@@ -61,7 +61,7 @@ static func site_plan(seed: int, lot: Dictionary, strip := false, level := 1) ->
 	b.small_store = level == 0 and not strip
 	b.grow_shop = level == 1 and not strip
 	if strip:
-		force_shop = "community" if level >= 2 else "strip"
+		force_shop = "power" if level >= 3 else ("community" if level >= 2 else "strip")
 	b._shop(3.9, lot, false)
 	force_shop = ""
 	return b.site
@@ -118,11 +118,21 @@ func _office_park(to_curb: float, width: float, level: int) -> void:
 	var glass_dark := r.randf() < 0.6
 	var x0 := -width * 0.5 + 0.6
 	var x1 := width * 0.5 - 0.6
-	var n := clampi(int((width - 4.0) / 34.0), 1, 3)
+	# The corporate campus keeps the drive's end of the site for its
+	# headquarters; the low buildings fill the rest.
+	var hq := level >= 3
+	var hq_w := clampf(width * 0.28, 34.0, 50.0) if hq else 0.0
+	# And a two-bay precast parking deck beside it: 500 people at a suburban
+	# headquarters need about 4 spaces per 1,000 sq ft (ITE), more than
+	# any surface field the site has room for.
+	var deck_w := 36.0 if hq else 0.0
+	var deck_x1 := x1 - hq_w - 8.0
+	var x1b := x1 - (hq_w + 8.0 + deck_w + 6.0 if hq else 0.0)
+	var n := clampi(int((x1b - x0 - 3.4) / 34.0), 1, 3)
 	var bd := clampf(depth - 30.0, 14.0, 20.0)
 	var zb := depth - 3.0
 	var zfb := zb - bd
-	var slot := (x1 - x0) / n
+	var slot := (x1b - x0) / n
 	var bw := minf(34.0, slot - 8.0)
 	# The order the slots fill: the middle (or left) first.
 	var order := [0] if n == 1 else ([0, 1] if n == 2 else [1, 0, 2])
@@ -138,6 +148,19 @@ func _office_park(to_curb: float, width: float, level: int) -> void:
 	var rowb := aisle - 5.5
 	var two := rowb >= 2.0
 	var lot0 := rowb if two else aisle
+	# The campus paves its front lawn into more pairs of rows, each pair
+	# nose to nose across its own aisle, keeping a 6 m planted setback.
+	var rows := [[rowa, Vector2(0, 1), aisle + 3.5]]
+	if two:
+		rows.append([rowb, Vector2(0, -1), aisle + 3.5])
+	if hq and two:
+		var rz := rowb
+		while rz - 5.5 - 7.0 - 5.5 >= 6.0:
+			var ai := rz - 5.5 - 7.0
+			rows.append([rz - 5.5, Vector2(0, 1), ai + 3.5])
+			rows.append([ai - 5.5, Vector2(0, -1), ai + 3.5])
+			rz = ai - 5.5
+		lot0 = rz
 	_flat_rect("drive", cut_x - 4.4, cut_x + 4.4, -to_curb, 0.0, 0.08)
 	_flat_rect("asphalt", cut_x - 3.5, cut_x + 3.5, 0.0, lot0, 0.06)
 	_flat_rect("asphalt", x0 + (pw + 2.0 if pond else 0.0), x1, lot0, zfb - 2.5, 0.06)
@@ -145,19 +168,23 @@ func _office_park(to_curb: float, width: float, level: int) -> void:
 	site.main_street = false
 	site.cut_x = cut_x
 	site.aisle_z = aisle + 3.5
-	for row in (2 if two else 1):
-		var a := rowa if row == 0 else rowb
+	for row in rows.size():
+		var a: float = rows[row][0]
 		var x := x0 + 1.0
 		while x + 2.75 <= x1 - 1.0:
 			var mid := x + 1.375
-			var skip := row == 1 and absf(mid - cut_x) < 4.5
-			skip = skip or (pond and mid < px + pw * 0.5 + 1.0)
+			var skip := row >= 1 and absf(mid - cut_x) < 4.5
+			skip = skip or (pond and mid < px + pw * 0.5 + 1.0 and a < rowa * 0.5 + 2.0 + maxf(rowa + 1.0, 9.0) * 0.5)
+			skip = skip or (hq and row == 0 and mid > deck_x1 - deck_w - 1.0 and mid < deck_x1 + 1.0)
 			# A landscaped island every ten stalls.
 			var isle := int((x - x0) / 2.75) % 11 == 10
 			if not skip and not isle:
 				_flat_rect("line", x - 0.06, x + 0.06, a, a + 5.5, 0.07, LINE)
 				_flat_rect("line", x + 2.69, x + 2.81, a, a + 5.5, 0.07, LINE)
-				site.stalls.append([Vector2(mid, a + 2.75), Vector2(0, 1) if row == 0 else Vector2(0, -1)])
+				if row < 2:
+					site.stalls.append([Vector2(mid, a + 2.75), rows[row][1]])
+				else:
+					site.stalls.append([Vector2(mid, a + 2.75), rows[row][1], rows[row][2]])
 			elif isle and not skip:
 				_flat_rect("mulch", x + 0.3, x + 2.45, a + 0.3, a + 5.2, 0.075)
 				if not _dry:
@@ -173,8 +200,23 @@ func _office_park(to_curb: float, width: float, level: int) -> void:
 		if k == 0:
 			door = Vector2(cx, zfb)
 	site.door = door
+	if hq:
+		# The deck's spaces: two bays of nose-to-nose rows on five levels and
+		# the roof, out of sight once parked.
+		var deck := []
+		var dd := zb - rowa
+		for lv in 6:
+			var x := deck_x1 - deck_w + 1.0
+			while x + 2.75 <= deck_x1 - 1.0:
+				for k in int((dd - 2.0) / 9.0):
+					deck.append([Vector2(x + 1.375, rowa + 1.0 + k * 9.0 + 2.75), Vector2(0, 1)])
+				x += 2.75
+		site.deck = deck
 	if _dry:
 		return
+	if hq:
+		_park_hq(x1 - 4.0 - hq_w * 0.5, hq_w, zfb, bd, band, r)
+		_park_deck(deck_x1 - deck_w * 0.5, deck_w, rowa, zb, x1 - 4.0 - hq_w, zfb + bd * 0.5)
 	# The monument sign by the drive, on a brick base in a planting bed.
 	var sx := cut_x - 7.0
 	_flat_rect("mulch", sx - 3.0, sx + 3.0, 0.8, 3.6, 0.075)
@@ -184,6 +226,111 @@ func _office_park(to_curb: float, width: float, level: int) -> void:
 		_shrub(Vector3(sx - 2.2 + i * 2.2, 0.1, 3.2), 0.45)
 	if pond:
 		_park_pond(Vector3(px, 0, rowa * 0.5 + 2.0), Vector2(pw, maxf(rowa + 1.0, 9.0)), r)
+
+
+## The headquarters a company builds on its office park once it has done
+## well there (Cummins's Corporate Office Building in Columbus, Lincoln
+## Financial's and Steel Dynamics' Fort Wayne campuses): six storeys of
+## glass curtain wall on a stone base, vertical aluminium fins, a two-storey
+## glass lobby pavilion facing the lot, the company's name along the top,
+## a screened penthouse, and three flagpoles beside the lobby.
+func _park_hq(cx: float, w: float, zf: float, d: float, band: Color, r: RandomNumberGenerator) -> void:
+	var fh := 4.0
+	var storeys := 6
+	var top := fh * storeys + 0.6
+	var cz := zf + d * 0.5
+	var stone := Color(["#cfc8ba", "#b9b2a4", "#d8d2c4"][r.randi() % 3])
+	var tint := Color(["#3f5560", "#4a5a52", "#2f3a44", "#5b6870"][r.randi() % 4])
+	_block("paint", cx, w, d, cz, top, top + 1.2, tint.darkened(0.2))
+	_box("brick", Vector3(w + 0.2, 4.6, d + 0.2), Vector3(cx, 2.3, cz), stone)  # stone base
+	for f in range(1, storeys):
+		var y := f * fh + 0.6 + fh * 0.5
+		for face in [[Vector3(cx, 0, zf - 0.03), Vector3(-1, 0, 0), w], [Vector3(cx, 0, zf + d + 0.03), Vector3(1, 0, 0), w],
+				[Vector3(cx - w * 0.5 - 0.03, 0, cz), Vector3(0, 0, 1), d], [Vector3(cx + w * 0.5 + 0.03, 0, cz), Vector3(0, 0, -1), d]]:
+			var c: Vector3 = face[0]
+			c.y = y
+			_glass(c, face[1], face[2] - 0.4, fh - 0.3, r.randf_range(0.1, 0.5))
+	for face in [[Vector3(cx, 0, zf - 0.03), Vector3(-1, 0, 0), w], [Vector3(cx, 0, zf + d + 0.03), Vector3(1, 0, 0), w],
+			[Vector3(cx - w * 0.5 - 0.03, 0, cz), Vector3(0, 0, 1), d], [Vector3(cx + w * 0.5 + 0.03, 0, cz), Vector3(0, 0, -1), d]]:
+		var along: Vector3 = face[1]
+		var out := along.cross(Vector3.UP)
+		var len: float = face[2]
+		var nf := maxi(2, roundi(len / (3.0 if fine_parts else 6.0)))
+		for i in range(1, nf):
+			var p: Vector3 = face[0] + along * (-len * 0.5 + i * len / nf) + out * 0.2
+			p.y = 4.6 + (top - 4.6) * 0.5
+			_box("metal", Vector3(0.12, top - 4.6, 0.45), p, Color("#b9bcbe"), Basis(Vector3.UP, atan2(-along.z, -along.x)))
+	# The glass lobby pavilion: two storeys under a thin flat roof.
+	var lw := minf(w * 0.4, 16.0)
+	var lz := zf - 2.4
+	_glass(Vector3(cx, 3.6, lz - 0.02), Vector3(-1, 0, 0), lw, 7.0, 0.0)
+	for sx in [-1.0, 1.0]:
+		_glass(Vector3(cx + sx * lw * 0.5, 3.6, lz + 1.5), Vector3(0, 0, sx), 3.0, 7.0, 0.0)
+	_box("paint", Vector3(lw + 2.4, 0.4, 3.6), Vector3(cx, 7.3, lz + 1.0), Color("#e6e4de"))
+	for i in range(0, 5):
+		_box("metal", Vector3(0.1, 7.0, 0.12), Vector3(cx - lw * 0.5 + i * lw / 4.0, 3.6, lz - 0.08), Color("#b9bcbe"))
+	_box("metal", Vector3(lw, 0.12, 0.12), Vector3(cx, 3.9, lz - 0.08), Color("#b9bcbe"))  # mid rail
+	_glass(Vector3(cx, 1.3, lz - 0.1), Vector3(-1, 0, 0), 2.4, 2.4, 0.0)
+	# The name along the top, the screened penthouse.
+	_sign(Vector3(cx, top - 2.3, zf - 0.08), minf(w * 0.5, 18.0), 1.6)
+	_box("paint", Vector3(w * 0.5, 3.6, d * 0.5), Vector3(cx, top + 1.8, cz), Color("#9a9c9e"))
+	_quad("membrane", Vector3(cx - w * 0.25, top + 3.62, cz - d * 0.25), Vector3(cx + w * 0.25, top + 3.62, cz - d * 0.25),
+		Vector3(cx + w * 0.25, top + 3.62, cz + d * 0.25), Vector3(cx - w * 0.25, top + 3.62, cz + d * 0.25), Color("#9a9790"), [], Vector3.UP)
+	# Three flagpoles along the walk beside the lobby.
+	for i in 3:
+		var fx := cx + lw * 0.5 + 3.0 + i * 2.4
+		_box("metal", Vector3(0.14, 10.0, 0.14), Vector3(fx, 5.0, zf - 1.4), Color("#cfd2d4"))
+		_box("paint", Vector3(1.8, 1.1, 0.04), Vector3(fx + 0.95, 9.3, zf - 1.4),
+			[Color("#3c3b6e"), Color("#1f3b6e"), band.lightened(0.2)][i])
+
+
+## The campus parking deck: precast double tees on five supported levels
+## and the roof, 3.2 m floor to floor behind 1.1 m spandrel panels, its
+## shadowed decks seen through the open sides, a glass stair and elevator
+## tower on the corner by the walk, the entry under a clearance bar off
+## the main aisle, light poles on the roof, and an enclosed skybridge to the
+## headquarters' second floor (as Cummins's and Lincoln's garages have).
+func _park_deck(cx: float, w: float, z0: float, z1: float, hq_x: float, link_z: float) -> void:
+	var levels := 5
+	var lh := 3.2
+	var h := lh * levels
+	var d := z1 - z0
+	var cz := (z0 + z1) * 0.5
+	var concrete := Color("#c4c0b6")
+	_box("paint", Vector3(w - 0.8, h, d - 0.8), Vector3(cx, h * 0.5, cz), Color("#2c2d2e"))
+	for k in range(1, levels + 1):
+		var y := k * lh
+		for e in [[Vector3(w, 1.1, 0.3), Vector3(cx, y + 0.25, z0 + 0.15)], [Vector3(w, 1.1, 0.3), Vector3(cx, y + 0.25, z1 - 0.15)],
+				[Vector3(0.3, 1.1, d), Vector3(cx - w * 0.5 + 0.15, y + 0.25, cz)], [Vector3(0.3, 1.1, d), Vector3(cx + w * 0.5 - 0.15, y + 0.25, cz)]]:
+			_box("concrete", e[0], e[1], concrete)
+		if fine_parts:
+			# The slab edge under each spandrel and its drip reveal.
+			_box("concrete", Vector3(w + 0.1, 0.35, 0.36), Vector3(cx, y - 0.48, z0 + 0.18), concrete.darkened(0.12))
+	for i in 3:
+		for zz in [z0 + 0.3, z1 - 0.3]:
+			_box("concrete", Vector3(0.6, h + 1.1, 0.6), Vector3(cx - w * 0.5 + 0.3 + i * (w - 0.6) * 0.5, (h + 1.1) * 0.5, zz), concrete.darkened(0.05))
+	_quad("paint", Vector3(cx - w * 0.5, h + 0.31, z0), Vector3(cx + w * 0.5, h + 0.31, z0), Vector3(cx + w * 0.5, h + 0.31, z1),
+		Vector3(cx - w * 0.5, h + 0.31, z1), Color("#8d8a84"), [], Vector3.UP)
+	for i in 2:
+		var at := Vector3(cx + (i - 0.5) * w * 0.5, h + 0.3, cz)
+		_box("metal", Vector3(0.18, 7.0, 0.18), at + Vector3(0, 3.5, 0), Color("#5f6266"))
+		_box("metal", Vector3(1.2, 0.25, 0.5), at + Vector3(0, 7.0, 0), Color("#5f6266"))
+	# The stair and elevator tower on the street corner nearest the walk.
+	var sx := cx - w * 0.5 + 2.5
+	_box("concrete", Vector3(5.0, h + 3.4, 5.0), Vector3(sx, (h + 3.4) * 0.5, z0 - 2.5), concrete)
+	_glass(Vector3(sx, (h + 3.4) * 0.5, z0 - 5.03), Vector3(-1, 0, 0), 3.6, h + 2.4, 0.0)
+	# The entry lane off the aisle under its clearance bar, and the sign.
+	var ex := cx + w * 0.25
+	_box("paint", Vector3(7.0, 0.3, 0.3), Vector3(ex, 2.6, z0 - 0.2), Color("#e2b23a"))
+	_box("paint", Vector3(0.4, 1.1, 0.4), Vector3(ex + 3.0, 0.55, z0 - 0.6), Color("#d2a22a"))
+	_sign(Vector3(ex, lh + 0.45, z0 - 0.16), 4.4, 0.8)
+	# The skybridge to the headquarters, over the gap between them.
+	var gap := hq_x - (cx + w * 0.5)
+	if gap > 0.5:
+		var bx := cx + w * 0.5 + gap * 0.5
+		_box("paint", Vector3(gap + 0.4, 3.4, 3.6), Vector3(bx, lh * 2.0 + 1.7, link_z), Color("#d6d4ce"))
+		for s in [-1.0, 1.0]:
+			_glass(Vector3(bx, lh * 2.0 + 1.9, link_z + s * 1.83), Vector3(-s, 0, 0), gap - 0.4, 2.2, 0.0)
 
 
 ## One office building of the park: a flat-roofed box with ribbon windows
@@ -354,7 +501,7 @@ func _row(to_curb: float, width: float, units: int, storeys: int) -> void:
 		_gable_roof(0.0, zf + d * 0.5, deck, d, d * 0.5 * rng.randf_range(0.33, 0.5), x1 - x0, true,
 			Color(_pick(ROOF)), siding)
 	# The alley garage pad at the back.
-	if depth - 1.0 > zf + d + 8.0:
+	if alley and depth - 1.0 > zf + d + 8.0:
 		_flat_rect("drive", -width * 0.5 + 0.5, width * 0.5 - 0.5, depth - 7.0, depth - 1.0, 0.06)
 	if rng.randf() < 0.7:
 		var pick := TreeField.pick(rng)
@@ -412,7 +559,7 @@ func _apartments(to_curb: float, width: float, storeys: int) -> void:
 	for i in rng.randi_range(1, 3):
 		_box("metal", Vector3(1.6, 1.0, 1.1), Vector3(rng.randf_range(-w * 0.35, w * 0.35), deck + 0.5, cz),
 			Color("#b9bcbc"))
-	_parking(-width * 0.5 + 0.6, width * 0.5 - 0.6, zf + d + 1.5, zf + d + 14.0, width)
+	_rl_back(-width * 0.5 + 0.6, width * 0.5 - 0.6, zf + d + 1.5, zf + d + 14.0, width)
 	# Foundation shrubs and a street tree.
 	var x := -w * 0.5 + 0.6
 	while x < w * 0.5 - 0.5:
@@ -427,6 +574,9 @@ func _apartments(to_curb: float, width: float, storeys: int) -> void:
 
 static func build_mixed(seed: int, to_curb: float, lot: Dictionary, storeys: int, spec := {}) -> Array:
 	var b := _start(seed, lot, spec)
+	b._added = int(lot.get("added_from", 0))
+	if b._added >= storeys:
+		b._added = 0
 	if MainInfill.wanted(b, storeys):
 		MainInfill.draw(b, to_curb, storeys)
 	else:
@@ -465,6 +615,7 @@ func _mixed(to_curb: float, width: float, storeys: int) -> void:
 	# One storefront every 7-8 m, each with its own sign and maybe an awning.
 	var fronts := maxi(1, roundi(w / 7.5))
 	var fw := w / fronts
+	var shop_wins := []
 	for k in fronts:
 		var fx := -w * 0.5 + (k + 0.5) * fw
 		var sw := fw - 1.0
@@ -474,16 +625,21 @@ func _mixed(to_curb: float, width: float, storeys: int) -> void:
 		# Huntington): paneled bulkheads, tall display windows, a glass
 		# entry door in the middle bay and a band of transom lights above,
 		# under the sign board.
+		# A shop whose sign says it serves food shows its booths and counter.
+		var eats := fine and (sign_spec.is_empty() or k != fronts / 2) and int(_word_slot(fx) * 0.5) - 1 in EATERIES
 		for i in bays:
 			var x := fx - sw * 0.5 + (i + 0.5) * bw
 			if i == bays / 2 and bw > 1.5:
 				_shop_door(x, bw, zf, mull)
 			else:
 				shopfront = fine
+				diner_room = 7.0 if eats else 0.0
 				_glass(Vector3(x, 1.65, zf - 0.03), Vector3(-1, 0, 0), bw - 0.12, 1.9, rng.randf_range(0.0, 0.2))
 				shopfront = false
+				diner_room = 0.0
 				_box("paint", Vector3(bw - 0.02, 0.6, 0.16), Vector3(x, 0.4, zf - 0.08), trim)
 				if fine:
+					shop_wins.append(Vector2(x, bw))
 					# Raised panels on the bulkhead.
 					_box("paint", Vector3(bw * 0.38, 0.32, 0.04), Vector3(x - bw * 0.22, 0.4, zf - 0.17), trim.darkened(0.1))
 					_box("paint", Vector3(bw * 0.38, 0.32, 0.04), Vector3(x + bw * 0.22, 0.4, zf - 0.17), trim.darkened(0.1))
@@ -523,6 +679,7 @@ func _mixed(to_curb: float, width: float, storeys: int) -> void:
 				shop_h + 0.2 + ph * 0.5, zf - 0.21), panel.darkened(0.12))
 	# Flats above: tall windows with sills and lintels.
 	var n := maxi(2, int(w / 2.6))
+	var uppers := []
 	for f in range(1, storeys if not slipcover else 1):
 		var y := shop_h + (f - 1) * floor_h + 1.6
 		for i in n:
@@ -532,6 +689,7 @@ func _mixed(to_curb: float, width: float, storeys: int) -> void:
 			_box("paint", Vector3(1.3, 0.1, 0.16), Vector3(x, y - wh * 0.5 - 0.05, zf - 0.08), trim)
 			if fine:
 				_sash(x, y, 1.0, wh, zf, trim)
+				uppers.append(Vector3(x, y, wh))
 			if italianate:
 				# A hood mould: a wider cap with a raised crown.
 				_box("paint", Vector3(1.5, 0.3, 0.16), Vector3(x, y + wh * 0.5 + 0.15, zf - 0.08), trim)
@@ -554,6 +712,8 @@ func _mixed(to_curb: float, width: float, storeys: int) -> void:
 		_box("paint", Vector3(w + 0.1, 0.25, 0.4), Vector3(0, top - 0.15, zf - 0.15), trim)
 	_box("metal", Vector3(1.8, 1.1, 1.2), Vector3(rng.randf_range(-w * 0.3, w * 0.3), deck + 0.55, cz + 2.0),
 		Color("#b9bcbc"))
+	if _added > 0 and not slipcover:
+		_ma_added(w, d, zf, cz, shop_h, floor_h, top, wall, trim, italianate)
 	# The flats' stair door at one end, and the alley at the back.
 	var sx := (w * 0.5 - 0.9) * (-1.0 if rng.randf() < 0.5 else 1.0)
 	_box("paint", Vector3(1.0, 2.2, 0.06), Vector3(sx, 1.1, zf - 0.05), Color(_pick(DOOR)))
@@ -566,9 +726,42 @@ func _mixed(to_curb: float, width: float, storeys: int) -> void:
 	if fine:
 		_front_signs(w, zf, fronts, fw, shop_h, storeys)
 		_shop_stoops(w, zf, fronts, fw)
+		_window_life(zf, uppers, shop_wins, n)
 	if depth > zf + d + 3.0:
 		_flat_rect("asphalt", -width * 0.5, width * 0.5, zf + d, minf(depth, zf + d + 10.0), 0.06)
 	_downtown_walk(to_curb, width, zf)
+
+
+## Floors an owner added on top of a Main Street block (BuildingTypes
+## added_from): the new storeys in a brick that never quite matches (a
+## different kiln, decades later), the old cornice taken down and its
+## line kept as a plain stone belt course, and the new top a simple
+## corbelled parapet, as on the blocks round Indiana's courthouse squares
+## that went from two storeys to three (Wabash, Peru, Hartford City).
+## The skin sits just behind the windows. Its own random numbers.
+func _ma_added(w: float, d: float, zf: float, cz: float, shop_h: float, floor_h: float, top: float, wall: Color,
+		trim: Color, italianate: bool) -> void:
+	var r := RandomNumberGenerator.new()
+	r.seed = hash([rng.seed, "added storey"])
+	var y0 := shop_h + floor_h * (_added - 1) + 0.15
+	var h := top - y0
+	var skin := Color(FACADE_BRICK[r.randi() % FACADE_BRICK.size()])
+	if absf(skin.get_luminance() - wall.get_luminance()) < 0.03:
+		skin = skin.lightened(0.12) if r.randf() < 0.5 else skin.darkened(0.12)
+	# Front (behind the glass, 2 cm out), back and the party walls.
+	_box("brick", Vector3(w, h, 0.012), Vector3(0, y0 + h * 0.5, zf - 0.008), skin)
+	_box("brick", Vector3(w, h, 0.012), Vector3(0, y0 + h * 0.5, zf + d + 0.008), skin)
+	for sx in [-1.0, 1.0]:
+		_box("brick", Vector3(0.012, h, d), Vector3(sx * (w * 0.5 + 0.008), y0 + h * 0.5, cz), skin)
+	# The old roofline: a limestone belt course where the cornice was.
+	var stone := Color("#cfc6b2")
+	_box("paint", Vector3(w + 0.06, 0.32, 0.22), Vector3(0, y0 - 0.02, zf - 0.11), stone)
+	_box("paint", Vector3(w + 0.06, 0.2, 0.1), Vector3(0, y0 - 0.02, zf + d + 0.05), stone)
+	# The new top: corbelled brick in the new skin under a stone coping,
+	# over (and hiding) the cornice the builder drew there.
+	_box("brick", Vector3(w + 0.04, 1.0, 0.95 if italianate else 0.5), Vector3(0, top - 0.5, zf - 0.02 - (0.45 if italianate else 0.22)), skin)
+	_box("brick", Vector3(w + 0.04, 0.22, 0.25), Vector3(0, top - 0.95, zf - 0.12 - (0.9 if italianate else 0.45)), skin.darkened(0.1))
+	_box("paint", Vector3(w + 0.14, 0.18, (1.05 if italianate else 0.6)), Vector3(0, top + 0.05, zf - 0.02 - (0.45 if italianate else 0.22)), stone)
 
 
 ## A storefront's entry in the middle bay: a wood or aluminium door with a
@@ -619,9 +812,12 @@ func _alley_side(w: float, zb: float, fronts: int, fw: float, storeys: int, shop
 			_box("metal", Vector3(0.025, 0.9, 0.025), Vector3(wx - 0.3 + b * 0.3, 2.3, zb + 0.08), Color("#2a2b2c"))
 		_box("paint", Vector3(1.0, 0.08, 0.14), Vector3(wx, 1.81, zb + 0.07), FOUNDATION)
 	var n := maxi(2, int(w / 3.6))
+	var stair := _ma_stair_end(w, fronts, fw, storeys, shop_h, n) if fine else 0
 	for f in range(1, storeys):
 		var y := shop_h + (f - 1) * floor_h + 1.6
 		for i in n:
+			if f == 1 and stair != 0 and i == (0 if stair < 0 else n - 1):
+				continue  # the stair's door is here
 			var x := lerpf(-w * 0.5 + 1.8, w * 0.5 - 1.8, float(i) / (n - 1))
 			var wh := 1.7
 			_glass(Vector3(x, y, zb + 0.03), Vector3(1, 0, 0), 0.9, wh, rng.randf_range(0.0, 0.8))
@@ -629,14 +825,243 @@ func _alley_side(w: float, zb: float, fronts: int, fw: float, storeys: int, shop
 			_box("paint", Vector3(1.1, 0.08, 0.14), Vector3(x, y - wh * 0.5 - 0.04, zb + 0.07), FOUNDATION)
 	if fine:
 		_alley_services(w, zb, fronts, fw, storeys, shop_h, floor_h, n)
+	if stair != 0:
+		_ma_back_stair(w, zb, stair, shop_h)
 
 
-## The side walls of a Main Street block, which show wherever the
-## neighbour is lower or gone (Marion, Wabash, Anderson): windows bricked
-## up in a slightly different brick, and on a tall block now and then a
-## faded painted advertisement, a "ghost sign" for a flour, tobacco or soft
-## drink brand, its lettering worn to pale bands. Desktop only, with its own
-## random numbers so the builder's don't move.
+## Which end of a two-storey Main Street block's back wall gets the outside
+## stair up to the flats (-1 or 1; 0 for none): the second way out the
+## code wants from flats over a shop, which a 1880s block never had inside,
+## so owners added it out back (wood or galvanized steel, up the alley wall
+## to a landing at the upstairs door, as behind the blocks in Wabash,
+## Huntington or Marion). Taller blocks have the fire escape instead. The
+## flight runs along the wall toward the middle, so it takes the end where
+## no shop's back door sits under its low half. Its own random numbers.
+func _ma_stair_end(w: float, fronts: int, fw: float, storeys: int, shop_h: float, n: int) -> int:
+	if storeys != 2 or n < 2:
+		return 0
+	var r := RandomNumberGenerator.new()
+	r.seed = hash([rng.seed, "back stair"])
+	if r.randf() < 0.25:
+		return 0  # the flats go out through the front stair hall only (or are storage)
+	var first := -1 if r.randf() < 0.5 else 1
+	for e in [first, -first]:
+		var xd: float = e * (w * 0.5 - 1.8)
+		var run := (shop_h + 0.1) / 0.19 * 0.27
+		var top_x: float = xd - e * 0.8  # where the flight meets the landing
+		var ok := absf(top_x - e * run) < w * 0.5 - 0.3
+		for k in fronts:
+			var fx := -w * 0.5 + (k + 0.5) * fw
+			var dx := fx + fw * 0.2 * (-1.0 if k % 2 == 0 else 1.0)
+			# The underside clears a 2.1 m door this far along from the foot.
+			var along: float = run - absf(dx - top_x)
+			if along > -0.6 and along < run * 2.3 / (shop_h + 0.1) + 0.6:
+				ok = false
+		if ok:
+			return e
+	return 0
+
+
+## The outside stair at end `e` of a two-storey Main Street block's back
+## wall (see _ma_stair_end): a steel door upstairs onto a landing on posts,
+## and one straight flight down along the wall to the pavement, guarded on
+## its open side (IBC 1011: 7 3/4 in risers, 10 in treads, 42 in guards).
+## Its own random numbers.
+func _ma_back_stair(w: float, zb: float, e: int, shop_h: float) -> void:
+	var r := RandomNumberGenerator.new()
+	r.seed = hash([rng.seed, "back stair look"])
+	var steel := Color(["#8f9396", "#8f9396", "#2a2b2c", "#8d7b5f"][r.randi() % 4])
+	var post := steel.darkened(0.15)
+	var fy := shop_h + 0.1
+	var xd: float = e * (w * 0.5 - 1.8)
+	var lw := 1.6
+	var ld := 1.3
+	_steel_door(Vector3(xd, fy + 1.05, zb), 1.0, Color("#5a5e60"), false)
+	_box("paint", Vector3(lw, 0.08, ld), Vector3(xd, fy - 0.04, zb + ld * 0.5), steel)
+	for px in [xd - lw * 0.5 + 0.06, xd + lw * 0.5 - 0.06]:
+		_box("paint", Vector3(0.1, fy, 0.1), Vector3(px, fy * 0.5, zb + ld - 0.06), post)
+	var top_x: float = xd - e * lw * 0.5
+	var run := fy / 0.19 * 0.27
+	# A 1 m flight (36 in is the least), tight to the wall, so a dumpster
+	# by a back door (_service_yard) still clears it.
+	var zs := zb + 0.55
+	_mb_flight(Vector3(top_x - e * run, 0.0, zs), Vector3(top_x, fy, zs), 1.0, steel, post)
+	# The flight's foot post, and the landing's guard round its open sides.
+	_box("paint", Vector3(0.08, 1.0, 0.08), Vector3(top_x - e * run, 0.5, zs + 0.46), post)
+	var ry := fy + 1.07
+	var outer: float = xd + e * (lw * 0.5 - 0.05)
+	_mb_rail(Vector3(outer, ry, zb + 0.1), Vector3(outer, ry, zb + ld - 0.05), fy, steel)
+	_mb_rail(Vector3(xd - lw * 0.5, ry, zb + ld - 0.05), Vector3(xd + lw * 0.5, ry, zb + ld - 0.05), fy, steel)
+
+
+## One stair flight from `a` (bottom) to `b` (top), running along x: open
+## treads on two stringers and a handrail on the outer side.
+func _mb_flight(a: Vector3, b: Vector3, sw: float, wood: Color, post: Color) -> void:
+	var rise := b.y - a.y
+	var run := b.x - a.x
+	var length := Vector2(run, rise).length()
+	var tilt := Basis(Vector3(0, 0, 1), atan2(rise, run))
+	var mid := (a + b) * 0.5
+	if not fine:
+		# The browser: the flight as one sloped run, stringers and all.
+		_box("paint", Vector3(length, 0.2, sw), mid + Vector3(0, -0.05, 0), wood, tilt)
+		_box("paint", Vector3(length, 0.05, 0.05), mid + Vector3(0, 0.9, sw * 0.5 - 0.02), wood, tilt)
+		return
+	var n := maxi(2, ceili(rise / 0.2))
+	for j in range(1, n):
+		var t := float(j) / n
+		_box("paint", Vector3(0.3, 0.04, sw), Vector3(lerpf(a.x, b.x, t), a.y + rise * t, a.z), wood)
+	for s in [-1.0, 1.0]:
+		_box("paint", Vector3(length, 0.24, 0.05), mid + Vector3(0, -0.1, s * (sw * 0.5 - 0.02)), post, tilt)
+	_box("paint", Vector3(length, 0.05, 0.05), mid + Vector3(0, 0.9, sw * 0.5 - 0.02), wood, tilt)
+
+
+## A porch guard from `a` to `b` (at rail height), on a deck at `floor_y`:
+## top rail, bottom rail and balusters about every 4 in, drawn every 30 cm
+## (desktop).
+func _mb_rail(a: Vector3, b: Vector3, floor_y: float, wood: Color) -> void:
+	var span := a.distance_to(b)
+	var along := (b - a) / span
+	var basis := Basis(along.cross(Vector3.UP), Vector3.UP, along)
+	var mid := (a + b) * 0.5
+	_box("paint", Vector3(0.12, 0.05, span), mid, wood, basis)
+	if fine:
+		_box("paint", Vector3(0.06, 0.05, span), Vector3(mid.x, floor_y + 0.1, mid.z), wood, basis)
+	# The browser keeps its triangle budget: a post every 1.2 m, no balusters.
+	var n := maxi(1, int(span / (0.3 if fine else 1.2)))
+	for k in n + 1:
+		var p := a.lerp(b, float(k) / n)
+		_box("paint", Vector3(0.04, a.y - floor_y - 0.1, 0.04), Vector3(p.x, (a.y + floor_y + 0.1) * 0.5, p.z), wood)
+
+
+## Desktop: signs of life in a Main Street block's windows. Downstairs, a
+## red-and-blue neon OPEN sign hung in some display windows (lit after dark).
+## Upstairs, now and then gold-leaf lettering across a second-floor office's
+## windows (the lawyer, the insurance man, the dentist, as still seen in
+## Wabash, Peru or Marion), a window air conditioner on its sill in the flats,
+## or a flower box. Its own random numbers.
+func _window_life(zf: float, uppers: Array, shop_wins: Array, per_floor: int) -> void:
+	var r := RandomNumberGenerator.new()
+	r.seed = hash([rng.seed, 31])
+	for sw: Vector2 in shop_wins:
+		if r.randf() < 0.3:
+			_open_sign(Vector3(sw.x + r.randf_range(-0.2, 0.2) * sw.y, r.randf_range(1.85, 2.2), zf - 0.05))
+	# Gold leaf across a run of second-floor windows.
+	if uppers.size() >= 2 and r.randf() < 0.35:
+		var first := r.randi() % maxi(1, mini(per_floor, uppers.size()) - 1)
+		var words: Array = GOLD_WORDS[r.randi() % GOLD_WORDS.size()]
+		var run := mini(words.size(), mini(per_floor, uppers.size()) - first)
+		var gold := Color("#d9b257")
+		for i in run:
+			var u: Vector3 = uppers[first + i]
+			# Windows run right to left as seen from the street.
+			_gold_word(words[run - 1 - i], Vector3(u.x, u.y - u.z * 0.5 + 0.5, zf - 0.04), gold)
+	for u: Vector3 in uppers:
+		var sill: float = u.y - u.z * 0.5
+		var roll := r.randf()
+		if roll < 0.07:
+			# A window unit in the bottom sash, its cabinet hanging out over the sill.
+			var ac := Color("#d6d2c6")
+			_box("metal", Vector3(0.62, 0.38, 0.55), Vector3(u.x, sill + 0.2, zf - 0.22), ac)
+			_box("metal", Vector3(0.5, 0.26, 0.02), Vector3(u.x, sill + 0.2, zf - 0.5), ac.darkened(0.25))
+			for q in 4:
+				_box("metal", Vector3(0.5, 0.015, 0.025), Vector3(u.x, sill + 0.1 + q * 0.065, zf - 0.51), ac.darkened(0.4))
+			_box("paint", Vector3(0.36, 0.38, 0.03), Vector3(u.x, sill + 0.2, zf - 0.02), Color("#8c8a82"))  # accordion side panels
+			_box("metal", Vector3(0.03, 0.03, 0.4), Vector3(u.x - 0.25, sill - 0.12, zf - 0.22), Color("#3a3a3a"),
+				Basis(Vector3.RIGHT, deg_to_rad(-35.0)))
+		elif roll < 0.15:
+			# A flower box on brackets under the sill, geraniums and trailing green.
+			var bx := Color(["#2f3a2c", "#e8e4da", "#5a2626"][r.randi() % 3])
+			_box("paint", Vector3(1.0, 0.2, 0.24), Vector3(u.x, sill - 0.2, zf - 0.2), bx)
+			var keep := rng
+			rng = r
+			for q in 3:
+				var px := u.x - 0.32 + q * 0.32
+				_shrub(Vector3(px, sill - 0.1, zf - 0.2), 0.14)
+				for b in 3:
+					_box("paint", Vector3(0.07, 0.07, 0.07), Vector3(px + r.randf_range(-0.1, 0.1), sill + r.randf_range(0.02, 0.14),
+						zf - 0.2 + r.randf_range(-0.08, 0.08)), Color(["#c8242e", "#e0485a", "#f2f0ea"][r.randi() % 3]))
+			rng = keep
+
+
+const GOLD_WORDS := [["ATTORNEY", "AT LAW"], ["INSURE", "REALTY"], ["ABSTRACT", "TITLE"], ["DENTIST", "OFFICE"],
+	["ACCOUNTS", "TAX"]]
+const PIXEL_FONT := {
+	"&": [".#.", "#.#", ".#.", "#.#", ".##"], "A": [".#.", "#.#", "###", "#.#", "#.#"],
+	"B": ["##.", "#.#", "##.", "#.#", "##."], "C": [".##", "#..", "#..", "#..", ".##"],
+	"D": ["##.", "#.#", "#.#", "#.#", "##."], "E": ["###", "#..", "##.", "#..", "###"],
+	"F": ["###", "#..", "##.", "#..", "#.."], "G": [".##", "#..", "#.#", "#.#", ".##"],
+	"H": ["#.#", "#.#", "###", "#.#", "#.#"], "I": ["###", ".#.", ".#.", ".#.", "###"],
+	"J": ["..#", "..#", "..#", "#.#", ".#."], "K": ["#.#", "#.#", "##.", "#.#", "#.#"],
+	"L": ["#..", "#..", "#..", "#..", "###"], "M": ["#.#", "###", "###", "#.#", "#.#"],
+	"N": ["###", "#.#", "#.#", "#.#", "#.#"], "O": [".#.", "#.#", "#.#", "#.#", ".#."],
+	"P": ["##.", "#.#", "##.", "#..", "#.."], "Q": [".#.", "#.#", "#.#", "##.", ".##"],
+	"R": ["##.", "#.#", "##.", "#.#", "#.#"], "S": [".##", "#..", ".#.", "..#", "##."],
+	"T": ["###", ".#.", ".#.", ".#.", ".#."], "U": ["#.#", "#.#", "#.#", "#.#", "###"],
+	"V": ["#.#", "#.#", "#.#", "#.#", ".#."], "W": ["#.#", "#.#", "###", "###", "#.#"],
+	"X": ["#.#", "#.#", ".#.", "#.#", "#.#"], "Y": ["#.#", "#.#", ".#.", ".#.", ".#."],
+	"Z": ["###", "..#", ".#.", "#..", "###"],
+}
+
+
+## One word in gold leaf on a window, centred on `c`, in small block
+## capitals (each row of a letter's pixels drawn as one strip).
+func _gold_word(word: String, c: Vector3, col: Color) -> void:
+	var px := 0.026
+	var adv := px * 4.0
+	var x0 := c.x + (word.length() * adv - px) * 0.5  # +x is the viewer's left
+	for i in word.length():
+		var rows: Array = PIXEL_FONT.get(word[i], [])
+		for ry in rows.size():
+			var row: String = rows[ry]
+			var cx := 0
+			while cx < 3:
+				if row[cx] != "#":
+					cx += 1
+					continue
+				var run := 0
+				while cx + run < 3 and row[cx + run] == "#":
+					run += 1
+				var lx := x0 - i * adv - (cx + run * 0.5) * px
+				_box("metal", Vector3(run * px, px, 0.006), Vector3(lx, c.y + (2 - ry) * px, c.z), col)
+				cx += run
+
+
+## A shop's neon OPEN sign in the window: red tube letters in a blue tube
+## border, on a clear hanger. Glows after dark ("sign" alpha 1).
+func _open_sign(c: Vector3) -> void:
+	var red := Color("#ff3446")
+	var blue := Color("#3a7bff")
+	var t := 0.022
+	var w := 0.62
+	var h := 0.26
+	for e in [[Vector3(w, t, t), Vector3(0, h * 0.5, 0)], [Vector3(w, t, t), Vector3(0, -h * 0.5, 0)],
+			[Vector3(t, h, t), Vector3(-w * 0.5, 0, 0)], [Vector3(t, h, t), Vector3(w * 0.5, 0, 0)]]:
+		_box("sign", e[0], c + e[1], blue)
+	var lh := 0.15
+	var lw := 0.1
+	for i in 4:
+		var x := c.x + 0.21 - i * 0.14  # +x is the viewer's left
+		var lc := Vector3(x, c.y, c.z)
+		var strokes := []
+		match i:
+			0:  # O
+				strokes = [[lw, 0, 0, lh * 0.5], [lw, 0, 0, -lh * 0.5], [0, lh, -lw * 0.5, 0], [0, lh, lw * 0.5, 0]]
+			1:  # P
+				strokes = [[0, lh, -lw * 0.5, 0], [lw, 0, 0, lh * 0.5], [lw, 0, 0, 0], [0, lh * 0.5, lw * 0.5, lh * 0.25]]
+			2:  # E
+				strokes = [[0, lh, -lw * 0.5, 0], [lw, 0, 0, lh * 0.5], [lw * 0.8, 0, -lw * 0.1, 0], [lw, 0, 0, -lh * 0.5]]
+			3:  # N
+				strokes = [[0, lh, -lw * 0.5, 0], [0, lh, lw * 0.5, 0]]
+		for s in strokes:
+			_box("sign", Vector3(maxf(s[0], t), maxf(s[1], t), t), lc + Vector3(-s[2], s[3], 0), red)
+		if i == 3:
+			_box("sign", Vector3(t, Vector2(lw, lh).length(), t), lc, red, Basis(Vector3.BACK, -atan2(lw, lh)))
+	# The hanging chain.
+	for sx in [-0.25, 0.25]:
+		_box("metal", Vector3(0.008, 0.3, 0.008), c + Vector3(sx, h * 0.5 + 0.15, 0.01), Color("#9a9a9a"))
+
+
 ## Desktop: what shopkeepers set out against their own fronts on a Main
 ## Street walk (the building side, clear of the door and the walking lane
 ## the ADA asks for): potted plants by the door, a chalkboard A-frame, a
@@ -751,6 +1176,12 @@ func _front_signs(w: float, zf: float, fronts: int, fw: float, shop_h: float, st
 					_box("sign", e[0], e[1], neon)
 
 
+## The side walls of a Main Street block, which show wherever the
+## neighbour is lower or gone (Marion, Wabash, Anderson): windows bricked
+## up in a slightly different brick, and on a tall block now and then a
+## faded painted advertisement, a "ghost sign" for a flour, tobacco or soft
+## drink brand, its lettering worn to pale bands. Desktop only, with its own
+## random numbers so the builder's don't move.
 func _party_wall(w: float, d: float, zf: float, shop_h: float, floor_h: float, storeys: int, wall: Color) -> void:
 	var r := RandomNumberGenerator.new()
 	r.seed = hash([rng.seed, 4421])
@@ -897,10 +1328,24 @@ func _downtown_walk(to_curb: float, width: float, zf: float) -> void:
 	if rng.randf() < 0.4:
 		var lx := (width * 0.5 - 0.4) * (-1.0 if rng.randf() < 0.5 else 1.0)
 		var black := Color("#1f2224")
-		_box("paint", Vector3(0.45, 0.5, 0.45), Vector3(lx, 0.25, tz), black)
-		_box("paint", Vector3(0.14, 3.6, 0.14), Vector3(lx, 2.3, tz), black)
-		_box("paint", Vector3(0.42, 0.55, 0.42), Vector3(lx, 4.35, tz), Color("#efe9d8"))  # the acorn globe
-		_box("paint", Vector3(0.3, 0.12, 0.3), Vector3(lx, 4.7, tz), black)
+		if fine:
+			# Desktop: a cast-iron post (fluted base, slim shaft, a collar) and
+			# a ribbed acorn globe that lights after dark, with its pool of
+			# warm light on the walk.
+			_cylinder("paint", Vector3(lx, 0.0, tz), 0.24, 0.9, black, 8)
+			_cylinder("paint", Vector3(lx, 0.9, tz), 0.15, 0.15, black, 8)
+			_cylinder("paint", Vector3(lx, 1.05, tz), 0.08, 2.95, black, 8)
+			_cylinder("paint", Vector3(lx, 3.95, tz), 0.16, 0.12, black, 8)
+			_cylinder("sign", Vector3(lx, 4.07, tz), 0.2, 0.32, Color(1.0, 0.9, 0.72, 1.0), 8)
+			_cylinder("sign", Vector3(lx, 4.39, tz), 0.15, 0.2, Color(1.0, 0.9, 0.72, 1.0), 8)
+			_cylinder("paint", Vector3(lx, 4.59, tz), 0.17, 0.06, black, 8)
+			_cylinder("paint", Vector3(lx, 4.65, tz), 0.04, 0.22, black, 6)  # the finial
+			_light_pool(Vector3(lx, 0.09, tz + 1.2), 7.0, 6.0, Color(1.0, 0.86, 0.62))
+		else:
+			_box("paint", Vector3(0.45, 0.5, 0.45), Vector3(lx, 0.25, tz), black)
+			_box("paint", Vector3(0.14, 3.6, 0.14), Vector3(lx, 2.3, tz), black)
+			_box("paint", Vector3(0.42, 0.55, 0.42), Vector3(lx, 4.35, tz), Color("#efe9d8"))  # the acorn globe
+			_box("paint", Vector3(0.3, 0.12, 0.3), Vector3(lx, 4.7, tz), black)
 	_street_furniture(width, tz)
 
 
@@ -1053,10 +1498,13 @@ func _office_mirror(to_curb: float, width: float, storeys: int) -> void:
 			var fx := -bw * 0.5 - 3.0 - k * 1.6
 			_box("metal", Vector3(0.12, 10.0, 0.12), Vector3(fx, 5.0, zf - 6.5), Color("#c9cccd"))
 			var flag: Color = [Color("#3c3b6e"), Color("#1f3a8a"), Color(_pick(SPANDREL)).darkened(0.3)][k]
-			_box("paint", Vector3(1.5, 0.95, 0.03), Vector3(fx - 0.8, 9.4, zf - 6.5), flag)
+			var at := Vector3(fx - 0.06, 9.85, zf - 6.5)
 			if k == 0:
-				for st in 3:
-					_box("paint", Vector3(0.9, 0.12, 0.035), Vector3(fx - 1.1, 9.05 + st * 0.3, zf - 6.5), Color("#b22234"))
+				_us_flag(at, 1.5, 0.95, k * 1.7)
+			elif k == 1:
+				_indiana_flag(at, 1.5, 0.95, k * 1.7)
+			else:
+				_house_flag(at, 1.5, 0.95, k * 1.7, flag)
 		_flat_rect("line", -hw + 1.0, -bw * 0.5 - 1.5, zf - 1.8, zf - 0.3, 0.065, Color("#4a3426"))
 		_flat_rect("line", bw * 0.5 + 1.5, hw - 1.0, zf - 1.8, zf - 0.3, 0.065, Color("#4a3426"))
 		var keep := rng
@@ -1284,18 +1732,25 @@ func _office_lot(to_curb: float, w: float, zf: float, zb: float, width: float) -
 ## down concrete steps to the yard. The steps stand on a footing that runs
 ## below grade, so on a lot that falls away behind they still reach the
 ## ground instead of hanging in the air.
-func _rear_wall(x0: float, x1: float, zb: float, base: float, floor_h: float, storeys: int, trim: Color) -> void:
+## `porch`: each floor has its own back door in the middle, out onto a
+## back porch (drawn by the caller), so no stoop.
+func _rear_wall(x0: float, x1: float, zb: float, base: float, floor_h: float, storeys: int, trim: Color,
+		porch := false) -> void:
 	var n := maxi(2, int((x1 - x0) / 3.2))
 	var door_x := (x0 + x1) * 0.5
 	for f in storeys:
 		var y := base + f * floor_h + 1.5
 		for i in n:
 			var x := lerpf(x0, x1, (i + 0.5) / n)
-			if f == 0 and absf(x - door_x) < 1.4:
+			if (f == 0 or porch) and absf(x - door_x) < 1.4:
 				continue
 			_window(Vector3(x, y, zb), Vector3(1, 0, 0), 1.0, 1.5, false, false, trim)
-	_box("paint", Vector3(0.95, 2.1, 0.06), Vector3(door_x, base + 1.05, zb + 0.03), Color("#4d5254"))
-	_box("paint", Vector3(1.25, 0.14, 0.1), Vector3(door_x, base + 2.17, zb + 0.05), trim)
+	for f in (storeys if porch else 1):
+		var y0 := base + f * floor_h
+		_box("paint", Vector3(0.95, 2.1, 0.06), Vector3(door_x, y0 + 1.05, zb + 0.03), Color("#4d5254"))
+		_box("paint", Vector3(1.25, 0.14, 0.1), Vector3(door_x, y0 + 2.17, zb + 0.05), trim)
+	if porch:
+		return
 	var footing := 1.6  # below grade: hidden on level ground, showing where the yard falls away
 	_box("concrete", Vector3(1.6, base + footing, 1.2), Vector3(door_x, (base - footing) * 0.5, zb + 0.6), FOUNDATION)
 	var steps := ceili(base / 0.19)
@@ -1318,6 +1773,41 @@ func _block(mat: String, cx: float, w: float, d: float, cz: float, deck: float, 
 	_box(mat, Vector3(w, ph, t), Vector3(cx, deck + ph * 0.5, cz + d * 0.5 - t * 0.5), wall)
 	_box(mat, Vector3(t, ph, d), Vector3(cx - w * 0.5 + t * 0.5, deck + ph * 0.5, cz), wall)
 	_box(mat, Vector3(t, ph, d), Vector3(cx + w * 0.5 - t * 0.5, deck + ph * 0.5, cz), wall)
+
+
+## The ground behind a residential building: its parking lot when a road
+## runs behind to reach it (`alley`), otherwise the tenants' shared back
+## yard (they park on the street, as SiteLayout has them): lawn, a
+## concrete patio with a picnic table and a kettle grill, and a
+## clothesline on older streets. Its own random numbers.
+func _rl_back(x0: float, x1: float, z0: float, z1: float, width: float) -> void:
+	if alley:
+		_parking(x0, x1, z0, z1, width)
+		return
+	z1 = minf(z1, depth - 1.0)
+	if z1 - z0 < 4.0:
+		return
+	var r := RandomNumberGenerator.new()
+	r.seed = hash([rng.seed, "back yard"])
+	var px := lerpf(x0 + 3.0, x1 - 3.0, r.randf())
+	var pz := z0 + 2.2
+	_flat_rect("drive", px - 2.4, px + 2.4, z0 + 0.4, z0 + 4.0, 0.06)
+	var wood := Color("#8d7b5f")
+	_box("paint", Vector3(1.8, 0.05, 0.75), Vector3(px, 0.74, pz), wood)
+	for s in [-1.0, 1.0]:
+		_box("paint", Vector3(1.8, 0.04, 0.25), Vector3(px, 0.45, pz + s * 0.62), wood)
+		_box("paint", Vector3(0.06, 0.72, 1.5), Vector3(px + s * 0.7, 0.36, pz), wood.darkened(0.15))
+	var gx := px + (1.7 if px < (x0 + x1) * 0.5 else -1.7)
+	_box("metal", Vector3(0.05, 0.6, 0.05), Vector3(gx, 0.3, pz + 0.9), Color("#2a2b2c"))
+	_box("metal", Vector3(0.55, 0.45, 0.55), Vector3(gx, 0.82, pz + 0.9), Color("#1f2021"))
+	if era != "recent" and z1 - z0 > 9.0:
+		var cx := lerpf(x0 + 2.0, x1 - 2.0, 1.0 - r.randf())
+		for s in [-1.0, 1.0]:
+			var post := Vector3(cx, 0.0, (z0 + z1) * 0.5 + 2.0 + s * 3.0)
+			_box("metal", Vector3(0.06, 2.0, 0.06), post + Vector3(0, 1.0, 0), Color("#9a9c9e"))
+			_box("metal", Vector3(1.2, 0.05, 0.05), post + Vector3(0, 1.95, 0), Color("#9a9c9e"))
+		for k in 3:
+			_box("metal", Vector3(0.012, 0.012, 6.0), Vector3(cx - 0.5 + k * 0.5, 1.93, (z0 + z1) * 0.5 + 2.0), Color("#d8d6d0"))
 
 
 ## An asphalt lot with 9 ft stalls along both long edges, cut short at the

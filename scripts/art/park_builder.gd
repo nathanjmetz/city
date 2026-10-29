@@ -941,6 +941,7 @@ func _football(size: Vector2, to_curb: float, built := [], on := false) -> void:
 		_box("siding", Vector3(3.0, 2.6, 2.4), gate + Vector3(0, 1.3, 0), Color("#d8d2c2"))
 		_box("paint", Vector3(3.4, 0.2, 2.8), gate + Vector3(0, 2.7, 0), Color("#6e1f2a"))
 		_glass(Vector3(gate.x, 1.5, gate.z - 1.23), Vector3(-1, 0, 0), 2.0, 0.9, 0.0)
+	_game_day(fz, 80.0 if "home_stands" in built else 60.0)
 	if "turf" in built:
 		# Synthetic turf has its yard numbers inlaid: 10 to 50 and back,
 		# both sides, 12 yards in from the sidelines.
@@ -993,6 +994,55 @@ func _football(size: Vector2, to_curb: float, built := [], on := false) -> void:
 		"height": 0.5, "color": Color("#e8c23a")})
 	_fence(Vector2(-hx + 1.0, -hz + 1.0), Vector2(hx - 1.0, hz - 1.0), 1.8)
 	_flat_rect("drive", -3.0, 3.0, -hz - to_curb, -fz - 9.0, 0.06)
+
+
+## What every Indiana high school field has on a Friday night beyond the
+## stands, from the NFHS rule book and photos: the team boxes between the
+## 25-yard lines on both sidelines (their restraining line 2 yards off the
+## field, the coaches' box behind it) with the players' benches, a pair of
+## Gatorade tables, the down-box and chain set racked at midfield, and the
+## boosters' block concession stand with its serving windows at the end of
+## the home stands. `home` is the home stands' length.
+func _game_day(fz: float, home: float) -> void:
+	var yd := 0.9144
+	var x25 := 25.0 * yd
+	for s in [-1.0, 1.0]:
+		# The restraining line, and the team box's ends at the 25s.
+		_flat_rect("line", -x25, x25, s * (fz + 2.0 * yd) - 0.05, s * (fz + 2.0 * yd) + 0.05, 0.06, LINE)
+		for e in [-1.0, 1.0]:
+			_flat_rect("line", e * x25 - 0.05, e * x25 + 0.05, s * (fz + 2.0 * yd), s * (fz + 4.0 * yd), 0.06, LINE)
+		# Two long benches and the drink tables.
+		for k in 2:
+			var bx := -9.0 + k * 9.5
+			var bz: float = s * (fz + 3.3)
+			_box("paint", Vector3(7.5, 0.06, 0.35), Vector3(bx, 0.45, bz), ALUMINUM)
+			for e in [-3.2, 0.0, 3.2]:
+				_box("paint", Vector3(0.08, 0.45, 0.3), Vector3(bx + e, 0.22, bz), GALV.darkened(0.2))
+		var tb := Vector3(13.0, 0, s * (fz + 3.3))
+		_box("paint", Vector3(1.8, 0.05, 0.75), tb + Vector3(0, 0.75, 0), Color("#e8e6df"))
+		for c in 2:
+			_cylinder("paint", tb + Vector3(-0.45 + c * 0.9, 0.78, 0), 0.22, 0.55, Color("#e57a1e"), 10)
+	# The chain crew's down box and chains, racked on the visitors' side.
+	var ch := Vector3(-2.0, 0, -fz - 3.0)
+	for k in 3:
+		_cyl_y(ch + Vector3(k * 1.0, 0.85, 0), 0.03, 1.7, Color("#e8c23a") if k != 1 else Color("#d8442f"))
+	# The concession stand at the end of the home stands.
+	var cs := Vector3(-home * 0.5 - 6.5, 0, fz + 8.0)
+	var block := Color("#cfc6b2")
+	_box("paint", Vector3(9.6, 0.25, 5.6), cs + Vector3(0, 0.12, 0), CONCRETE)
+	_box("brick", Vector3(9.0, 3.0, 5.0), cs + Vector3(0, 1.75, 0), block)
+	_box("paint", Vector3(9.8, 0.3, 6.0), cs + Vector3(0, 3.4, -0.2), Color("#6e1f2a"))
+	for k in 2:
+		var wx := -2.2 + k * 4.4
+		_box("paint", Vector3(2.6, 1.1, 0.05), cs + Vector3(wx, 1.7, -2.53), Color("#e2e0d8"))  # roll-up shutters
+		_box("paint", Vector3(2.8, 0.08, 0.45), cs + Vector3(wx, 1.12, -2.7), ALUMINUM)  # counter
+		_box("paint", Vector3(2.2, 0.35, 0.03), cs + Vector3(wx, 2.55, -2.54), Color("#f2ecd8"))  # menu board
+	labels.append({"pos": cs + Vector3(0, 3.0, -2.56), "normal": Vector3(0, 0, -1), "text": "CONCESSIONS",
+		"height": 0.32, "color": Color("#6e1f2a")})
+	for k in 2:  # the restroom doors on the end
+		_box("paint", Vector3(0.05, 2.1, 0.9), cs + Vector3(4.53, 1.3, -1.0 + k * 2.0), Color("#6a7a84"))
+	for k in 3:
+		_box("paint", Vector3(0.6, 0.9, 0.6), cs + Vector3(-5.6, 0.45, -2.0 + k * 0.8), Color("#2f5d8a"))  # bins
 
 
 ## Aluminium bleachers: `rows` of seats stepping up away from the field,
@@ -1788,6 +1838,8 @@ func _fairgrounds(size: Vector2, to_curb: float, name: String, built: Array, on:
 			_box("paint", Vector3(0.3, 9.0, 0.3), gs + Vector3(-long * 0.5 + i * long / 5.0, 4.5, 9.5), GALV)
 		_box("metal", Vector3(long + 2.0, 0.3, 11.0), gs + Vector3(0, 9.2, 5.0), Color("#8a8f94"),
 			Basis(Vector3.RIGHT, -0.08))
+	if "harness" not in built:
+		_pull_arena(arena, gs, long, 12 if "grandstand" in built else 6, "derby" in built)
 	# The midway: open gravel ground, with the carnival only in fair week.
 	var mid := Vector3(-20.0, 0, 10.0)
 	_flat_rect("gravel", mid.x - 30.0, mid.x + 30.0, mid.z - 25.0, mid.z + 25.0, 0.05, gravel)
@@ -1809,6 +1861,67 @@ func _fairgrounds(size: Vector2, to_curb: float, name: String, built: Array, on:
 			_box("paint", Vector3(6.4, 0.1, 1.6), p + Vector3(0, 2.7, -1.9), [Color("#c23a3a"), Color("#e8c23a"),
 				Color("#2f7ac0")][i % 3], Basis(Vector3.RIGHT, 0.25))
 	_fair_life(hx, hz, built)
+
+
+## The grandstand's dirt arena as Indiana county fairs run it all summer,
+## from truck and tractor pulls (NTPA rules: a 3 m wide lane, 90 m and
+## more) to the demolition derby: a pipe-rail fence with a gate at the far
+## end, a row of concrete barriers in front of the seats, the dragged pull
+## lane darker down the middle, floodlights on tall wood poles at the
+## corners, and the announcer's booth up on legs behind the top row.
+func _pull_arena(arena: Vector3, gs: Vector3, long: float, rows: int, derby: bool) -> void:
+	var r := RandomNumberGenerator.new()
+	r.seed = hash([rng.seed, "pull_arena"])
+	var x0 := arena.x - 35.0
+	var x1 := arena.x + 35.0
+	var z0 := arena.z - 18.0
+	var z1 := arena.z + 14.0
+	# The pull lane, worked and dragged darker, and its tire marks.
+	_flat_rect("gravel", x0 + 2.0, x1 - 2.0, arena.z - 3.5, arena.z + 3.5, 0.056, Color("#7e5f42"))
+	for k in 4:
+		var z := arena.z - 2.2 + k * 1.45 + r.randf_range(-0.2, 0.2)
+		_flat_rect("gravel", x0 + 4.0 + r.randf_range(0.0, 6.0), x1 - 4.0 - r.randf_range(0.0, 12.0), z - 0.22, z + 0.22,
+			0.058, Color("#6b5038"))
+	# Pipe rail round it, a gate at the far end for the trucks.
+	var gate := arena.x - 20.0
+	_pipe_rail(Vector3(x0, 0, z0), Vector3(gate - 4.0, 0, z0))
+	_pipe_rail(Vector3(gate + 4.0, 0, z0), Vector3(x1, 0, z0))
+	_pipe_rail(Vector3(x1, 0, z0), Vector3(x1, 0, z1))
+	_pipe_rail(Vector3(x0, 0, z1), Vector3(x0, 0, z0))
+	if not derby:
+		_pipe_rail(Vector3(x1, 0, z1), Vector3(x0, 0, z1))
+	# Concrete barriers between the arena and the seats.
+	var x := x0 + 1.0
+	while x < x1 - 1.0:
+		_box("paint", Vector3(3.6, 0.8, 0.6), Vector3(x + 1.8, 0.4, z1 + 1.2), CONCRETE.darkened(r.randf_range(0.0, 0.08)))
+		_box("paint", Vector3(3.6, 0.3, 0.8), Vector3(x + 1.8, 0.15, z1 + 1.2), CONCRETE.darkened(0.05))
+		x += 3.7
+	# Floodlights on tall wood poles at the corners.
+	for c in [Vector3(x0 - 3.0, 0, z0 - 2.0), Vector3(x1 + 3.0, 0, z0 - 2.0), Vector3(x0 - 3.0, 0, z1 + 3.5),
+			Vector3(x1 + 3.0, 0, z1 + 3.5)]:
+		_cyl_y(c + Vector3(0, 7.5, 0), 0.17, 15.0, POLE)
+		var face: Vector3 = (Vector3(arena.x, 0, arena.z) - c).normalized()
+		var yaw := atan2(face.x, face.z)
+		_box("paint", Vector3(3.0, 0.14, 0.14), c + Vector3(0, 14.4, 0), POLE, Basis(Vector3.UP, yaw))
+		for k in 3:
+			var off := Vector3(face.z, 0, -face.x) * (-1.0 + k)
+			_box("paint", Vector3(0.6, 0.5, 0.35), c + off + face * 0.3 + Vector3(0, 14.8, 0), Color("#4a4e52"),
+				Basis(Vector3.UP, yaw) * Basis(Vector3.RIGHT, 0.5))
+	# The announcer's booth on legs behind the top row.
+	var deck := 0.5 + rows * 0.42 + 0.6
+	var b := gs + Vector3(long * 0.22, 0, rows * 0.75 + 2.0)
+	for e in [[-2.0, -1.3], [2.0, -1.3], [-2.0, 1.3], [2.0, 1.3]]:
+		_box("paint", Vector3(0.16, deck, 0.16), b + Vector3(e[0], deck * 0.5, e[1]), GALV.darkened(0.2))
+	_box("paint", Vector3(4.6, 0.2, 3.2), b + Vector3(0, deck, 0), Color("#8d918f"))
+	_box("paint", Vector3(4.4, 2.6, 3.0), b + Vector3(0, deck + 1.4, 0), Color("#e2e0d8"))
+	_box("paint", Vector3(4.9, 0.18, 3.6), b + Vector3(0, deck + 2.8, -0.15), Color("#5a5e60"))
+	_glass(b + Vector3(0, deck + 1.75, -1.53), Vector3(-1, 0, 0), 4.0, 1.0, 0.0)
+	for k in 2:  # horn speakers on the roof
+		_box("paint", Vector3(0.4, 0.4, 0.7), b + Vector3(-1.4 + k * 2.8, deck + 3.2, -1.2), Color("#d8d6cc"),
+			Basis(Vector3.RIGHT, 0.25))
+	# Its stair down the back.
+	var st0 := b + Vector3(2.6, 0, 1.2)
+	_strut(st0 + Vector3(0, 0, 4.5), st0 + Vector3(0, deck, 0), 0.9, GALV.darkened(0.15))
 
 
 ## What every Indiana 4-H fairground has beyond the big buildings: gravel

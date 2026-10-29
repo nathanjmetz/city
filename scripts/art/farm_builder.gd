@@ -201,13 +201,39 @@ func _frame(c: Vector3, w: float, h: float) -> void:
 		_box("paint", Vector3(diag - 0.1, t * 0.8, 0.06), c, TRIM, bas)
 
 
-## A corrugated steel grain bin with a cone roof.
+## A corrugated steel grain bin (GSI, Sukup, Brock): the wall in its rings
+## on a concrete pad, a 30 degree ribbed roof with an eave ring and a peak
+## collar and cap where the fill spout comes in, a caged ladder up the side
+## and the roof ladder up to the peak.
 func _grain_bin(base: Vector3, r: float, h: float) -> void:
+	var segs := 28 if r > 4.0 else 22
 	_box("concrete", Vector3(r * 2.1, 0.3, r * 2.1), base + Vector3(0, 0.15, 0), FOUNDATION)
-	_cylinder("metal", base + Vector3(0, 0.3, 0), r, h, BIN, 20)
-	_cone(base + Vector3(0, 0.3 + h, 0), r + 0.15, r * 0.7, BIN.darkened(0.04))
-	# Hoops every so often, and a ladder up the side.
-	_box("paint", Vector3(0.45, h, 0.08), base + Vector3(0, 0.3 + h * 0.5, -r - 0.05), Color("#7d8082"))
+	_cylinder("bin", base + Vector3(0, 0.3, 0), r, h, BIN, segs)
+	var eave := base + Vector3(0, 0.3 + h, 0)
+	var rise := r * 0.58  # 30 degrees
+	_cone(eave, r + 0.15, rise, BIN.darkened(0.04), segs, "bin")
+	_cylinder("bin", eave - Vector3(0, 0.12, 0), r + 0.17, 0.14, BIN.darkened(0.12), segs)  # eave ring
+	var peak := eave + Vector3(0, rise * (1.0 - 0.6 / (r + 0.15)), 0)
+	_cylinder("bin", peak, 0.55, 0.35, BIN.darkened(0.06), 10)
+	_cone(peak + Vector3(0, 0.35, 0), 0.7, 0.3, BIN.darkened(0.1), 10, "bin")
+	# The ladder up the road side, in its safety cage, then up the roof.
+	var lz := -r - 0.22
+	for sx in [-0.22, 0.22]:
+		_box("paint", Vector3(0.05, h - 1.8, 0.05), base + Vector3(sx, 2.1 + (h - 1.8) * 0.5, lz), Color("#8a8d8f"))
+	var y := 2.6
+	while y < h + 0.3:
+		_box("paint", Vector3(0.62, 0.05, 0.05), base + Vector3(0, y, lz - 0.38), Color("#8a8d8f"))
+		for sx in [-0.31, 0.31]:
+			_box("paint", Vector3(0.04, 0.04, 0.4), base + Vector3(sx, y, lz - 0.2), Color("#8a8d8f"))
+		y += 1.2
+	for sx in [-0.3, 0.0, 0.3]:
+		_box("paint", Vector3(0.04, h - 2.6, 0.04), base + Vector3(sx, 2.6 + (h - 2.6) * 0.5, lz - 0.38), Color("#8a8d8f"))
+	var a := eave + Vector3(0, 0.12, -r - 0.05)
+	var b := peak + Vector3(0, 0.05, -0.55)
+	var d := b - a
+	var axis := d.normalized()
+	_box("paint", Vector3(0.4, d.length(), 0.05), (a + b) * 0.5, Color("#8a8d8f"),
+		Basis(Vector3.RIGHT, axis, Vector3.RIGHT.cross(axis)))
 
 
 ## A concrete stave silo with a dome.
@@ -347,6 +373,7 @@ var _xf_on := false
 var _county := {}
 var _county_base := 0.0
 var _lawn := SurfaceTool.new()
+var _gravel := SurfaceTool.new()  # the county farmstead's gravel ("farm_gravel")
 const POLE_BROWN := Color("#4a3f33")
 const STONE := Color("#8d887c")
 
@@ -392,7 +419,7 @@ static func county(p: Dictionary) -> FarmBuilder:
 
 
 func steps() -> int:
-	return 2 + (_county.parts as Array).size()
+	return 3 + (_county.parts as Array).size()
 
 
 ## The ground under a local point, as a lift above the farmstead's base.
@@ -419,6 +446,7 @@ func step(i: int) -> void:
 	match i:
 		0: _county_house(p.house)
 		1: _county_ground(p)
+		_ when i - 2 >= (p.parts as Array).size(): _county_yard_things(p)
 		_:
 			var part: Dictionary = p.parts[i - 2]
 			match part.kind:
@@ -456,7 +484,14 @@ func commit() -> Array:
 	var grass := _lawn.commit()
 	if grass.get_surface_count() > 0:
 		grass.surface_set_material(0, HouseMaterials.get_mat("pasture"))
-	return [_commit_house(), _commit_flat(), grass]
+	var house := _commit_house()
+	var flat := _commit_flat()
+	if not _county.is_empty():
+		var g := _gravel.commit_to_arrays()
+		if not g.is_empty() and g[Mesh.ARRAY_VERTEX] != null and not (g[Mesh.ARRAY_VERTEX] as PackedVector3Array).is_empty():
+			flat.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, g)
+			flat.surface_set_material(flat.get_surface_count() - 1, HouseMaterials.get_mat("farm_gravel"))
+	return [house, flat, grass]
 
 
 ## The farmhouse: the house builder's own plan of its type and era (an
@@ -493,6 +528,48 @@ func _county_house(h: Dictionary) -> void:
 	owner_care = 0
 
 
+## The small things about the house: the propane tank that heats it
+## (nearly every Indiana farmhouse past the gas mains has one), on two
+## concrete blocks off the side of the house away from the drive, 10 ft or
+## more from the wall (NFPA 58); 1,000 gal on a farm, 500 at a country
+## home. A grain farm with a dryer has a bigger one by the dryer.
+func _county_yard_things(p: Dictionary) -> void:
+	var h: Dictionary = p.house
+	var s: float = p.side
+	if not h.vacant:
+		var c := Vector2(h.x - s * (h.w * 0.5 + 4.2), h.d * 0.55)
+		_lp_tank(c, 1000 if p.kind != "home" else 500)
+	for part in p.parts:
+		if part.kind == "dryer":
+			var at: Vector2 = part.dryer_at
+			_lp_tank(at + Vector2(-s * 7.0, 6.0), 2000)
+
+
+## A white propane tank lying along z at `c`: 500 gal is 37 in by 10 ft,
+## 1,000 gal 41 in by 16 ft, 2,000 gal 46 in by 20 ft, with rounded heads,
+## the dome over the valves on top, on two concrete piers.
+func _lp_tank(c: Vector2, gal: int) -> void:
+	var dims := {500: Vector2(0.94, 3.05), 1000: Vector2(1.04, 4.9), 2000: Vector2(1.17, 6.1)}
+	var d: Vector2 = dims[gal]
+	var r := d.x * 0.5
+	var l := d.y - d.x  # the barrel between the heads
+	_stand(c, Vector2(r, d.y * 0.5))
+	var lift := part_xf.origin.y
+	var y := 0.35 + r
+	for k in [-1.0, 1.0]:
+		_box("concrete", Vector3(0.6, 0.4, 0.4), Vector3(c.x, 0.2, c.y + k * l * 0.3), FOUNDATION)
+	var white := Color("#eeeeea")
+	part_xf = Transform3D(Basis(Vector3.RIGHT, PI * 0.5), Vector3(c.x, lift + y, c.y - l * 0.5))
+	_cylinder("paint", Vector3.ZERO, r, l, white, 14)
+	_cone(Vector3(0, l, 0), r, r * 0.55, white, 14, "paint")
+	part_xf = Transform3D(Basis(Vector3.RIGHT, -PI * 0.5), Vector3(c.x, lift + y, c.y - l * 0.5))
+	_cone(Vector3.ZERO, r, r * 0.55, white, 14, "paint")
+	part_xf = Transform3D(Basis.IDENTITY, Vector3(0, lift, 0))
+	_cylinder("paint", Vector3(c.x, y + r - 0.05, c.y), 0.22, 0.22, white.darkened(0.04), 10)
+	_box("paint", Vector3(0.12, 0.12, 0.25), Vector3(c.x + r * 0.6, y + 0.1, c.y), Color("#8a8d8f"))  # regulator
+	_xf_on = false
+
+
 ## The gravel yard, lane and drive, draped over the land; the mailbox at
 ## the road and the yard light's pole.
 func _county_ground(p: Dictionary) -> void:
@@ -500,8 +577,10 @@ func _county_ground(p: Dictionary) -> void:
 	# the gravel over it.
 	_lawn.begin(Mesh.PRIMITIVE_TRIANGLES)
 	_drape(p.grounds, Color("#4f6a2e") if not p.house.vacant else Color("#727a40"), _lawn, FarmsteadPlan.LAWN_LIFT, 12.0)
-	for r: Rect2 in p.gravel:
-		_drape(r, YARD_GRAVEL, _flat, FarmsteadPlan.GRAVEL_LIFT)
+	_gravel.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for i in p.gravel.size():
+		# Each piece a little over the last, so the yard lies over its drive.
+		_drape(p.gravel[i], YARD_GRAVEL, _gravel, FarmsteadPlan.GRAVEL_LIFT + i * 0.01, 8.0, true)
 	# The mailbox: a 4 x 4 post, a standard rural box (about 19 x 6.5 x 9 in)
 	# 42 in up, its door to the road, the red flag down.
 	var mb: Vector2 = p.mailbox
@@ -524,7 +603,9 @@ func _county_ground(p: Dictionary) -> void:
 
 ## A flat rectangle of ground work draped over the land in `step` m
 ## pieces, `above` metres over it, into `st`.
-func _drape(r: Rect2, col: Color, st: SurfaceTool, above: float, step_m := 8.0) -> void:
+## `local` UVs are metres inside the piece and UV2 its size (the gravel
+## shader's edges and lanes), else metres / 4 over the land.
+func _drape(r: Rect2, col: Color, st: SurfaceTool, above: float, step_m := 8.0, local := false) -> void:
 	var nx := clampi(ceili(r.size.x / step_m), 1, 32)
 	var nz := clampi(ceili(r.size.y / step_m), 1, 64)
 	col.a = 1.0
@@ -544,7 +625,11 @@ func _drape(r: Rect2, col: Color, st: SurfaceTool, above: float, step_m := 8.0) 
 			for v in [a, b, c, a, c, d]:  # clockwise seen from above
 				st.set_normal(Vector3.UP)
 				st.set_color(col)
-				st.set_uv(Vector2(v.x, v.z) * 0.25)
+				if local:
+					st.set_uv(Vector2(v.x, v.z) - r.position)
+					st.set_uv2(r.size)
+				else:
+					st.set_uv(Vector2(v.x, v.z) * 0.25)
 				st.add_vertex(v)
 
 

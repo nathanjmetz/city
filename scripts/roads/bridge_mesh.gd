@@ -26,12 +26,47 @@ const GUARD_H := 0.79  # 31 in to the top of the W-beam (MASH)
 const POST_SPACING := 1.905  # 6 ft 3 in
 
 
+static var _concrete: StandardMaterial3D
+
+
+## Cast concrete for the structure: piers, barrier, deck edges. The
+## pavement shaders tile by ground position (x and z), which smears into
+## vertical streaks on a wall, so this one maps its weathering triplanar.
+static func concrete() -> StandardMaterial3D:
+	if _concrete != null:
+		return _concrete
+	var noise := FastNoiseLite.new()
+	noise.frequency = 0.05
+	noise.fractal_octaves = 4
+	var ramp := Gradient.new()
+	ramp.set_color(0, Color(0.86, 0.86, 0.85))
+	ramp.set_color(1, Color(1.0, 1.0, 0.99))
+	var tex := NoiseTexture2D.new()
+	tex.noise = noise
+	tex.color_ramp = ramp
+	tex.seamless = true
+	tex.width = 256
+	tex.height = 256
+	_concrete = StandardMaterial3D.new()
+	_concrete.albedo_color = Color(0.70, 0.69, 0.66)
+	_concrete.albedo_texture = tex
+	_concrete.uv1_triplanar = true
+	_concrete.uv1_scale = Vector3(0.12, 0.12, 0.12)
+	_concrete.roughness = 0.88
+	_concrete.cull_mode = BaseMaterial3D.CULL_DISABLED
+	return _concrete
+
+
 ## Draws every bridge along a road's points (lifted to their drawn height).
 ## Returns true if any part of the road was on a bridge.
-static func build(pts: PackedVector3Array, half: float, parts: Dictionary, ground: Callable, fine: bool) -> bool:
+## `blocked` (optional, a point -> bool): where a pier can't stand, such as
+## on a road passing under; piers move along the span clear of it, or the
+## span runs on over it.
+static func build(pts: PackedVector3Array, half: float, parts: Dictionary, ground: Callable, fine: bool,
+		blocked := Callable()) -> bool:
 	var runs := _runs(pts, ground)
 	for r in runs:
-		_bridge(pts, r[0], r[1], half, parts, ground, fine)
+		_bridge(pts, r[0], r[1], half, parts, ground, fine, blocked)
 		if fine and parts.has("steel"):
 			for end: int in [0, 1]:
 				_guardrail(pts, r[end], -1 if end == 0 else 1, half, parts)
@@ -67,7 +102,7 @@ static func spans_for(length: float) -> Array:
 
 
 static func _bridge(pts: PackedVector3Array, i0: int, i1: int, half: float, parts: Dictionary,
-		ground: Callable, fine: bool) -> void:
+		ground: Callable, fine: bool, blocked := Callable()) -> void:
 	var c: SurfaceTool = parts.concrete
 	var cum := [0.0]
 	for i in range(i0 + 1, i1 + 1):
@@ -110,14 +145,16 @@ static func _bridge(pts: PackedVector3Array, i0: int, i1: int, half: float, part
 	var k := 1
 	while span * k < length - 1.0:
 		var at := span * k
-		var j := 0
-		while j < cum.size() - 2 and cum[j + 1] < at:
-			j += 1
+		if blocked.is_valid():
+			at = _clear_spot(pts, i0, cum, at, span * 0.45, half, blocked)
+		k += 1
+		if at < 0.0:
+			continue  # no room clear of the road under: the span runs on over it
+		var j := _piece(cum, at)
 		var f: float = (at - cum[j]) / maxf(cum[j + 1] - cum[j], 0.001)
 		var p := pts[i0 + j].lerp(pts[i0 + j + 1], f)
 		var side := _side(pts, i0 + j)
 		_pier(c, p - Vector3(0, depth, 0), side, half, float(ground.call(p.x, p.z)) - 1.0, fine)
-		k += 1
 	# Abutments: a wall under each end of the deck down into the bank.
 	for end: int in [i0, i1]:
 		var p := pts[end]
@@ -132,6 +169,39 @@ static func _bridge(pts: PackedVector3Array, i0: int, i1: int, half: float, part
 			for s: float in [-1.0, 1.0]:
 				var w0 := p + side * (half + 0.3) * s
 				_box(c, Vector3(w0.x, (top + foot) * 0.5, w0.z) + along * 2.5, side * 0.45, along * 4.0, top - foot)
+
+
+## The piece of the bridge (index from its first point) `at` metres along.
+static func _piece(cum: Array, at: float) -> int:
+	var j := 0
+	while j < cum.size() - 2 and cum[j + 1] < at:
+		j += 1
+	return j
+
+
+## The nearest place to `at` (within `slack` either way, in 2 m steps)
+## where a bent across the deck stands clear of what `blocked` marks, or -1.
+static func _clear_spot(pts: PackedVector3Array, i0: int, cum: Array, at: float, slack: float, half: float,
+		blocked: Callable) -> float:
+	var step := 0.0
+	while step <= slack:
+		for s: float in ([1.0] if step == 0.0 else [1.0, -1.0]):
+			var a: float = at + step * s
+			if a <= 2.0 or a >= cum[-1] - 2.0:
+				continue
+			var j := _piece(cum, a)
+			var f: float = (a - cum[j]) / maxf(cum[j + 1] - cum[j], 0.001)
+			var p := pts[i0 + j].lerp(pts[i0 + j + 1], f)
+			var side := _side(pts, i0 + j)
+			var clear := true
+			var w := -half
+			while w <= half and clear:
+				clear = not blocked.call(p + side * w)
+				w += 2.0
+			if clear:
+				return a
+		step += 2.0
+	return -1.0
 
 
 ## A multi-column bent: a cap beam across the deck on round (or, at

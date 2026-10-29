@@ -83,6 +83,43 @@ func _demo_town() -> void:
 					if args.size() >= 7 else Vector3.ZERO)
 				c.set_view(deg_to_rad(float(args[1])), deg_to_rad(float(args[2])), float(args[3]))
 		return
+	if args0.size() >= 5 and args0[4] == "overpass":
+		# An avenue raised over a street (Overpass), its piers clear of the
+		# street under it. OVER_AT=x,z moves it.
+		var at := Vector2(-600, 300)
+		if OS.get_environment("OVER_AT") != "":
+			var xz := OS.get_environment("OVER_AT").split(",")
+			at = Vector2(float(xz[0]), float(xz[1]))
+		sim.apply({"type": "build_road", "start": [at.x - 250, at.y], "ctrl": [at.x, at.y], "end": [at.x + 250, at.y], "road": 0})
+		var ok := sim.apply({"type": "build_road", "start": [at.x, at.y - 300], "ctrl": [at.x, at.y],
+			"end": [at.x, at.y + 300], "road": 1, "over": true})
+		print("overpass built: ", ok)
+		var args := OS.get_cmdline_user_args()
+		for c in _main.get_children():
+			if c is CityCamera:
+				c.look_at_point(Vector3(at.x + (float(args[5]) if args.size() >= 7 else 0.0), 0,
+					at.y + (float(args[6]) if args.size() >= 7 else 0.0)))
+				c.set_view(deg_to_rad(float(args[1])), deg_to_rad(float(args[2])), float(args[3]))
+		return
+	if args0.size() >= 5 and args0[4] == "crossing":
+		# A county road or highway over the water (WaterCrossings), by its
+		# key in CROSSING (the nearest one if none is given).
+		var want := OS.get_environment("CROSSING")
+		var o := sim.terrain_offset
+		var best := {}
+		for x in WaterCrossings.near(o, 20000.0):
+			if x.key == want or (want == "" and (best.is_empty() or x.mid.distance_to(o) < best.mid.distance_to(o))):
+				best = x
+		print("crossing ", best.get("key", "none"), " ", best.get("kind", ""), " at ", best.get("mid", ""))
+		if not best.is_empty():
+			var args := OS.get_cmdline_user_args()
+			var i: int = best.pts.size() / 2
+			var at := Vector3(best.mid.x - o.x, best.deck[i], best.mid.y - o.y)
+			for c in _main.get_children():
+				if c is CityCamera:
+					c.look_at_point(at + (Vector3(float(args[5]), 0, float(args[6])) if args.size() >= 7 else Vector3.ZERO))
+					c.set_view(deg_to_rad(float(args[1])), deg_to_rad(float(args[2])), float(args[3]))
+		return
 	if args0.size() >= 5 and args0[4] == "ramp":
 		# The Critic's repro: a straight exit ramp off a one-way highway.
 		sim.apply({"type": "build_road", "start": [-250, 200], "ctrl": [0, 200], "end": [250, 200], "road": 3})

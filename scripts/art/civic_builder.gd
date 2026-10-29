@@ -1518,6 +1518,9 @@ func _parking(x0: float, x1: float, z0: float, z1: float, to_curb: float, drive_
 func _flagpole(p: Vector3) -> void:
 	_box("paint", Vector3(1.2, 0.2, 1.2), p + Vector3(0, 0.1, 0), CONCRETE)
 	_cyl_y(p + Vector3(0, 5.0, 0), 0.07, 10.0, Color("#d0d2d2"))
+	if fine_parts:
+		_us_flag(p + Vector3(0.07, 9.7, 0), 1.8, 1.0, p.x * 0.37, 1.0)
+		return
 	var f := p + Vector3(0.95, 9.2, 0)
 	var stripes := 7
 	for i in stripes:

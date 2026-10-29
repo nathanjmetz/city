@@ -95,6 +95,13 @@ var _lo := false
 ## Close-up detail for the desktop Ultra tier: rounder wheels with spokes,
 ## door seams and handles, wipers, plates.
 var _hi := false
+## Set by a model that wants its pickup bed under a soft tonneau cover.
+var _tonneau := false
+## Set by a model built on a cab and chassis (wrecker, utility body): at
+## Ultra _truck stops at the cab and leaves the frame bare.
+var _chassis := false
+## A cab and chassis whose body keeps the rear step bumper.
+var _bumper := false
 
 ## Levels of detail build() takes: normal close range, far, and Ultra close-up.
 const LOD_NEAR := 0
@@ -548,8 +555,10 @@ func _hatch_box() -> void:  # Kia Soul: tall, upright box
 		"b": 1.5, "c": 3.85, "e": 4.08, "tail": 1.02, "wr": 0.34, "axles": [0.88, 3.45], "c_pillar": false})
 
 
-func _pickup_ext() -> void:  # Chevrolet Silverado double cab, 6.5 ft bed
+func _pickup_ext() -> void:  # Chevrolet Silverado double cab, 6.5 ft bed, tonneau
+	_tonneau = true
 	_truck(5.84, 3.75, [1.15, 4.6], false)
+	_tonneau = false
 
 
 ## A 1990s Chevrolet C/K regular cab long bed: square body, chrome grille,
@@ -688,6 +697,23 @@ func _truck(L: float, cab_end: float, wb: Array, work: bool, W := 2.03, H := 1.9
 		[L - 0.1, c, belt - 0.08, belt, hw - 0.03, hw, hw - 0.05],
 		[L, c + 0.08, belt - 0.12, belt - 0.02, hw - 0.06, hw - 0.04, hw - 0.08],
 	]
+	# Ultra: the bed is really open, its floor a bed depth (about 0.53 m,
+	# F-150 and Silverado) under the rails.
+	var fl := belt - 0.53
+	var chassis := _chassis and _hi
+	if chassis:
+		# A cab and chassis (F-550): the cab's back closes, frame rails run
+		# on under whatever body the model fits.
+		body = body.slice(0, 3) + [[cab_end, c, belt - 0.08, belt, hw - 0.03, hw, hw - 0.05]]
+		for x in [-0.45, 0.45]:
+			_box(Vector3(x, c + 0.28, (cab_end + L) * 0.5), Vector3(0.1, 0.24, L - cab_end - 0.05), TRIM)
+	elif _hi:
+		body = body.slice(0, 3) + [
+			[cab_end + 0.06, c, belt - 0.08, belt, hw - 0.03, hw, hw - 0.05],
+			[cab_end + 0.07, c, fl - 0.05, fl, hw - 0.03, hw, hw - 0.04],
+			[L - 0.1, c, fl - 0.05, fl, hw - 0.03, hw, hw - 0.04],
+			[L, c + 0.08, fl - 0.08, fl - 0.02, hw - 0.06, hw - 0.04, hw - 0.06],
+		]
 	_loft(body, [_edges(PAINT, TRIM)], PAINT, PAINT)
 	var g := hw - 0.07
 	var r := hw - 0.2
@@ -699,20 +725,33 @@ func _truck(L: float, cab_end: float, wb: Array, work: bool, W := 2.03, H := 1.9
 	]
 	_loft(gh, [_edges(GLASS, PAINT, PAINT, GLASS), _edges(GLASS, PAINT, GLASS, PAINT),
 		_edges(PAINT, PAINT, PAINT, PAINT)], PAINT, PAINT)
-	# The open bed: dark floor between the bed rails.
-	_box(Vector3(0, belt + 0.008, (cab_end + 0.08 + L - 0.08) * 0.5), Vector3(W - 0.18, 0.004, L - cab_end - 0.2), DARK)
-	_wheels(wb, 0.42, hw, 0.28)
+	if _hi and not chassis:
+		_open_bed(L, cab_end, wb[1], hw, belt, fl)
+	if not chassis and (not _hi or _tonneau):
+		# A soft tonneau cover over the bed (the open bed's dark floor below
+		# Ultra).
+		_box(Vector3(0, belt + 0.008, (cab_end + 0.08 + L - 0.08) * 0.5), Vector3(W - 0.18, 0.004, L - cab_end - 0.2), DARK)
+	if chassis:
+		# Dual rear wheels, no fender over them: the body brings its own.
+		_wheels([wb[0]], 0.42, hw, 0.28)
+		for s in [-1.0, 1.0]:
+			_wheel(Vector3(s * (hw - 0.11), 0.0, wb[1]), 0.42, 0.22, RIM)
+			_wheel(Vector3(s * (hw - 0.35), 0.0, wb[1]), 0.42, 0.22, RIM)
+	else:
+		_wheels(wb, 0.42, hw, 0.28)
 	if _hi:
 		_truck_face(hw, c, work)
 	else:
 		_box(Vector3(hw - 0.28, 1.08, 0.05), Vector3(0.36, 0.16, 0.12), HEAD, true)
-	_box(Vector3(hw - 0.07, 1.05, L - 0.03), Vector3(0.12, 0.34, 0.08), TAIL, true)
+	if not chassis:
+		_box(Vector3(hw - 0.07, 1.05, L - 0.03), Vector3(0.12, 0.34, 0.08), TAIL, true)
 	if _lo:
 		return
 	if not _hi:
 		_box(Vector3(0, 0.9, 0.03), Vector3(1.3, 0.34, 0.08), CHROME if work else TRIM)
 	_box(Vector3(0, c + 0.12, 0.05), Vector3(W - 0.1, 0.2, 0.14), CHROME if work else TRIM)
-	_box(Vector3(0, c + 0.12, L - 0.02), Vector3(W - 0.1, 0.18, 0.12), CHROME)
+	if not chassis or _bumper:
+		_box(Vector3(0, c + 0.12, L - 0.02), Vector3(W - 0.1, 0.18, 0.12), CHROME)
 	_box(Vector3(hw + 0.1, belt + 0.12, 1.95), Vector3(0.16, 0.2, 0.1), TRIM, true)
 	if _hi:
 		# Cab door seams and handles, the bed's tailgate seam, plates.
@@ -724,8 +763,9 @@ func _truck(L: float, cab_end: float, wb: Array, work: bool, W := 2.03, H := 1.9
 				_box(Vector3(x, (c + belt) * 0.5 + 0.12, z), Vector3(0.004, belt - c - 0.2, 0.012), seam)
 			for i in doors.size() - 1:
 				_box(Vector3(s * (hw + 0.012), belt - 0.15, doors[i + 1] - 0.25), Vector3(0.02, 0.035, 0.16), CHROME)
-		_box(Vector3(0, belt - 0.1, L + 0.004), Vector3(W - 0.3, 0.012, 0.004), seam)
-		_box(Vector3(0, 0.62, L + 0.005), Vector3(0.3, 0.15, 0.02), WHITE)
+		if not chassis:
+			_box(Vector3(0, belt - 0.1, L + 0.004), Vector3(W - 0.3, 0.012, 0.004), seam)
+			_box(Vector3(0, 0.62, L + 0.005), Vector3(0.3, 0.15, 0.02), WHITE)
 		_box(Vector3(0, 0.62, -0.01), Vector3(0.3, 0.15, 0.02), WHITE)
 		for x in [-0.4, 0.35]:
 			_box(Vector3(x, belt + 0.03, 1.85), Vector3(0.55, 0.015, 0.02), seam)
@@ -749,6 +789,32 @@ func _truck(L: float, cab_end: float, wb: Array, work: bool, W := 2.03, H := 1.9
 		if _hi:
 			for i in int(ll / 0.3):
 				_box(Vector3(0, 2.17, lz - ll * 0.5 + 0.15 + i * 0.3), Vector3(0.44, 0.03, 0.03), CHROME)
+
+
+## Ultra: a pickup's open bed: double-wall sides and front wall in the
+## body colour, a tailgate between the tail-lamp pillars with its handle,
+## and a black spray-in liner over the ribbed floor and the wheel-well
+## humps inside.
+func _open_bed(L: float, cab_end: float, axle: float, hw: float, belt: float, fl: float) -> void:
+	var z0 := cab_end + 0.07
+	var h := belt - fl
+	var liner := Color(0.11, 0.11, 0.115, 0.3)
+	for s in [-1.0, 1.0]:
+		_box(Vector3(s * (hw - 0.0425), fl + h * 0.5, (z0 + L - 0.01) * 0.5), Vector3(0.075, h, L - 0.01 - z0), PAINT)
+		_box(Vector3(s * (hw - 0.083), fl + h * 0.5 - 0.01, (z0 + L - 0.08) * 0.5), Vector3(0.006, h - 0.04, L - 0.08 - z0 - 0.08), liner)
+		_box(Vector3(s * (hw - 0.3), fl + 0.15, axle), Vector3(0.42, 0.3, 0.95), liner)
+	_box(Vector3(0, fl + h * 0.5, z0 + 0.03), Vector3(hw * 2.0 - 0.1, h, 0.06), PAINT)
+	_box(Vector3(0, fl + h * 0.5 - 0.01, z0 + 0.063), Vector3(hw * 2.0 - 0.17, h - 0.04, 0.006), liner)
+	_box(Vector3(0, fl + 0.003, (z0 + L) * 0.5), Vector3(hw * 2.0 - 0.16, 0.006, L - z0 - 0.08), liner)
+	var z := z0 + 0.2
+	while z < L - 0.2:
+		for x in [-0.5, -0.25, 0.0, 0.25, 0.5]:
+			_box(Vector3(x, fl + 0.012, z), Vector3(0.05, 0.012, 0.16), liner)
+		z += 0.36
+	# Tailgate, its inside face lined, and the handle up top.
+	_box(Vector3(0, (fl - 0.02 + belt - 0.02) * 0.5, L - 0.035), Vector3(hw * 2.0 - 0.18, belt - fl, 0.07), PAINT)
+	_box(Vector3(0, (fl + belt) * 0.5, L - 0.073), Vector3(hw * 2.0 - 0.22, h - 0.06, 0.006), liner)
+	_box(Vector3(0, belt - 0.1, L + 0.008), Vector3(0.26, 0.07, 0.012), Color(0.05, 0.05, 0.05, 0.3))
 
 
 ## Ultra: a full-size pickup's face, after the F-150 / Silverado: a tall
@@ -786,12 +852,83 @@ func _work_pickup() -> void:  # Ford F-250 regular cab, 8 ft bed
 
 func _tow_truck() -> void:  # wrecker on a Ford F-550
 	var L := 7.0
+	_chassis = true
 	_truck(L, 3.3, [1.2, 5.2], false)
-	_box(Vector3(0, 1.45, 5.15), Vector3(2.2, 0.25, 3.6), TRIM)
+	_chassis = false
 	_box(Vector3(0, 2.0, 2.98), Vector3(1.5, 0.12, 0.22), BEACON_AMBER)
+	if _hi:
+		_wrecker_body(L)
+		return
+	_box(Vector3(0, 1.45, 5.15), Vector3(2.2, 0.25, 3.6), TRIM)
 	if not _lo:
 		_beam(Vector3(0, 1.6, 4.0), Vector3(0, 2.3, 6.4), 0.18, PAINT)
 		_box(Vector3(0, 0.75, 6.9), Vector3(1.6, 0.12, 0.3), TRIM)
+
+
+## Ultra: a utility service body (Knapheide, Reading) on the cab and
+## chassis: tall compartments down each side from the frame up, split by
+## the rear wheel's fender, each door with its seam and a chrome T-handle,
+## the open well floor between them, lamps and plate on the rear faces.
+func _service_body(L: float) -> void:
+	var seam := Color(0.04, 0.04, 0.04, 0.3)
+	var e := L - 0.1
+	for s in [-1.0, 1.0]:
+		_box(Vector3(s * 0.95, 1.3, (3.4 + 5.0) * 0.5), Vector3(0.5, 1.4, 1.6), WHITE)
+		_box(Vector3(s * 0.95, 1.3, (6.2 + e) * 0.5), Vector3(0.5, 1.4, e - 6.2), WHITE)
+		_box(Vector3(s * 0.95, 1.6, 5.6), Vector3(0.5, 0.8, 1.2), WHITE)
+		_fender(Vector3(s * 0.95, 0.42, 5.6), 0.55, 0.5)
+		var x: float = s * 1.203
+		for z in [4.2, 6.9, 7.5]:
+			_box(Vector3(x, 1.3, z), Vector3(0.006, 1.3, 0.012), seam)
+		for z in [3.8, 4.6, 6.55, 7.2, 7.8]:
+			_box(Vector3(s * 1.208, 1.55, z), Vector3(0.012, 0.04, 0.12), CHROME)
+		_box(Vector3(s * 0.95, 1.3, e + 0.008), Vector3(0.5, 1.4, 0.006), Color(0.86, 0.86, 0.84, 0.4))
+		_box(Vector3(s * 1.08, 0.82, e + 0.018), Vector3(0.14, 0.24, 0.024), TAIL)
+	_box(Vector3(0, 0.8, (3.45 + e - 0.02) * 0.5), Vector3(1.38, 0.4, e - 0.02 - 3.45), TRIM)
+	_box(Vector3(0, 0.62, e - 0.01), Vector3(0.3, 0.15, 0.02), WHITE)
+
+
+## Ultra: a light-duty wrecker body (Jerr-Dan MPL, Century 212): painted
+## toolboxes down both sides with their doors and latches over the dual
+## rear wheels' fenders, the boom housing between them rising to the boom
+## and its winch cable, and the wheel-lift folded up at the tail with its
+## crossbar and grid arms, tow lights on top.
+func _wrecker_body(L: float) -> void:
+	var z0 := 3.42
+	var seam := Color(0.04, 0.04, 0.04, 0.3)
+	for s in [-1.0, 1.0]:
+		# Toolbox ahead of the wheels, a fender over them, a box behind.
+		_box(Vector3(s * 0.83, 1.12, (z0 + 4.55) * 0.5), Vector3(0.44, 0.9, 4.55 - z0), PAINT)
+		_box(Vector3(s * 0.83, 1.12, (5.85 + 6.55) * 0.5), Vector3(0.44, 0.9, 0.7), PAINT)
+		_box(Vector3(s * 0.83, 1.5, 5.2), Vector3(0.44, 0.14, 1.3), PAINT)
+		_fender(Vector3(s * 0.83, 0.42, 5.2), 0.52, 0.44)
+		var x: float = s * 1.053
+		for z in [z0 + 0.05, 4.0, 4.5]:
+			_box(Vector3(x, 1.12, z), Vector3(0.004, 0.84, 0.012), seam)
+		_box(Vector3(x, 1.12, 5.9), Vector3(0.004, 0.84, 0.012), seam)
+		_box(Vector3(s * 1.058, 1.3, 3.72), Vector3(0.012, 0.05, 0.14), CHROME)
+		_box(Vector3(s * 1.058, 1.3, 4.25), Vector3(0.012, 0.05, 0.14), CHROME)
+		_box(Vector3(s * 1.058, 1.3, 6.2), Vector3(0.012, 0.05, 0.14), CHROME)
+		_box(Vector3(s * 0.83, 1.578, (z0 + 6.55) * 0.5), Vector3(0.46, 0.016, 6.55 - z0), STEEL)
+		_box(Vector3(s * 0.83, 0.85, 6.565), Vector3(0.3, 0.12, 0.03), TAIL)
+	# Boom housing, the boom and its cable down to the hook.
+	_box(Vector3(0, 1.25, (z0 + 6.5) * 0.5), Vector3(0.7, 1.1, 6.5 - z0), Color(0.18, 0.18, 0.19, 0.4))
+	_box(Vector3(0, 1.85, 4.0), Vector3(0.6, 0.12, 0.6), STEEL)
+	_beam(Vector3(0, 1.95, 4.0), Vector3(0, 2.55, 6.6), 0.22, PAINT)
+	_beam(Vector3(0, 2.25, 5.0), Vector3(0, 2.55, 6.6), 0.15, STEEL)
+	_cyl(Vector3(0, 2.5, 6.72), Vector3(0, 1.25, 6.76), 0.012, DARK, 4)
+	_box(Vector3(0, 1.22, 6.76), Vector3(0.06, 0.1, 0.04), CHROME)
+	# The wheel-lift tucked up under the tail: uprights, the crossbar,
+	# the L-arms (yellow grid ends) and the tow-light bar on top of it.
+	for x in [-0.3, 0.3]:
+		_box(Vector3(x, 0.8, 6.62), Vector3(0.12, 0.7, 0.12), DARK)
+	_box(Vector3(0, 0.48, 6.78), Vector3(1.5, 0.12, 0.14), DARK)
+	for x in [-0.6, 0.6]:
+		_box(Vector3(x, 0.48, 6.95), Vector3(0.1, 0.1, 0.36), Color(0.92, 0.72, 0.05, 0.4))
+	_box(Vector3(0, 0.62, 6.86), Vector3(0.3, 0.15, 0.02), WHITE)
+	_box(Vector3(0, 1.75, 6.6), Vector3(1.5, 0.06, 0.06), DARK)
+	for x in [-0.6, 0.6]:
+		_box(Vector3(x, 1.75, 6.635), Vector3(0.14, 0.07, 0.02), TAIL)
 
 
 ## An insulated aerial lift (Altec AT40G) on a Ford F-550 with a utility
@@ -799,9 +936,15 @@ func _tow_truck() -> void:  # wrecker on a Ford F-550
 ## stowed toward the back and the fiberglass bucket at the tail.
 func _bucket_truck() -> void:
 	var L := 8.2
+	_chassis = true
+	_bumper = true
 	_truck(L, 3.3, [1.2, 5.6], false, 2.2, 2.05)
+	_chassis = false
+	_bumper = false
+	if _hi:
+		_service_body(L)
 	# Service body: compartments down each side, open well in the middle.
-	for s in [-1.0, 1.0]:
+	for s in ([] if _hi else [-1.0, 1.0]):
 		_box(Vector3(s * 0.95, 1.45, 5.75), Vector3(0.5, 1.1, 4.7), WHITE)
 		if not _lo:
 			for z in [4.2, 5.4, 6.6, 7.6]:
@@ -891,6 +1034,8 @@ func _motorhome() -> void:
 func _pickup_camper() -> void:
 	_truck(5.94, 3.2, [1.15, 4.8], false)
 	var hw := 1.15
+	if _hi:  # the camper fills the bed down to its floor
+		_box(Vector3(0, 1.075, 4.6), Vector3(1.8, 0.47, 2.6), WHITE)
 	_loft([
 		[2.55, 2.0, 2.15, 2.2, hw - 0.1, hw - 0.08, hw - 0.14],
 		[2.9, 1.95, 3.1, 3.2, hw - 0.02, hw, hw - 0.06],
@@ -929,12 +1074,35 @@ func _van_body(L: float, W: float, H: float, box_from: float, box_h: float, box_
 		[box_from, c, box_h - 0.12, box_h, hw, hw, hw - 0.06],
 		[L, c, box_h - 0.12, box_h, hw, hw, hw - 0.06],
 	], [_edges(box_code, TRIM)], box_code, box_code)
-	_box(Vector3(hw - 0.25, 0.92, 0.07), Vector3(0.34, 0.14, 0.12), HEAD, true)
 	_box(Vector3(hw - 0.06, 1.2, L - 0.02), Vector3(0.1, 0.4, 0.06), TAIL, true)
-	if not _lo:
+	if _hi:
+		_van_face(hw, c)
+	else:
+		# The headlamps stand just proud of the nose (behind it they hid).
+		_box(Vector3(hw - 0.3, 0.86, 0.0), Vector3(0.32, 0.14, 0.04), HEAD, true)
+	if not _lo and not _hi:
 		_box(Vector3(0, 0.75, 0.03), Vector3(1.2, 0.3, 0.08), TRIM)
+	if not _lo:
 		_box(Vector3(0, c + 0.1, 0.06), Vector3(W - 0.15, 0.18, 0.14), TRIM)
 		_box(Vector3(hw + 0.12, 1.45, 1.05), Vector3(0.1, 0.32, 0.18), TRIM, true)
+
+
+## Ultra: a Ford Transit / E-Series cutaway face: swept headlamps in dark
+## housings at the corners with an amber side marker, the big trapezoid
+## grille in black with three silver bars and the badge, a plate on the
+## bumper and fog lamps low in it.
+func _van_face(hw: float, c: float) -> void:
+	var lx := hw - 0.3
+	_box(Vector3(lx, 0.86, -0.004), Vector3(0.36, 0.17, 0.04), TRIM, true)
+	_box(Vector3(lx + 0.02, 0.87, -0.012), Vector3(0.26, 0.1, 0.04), HEAD, true)
+	_box(Vector3(lx - 0.13, 0.83, -0.012), Vector3(0.05, 0.05, 0.04), HEAD, true)
+	_box(Vector3(hw - 0.1, 0.84, 0.12), Vector3(0.04, 0.06, 0.12), Color(1.0, 0.55, 0.05, 0.5), true)
+	_box(Vector3(0, 0.7, -0.004), Vector3(1.0, 0.36, 0.04), Color(0.03, 0.03, 0.03, 0.3))
+	for y in [0.6, 0.7, 0.8]:
+		_box(Vector3(0, y, -0.012), Vector3(0.94, 0.025, 0.04), STEEL)
+	_box(Vector3(0, 0.82, -0.02), Vector3(0.2, 0.08, 0.04), Color(0.1, 0.2, 0.45, 0.4))
+	_box(Vector3(0, c + 0.1, -0.024), Vector3(0.3, 0.15, 0.02), WHITE)
+	_box(Vector3(hw - 0.3, c + 0.1, -0.016), Vector3(0.12, 0.06, 0.04), HEAD, true)
 
 
 func _van() -> void:  # Ford Transit high roof
@@ -1077,6 +1245,58 @@ func _md_cab(W: float, paint := PAINT) -> float:
 	return 3.0
 
 
+## Ultra: the Class 8 vocational cab mixers and tandem dumps really ride
+## on (Kenworth T880, Mack Granite, Peterbilt 567): a tall narrow hood up
+## near 2 m with a big square chrome grille, separate squared fenders
+## carrying the headlamps, a heavy steel bumper, a day cab roof at 3.1 m,
+## an air cleaner and exhaust stack behind it and big West Coast mirrors.
+## Ends at 3.0 like the medium cab, so the bodies behind fit as before.
+func _vocational_cab(W: float) -> float:
+	var hw := W * 0.5
+	_loft([
+		[0.0, 0.8, 1.8, 1.92, 0.56, 0.58, 0.5],
+		[0.2, 0.75, 1.86, 2.0, 0.6, 0.62, 0.54],
+		[1.75, 0.75, 1.92, 2.06, 0.64, 0.66, 0.58],
+	], [_edges(PAINT, TRIM)], PAINT, PAINT)
+	_loft([
+		[1.7, 0.95, 2.04, 2.1, hw - 0.1, hw - 0.06, hw - 0.1],
+		[3.0, 0.95, 2.04, 2.1, hw - 0.1, hw - 0.06, hw - 0.1],
+	], [_edges(PAINT, PAINT)], PAINT, PAINT)
+	_loft([
+		[1.75, 2.08, 2.12, 2.13, hw - 0.12, hw - 0.12, hw - 0.14],
+		[2.3, 2.08, 2.16, 3.1, hw - 0.12, hw - 0.12, hw - 0.2],
+		[3.0, 2.08, 2.16, 3.1, hw - 0.12, hw - 0.12, hw - 0.2],
+	], [_edges(GLASS, PAINT, PAINT, GLASS), _edges(PAINT, PAINT, GLASS, PAINT)], PAINT, PAINT)
+	# Grille: chrome surround, dark bars, the badge on top.
+	_box(Vector3(0, 1.32, -0.03), Vector3(1.08, 1.0, 0.06), CHROME)
+	for i in range(1, 9):
+		_box(Vector3(0, 0.86 + i * 0.1, -0.066), Vector3(0.96, 0.04, 0.02), Color(0.05, 0.05, 0.05, 0.3))
+	_box(Vector3(0, 1.88, -0.01), Vector3(0.3, 0.06, 0.04), CHROME)
+	# Fenders over the steer tyres, headlamps and markers in their noses.
+	for s in [-1.0, 1.0]:
+		_box(Vector3(s * (hw - 0.31), 1.25, 1.1), Vector3(0.58, 0.32, 1.7), PAINT)
+		_box(Vector3(s * (hw - 0.31), 1.1, 1.1), Vector3(0.6, 0.04, 1.72), TRIM)
+		_box(Vector3(s * (hw - 0.34), 1.28, 0.236), Vector3(0.38, 0.2, 0.04), TRIM)
+		_box(Vector3(s * (hw - 0.36), 1.29, 0.21), Vector3(0.26, 0.13, 0.04), HEAD)
+		_box(Vector3(s * (hw - 0.1), 1.29, 0.214), Vector3(0.07, 0.07, 0.03), Color(1.0, 0.55, 0.05, 0.5))
+		# Cab steps over the fuel and battery boxes.
+		_box(Vector3(s * (hw - 0.22), 0.72, 2.45), Vector3(0.44, 0.04, 0.9), STEEL)
+		_box(Vector3(s * (hw - 0.22), 0.45, 2.45), Vector3(0.44, 0.04, 0.9), STEEL)
+		# West Coast mirror on its frame, a convex mirror below.
+		_beam(Vector3(s * (hw - 0.06), 2.2, 1.85), Vector3(s * (hw + 0.28), 2.25, 1.85), 0.03, TRIM)
+		_box(Vector3(s * (hw + 0.3), 2.25, 1.85), Vector3(0.07, 0.48, 0.2), TRIM)
+		_box(Vector3(s * (hw + 0.3), 1.9, 1.85), Vector3(0.12, 0.16, 0.12), TRIM)
+	# Steel bumper with tow hooks, amber roof markers.
+	_box(Vector3(0, 0.62, -0.1), Vector3(W, 0.32, 0.24), STEEL)
+	_box(Vector3(0.45, 0.62, -0.23), Vector3(0.08, 0.1, 0.04), Color(0.7, 0.1, 0.05, 0.4), true)
+	for x in [-0.6, -0.3, 0.0, 0.3, 0.6]:
+		_box(Vector3(x, 3.12, 2.32), Vector3(0.1, 0.05, 0.06), Color(1.0, 0.55, 0.05, 0.5))
+	# Air cleaner canister and the stack behind the cab.
+	_cyl(Vector3(hw - 0.25, 1.9, 2.25), Vector3(hw - 0.25, 2.6, 2.25), 0.2, Color(0.1, 0.1, 0.1, 0.3), 10)
+	_cyl(Vector3(-(hw - 0.2), 1.2, 3.12), Vector3(-(hw - 0.2), 3.7, 3.12), 0.065, CHROME, 8)
+	return 3.0
+
+
 ## Ultra: a truck cab's face (Freightliner M2 and Cascadia, Peterbilt): the
 ## headlamps on the nose in dark housings with an amber marker, and dark
 ## bars across the chrome grille (gw wide, gh high, centred at gy), each
@@ -1117,7 +1337,10 @@ func _box_truck() -> void:  # 26 ft box truck
 
 func _dump_truck() -> void:  # tandem dump on a conventional chassis
 	var L := 9.0
-	_md_cab(2.5)
+	if _hi:
+		_vocational_cab(2.5)
+	else:
+		_md_cab(2.5)
 	_box(Vector3(0, 0.75, 5.5), Vector3(1.0, 0.3, 6.5), TRIM)
 	if _hi:
 		_dump_bed(L)
@@ -1153,7 +1376,8 @@ func _dump_bed(L: float) -> void:
 			z += 0.9
 	_box(Vector3(0, 2.3, 3.34), Vector3(2.5, 1.4, 0.08), PAINT)
 	_box(Vector3(0, 2.3, L - 0.04), Vector3(2.5, 1.4, 0.08), PAINT)
-	_box(Vector3(0, 2.98, 2.98), Vector3(2.0, 0.06, 0.72), PAINT)
+	_box(Vector3(0, 3.11, 3.34), Vector3(2.5, 0.22, 0.08), PAINT)
+	_box(Vector3(0, 3.2, 3.0), Vector3(2.0, 0.06, 0.72), PAINT)
 	# Inside, the paint is scraped back to dull steel by the loads.
 	var worn := Color(0.3, 0.28, 0.26, 0.4)
 	_box(Vector3(0, 1.62, mid), Vector3(2.34, 0.04, len), worn)
@@ -1168,7 +1392,10 @@ func _dump_bed(L: float) -> void:
 ## tridem axles. The cab takes the fleet colour.
 func _concrete_mixer() -> void:
 	var L := 10.4
-	_md_cab(2.5)
+	if _hi:
+		_vocational_cab(2.5)
+	else:
+		_md_cab(2.5)
 	_box(Vector3(0, 0.8, 6.0), Vector3(1.0, 0.3, 7.6), TRIM)
 	# The drum: wide in the middle, narrow at both ends, rising to the rear.
 	var drum := [[3.4, 1.7, 0.55], [4.3, 1.95, 1.05], [6.4, 2.3, 1.2], [8.6, 2.75, 0.85], [9.6, 3.05, 0.45]]
@@ -1190,7 +1417,10 @@ func _concrete_mixer() -> void:
 				for dz in [-0.12, 0.12]:
 					band.append([z + dz, y - r, y - r * 0.1, y + r, r * 0.7, r, r * 0.7])
 				_loft(band, [_edges(PAINT, PAINT)], PAINT, PAINT)
-		_cyl(Vector3(0, 2.0, 3.1), Vector3(0, 2.9, 3.1), 0.35, STEEL, 10)
+		if _hi:
+			_cyl(Vector3(0.25, 2.3, 3.3), Vector3(0.25, 3.0, 3.3), 0.3, STEEL, 12)
+		else:
+			_cyl(Vector3(0, 2.0, 3.1), Vector3(0, 2.9, 3.1), 0.35, STEEL, 10)
 		_beam(Vector3(0, 2.4, 9.7), Vector3(0, 1.6, 10.3), 0.35, TRIM)
 		_box(Vector3(0, 1.4, 9.9), Vector3(0.9, 0.5, 0.5), STEEL)
 		_box(Vector3(0, 1.15, 10.38), Vector3(0.5, 0.06, 0.6), STEEL)  # the fold-down discharge chute
@@ -1221,7 +1451,10 @@ func _garbage_truck() -> void:  # rear loader on a Mack LR cab-over
 	], [_edges(PAINT, TRIM)], PAINT, DARK)
 	_wheels([1.0, 6.6, 7.9], 0.52, hw, 0.3)
 	_box(Vector3(0, 0.9, 0.0), Vector3(2.2, 0.3, 0.1), TRIM)
-	_box(Vector3(hw - 0.25, 1.1, -0.02), Vector3(0.3, 0.16, 0.06), HEAD, true)
+	if _hi:
+		_refuse_face(hw)
+	else:
+		_box(Vector3(hw - 0.25, 1.1, -0.02), Vector3(0.3, 0.16, 0.06), HEAD, true)
 	_box(Vector3(hw - 0.15, 2.4, L + 0.01), Vector3(0.14, 0.14, 0.04), TAIL, true)
 	_box(Vector3(0, 2.86, 1.2), Vector3(0.9, 0.1, 0.2), BEACON_AMBER)
 
@@ -1258,7 +1491,10 @@ func _garbage_side() -> void:
 	_box(Vector3(hw + 0.2, 1.1, 3.2), Vector3(0.08, 0.5, 0.9), STEEL)
 	_wheels([1.0, 6.6, 7.9], 0.52, hw, 0.3)
 	_box(Vector3(0, 0.9, 0.0), Vector3(2.2, 0.3, 0.1), TRIM)
-	_box(Vector3(hw - 0.25, 1.1, -0.02), Vector3(0.3, 0.16, 0.06), HEAD, true)
+	if _hi:
+		_refuse_face(hw)
+	else:
+		_box(Vector3(hw - 0.25, 1.1, -0.02), Vector3(0.3, 0.16, 0.06), HEAD, true)
 	_box(Vector3(hw - 0.2, 2.2, L - 0.15), Vector3(0.14, 0.14, 0.04), TAIL, true)
 	_box(Vector3(0, 2.86, 1.2), Vector3(0.9, 0.1, 0.2), BEACON_AMBER)
 
@@ -1282,7 +1518,10 @@ func _fire_engine() -> void:  # custom-cab pumper (Pierce Enforcer)
 	_wheels([1.3, 7.4], 0.55, hw, 0.32)
 	_box(Vector3(0, 3.06, 1.7), Vector3(2.2, 0.12, 0.3), BEACON_RED)
 	_box(Vector3(0, 1.0, -0.06), Vector3(2.4, 0.4, 0.14), CHROME)
-	_box(Vector3(hw - 0.3, 1.25, -0.02), Vector3(0.36, 0.18, 0.06), HEAD, true)
+	if _hi:
+		_pumper_face(hw)
+	else:
+		_box(Vector3(hw - 0.3, 1.25, -0.02), Vector3(0.36, 0.18, 0.06), HEAD, true)
 	_box(Vector3(hw - 0.1, 1.1, L + 0.01), Vector3(0.14, 0.2, 0.04), TAIL, true)
 	if _lo:
 		return
@@ -1294,6 +1533,59 @@ func _fire_engine() -> void:  # custom-cab pumper (Pierce Enforcer)
 			_box(Vector3(s * (hw + 0.004), 1.65, 4.0 + i * 0.85 + (1.6 if i > 2 else 0.0)), Vector3(0.006, 1.6, 0.04), CHROME)
 	for x in [-1.2, 1.2]:
 		_box(Vector3(x, 2.9, L - 0.05), Vector3(0.12, 0.14, 0.08), BEACON_RED)
+
+
+## Ultra: a low-cab-forward refuse truck's face (Mack LR, Peterbilt 520):
+## the black grille with its chrome bars under the split windshield,
+## headlamps in dark housings at the corners with amber markers above,
+## west-coast mirrors on arms and the convex corner mirrors drivers use to
+## see the curb right below the nose. Layers stand 6 mm apart.
+func _refuse_face(hw: float) -> void:
+	_box(Vector3(0, 1.22, -0.006), Vector3(1.1, 0.42, 0.012), TRIM)
+	for i in 4:
+		_box(Vector3(0, 1.07 + i * 0.1, -0.012), Vector3(1.0, 0.03, 0.012), CHROME)
+	_box(Vector3(hw - 0.3, 1.2, -0.006), Vector3(0.34, 0.2, 0.012), TRIM, true)
+	_box(Vector3(hw - 0.3, 1.2, -0.012), Vector3(0.28, 0.13, 0.012), HEAD, true)
+	_box(Vector3(hw - 0.3, 1.36, -0.006), Vector3(0.22, 0.06, 0.012), Color(0.95, 0.55, 0.05, 0.5), true)
+	_lcf_glass(Vector3(0, 1.52, 0.0), Vector3(0, 2.8, 0.25), hw - 0.1)
+	_lcf_mirrors(hw, 2.15, 0.45)
+
+
+## Ultra: a custom fire cab's face (Pierce Enforcer, E-One): a chrome
+## grille with dark slots, quad headlamps in black housings either side,
+## red warning lights above them that flash with the siren, and mirrors.
+func _pumper_face(hw: float) -> void:
+	_box(Vector3(0, 1.36, -0.006), Vector3(1.0, 0.44, 0.012), CHROME)
+	for i in 5:
+		_box(Vector3(0, 1.2 + i * 0.08, -0.012), Vector3(0.9, 0.035, 0.012), TRIM)
+	_box(Vector3(hw - 0.32, 1.38, -0.006), Vector3(0.44, 0.22, 0.012), TRIM, true)
+	for dx in [-0.1, 0.1]:
+		_box(Vector3(hw - 0.32 + dx, 1.38, -0.012), Vector3(0.16, 0.15, 0.012), HEAD, true)
+	_box(Vector3(hw - 0.32, 1.56, -0.006), Vector3(0.3, 0.07, 0.012), BEACON_RED, true)
+	_lcf_glass(Vector3(0, 1.66, 0.05), Vector3(0, 3.0, 0.35), hw - 0.08)
+	_lcf_mirrors(hw, 2.45, 0.6)
+
+
+## The split windshield's centre post and a pair of parked wipers on a
+## cab-over's face, from its foot `a` to its top `b`, 8 mm out from the
+## glass.
+func _lcf_glass(a: Vector3, b: Vector3, half: float) -> void:
+	var up := (b - a).normalized()
+	var out := Vector3(0, up.z, -up.y) * 0.008
+	_beam(a + out, b + out, 0.06, TRIM)
+	for x in [-half * 0.5, half * 0.5]:
+		_beam(a + out + up * 0.06 + Vector3(x - half * 0.4, 0, 0),
+			a + out + up * 0.06 + Vector3(x + half * 0.4, 0, 0), 0.025, TRIM)
+
+
+## West-coast mirrors on arms out from both doors, and a convex mirror
+## on a stalk at each front corner.
+func _lcf_mirrors(hw: float, y: float, z: float) -> void:
+	for s in [-1.0, 1.0]:
+		_box(Vector3(s * (hw + 0.14), y + 0.2, z), Vector3(0.28, 0.04, 0.04), TRIM)
+		_box(Vector3(s * (hw + 0.3), y, z), Vector3(0.07, 0.5, 0.2), TRIM)
+		_beam(Vector3(s * (hw - 0.12), y - 0.35, 0.02), Vector3(s * (hw - 0.05), y - 0.3, -0.25), 0.03, TRIM)
+		_cyl(Vector3(s * (hw - 0.05), y - 0.3, -0.25), Vector3(s * (hw - 0.05), y - 0.3, -0.3), 0.09, TRIM, 10)
 
 
 ## A rural water tender (Pierce or KME on a commercial chassis): a 3,000
@@ -1727,12 +2019,92 @@ func _tractor() -> void:  # John Deere 8R row-crop tractor
 	_box(Vector3(0, 3.48, 4.0), Vector3(0.12, 0.1, 0.12), BEACON_AMBER)
 	_cyl(Vector3(0.35, 2.0, 1.9), Vector3(0.35, 3.4, 1.9), 0.07, TRIM)
 	var rim := Color(0.95, 0.75, 0.05, 0.4)
-	_wheel(Vector3(-hw, 0.0, 1.0), 0.62, 0.45, rim)
-	_wheel(Vector3(hw, 0.0, 1.0), 0.62, 0.45, rim)
-	_wheel(Vector3(-hw - 0.15, 0.0, 4.2), 1.0, 0.6, rim)
-	_wheel(Vector3(hw + 0.15, 0.0, 4.2), 1.0, 0.6, rim)
-	_box(Vector3(0, 1.4, 0.04), Vector3(0.6, 0.12, 0.1), HEAD, true)
+	if _hi:
+		_tractor_hi(hw, rim)
+	else:
+		_wheel(Vector3(-hw, 0.0, 1.0), 0.62, 0.45, rim)
+		_wheel(Vector3(hw, 0.0, 1.0), 0.62, 0.45, rim)
+		_wheel(Vector3(-hw - 0.15, 0.0, 4.2), 1.0, 0.6, rim)
+		_wheel(Vector3(hw + 0.15, 0.0, 4.2), 1.0, 0.6, rim)
+		_box(Vector3(0, 1.4, 0.04), Vector3(0.6, 0.12, 0.1), HEAD, true)
 	_box(Vector3(0, 0.75, 5.4), Vector3(0.6, 0.15, 0.4), TRIM)
+
+
+## Ultra: what makes a row-crop tractor read as one (JD 8R, Case IH
+## Magnum): lugged ag tyres on dished rims instead of car wheels, fenders
+## arching over the rears, a four-post cab, the grille and lamps on the
+## nose, a stack of suitcase weights out front, steps and a grab rail up to
+## the door, and the orange slow-moving-vehicle triangle every tractor on
+## an Indiana road must carry (IC 9-21-9, ASABE S276).
+func _tractor_hi(hw: float, rim: Color) -> void:
+	for s in [-1.0, 1.0]:
+		_ag_wheel(Vector3(s * hw, 0.0, 1.0), 0.62, 0.45, rim)
+		_ag_wheel(Vector3(s * (hw + 0.15), 0.0, 4.2), 1.0, 0.6, rim)
+		_fender(Vector3(s * (hw + 0.15), 1.0, 4.2), 1.1, 0.72)
+		# Cab posts at the four corners.
+		for z in [2.8, 4.4]:
+			_box(Vector3(s * 0.75, 2.7, z), Vector3(0.08, 1.3, 0.08), TRIM)
+	_box(Vector3(0, 1.4, -0.006), Vector3(0.72, 0.8, 0.012), TRIM)
+	for i in 6:
+		_box(Vector3(0, 1.08 + i * 0.12, -0.012), Vector3(0.66, 0.025, 0.012), PAINT)
+	for x in [-0.24, 0.24]:
+		_box(Vector3(x, 1.68, -0.018), Vector3(0.18, 0.08, 0.012), HEAD)
+	# Suitcase weights on the front bracket.
+	_box(Vector3(0, 0.62, -0.08), Vector3(0.5, 0.18, 0.16), TRIM)
+	for i in 6:
+		_box(Vector3(-0.42 + i * 0.168, 0.7, -0.3), Vector3(0.15, 0.42, 0.3), TRIM)
+	# Steps and the grab rail on the left, up to the door.
+	for y in [0.75, 1.15, 1.55]:
+		_box(Vector3(-0.85, y, 2.85), Vector3(0.3, 0.04, 0.22), STEEL)
+	_beam(Vector3(-0.8, 1.2, 2.72), Vector3(-0.8, 2.9, 2.72), 0.04, STEEL)
+	# Slow-moving-vehicle emblem on the back of the cab: a red-bordered
+	# fluorescent orange triangle, point up.
+	var o := Vector3(0, 2.35, 4.45)
+	_tri(o + Vector3(-0.21, -0.18, 0), o + Vector3(0.21, -0.18, 0), o + Vector3(0, 0.18, 0), TAPE_RED, o - Vector3(0, 0, 1))
+	o.z += 0.006
+	_tri(o + Vector3(-0.15, -0.14, 0), o + Vector3(0.15, -0.14, 0), o + Vector3(0, 0.12, 0), Color(1.0, 0.38, 0.04, 0.4), o - Vector3(0, 0, 1))
+
+
+## A farm tyre on a dished steel rim: deep sidewall, the rim as a plain
+## dish with its hub, and chevron lugs round the tread.
+func _ag_wheel(c: Vector3, r: float, w: float, rim: Color) -> void:
+	var ax := Vector3(1, 0, 0)
+	var mid := Vector3(c.x, r, c.z)
+	_cyl(mid - ax * w * 0.5, mid + ax * w * 0.5, r - 0.03, TIRE, 24)
+	for side in [-1.0, 1.0]:
+		var face: Vector3 = mid + ax * side * (w * 0.5 + 0.008)
+		_disc(face, ax * side, r * 0.62, rim)
+		_disc(face + ax * side * 0.006, ax * side, r * 0.2, Color(0.2, 0.2, 0.2, 0.2))
+		_disc(face + ax * side * 0.012, ax * side, r * 0.08, rim)
+	# Lugs: bars from each shoulder in toward the middle, offset round the
+	# tyre so they meet in a chevron.
+	var n := 22
+	for k in n:
+		var a1 := TAU * k / n
+		for side in [-1.0, 1.0]:
+			var a2: float = a1 + side * 0.12
+			var p1: Vector3 = mid + ax * side * w * 0.48 + Vector3(0, sin(a1), cos(a1)) * (r - 0.01)
+			var p2: Vector3 = mid + ax * side * w * 0.05 + Vector3(0, sin(a2), cos(a2)) * (r - 0.01)
+			_beam(p1, p2, 0.07, TIRE)
+
+
+## A fender arching over a big rear tyre: a strip of painted steel round
+## `c` (the axle) at radius r, w wide, from behind the wheel up and over to
+## the front.
+func _fender(c: Vector3, r: float, w: float) -> void:
+	var n := 8
+	for i in n:
+		var a1 := lerpf(0.35, PI - 0.35, float(i) / n)
+		var a2 := lerpf(0.35, PI - 0.35, float(i + 1) / n)
+		var d1 := Vector3(0, sin(a1), cos(a1))
+		var d2 := Vector3(0, sin(a2), cos(a2))
+		var hx := Vector3(w * 0.5, 0, 0)
+		var p1 := c + d1 * r
+		var p2 := c + d2 * r
+		_quad(p1 - hx, p1 + hx, p2 + hx, p2 - hx, PAINT, c)
+		var q1 := c + d1 * (r + 0.02)
+		var q2 := c + d2 * (r + 0.02)
+		_quad(q1 - hx, q1 + hx, q2 + hx, q2 - hx, PAINT, c + d1 * 5.0)
 
 
 ## A 500 bu gravity wagon (Parker, Brent) on a four-wheel running gear:
@@ -1771,15 +2143,60 @@ func _combine() -> void:  # John Deere S790, header off for the road
 	], [_edges(PAINT, TRIM)], TRIM, PAINT)
 	_box(Vector3(0, 3.0, 1.2), Vector3(1.7, 1.5, 1.4), GLASS)
 	_box(Vector3(0, 3.8, 1.2), Vector3(1.9, 0.12, 1.6), WHITE)
-	_box(Vector3(0, 4.0, 5.0), Vector3(2.6, 0.6, 3.6), PAINT)
+	if _hi:
+		# The grain tank's folding extensions flare out above the body,
+		# open on top over the grain.
+		_loft([
+			[3.2, 3.7, 4.05, 4.3, 1.25, 1.32, 1.42],
+			[6.8, 3.7, 4.05, 4.3, 1.25, 1.32, 1.42],
+		], [_edges(PAINT, PAINT)], PAINT, PAINT)
+		_box(Vector3(0, 4.306, 5.0), Vector3(2.6, 0.004, 3.4), Color(0.82, 0.68, 0.3, 0.4))
+	else:
+		_box(Vector3(0, 4.0, 5.0), Vector3(2.6, 0.6, 3.6), PAINT)
 	_box(Vector3(0, 3.96, 1.4), Vector3(0.14, 0.12, 0.14), BEACON_AMBER)
 	_beam(Vector3(-1.2, 3.8, 3.6), Vector3(-1.4, 3.8, 8.6), 0.18, PAINT)
 	var rim := Color(0.95, 0.75, 0.05, 0.4)
-	_wheel(Vector3(-1.4, 0.0, 2.4), 0.95, 0.7, rim)
-	_wheel(Vector3(1.4, 0.0, 2.4), 0.95, 0.7, rim)
-	_wheel(Vector3(-1.2, 0.0, 7.0), 0.7, 0.45, rim)
-	_wheel(Vector3(1.2, 0.0, 7.0), 0.7, 0.45, rim)
+	if _hi:
+		_combine_hi(L, rim)
+	else:
+		_wheel(Vector3(-1.4, 0.0, 2.4), 0.95, 0.7, rim)
+		_wheel(Vector3(1.4, 0.0, 2.4), 0.95, 0.7, rim)
+		_wheel(Vector3(-1.2, 0.0, 7.0), 0.7, 0.45, rim)
+		_wheel(Vector3(1.2, 0.0, 7.0), 0.7, 0.45, rim)
 	_box(Vector3(0.5, 3.4, 0.45), Vector3(0.3, 0.12, 0.08), HEAD, true)
+
+
+## Ultra: a combine close up (JD S790, Case IH Axial-Flow): lugged drive
+## and steer tyres, the cab's corner posts and mirrors, the stair up the
+## left front to the platform, the dark mouth of the feeder house with
+## its header off, the rotary radiator screen and louvres at the back of
+## the engine bay, the straw chopper's housing, tail lamps and the
+## slow-moving-vehicle triangle.
+func _combine_hi(L: float, rim: Color) -> void:
+	for s in [-1.0, 1.0]:
+		_ag_wheel(Vector3(s * 1.4, 0.0, 2.4), 0.95, 0.7, rim)
+		_ag_wheel(Vector3(s * 1.2, 0.0, 7.0), 0.7, 0.45, rim)
+		for z in [0.5, 1.9]:
+			_box(Vector3(s * 0.85, 3.0, z), Vector3(0.08, 1.5, 0.08), TRIM)
+		_box(Vector3(s * 1.08, 3.45, 0.7), Vector3(0.38, 0.04, 0.04), TRIM)
+		_box(Vector3(s * 1.28, 3.25, 0.7), Vector3(0.06, 0.4, 0.2), TRIM)
+		_box(Vector3(s * 1.0, 1.05, L - 0.2), Vector3(0.14, 0.18, 0.04), TAIL)
+	# The stair: treads stepping up the left front, with its rail.
+	for i in 6:
+		_box(Vector3(-1.05, 0.55 + i * 0.32, 0.55 + i * 0.12), Vector3(0.5, 0.04, 0.25), STEEL)
+	_beam(Vector3(-1.3, 1.1, 0.4), Vector3(-1.3, 2.9, 1.1), 0.05, STEEL)
+	# The feeder house's mouth, open with the header off.
+	_box(Vector3(0, 1.32, -0.006), Vector3(1.1, 0.6, 0.012), Color(0.04, 0.04, 0.04, 0.3))
+	# Radiator screen and engine louvres on the right side at the back.
+	_disc(Vector3(1.51, 3.0, L - 1.6), Vector3(1, 0, 0), 0.55, Color(0.1, 0.1, 0.1, 0.3))
+	for i in 5:
+		_box(Vector3(1.506, 2.3 + i * 0.16, L - 3.2), Vector3(0.012, 0.06, 1.2), TRIM)
+	# Straw chopper housing under the back, and the SMV sign above it.
+	_box(Vector3(0, 1.25, L + 0.15), Vector3(1.9, 0.5, 0.3), TRIM)
+	var o := Vector3(0, 2.2, L + 0.006)
+	_tri(o + Vector3(-0.21, -0.18, 0), o + Vector3(0.21, -0.18, 0), o + Vector3(0, 0.18, 0), TAPE_RED, o - Vector3(0, 0, 1))
+	o.z += 0.006
+	_tri(o + Vector3(-0.15, -0.14, 0), o + Vector3(0.15, -0.14, 0), o + Vector3(0, 0.12, 0), Color(1.0, 0.38, 0.04, 0.4), o - Vector3(0, 0, 1))
 
 
 func _motorcycle() -> void:  # cruiser (Harley-Davidson Street Glide) with rider

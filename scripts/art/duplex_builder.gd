@@ -52,6 +52,7 @@ static func build(seed: int, to_curb: float, lot := {}, level := 0) -> Array:
 	b._yard_trees(info, to_curb)
 	b._street_trees(info, to_curb)
 	b._back_yard(info)
+	b._cf_units = 4 if plan.style == "fourplex" else 2  # a meter and carts for each home
 	b._utilities(info)
 	b._front_yard(info)
 	return [b._commit_house(), b._commit_flat(), b.trees]
@@ -289,7 +290,16 @@ func _dx_double(p: Dictionary) -> Dictionary:
 			var z := zf + d * (i + 0.6) / 3.4
 			for y in [sill + 1.5, sill + 4.0]:
 				_window(Vector3(cx + s * w * 0.5, y, z), Vector3(0, 0, -s), 0.85, 1.35, true, false, TRIM)
-	_back(cx - w * 0.5, cx + w * 0.5, zb, [sill + 1.5, sill + 4.0], sill)
+	# Each home of a double has its own back door (to the kitchen), down a
+	# concrete stoop, in place of one family's slider and deck.
+	var back_doors := [cx - w * 0.25, cx + w * 0.25]
+	_back(cx - w * 0.5, cx + w * 0.5, zb, [sill + 1.5, sill + 4.0], sill, back_doors)
+	var bd: Color = paint.door if (paint.door as Color).get_luminance() < 0.7 else Color("#5a5f61")
+	for bx: float in back_doors:
+		_box("paint", Vector3(0.9, 2.05, 0.05), Vector3(bx, sill + 1.02, zb + 0.03), bd)
+		_box("paint", Vector3(1.1, 0.12, 0.08), Vector3(bx, sill + 2.1, zb + 0.04), TRIM)
+		_box("concrete", Vector3(1.2, sill, 1.0), Vector3(bx, sill * 0.5, zb + 0.5), FOUNDATION)
+		_box("concrete", Vector3(1.2, sill * 0.5, 0.3), Vector3(bx, sill * 0.25, zb + 1.15), FOUNDATION.lightened(0.04))
 	var info := _dx_info(p)
 	var g := _back_garage(p.drives[0][0], zb + 1.0, paint.siding, paint.roof)
 	info.garage_z = g.garage_z

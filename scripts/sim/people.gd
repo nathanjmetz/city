@@ -202,6 +202,41 @@ func plan(sim: CitySim, traffic: TrafficSim, rng: RandomNumberGenerator) -> void
 			return
 
 
+## Everyone where the hour would find them, for a clock that jumps (see
+## TrafficSim.arrive_now): a worker whose shift covers the hour is at work,
+## the car in its lot. The shift is the one plan() deals out, starting
+## between 6 and 10 and ending between 3 and 6 pm, here fixed per person.
+## Errands are left out: a stop at a shop lasts minutes. With a budget (in
+## microseconds) it does what fits and carries on at the next call; true
+## once everyone is placed.
+func settle(sim: CitySim, traffic: TrafficSim, budget_usec := 0) -> bool:
+	var t0 := Time.get_ticks_usec()
+	if _settle.is_empty():
+		var ids := people.keys()
+		ids.sort()
+		_settle = {"ids": ids, "at": 0, "batch": traffic.arrive_batch()}
+	var hour := sim.sky_hour()
+	var tph := sim.sky_ticks_per_hour()
+	var ids: Array = _settle.ids
+	while int(_settle.at) < ids.size():
+		if budget_usec > 0 and Time.get_ticks_usec() - t0 > budget_usec:
+			return false
+		var id: int = ids[_settle.at]
+		_settle.at += 1
+		var p: Dictionary = people.get(id, {})
+		if p.is_empty() or p.at != "" or p.job == "" or p.age < 12:
+			continue
+		var start := 6.0 + 4.0 * float(absi(hash([id, "shift start"])) % 1000) / 1000.0
+		var end := 15.0 + 3.0 * float(absi(hash([id, "shift end"])) % 1000) / 1000.0
+		if hour >= start and hour < end:
+			traffic.arrive_now(sim, id, p.job, roundi((end - hour) * tph), _settle.batch)
+	_settle = {}
+	return true
+
+
+var _settle := {}  # a settle under way: ids, how far through, arrive_batch
+
+
 ## A shop to go to: usually one of the closer ones.
 func _shop_for(sim: CitySim, p: Dictionary, rng: RandomNumberGenerator) -> String:
 	var home: Dictionary = sim.lots.get(p.home, {})

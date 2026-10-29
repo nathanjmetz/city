@@ -138,7 +138,24 @@ const GLASS := """
 // bulkhead to a ceiling above the head, 6 m deep. Shelves of stock or racks
 // of clothes on the walls, tile floor, lay-in ceiling with light panels;
 // after dark most stay lit, as Main Street windows do.
-bool shop_room(vec2 uv, vec3 vw, out vec3 col, out float glow) {
+const vec3 CLOTH[12] = vec3[](vec3(0.06, 0.08, 0.16), vec3(0.03, 0.03, 0.035), vec3(0.16, 0.16, 0.17),
+	vec3(0.42, 0.42, 0.42), vec3(0.12, 0.2, 0.34), vec3(0.45, 0.38, 0.25), vec3(0.75, 0.74, 0.7),
+	vec3(0.2, 0.24, 0.14), vec3(0.3, 0.06, 0.08), vec3(0.06, 0.08, 0.16), vec3(0.55, 0.08, 0.08), vec3(0.75, 0.6, 0.15));
+// The ray's entry into a box (1e9 if it misses), and which slab it came
+// through (the top when `top` is 1).
+float box_t(vec3 o, vec3 rd, vec3 bmin, vec3 bmax, out float top) {
+	vec3 inv = 1.0 / rd;
+	vec3 t0 = (bmin - o) * inv;
+	vec3 t1 = (bmax - o) * inv;
+	vec3 tn = min(t0, t1);
+	vec3 tf = max(t0, t1);
+	float tin = max(max(tn.x, tn.y), tn.z);
+	float tout = min(min(tf.x, tf.y), tf.z);
+	top = step(max(tn.x, tn.z), tn.y);
+	return (tin > 0.0 && tin < tout) ? tin : 1e9;
+}
+
+bool shop_room(vec2 uv, vec3 vw, bool diner, float sill, out vec3 col, out float glow) {
 	vec3 n = normalize(world_normal);
 	vec3 inw = dot(vw, n) > 0.0 ? n : -n;
 	vec3 rt = normalize(cross(vec3(0.0, 1.0, 0.0), inw));
@@ -154,7 +171,7 @@ bool shop_room(vec2 uv, vec3 vw, out vec3 col, out float glow) {
 	float xl = min(a, a + sx) - 1.2;
 	float xr = max(a, a + sx) + 1.2;
 	float yb = world_pos.y - uv.y * sy;
-	float yf = yb - 0.45;
+	float yf = yb - sill;
 	float yc = yb + abs(sy) + 0.5;
 	vec3 rd = vec3(dot(vw, rt), vw.y, max(dot(vw, inw), 0.02));
 	float tx = abs(rd.x) < 1e-4 ? 1e9 : ((rd.x > 0.0 ? xr : xl) - px) / rd.x;
@@ -172,6 +189,11 @@ bool shop_room(vec2 uv, vec3 vw, out vec3 col, out float glow) {
 		vec3 tile = mix(vec3(0.50, 0.48, 0.45), vec3(0.58, 0.56, 0.52), chk);
 		vec3 wood = vec3(0.42, 0.30, 0.20) * (0.85 + 0.3 * hash(vec2(floor(h.x / 0.15), floor(h.z / 1.2))));
 		col = mix(tile, wood, step(0.55, hash(vec2(sid, 2.0))));
+		if (diner) {
+			// Black and white checkerboard tile, 30 cm squares.
+			vec2 q = floor(vec2(h.x, h.z) / 0.3);
+			col = mix(vec3(0.06), vec3(0.78, 0.77, 0.74), mod(q.x + q.y, 2.0));
+		}
 	} else if (t == ty) {
 		vec2 f = fract(vec2(h.x, h.z) / 1.2);
 		float panel = step(0.25, f.x) * step(f.x, 0.75) * step(0.05, f.y) * step(f.y, 0.95);
@@ -182,12 +204,34 @@ bool shop_room(vec2 uv, vec3 vw, out vec3 col, out float glow) {
 		float u = t == tz ? h.x : h.z;
 		col = wallc;
 		bool racks = hash(vec2(sid, 3.0)) > 0.72;
-		if (racks) {
+		if (diner) {
+			// The lunch counter along the back: formica front, a chrome
+			// edge, the pie case on it; a menu board on the wall above.
+			// Side walls get a wood wainscot.
+			vec3 fronts[3] = vec3[3](vec3(0.45, 0.06, 0.07), vec3(0.08, 0.36, 0.36), vec3(0.72, 0.66, 0.52));
+			vec3 front = fronts[clamp(int(hash(vec2(sid, 8.0)) * 3.0), 0, 2)];
+			if (t == tz) {
+				col = mix(col, front, step(hy, 1.0));
+				col = mix(col, vec3(0.8, 0.81, 0.82), step(abs(hy - 1.03), 0.03));
+				float pie = step(1.06, hy) * step(hy, 1.45) * step(0.6, fract(u / 3.1));
+				col = mix(col, vec3(0.55, 0.5, 0.42) + 0.25 * step(0.5, fract(hy * 8.0)), pie);
+				float board = step(1.75, hy) * step(hy, 2.45) * step(0.15, fract(u / 4.0)) * step(fract(u / 4.0), 0.85);
+				// Rows of white letters on the dark board, short items and prices.
+				float row = floor((hy - 1.75) / 0.14);
+				float fu = fract(u / 4.0);
+				float line = step(0.6, fract((hy - 1.75) / 0.14)) * step(0.5, row) * step(row, 3.5)
+					* step(fu, 0.25 + 0.4 * hash(vec2(row, sid)) + 0.15 * step(0.78, fu) * 2.0) * step(0.2, fu);
+				col = mix(col, mix(vec3(0.12, 0.1, 0.09), vec3(0.75, 0.72, 0.62), line * 0.8), board);
+			} else {
+				col = mix(col, vec3(0.36, 0.24, 0.15), step(hy, 1.0));
+			}
+		} else if (racks) {
 			if (hy > 0.75 && hy < 1.75) {
 				float g = floor(u / 0.09);
 				float c = hash(vec2(g, sid));
-				vec3 cloth = vec3(c, hash(vec2(g, 5.0)), hash(vec2(g, 7.0)));
-				cloth = cloth * cloth * 0.7;
+				// What a real rack holds: mostly navy, black, greys, denim,
+				// khaki and white, with the odd bright piece.
+				vec3 cloth = CLOTH[clamp(int(hash(vec2(g, 5.0 + sid)) * 12.0), 0, 11)];
 				float len = 0.75 + 0.5 * hash(vec2(g, 11.0));
 				col = mix(col, cloth, step(1.75 - len, hy) * step(0.12, c));
 			}
@@ -202,6 +246,76 @@ bool shop_room(vec2 uv, vec3 vw, out vec3 col, out float glow) {
 			col = mix(c, vec3(0.30, 0.27, 0.24), step(fy, 0.07));
 		}
 	}
+	// A display table in the middle of the floor (or a low gondola), stock
+	// on its top: the slab test of the ray against its box.
+	vec3 o = vec3(px, world_pos.y, 0.0);
+	vec3 o0 = o;
+	if (diner) {
+		// Window booths, a table between two high-backed vinyl benches every
+		// 1.9 m (the classic 24 in bench, 30 in table), walked along the
+		// ray's way across the room.
+		vec3 vinyls[4] = vec3[4](vec3(0.42, 0.05, 0.06), vec3(0.05, 0.28, 0.28), vec3(0.28, 0.15, 0.09), vec3(0.3, 0.04, 0.1));
+		vec3 vinyl = vinyls[clamp(int(hash(vec2(sid, 9.0)) * 4.0), 0, 3)];
+		float c0 = floor(px / 1.9);
+		float dir = rd.x >= 0.0 ? 1.0 : -1.0;
+		for (int k = 0; k < 5; k++) {
+			float xc = (c0 + dir * float(k) + 0.5) * 1.9;
+			if (xc < xl - 1.0 || xc > xr + 1.0) {
+				continue;
+			}
+			float top;
+			for (int b = 0; b < 5; b++) {
+				vec3 lo;
+				vec3 hi;
+				vec3 bc = vinyl;
+				if (b < 2) {
+					float sgn = b == 0 ? -1.0 : 1.0;
+					lo = vec3(xc + sgn * 0.95, yf, 0.25);
+					hi = vec3(xc + sgn * 0.8, yf + 1.22, 1.85);
+				} else if (b < 4) {
+					float sgn = b == 2 ? -1.0 : 1.0;
+					lo = vec3(xc + sgn * 0.8, yf, 0.25);
+					hi = vec3(xc + sgn * 0.38, yf + 0.46, 1.85);
+				} else {
+					lo = vec3(xc - 0.35, yf + 0.71, 0.3);
+					hi = vec3(xc + 0.35, yf + 0.76, 1.5);
+					bc = vec3(0.8, 0.77, 0.68);
+				}
+				float tb = box_t(o0, rd, min(lo, hi), max(lo, hi), top);
+				if (tb < t) {
+					t = tb;
+					glow = 0.0;
+					// Tops catch the light; the tufted backs read in rows.
+					vec3 bp = o0 + rd * tb;
+					col = bc * mix(0.75 + 0.1 * step(0.5, fract(bp.z / 0.4)), 1.15, top);
+				}
+			}
+		}
+		col *= mix(1.0, 0.72, clamp(t * rd.z / 6.0, 0.0, 1.0));
+		return true;
+	}
+	vec3 bmin = vec3((xl + xr) * 0.5 - 0.8, yf, 2.0);
+	vec3 bmax = vec3((xl + xr) * 0.5 + 0.8, yf + mix(0.8, 1.4, step(0.5, hash(vec2(sid, 4.0)))), 3.4);
+	vec3 inv = 1.0 / rd;
+	vec3 t0 = (bmin - o) * inv;
+	vec3 t1 = (bmax - o) * inv;
+	vec3 tn = min(t0, t1);
+	vec3 tf = max(t0, t1);
+	float tin = max(max(tn.x, tn.y), tn.z);
+	float tout = min(min(tf.x, tf.y), tf.z);
+	if (tin > 0.0 && tin < tout && tin < t) {
+		vec3 b = o + rd * tin;
+		vec3 fix = mix(vec3(0.42, 0.30, 0.20), vec3(0.85, 0.84, 0.8), step(0.5, hash(vec2(sid, 6.0))));
+		if (tin == tn.y) {
+			// The top: folded stock in rows.
+			float g = floor(b.x / 0.3) + floor(b.z / 0.35) * 7.0;
+			col = mix(fix, CLOTH[clamp(int(hash(vec2(g, sid)) * 12.0), 0, 11)] + 0.08, step(0.3, hash(vec2(g, 2.0 + sid))));
+		} else {
+			col = fix * 0.7;
+		}
+		t = tin;
+		glow = 0.0;
+	}
 	// Further in, a little dimmer; and the corners darker.
 	col *= mix(1.0, 0.72, clamp(t * rd.z / 6.0, 0.0, 1.0));
 	return true;
@@ -209,11 +323,15 @@ bool shop_room(vec2 uv, vec3 vw, out vec3 col, out float glow) {
 
 void fragment() {
 	bool shop = false;
-	if (UV.x >= 2.0 && UV.x < 4.0) {
+	// UV.x in 2..4: a shop's room behind its glass; 6..8: a diner's, its
+	// windows high over the booths (6..7) or low on Main Street (7..8).
+	bool diner = UV.x >= 6.0 && UV.x < 8.0;
+	if ((UV.x >= 2.0 && UV.x < 4.0) || diner) {
 		vec3 vw = normalize((INV_VIEW_MATRIX * vec4(-VIEW, 0.0)).xyz);
 		vec3 inside;
 		float glow;
-		if (shop_room(UV, vw, inside, glow)) {
+		float low = step(7.0, UV.x);
+		if (shop_room(UV - vec2(diner ? 4.0 + low : 0.0, 0.0), vw, diner, diner ? 0.9 - 0.45 * low : 0.45, inside, glow)) {
 			float fres = pow(1.0 - clamp(dot(NORMAL, VIEW), 0.0, 1.0), 4.0);
 			vec3 sky = mix(vec3(0.20, 0.26, 0.34), vec3(0.45, 0.52, 0.60), UV.y) * (1.0 - night * 0.85);
 			float blinds = step(1.0 - COLOR.a, UV.y);
@@ -229,8 +347,8 @@ void fragment() {
 	}
 	if (!shop) {
 	// UV.x in 4..5: office glass (the builders' `office_glass`, desktop).
-	float office = step(4.0, UV.x);
-	float ux = UV.x - 4.0 * office;
+	float office = step(4.0, UV.x) * step(UV.x, 5.0);
+	float ux = fract(UV.x);
 	vec3 room = vec3(0.018, 0.02, 0.022);
 	float blinds = step(1.0 - COLOR.a, UV.y);
 	float slat = 0.85 + 0.15 * smoothstep(0.3, 0.5, fract(UV.y * 28.0));
@@ -406,6 +524,105 @@ void fragment() {
 }
 """
 
+## A farm's crushed-limestone yard, lane and drive (the #53 stone county
+## farmsteads are graveled with). UV is metres inside the gravelled piece,
+## UV2 the piece's size, so the shader knows its edges and which way a lane
+## runs: grass creeps in raggedly at the edges; a lane (anything under
+## 8 m across) has the two wheel tracks pressed dark and smooth with a
+## crown of grass tufts between them; a yard has darker worn patches where
+## trucks turn and park. Loose stones up close (on the desktop at High and
+## up, the gravel photo, art/pbr gravel_floor_02); from afar the average
+## matches the far farmstead's flat gravel.
+const GRAVEL := """
+uniform vec4 lawn : source_color = vec4(0.31, 0.42, 0.18, 1.0);
+uniform sampler2D gph : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
+uniform float gph_on = 0.0;
+void fragment() {
+	vec2 p = world_pos.xz;
+	vec2 at = UV;
+	vec2 size = UV2;
+	float close = clamp(1.0 - length(VERTEX) / 120.0, 0.0, 1.0);
+	float fine = texture(noise_grain, p / 0.18).r;
+	float pebble = texture(noise_grain, p / 0.7).r;
+	float patch = texture(noise_soft, p / 7.0).r;
+	float broad = texture(noise_soft, p / 31.0 + 0.17).r;
+	vec3 stone = vcol(COLOR.rgb) * (0.84 + patch * 0.2) * (0.9 + broad * 0.16) * (1.0 + (pebble - 0.5) * 0.22);
+	stone *= 1.0 + (fine - 0.5) * 0.35 * close;
+	if (gph_on > 0.5) {
+		vec3 ph = texture(gph, p / 2.0).rgb;
+		vec3 avg = textureLod(gph, vec2(0.5), 12.0).rgb;
+		stone *= mix(vec3(1.0), ph / max(avg, vec3(0.05)), 0.8 * clamp(1.0 - length(VERTEX) / 90.0, 0.0, 1.0));
+	}
+	float worn = 0.0;
+	float tuft = 0.0;
+	if (size.x < 8.0 || size.y < 8.0) {
+		// A lane: across it, its wheel tracks and the crown between.
+		float across = (size.x < size.y ? at.x - size.x * 0.5 : at.y - size.y * 0.5);
+		float along = (size.x < size.y ? at.y : at.x);
+		float wob = (texture(noise_soft, vec2(along / 25.0, 0.3)).r - 0.5) * 0.5;
+		float c = abs(across + wob);
+		worn = 1.0 - smoothstep(0.18, 0.34, abs(c - 0.85));
+		tuft = (1.0 - smoothstep(0.2, 0.4, c)) * smoothstep(0.5, 0.7, texture(noise_grain, p / 0.9).r);
+	} else {
+		worn = smoothstep(0.35, 0.85, texture(noise_soft, p / 22.0 + 0.4).r) * 0.6;
+	}
+	// Packed by the wheels: darker (the fines and a film of dirt), smoother.
+	stone = mix(stone, vcol(COLOR.rgb) * vec3(0.66, 0.65, 0.62) * (0.95 + patch * 0.1), worn * 0.75);
+	// Grass in from the edges, ragged.
+	float edge = min(min(at.x, size.x - at.x), min(at.y, size.y - at.y));
+	float rag = texture(noise_grain, p / 1.3).r * 1.2 + texture(noise_soft, p / 6.0).r * 0.8;
+	float grass = 1.0 - smoothstep(0.0, 0.35, edge - rag * 0.9 + 0.2);
+	grass = max(grass, tuft * 0.85);
+	vec3 g = lawn.rgb * (0.85 + texture(noise_grain, p / 0.4).r * 0.3);
+	float cover = snow_cover(0.8, 0.95);
+	ALBEDO = mix(mix(stone, g, grass), vec3(0.86, 0.88, 0.92), cover);
+	ROUGHNESS = mix(0.95, 0.85, worn);
+	SPECULAR = 0.25;
+}
+"""
+
+## A corrugated steel grain bin (GSI, Sukup and Brock bins on Indiana
+## farms), UV in metres: x around, y up the wall (or up the roof's slope
+## from the eave). The wall is rolled 2.66 in corrugations running round
+## the bin in rings of 44 in sheets, bolted at each ring's lap, with a
+## vertical stiffener every sheet length (9 ft 4 in) round it; the roof
+## is ribbed panels running up to the peak. Galvanized: a soft sheen, a
+## spangle of brighter and duller grains, weathering dull and streaked
+## down from the eave, darker at the foot where rain splashes. From afar
+## the fine lines blend into the average, never shimmer.
+const BIN := """
+void fragment() {
+	float roof = step(0.35, world_normal.y);
+	float h = UV.y;
+	float around = UV.x;
+	// Corrugations: a light and a dark band each 2.66 in, fading out as they
+	// shrink below a pixel.
+	float c = h / 0.0676;
+	float corr = sin(c * 6.2832) * (1.0 - smoothstep(0.25, 0.6, fwidth(c)));
+	// Ring laps every 44 in, and stiffeners round the wall.
+	float ring = abs(fract(h / 1.118) - 0.5) * 2.0;
+	float lap = (1.0 - smoothstep(0.0, 0.03 + fwidth(h / 1.118) * 2.0, 1.0 - ring)) * clamp(0.02 / max(fwidth(h / 1.118), 0.0001), 0.0, 1.0);
+	float st = abs(fract(around / 2.845) - 0.5) * 2.0;
+	float stiff = (1.0 - smoothstep(0.0, 0.04 + fwidth(around / 2.845) * 2.0, 1.0 - st)) * clamp(0.03 / max(fwidth(around / 2.845), 0.0001), 0.0, 1.0);
+	// Roof ribs every 0.6 m round the eave, closing in toward the peak.
+	float r = around / 0.6;
+	float rib = abs(fract(r) - 0.5) * 2.0;
+	float ribs = (1.0 - smoothstep(0.75, 0.95, rib)) * clamp(0.25 / max(fwidth(r), 0.0001), 0.0, 1.0);
+	float spangle = texture(noise_grain, world_pos.xy * 1.7 + world_pos.zy * 1.3).r;
+	float streak = texture(noise_soft, vec2(around / 9.0, h / 40.0)).r;
+	float grime = 1.0 - 0.14 * (1.0 - smoothstep(0.0, 1.4, h)) * (1.0 - roof);
+	float wall_s = (1.0 + corr * 0.07) * (1.0 - lap * 0.22) * (1.0 + stiff * 0.12) * (0.94 + spangle * 0.1)
+		* (1.0 - smoothstep(0.55, 0.85, streak) * 0.12) * grime;
+	float roof_s = (1.0 - ribs * 0.16) * (0.95 + spangle * 0.08);
+	float s = mix(wall_s, roof_s, roof);
+	float cover = snow_cover(0.6, 0.85);
+	ALBEDO = mix(vcol(COLOR.rgb) * 0.82 * s, vec3(0.86, 0.88, 0.92), cover);
+	METALLIC = mix(0.55, 0.0, cover);
+	ROUGHNESS = mix(0.42 + streak * 0.12, 0.7, cover);
+	SPECULAR = 0.5;
+}
+"""
+
 ## Ribbed metal panels (walls and roofs of metal buildings): ribs every 12 in
 ## across UV.x, catching light on one side.
 const METAL := """
@@ -453,24 +670,46 @@ void fragment() {
 ## (0: real lettering by SignText; 0.5-0.99: unlit letters painted on an
 ## awning, width (a - 0.5) * 60; 1: neon tubing or a lamp lens).
 const SIGN := """
+// Stand-in lettering: a trade word (no names) in 3x5 block capitals, so a
+// sign with no business name yet still reads as lettering, not noise.
+const int GLYPHS[27] = int[](27306, 23530, 15083, 25166, 15211, 29391, 4815, 27470, 23533, 29847, 11044, 23277, 29257, 23549, 23407, 11114, 4843, 26474, 23275, 14478, 9367, 31597, 11117, 24557, 23213, 9389, 29351);
+const int LETTERS[331] = int[](4, 9, 14, 5, 18, 3, 1, 6, 5, 16, 9, 26, 26, 1, 2, 1, 14, 11, 19, 1, 12, 15, 14, 14, 1, 9, 12, 19, 20, 1, 24, 4, 5, 12, 9, 19, 21, 2, 19, 12, 9, 17, 21, 15, 18, 16, 1, 23, 14, 20, 1, 3, 15, 19, 4, 18, 21, 7, 19, 8, 1, 18, 4, 23, 1, 18, 5, 22, 9, 4, 5, 15, 19, 8, 15, 5, 19, 6, 12, 15, 23, 5, 18, 19, 2, 1, 11, 5, 18, 25, 2, 15, 15, 11, 19, 20, 15, 25, 19, 7, 9, 6, 20, 19, 13, 21, 19, 9, 3, 16, 5, 20, 19, 20, 9, 18, 5, 19, 12, 15, 1, 14, 19, 4, 5, 14, 20, 1, 12, 9, 14, 19, 21, 18, 1, 14, 3, 5, 13, 1, 18, 11, 5, 20, 7, 18, 9, 12, 12, 4, 15, 14, 21, 20, 19, 6, 21, 18, 14, 9, 20, 21, 18, 5, 15, 16, 20, 9, 3, 1, 12, 3, 12, 5, 1, 14, 5, 18, 19, 2, 1, 18, 2, 5, 18, 20, 8, 18, 9, 6, 20, 20, 1, 22, 5, 18, 14, 1, 14, 20, 9, 17, 21, 5, 19, 2, 9, 11, 5, 19, 3, 1, 14, 4, 25, 19, 16, 15, 18, 20, 19, 8, 15, 2, 2, 25, 18, 5, 1, 12, 20, 25, 16, 1, 9, 14, 20, 17, 21, 9, 12, 20, 19, 1, 16, 16, 12, 9, 1, 14, 3, 5, 10, 5, 23, 5, 12, 18, 25, 6, 1, 2, 18, 9, 3, 3, 5, 12, 12, 21, 12, 1, 18, 6, 9, 20, 14, 5, 19, 19, 19, 5, 23, 9, 14, 7, 7, 18, 15, 3, 5, 18, 25, 6, 15, 15, 4, 19, 4, 9, 19, 3, 15, 21, 14, 20, 16, 8, 1, 18, 13, 1, 3, 25, 19, 21, 16, 5, 18, 3, 5, 14, 20, 5, 18, 15, 21, 20, 12, 5, 20);
+const int WSTART[56] = int[](0, 5, 9, 14, 18, 23, 28, 31, 35, 39, 45, 49, 54, 59, 67, 72, 77, 84, 90, 95, 99, 104, 109, 113, 118, 123, 129, 138, 144, 149, 155, 164, 171, 179, 185, 191, 197, 205, 210, 215, 221, 226, 232, 237, 243, 252, 259, 265, 273, 280, 286, 293, 298, 306, 314, 325);
+const int WLEN[56] = int[](5, 4, 5, 4, 5, 5, 3, 4, 4, 6, 4, 5, 5, 8, 5, 5, 7, 6, 5, 4, 5, 5, 4, 5, 5, 6, 9, 6, 5, 6, 9, 7, 8, 6, 6, 6, 8, 5, 5, 6, 5, 6, 5, 6, 9, 7, 6, 8, 7, 6, 7, 5, 8, 8, 11, 6);
 void fragment() {
 	// Alpha 1: neon tubing or a lamp lens, bright after dark, a little by day.
 	float neon = step(0.99, COLOR.a);
 	// Alpha 0.5-0.99: letters painted on canvas (awnings), never lit.
 	float painted = step(0.5, COLOR.a) * (1.0 - neon);
-	float nx = UV.x / max(mix(COLOR.a * 60.0, (COLOR.a - 0.5) * 60.0, painted), 0.1);
-	float pitch = 0.42;
-	float i = floor(UV.x / pitch);
-	vec2 q = (vec2(fract(UV.x / pitch), UV.y) - vec2(0.15, 0.25)) / vec2(0.7, 0.53);
+	float wdt = max(mix(COLOR.a * 60.0, (COLOR.a - 0.5) * 60.0, painted), 0.1);
+	// Which word: from the sign's colour and width, the same all across it.
+	// (Rounded first: the hash would turn interpolation's last-bit wobble
+	// into a different word from one pixel to the next.)
+	vec4 qc = floor(COLOR * 255.0 + 0.5);
+	vec2 at = floor(MODEL_MATRIX[3].xz);
+	int wi = clamp(int(hash(vec2(qc.r * 0.97 + qc.a * 4.13 + at.x * 0.013, qc.g * 0.31 + qc.b * 0.57 + at.y * 0.017)) * 50.0), 0, 49);  // the first 50: trades
+	// A builder can name the word instead, so a shop's board and awning
+	// agree: UV.y then runs from 2 * (word + 1), and vy is its 0..1.
+	float slot = floor(UV.y * 0.5);
+	float vy = UV.y - 2.0 * slot;
+	wi = slot > 0.5 ? clamp(int(slot) - 1, 0, 55) : wi;
+	int len = WLEN[wi];
+	float pitch = min(0.42, wdt * 0.78 / float(len));
+	// Read left to right on screen whichever way the sign's UVs run.
+	float u = dFdx(UV.x) < 0.0 ? wdt - UV.x : UV.x;
+	float start = (wdt - float(len) * pitch) * 0.5;
+	float fi = floor((u - start) / pitch);
+	float band = step(0.0, fi) * step(fi, float(len) - 1.0);
+	int li = clamp(int(fi), 0, len - 1);
+	vec2 q = (vec2(fract((u - start) / pitch), vy) - vec2(0.15, 0.25)) / vec2(0.7, 0.53);
 	float inside = step(0.0, q.x) * step(q.x, 1.0) * step(0.0, q.y) * step(q.y, 1.0);
-	vec2 cell = floor(q * vec2(3.0, 5.0));
-	float on = step(0.4, hash(vec2(i * 7.0 + cell.x, cell.y + COLOR.r * 97.0)));
-	float gap = step(0.12, hash(vec2(i, 3.3 + COLOR.g * 31.0)));
-	float band = step(0.12, nx) * step(nx, 0.88);
+	ivec2 cell = ivec2(clamp(floor(q * vec2(3.0, 5.0)), vec2(0.0), vec2(2.0, 4.0)));
+	int glyph = GLYPHS[LETTERS[WSTART[wi] + li]];
+	float on = float((glyph >> ((4 - cell.y) * 3 + cell.x)) & 1);
 	// Alpha 0: the business's real name is lettered on (SignText).
-	float text = inside * on * gap * band * step(0.0001, COLOR.a) * (1.0 - neon);
-	float aa = smoothstep(0.08, 0.3, fwidth(UV.x / pitch));
-	text = mix(text, 0.3 * band * step(0.25, UV.y) * step(UV.y, 0.78) * step(0.0001, COLOR.a), aa);
+	float text = inside * on * band * step(0.0001, COLOR.a) * (1.0 - neon);
+	float aa = smoothstep(0.08, 0.3, fwidth(u / pitch));
+	text = mix(text, 0.3 * band * step(0.25, vy) * step(vy, 0.78) * step(0.0001, COLOR.a), aa);
 	ALBEDO = mix(vcol(COLOR.rgb), vec3(0.86, 0.84, 0.79), text);
 	ROUGHNESS = 0.4;
 	SPECULAR = 0.5;
@@ -603,8 +842,11 @@ static func get_mat(key: String) -> Material:
 		"far": mat = _shader(FAR)
 		"membrane": mat = _shader(MEMBRANE)
 		"slipform": mat = _shader(SLIPFORM)
+		"bin": mat = _shader(BIN)
+		"farm_gravel": mat = _gravel()
 		"pool": mat = _pool()
 		"foliage": mat = _plain(1.0)
+		"paint_unplanted": mat = _unplanted()
 		_: mat = _plain(0.55)  # paint, shutters, trim
 	_cache[key] = mat
 	return mat
@@ -640,6 +882,15 @@ static func _yard() -> ShaderMaterial:
 	return Surfaces.with_photo(mat, "concrete", "walkph")
 
 
+static func _gravel() -> ShaderMaterial:
+	var mat := _shader(GRAVEL)
+	# The photo on the desktop at High and up (PhotoGround's own textures).
+	if PhotoGround.wanted() and ResourceLoader.exists(PhotoGround.DIR + "gravel_floor_02/albedo.jpg"):
+		mat.set_shader_parameter("gph", load(PhotoGround.DIR + "gravel_floor_02/albedo.jpg"))
+		mat.set_shader_parameter("gph_on", 1.0)
+	return mat
+
+
 ## Light thrown by a lot's own lamps after dark (parking-lot LEDs, sign
 ## goosenecks): an additive glow, brightest in the middle of the quad and
 ## gone by its edge, in the vertex colour; nothing by day. Desktop only.
@@ -667,4 +918,12 @@ static func _pool() -> ShaderMaterial:
 static func _plain(roughness: float) -> ShaderMaterial:
 	var m := _shader(PLAIN)
 	m.set_shader_parameter("rough", roughness)
+	return m
+
+
+## Paint with its foliage left out: a house still going up, whose
+## foundation shrubs aren't planted until the yard goes in.
+static func _unplanted() -> ShaderMaterial:
+	var m := _shader(PLAIN.replace("void fragment() {", "void fragment() {\n\tif (COLOR.a < 0.5) {\n\t\tdiscard;\n\t}"))
+	m.set_shader_parameter("rough", 0.55)
 	return m

@@ -217,6 +217,10 @@ var history := StatHistory.new()
 ## Buildings only grow and fill with power and water, as in Cities: Skylines.
 ## The game turns this on; tests about other things can leave it off.
 var require_utilities := false
+## Through freights on the county's real railroads (CountyTrains), with
+## gates where the town's roads cross them. The desktop game turns it on.
+var county_rail := false
+var county_trains := CountyTrains.new()
 ## The balance harness turns cars off to play years of a city in seconds
 ## (traffic doesn't touch the budget yet).
 var simulate_traffic := true
@@ -1600,6 +1604,8 @@ func tick() -> void:
 	Perf.add("sim.interlocal", t)
 	t = Perf.now()
 	rail.tick(self)
+	if county_rail:
+		county_trains.tick(self)
 	Perf.add("sim.rail", t)
 	# After rail, so a loaded copy has its grade crossings back first.
 	t = Perf.now()
@@ -1696,6 +1702,12 @@ func set_calendar(cal: int) -> void:
 ## follow this.
 func sky_hour(frac := 0.0) -> float:
 	return SkyClock.hour(Seasons.months_at(calendar_tick() + frac))
+
+
+## Every grade crossing in town with its gates: the town railroad's, then
+## the county lines' (CountyTrains). Views and sounds read `closed`.
+func all_crossings() -> Array:
+	return rail.crossings + county_trains.crossings if county_rail else rail.crossings
 
 
 ## Ticks a daylight hour of the sky lasts now (SkyClock.ticks_per_hour).
@@ -4933,6 +4945,7 @@ func save_steps(postcard := false) -> Array:
 		["reserves", func(): return reserves.to_dict()],
 		["land_plan", func(): return land_plan.to_dict()],
 		["rail", func(): return rail.to_dict()],
+		["county_trains", func(): return county_trains.to_dict()],
 		["permits", func(): return permits.to_dict()],
 		["hubs", func(): return hubs.to_dict()],
 		["parks", func(): return parks.to_dict()],
@@ -5048,6 +5061,7 @@ func from_dict(d: Dictionary) -> void:
 	land_plan.from_list(d.get("land_plan", []))
 	plan_changed.emit()
 	rail.from_dict(d.get("rail", {}))
+	county_trains.from_dict(d.get("county_trains", {}))
 	permits.from_dict(d.get("permits", {}))
 	hubs.from_dict(d.get("hubs", {}))
 	parks.from_dict(d.get("parks", {}))

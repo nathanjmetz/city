@@ -67,6 +67,7 @@ func _shop(to_curb: float, lot: Dictionary, main_street := true) -> void:
 		"strip": _strip_center(to_curb)
 		"center": _strip_center(to_curb, true)
 		"community": _community_center(to_curb)
+		"power": _power_center(to_curb)
 		"gas": _shop_gas_station(to_curb)
 		"diner": _shop_diner(to_curb)
 		"bank": _bank(to_curb)
@@ -190,6 +191,17 @@ func _retail(to_curb: float) -> void:
 	_box("paint", Vector3(0.6, 0.5, 0.6), Vector3(lx, 0.25, 0.8), FOUNDATION)
 	_box("paint", Vector3(0.16, 7.5, 0.16), Vector3(lx, 4.0, 0.8), Color("#3a3c3e"))
 	_box("paint", Vector3(0.5, 0.18, 0.9), Vector3(lx, 7.7, 0.8 + 0.3), Color("#3a3c3e"))
+	if fine_parts:
+		# Its LED lens and light on the lot, and the accessible stall by the
+		# door that every lot needs (ADA 208: one for up to 25 stalls).
+		_box("sign", Vector3(0.4, 0.02, 0.7), Vector3(lx, 7.6, 1.1), Color(0.95, 0.96, 1.0, 1.0))
+		var lot_d := zf - 2.2 - 0.8
+		var pw := minf(18.0, lot1 - lot0)
+		_light_pool(Vector3(clampf(lx - 3.0, lot0 + pw * 0.5, lot1 - pw * 0.5), 0.13, 0.8 + lot_d * 0.5), pw, lot_d,
+			Color(0.95, 0.96, 1.0))
+		var ka := clampi(int((site.door.x - lot0) / stall), 0, int((lot1 - lot0) / stall) - 2)
+		if lot1 - lot0 >= stall * 2.0:
+			_ada_stalls(lot0 + ka * stall, zf - 2.2)
 	if not small_store:
 		_rt_grown(w, d, h, zf, site.door.x, sw)
 
@@ -656,7 +668,7 @@ func _coping(w: float, d: float, cz: float, top: float, old := false) -> void:
 	_box("paint", Vector3(0.35, 0.1, d), Vector3(w * 0.5, top, cz), col)
 
 
-func _sign(c: Vector3, w: float, h: float) -> void:
+func _sign(c: Vector3, w: float, h: float, word := -1) -> void:
 	var col := Color(_pick(SIGNS))
 	col.a = minf(w / 60.0, 0.49)
 	if not sign_spec.is_empty():
@@ -667,47 +679,91 @@ func _sign(c: Vector3, w: float, h: float) -> void:
 		labels.append_array(SignText.on_panel(sign_spec, c + Vector3(0, 0, -0.01), w, h, Vector3.FORWARD, true))
 	var r := Vector3(-w * 0.5, 0, 0)
 	var u := Vector3(0, h, 0)
+	var v0 := (_word_slot(c.x) if word < 0 else 2.0 * (word + 1)) if sign_spec.is_empty() else 0.0
 	# Faces the street (-z); x runs right to left as seen from the street.
 	_quad("sign", c + r, c - r, c - r + u, c + r + u, col,
-		[Vector2(0, 0), Vector2(w, 0), Vector2(w, 1), Vector2(0, 1)], Vector3.FORWARD)
+		[Vector2(0, v0), Vector2(w, v0), Vector2(w, v0 + 1.0), Vector2(0, v0 + 1.0)], Vector3.FORWARD)
 	_box("paint", Vector3(w + 0.1, h + 0.1, 0.06), c + Vector3(0, h * 0.5, 0.04), col.darkened(0.3))
+
+
+## Trades lettered on signs with no business name yet (the sign shader's
+## stand-in words are the same list).
+const TRADE_WORDS := [
+	"DINER", "CAFE", "PIZZA", "BANK", "SALON", "NAILS", "TAX", "DELI", "SUBS", "LIQUOR", "PAWN", "TACOS", "DRUGS",
+	"HARDWARE", "VIDEO", "SHOES", "FLOWERS", "BAKERY", "BOOKS", "TOYS", "GIFTS", "MUSIC", "PETS", "TIRES", "LOANS",
+	"DENTAL", "INSURANCE", "MARKET", "GRILL", "DONUTS", "FURNITURE", "OPTICAL", "CLEANERS", "BARBER", "THRIFT", "TAVERN",
+	"ANTIQUES", "BIKES", "CANDY", "SPORTS", "HOBBY", "REALTY", "PAINT", "QUILTS", "APPLIANCE", "JEWELRY", "FABRIC",
+	"CELLULAR", "FITNESS", "SEWING",
+	# Big stores' departments, named by the builders, never drawn at random.
+	"GROCERY", "FOODS", "DISCOUNT", "PHARMACY", "SUPERCENTER", "OUTLET",
+]
+
+
+## What a family restaurant's reader board says this week (two lines, at
+## most 13 letters each: what fits a 10 ft board in 8 in letters).
+const READER_BOARDS := [
+	["HOMEMADE PIE", "DAILY"], ["FISH FRY", "FRIDAY"], ["BISCUITS", "& GRAVY"], ["GO GIANTS"],
+	["TENDERLOIN", "SPECIAL"], ["BREAKFAST", "ALL DAY"], ["NOW HIRING", "COOKS"], ["SOUP & CHILI"],
+	["SUGAR CREAM", "PIE"], ["CHICKEN", "& NOODLES"], ["WELCOME", "BACK"], ["STEAK & EGGS"],
+]
+
+
+## The stand-in trades that serve food at tables (DINER, CAFE, PIZZA, DELI,
+## SUBS, TACOS, GRILL, DONUTS, TAVERN): their windows show booths.
+const EATERIES := [0, 1, 2, 7, 8, 11, 28, 29, 35]
+
+
+## Which stand-in trade word a shop at `x` letters, as the sign shader reads
+## it from UV.y (2 * (word + 1) on): its board and awning say the same.
+func _word_slot(x: float) -> float:
+	return 2.0 * (1 + posmod(hash([rng.seed, snappedf(x, 0.1)]), 50))
 
 
 ## Desktop: a strip tenant's name in channel letters, the way strip-centre
 ## leases require them: separate lit letters about 13 cm deep on a raceway
 ## along the fascia, red most often, then white, blue or green; they glow
 ## after dark (sign alpha 1). Takes the same one draw from rng as _sign.
-func _channel_letters(c: Vector3, w: float, h: float) -> void:
+func _channel_letters(c: Vector3, w: float, h: float, named := "") -> void:
 	_pick(SIGNS)  # the same one draw as _sign
+	if w < 1.0:
+		return  # no room for a name (a sliver of shops beside an anchor)
 	var r := RandomNumberGenerator.new()
 	r.seed = hash([rng.seed, 37, snappedf(c.x, 0.1)])
 	var tints := [Color("#e0262e"), Color("#e0262e"), Color("#f4f1ea"), Color("#1f5fbf"), Color("#1f8a4a"), Color("#f2b632")]
 	var col: Color = tints[r.randi() % tints.size()]
 	col.a = 1.0
 	var lh := h * r.randf_range(0.7, 0.95)
-	var lw := lh * 0.62
-	var gap := lh * 0.14
-	var n := maxi(3, int(w / (lw + gap)))
-	var x0 := c.x - (n * (lw + gap) - gap) * 0.5
+	# A trade word (no names) in block capitals built up from strokes.
+	var word: String = TRADE_WORDS[r.randi() % 50] if named == "" else named
+	var px := minf(lh / 5.0, w * 0.85 / (word.length() * 4.0 - 1.0))
+	lh = px * 5.0
+	var span := word.length() * 4.0 * px - px
 	var y0 := c.y + (h - lh) * 0.5
 	var z := c.z - 0.08
 	# The raceway the letters hang on, painted to match the fascia.
-	_box("paint", Vector3(n * (lw + gap), 0.12, 0.1), Vector3(c.x, y0 + lh * 0.45, c.z - 0.03), Color("#5b5d5f"))
-	var t := lh * 0.18
-	for i in n:
-		if r.randf() < 0.1 and i > 0 and i < n - 1:
-			continue  # a space between words
-		var lx := x0 + i * (lw + gap) + lw * 0.5
-		# A block letter from a few strokes: stems, then bars across.
-		var stems := r.randi_range(1, 2)
-		if stems == 1:
-			_box("sign", Vector3(t, lh, 0.13), Vector3(lx + r.randf_range(-0.3, 0.3) * lw, y0 + lh * 0.5, z), col)
-		else:
-			for sx in [-1.0, 1.0]:
-				_box("sign", Vector3(t, lh, 0.13), Vector3(lx + sx * (lw - t) * 0.5, y0 + lh * 0.5, z), col)
-		for k in 3:
-			if r.randf() < 0.55:
-				_box("sign", Vector3(lw, t, 0.13), Vector3(lx, y0 + t * 0.5 + k * (lh - t) * 0.5, z - 0.005), col)
+	_box("paint", Vector3(span + px * 2.0, 0.12, 0.1), Vector3(c.x, y0 + lh * 0.45, c.z - 0.03), Color("#5b5d5f"))
+	_pixel_text(word, c.x, y0, z, px, 0.13, col, "sign")
+
+
+## Block capitals from the 3x5 pixel font, centred on `cx`, facing the street
+## (-z, so letters run toward -x), bottom at `y0`, in `px`-square strokes.
+func _pixel_text(word: String, cx: float, y0: float, z: float, px: float, depth: float, col: Color, mat: String) -> void:
+	var x0 := cx + (word.length() * 4.0 * px - px) * 0.5  # +x is the viewer's left
+	for i in word.length():
+		var rows: Array = DenseBuilder.PIXEL_FONT.get(word[i], [])
+		for ry in rows.size():
+			var row: String = rows[ry]
+			var k := 0
+			while k < 3:
+				if row[k] != "#":
+					k += 1
+					continue
+				var run := 0
+				while k + run < 3 and row[k + run] == "#":
+					run += 1
+				var lx := x0 - i * 4.0 * px - (k + run * 0.5) * px
+				_box(mat, Vector3(run * px, px, depth), Vector3(lx, y0 + (4.5 - ry) * px, z), col)
+				k += run
 
 
 func _awning(cx: float, w: float, zf: float, y: float, col: Color) -> void:
@@ -732,7 +788,9 @@ func _awning(cx: float, w: float, zf: float, y: float, col: Color) -> void:
 		# Painted letters (sign alpha 0.5-0.99: unlit, width (a - 0.5) * 60).
 		var v := col.darkened(0.15)
 		v.a = 0.5 + w / 60.0
-		_quad("sign", d, c, c + drop, d + drop, v, [Vector2(0, 1), Vector2(w, 1), Vector2(w, 0), Vector2(0, 0)], Vector3.FORWARD)
+		var v0 := _word_slot(cx)
+		_quad("sign", d, c, c + drop, d + drop, v,
+			[Vector2(0, v0 + 1.0), Vector2(w, v0 + 1.0), Vector2(w, v0), Vector2(0, v0)], Vector3.FORWARD)
 	else:
 		_quad("paint", d, c, c + drop, d + drop, col.darkened(0.15), [], Vector3.FORWARD)
 	if pick > 0.7:
@@ -954,19 +1012,30 @@ func _community_center(to_curb: float) -> void:
 			_box("paint", Vector3(10.6, 0.5, 2.0), Vector3(vx, th + 0.1, zf - 0.8), band)  # cornice
 			_box("paint", Vector3(10.2, 0.9, 1.7), Vector3(vx, 0.45, zf - 0.8), Color("#8a7d6b"))  # stone base
 			sign_spec = {}
-			_sign(Vector3(vx, th - 2.4, zf - 1.62), 6.5, 1.0)  # "Grocery" / "Home & Pharmacy"
+			if fine_parts:
+				_channel_letters(Vector3(vx, th - 2.4, zf - 1.62), 6.5, 1.0, "GROCERY" if vx < ex else "PHARMACY")
+			else:
+				_sign(Vector3(vx, th - 2.4, zf - 1.62), 6.5, 1.0)  # "Grocery" / "Home & Pharmacy"
 		sign_spec = spec
-		_sign(Vector3(ex, hd - 2.6, zf - 0.33), minf(ew * 0.7, 16.0), 1.8)
+		if fine_parts and sign_spec.is_empty():
+			_channel_letters(Vector3(ex, hd - 2.6, zf - 0.33), minf(ew * 0.7, 16.0), 1.8, "SUPERCENTER")
+		else:
+			_sign(Vector3(ex, hd - 2.6, zf - 0.33), minf(ew * 0.7, 16.0), 1.8)
 	else:
 		_box("paint", Vector3(ew, eh, 1.4), Vector3(ex, eh * 0.5, zf - 0.7), wall.lightened(0.06))
 		_box("paint", Vector3(ew + 0.4, 0.4, 1.7), Vector3(ex, eh + 0.2, zf - 0.7), band)
-		_sign(Vector3(ex, eh - 2.3, zf - 1.42), ew * 0.75, 1.7)
+		if fine_parts and sign_spec.is_empty():
+			_channel_letters(Vector3(ex, eh - 2.3, zf - 1.42), ew * 0.75, 1.7, "DISCOUNT")
+		else:
+			_sign(Vector3(ex, eh - 2.3, zf - 1.42), ew * 0.75, 1.7)
 	sign_spec = {}
 	for vx: float in vxs:
 		_box("paint", Vector3(5.0, 3.4, 3.0), Vector3(vx, 1.7, zf - 2.9), wall.lightened(0.03))  # vestibule
 		_box("paint", Vector3(5.4, 0.3, 3.4), Vector3(vx, 3.5, zf - 2.9), band)
 		_glass(Vector3(vx, 1.35, zf - 4.42), Vector3(-1, 0, 0), 4.2, 2.5, 0.0)
 		_box("paint", Vector3(2.4, 2.2, 0.06), Vector3(vx, 1.1, zf - 4.46), Color("#2b2d2f"))
+		if fine_parts:
+			_cc_entry(vx, zf - 4.4, band, vx == vxs[0], 6, 1.0 if vx == vxs[0] else -1.0, true, 1.5)
 	# The garden center: a fenced yard in front of the end wall (black
 	# picket panels on a block knee wall), a shade roof over its back half.
 	var gz1 := zf + minf(dd * 0.6, 24.0)
@@ -992,7 +1061,7 @@ func _community_center(to_curb: float) -> void:
 	var ds := minf(18.0, dd)
 	var x0s := xd1
 	var x1s := xg0
-	_cc_box("paint", x0s, x1s, zf, zf + ds, hs, hs + 1.0, wall.darkened(0.04))
+	_cc_box("paint", x0s, x1s, zf, zf + ds, hs, hs + 1.0, wall.darkened(0.04), maxi(2, int((x1s - x0s) / 7.5)))
 	var n := maxi(2, int((x1s - x0s) / 7.5))
 	var bay := (x1s - x0s) / n
 	for i in n:
@@ -1031,13 +1100,213 @@ func _community_center(to_curb: float) -> void:
 	_cc_parking(to_curb, w, zf - 2.6, xg0, cr)
 
 
+## A power center (ICSC: 250,000-600,000 sq ft, three or more "category
+## killers" beside a discount store, few small shops; Marion's Baldwin
+## Avenue and Fort Wayne's Apple Glen): along the back of a big parking
+## field, a home improvement store with its fenced lumber and garden yard on
+## the outer end, a row of junior boxes (electronics, sporting goods, pets,
+## crafts) each with its own entry tower, and the discount store at the
+## other end; docks behind them all, pads along the road. Its own random
+## numbers.
+func _power_center(to_curb: float) -> void:
+	var cr := RandomNumberGenerator.new()
+	cr.seed = hash([rng.seed, "power"])
+	var w := half * 2.0 - 2.0
+	var back := clampf(depth - 80.0, 6.0, 18.0)
+	var dd := clampf(depth - back - 36.0, 24.0, 56.0)
+	var zf := maxf(depth - back - dd, 22.0)
+	dd = minf(dd, depth - zf - 4.0)
+	var yard := 14.0
+	var wh := clampf(w * 0.34, 34.0, 64.0)
+	var wd := clampf(w * 0.28, 28.0, 56.0)
+	var xh0 := -w * 0.5 + yard
+	var xh1 := xh0 + wh
+	var xd0 := w * 0.5 - wd
+	if xd0 - xh1 < 18.0:
+		wd = maxf(w * 0.5 - xh1 - 18.0, 22.0)
+		xd0 = w * 0.5 - wd
+	var spec := sign_spec
+	sign_spec = {}
+	var boxes := []  # [x0, x1, deck] for the docks
+	# The home improvement store: a tall gray or tan box, a stripe in the
+	# chain's colour, the name on a raised front over two entries (the
+	# lumber end and the main one).
+	var hh := cr.randf_range(9.6, 10.8)
+	var hw := Color(["#8d8f91", "#a7a49c", "#c4b79f", "#9a9fa3"][cr.randi() % 4])
+	var hb := Color(["#1f4e8a", "#2f6a3e", "#b0262b", "#e0a31f"][cr.randi() % 4])
+	_cc_box("paint", xh0, xh1, zf, zf + dd, hh, hh + 0.9, hw)
+	_box("paint", Vector3(wh + 0.12, 0.6, 0.34), Vector3((xh0 + xh1) * 0.5, hh - 1.0, zf - 0.13), hb)
+	_box("paint", Vector3(wh + 0.08, 1.3, 0.2), Vector3((xh0 + xh1) * 0.5, 0.65, zf - 0.08), hw.darkened(0.2))
+	var hx := (xh0 + xh1) * 0.5 + wh * 0.08
+	var th := hh + 3.0
+	_box("paint", Vector3(20.0, th, 1.6), Vector3(hx, th * 0.5, zf - 0.8), hw.lightened(0.06))
+	_box("paint", Vector3(20.6, 0.6, 2.0), Vector3(hx, th + 0.1, zf - 0.8), hb)
+	sign_spec = spec
+	_sign(Vector3(hx, th - 2.8, zf - 1.62), 15.0, 2.0)
+	sign_spec = {}
+	var doors := [hx - 6.0, hx + 6.0]
+	for vx: float in doors:
+		_box("paint", Vector3(5.0, 3.4, 3.0), Vector3(vx, 1.7, zf - 2.9), hw.lightened(0.03))  # vestibule
+		_box("paint", Vector3(5.4, 0.3, 3.4), Vector3(vx, 3.5, zf - 2.9), hb)
+		_glass(Vector3(vx, 1.35, zf - 4.42), Vector3(-1, 0, 0), 4.2, 2.5, 0.0)
+		_box("paint", Vector3(2.4, 2.2, 0.06), Vector3(vx, 1.1, zf - 4.46), Color("#2b2d2f"))
+		if fine_parts:
+			_cc_entry(vx, zf - 4.4, hb, false, 6, -1.0 if vx < hx else 1.0, true, 1.5)
+	boxes.append([xh0, xh1, hh])
+	# Block pilasters every bay along the front, and on desktop the
+	# sidewalk display a home improvement store sets out along its front
+	# all season: storage sheds, riding mowers in a row, grills.
+	var npil := maxi(2, int(wh / 9.0))
+	for i in npil + 1:
+		var px := xh0 + i * wh / npil
+		if absf(px - hx) > 10.5:
+			_box("paint", Vector3(0.9, hh, 0.5), Vector3(px, hh * 0.5, zf - 0.25), hw.darkened(0.06))
+	if fine_parts:
+		var x := xh0 + 2.5
+		var k := 0
+		while x < xh1 - 3.0:
+			if absf(x - hx) < 13.0:
+				x = hx + 13.0
+				continue
+			match k % 3:
+				0:  # a storage shed: a little gabled building
+					_box("paint", Vector3(2.4, 2.0, 2.4), Vector3(x + 0.6, 1.0, zf - 3.0), Color(["#c9b48f", "#8a5a3c", "#a7b3a0"][k % 3 if k % 2 == 0 else (k + 1) % 3]))
+					_tri("roof", Vector3(x - 0.7, 2.0, zf - 4.25), Vector3(x + 1.9, 2.0, zf - 4.25), Vector3(x + 0.6, 2.7, zf - 4.25),
+						Color("#4a4440"), [], Vector3(0, 0, -1))
+					_quad("roof", Vector3(x - 0.7, 2.0, zf - 4.25), Vector3(x + 0.6, 2.7, zf - 4.25), Vector3(x + 0.6, 2.7, zf - 1.75),
+						Vector3(x - 0.7, 2.0, zf - 1.75), Color("#4a4440"), [], Vector3(-1, 1, 0))
+					_quad("roof", Vector3(x + 0.6, 2.7, zf - 4.25), Vector3(x + 1.9, 2.0, zf - 4.25), Vector3(x + 1.9, 2.0, zf - 1.75),
+						Vector3(x + 0.6, 2.7, zf - 1.75), Color("#4a4440"), [], Vector3(1, 1, 0))
+					x += 3.4
+				1:  # riding mowers, nose out
+					var mc := Color(["#2f6a3e", "#c9a227", "#b0262b"][(k / 3) % 3])
+					for m in 4:
+						var mx := x + m * 1.2
+						_box("paint", Vector3(0.95, 0.5, 1.7), Vector3(mx, 0.45, zf - 2.6), mc)
+						_box("paint", Vector3(0.5, 0.45, 0.4), Vector3(mx, 0.85, zf - 2.3), Color("#1e1e1e"))  # seat
+						_box("paint", Vector3(1.0, 0.25, 0.25), Vector3(mx, 0.2, zf - 1.9), Color("#1e1e1e"))  # back tires
+					x += 5.2
+				2:  # grills under their covers
+					for m in 3:
+						_box("paint", Vector3(1.2, 1.1, 0.6), Vector3(x + m * 1.4, 0.55, zf - 1.6), Color("#2a2c2e"))
+					x += 4.6
+			k += 1
+	# The yard on the outer end: block knee wall and black fence, a shed roof
+	# over the lumber racks along the store's wall, the drive-in gate.
+	var yz0 := zf - 4.0
+	var yz1 := zf + dd - 2.0
+	var x0y := -w * 0.5 + 0.3
+	_flat_rect("drive", x0y, xh0, yz0, yz1, 0.08)
+	var fence := Color("#2a2c2e")
+	for e in [[Vector2(x0y, yz0), Vector2(xh0, yz0)], [Vector2(x0y, yz0), Vector2(x0y, yz1)], [Vector2(x0y, yz1), Vector2(xh0, yz1)]]:
+		var a: Vector2 = e[0]
+		var b: Vector2 = e[1]
+		var mid := (a + b) * 0.5
+		var size := Vector3(maxf(absf(b.x - a.x), 0.2), 0.0, maxf(absf(b.y - a.y), 0.2))
+		if size.x > 0.2:
+			# The gate: the front fence leaves a truck-wide opening.
+			for k in [-1.0, 1.0]:
+				var gx: float = mid.x + k * (size.x * 0.25 + 1.0)
+				_box("paint", Vector3(size.x * 0.5 - 2.0, 0.8, 0.2), Vector3(gx, 0.4, a.y), hw.darkened(0.15))
+				_box("metal", Vector3(size.x * 0.5 - 2.0, 2.6, 0.06), Vector3(gx, 2.1, a.y), fence)
+		else:
+			_box("paint", Vector3(0.2, 0.8, size.z), Vector3(mid.x, 0.4, mid.y), hw.darkened(0.15))
+			_box("metal", Vector3(0.06, 2.6, size.z), Vector3(mid.x, 2.1, mid.y), fence)
+	_box("paint", Vector3(6.0, 0.25, yz1 - zf), Vector3(xh0 - 3.0, 5.4, (zf + yz1) * 0.5), Color("#c9c6bd"))  # shed roof
+	for i in 3:
+		_box("metal", Vector3(0.18, 5.3, 0.18), Vector3(xh0 - 5.8, 2.65, zf + 1.0 + i * (yz1 - zf - 2.0) * 0.5), fence)
+	if fine_parts:
+		var lumber := Color("#c8a46e")
+		for i in maxi(2, int((yz1 - zf - 2.0) / 3.2)):
+			var lz := zf + 2.0 + i * 3.2
+			_box("paint", Vector3(4.6, 1.2, 1.3), Vector3(xh0 - 3.0, 0.6, lz), lumber)
+			_box("paint", Vector3(4.6, 0.9, 1.3), Vector3(xh0 - 3.0, 1.9, lz), lumber.darkened(0.08))
+		for i in 4:  # pallets of mulch and bagged soil in the open yard
+			_box("paint", Vector3(1.2, 1.0, 1.2), Vector3(x0y + 2.0, 0.5, yz0 + 2.0 + i * 1.8), Color("#6a4a32") if i % 2 == 0 else Color("#4f4a40"))
+	# The junior boxes: each its own wall colour, an entry tower and sign.
+	var nj := clampi(int((xd0 - xh1) / 22.0), 1, 4)
+	var jw := (xd0 - xh1) / nj
+	var jcols := ["#c9b48f", "#5d6670", "#b7b1a5", "#d6cbb3", "#8a8378", "#a8b0b4"]
+	var jbands := ["#1f4e8a", "#b0262b", "#2f6a3e", "#e0a31f", "#5a3f7a", "#2a2c2e"]
+	var jc0 := cr.randi() % jcols.size()
+	var jb0 := cr.randi() % jbands.size()
+	for j in nj:
+		var x0 := xh1 + j * jw
+		var x1 := x0 + jw
+		var jh := cr.randf_range(7.4, 8.8)
+		var jd := minf(dd, cr.randf_range(30.0, 42.0))
+		var jc := Color(jcols[(jc0 + j * 2) % jcols.size()])  # no two neighbours alike
+		var jb := Color(jbands[(jb0 + j * 5) % jbands.size()])
+		_cc_box("paint", x0, x1, zf + 1.0, zf + 1.0 + jd, jh, jh + 0.8, jc)
+		_box("paint", Vector3(jw + 0.1, 0.4, 0.3), Vector3((x0 + x1) * 0.5, jh - 0.7, zf + 0.88), jb)
+		var jx := (x0 + x1) * 0.5 + (jw * 0.18 if j % 2 == 0 else -jw * 0.18)
+		var tw := minf(jw * 0.45, 11.0)
+		var jt := jh + 1.8
+		_box("paint", Vector3(tw, jt, 1.2), Vector3(jx, jt * 0.5, zf + 0.4), jc.lightened(0.08))
+		_box("paint", Vector3(tw + 0.4, 0.45, 1.5), Vector3(jx, jt + 0.1, zf + 0.4), jb)
+		_sign(Vector3(jx, jt - 2.4, zf - 0.22), tw * 0.8, 1.3)
+		_glass(Vector3(jx, 1.6, zf - 0.23), Vector3(-1, 0, 0), tw - 1.4, 2.8, 0.0)
+		_box("paint", Vector3(tw + 0.6, 0.25, 2.2), Vector3(jx, 3.3, zf - 1.1), jb)  # entry canopy
+		if fine_parts:
+			_cc_entry(jx, zf - 0.2, jb, false, 3, -1.0 if jx > (x0 + x1) * 0.5 else 1.0, false, -0.9)
+		# Display windows either side of the entry.
+		for k in [-1.0, 1.0]:
+			var wx: float = jx + k * (tw * 0.5 + 3.0)
+			if wx > x0 + 2.0 and wx < x1 - 2.0:
+				_glass(Vector3(wx, 2.0, zf + 0.97), Vector3(-1, 0, 0), 3.4, 2.2, cr.randf_range(0.2, 0.5))
+		for px in [x0 + 0.45, x1 - 0.45]:
+			_box("paint", Vector3(0.9, jh, 0.5), Vector3(px, jh * 0.5, zf + 0.75), jc.darkened(0.06))
+		boxes.append([x0, x1, jh])
+	# The discount store at the other end.
+	var dh := cr.randf_range(8.4, 9.4)
+	var dw := Color(["#b8b2a4", "#c9c1ae", "#d6c4a0", "#a49d8f"][cr.randi() % 4])
+	var db := Color(["#1f4e8a", "#b0262b", "#2f6a3e", "#5a5e62"][cr.randi() % 4])
+	_cc_box("paint", xd0, w * 0.5, zf, zf + dd, dh, dh + 0.9, dw)
+	_box("paint", Vector3(wd + 0.12, 0.45, 0.34), Vector3(xd0 + wd * 0.5, dh - 1.35, zf - 0.13), db)
+	_box("paint", Vector3(wd + 0.08, 1.3, 0.2), Vector3(xd0 + wd * 0.5, 0.65, zf - 0.08), dw.darkened(0.22))
+	var ex := xd0 + wd * 0.5
+	var ew := minf(wd * 0.5, 22.0)
+	_box("paint", Vector3(ew, dh + 2.4, 1.4), Vector3(ex, (dh + 2.4) * 0.5, zf - 0.7), dw.lightened(0.06))
+	_box("paint", Vector3(ew + 0.4, 0.4, 1.7), Vector3(ex, dh + 2.6, zf - 0.7), db)
+	_sign(Vector3(ex, dh + 0.1, zf - 1.42), ew * 0.75, 1.7)
+	for vx: float in [ex - ew * 0.3, ex + ew * 0.3]:
+		_box("paint", Vector3(5.0, 3.4, 3.0), Vector3(vx, 1.7, zf - 2.9), dw.lightened(0.03))
+		_box("paint", Vector3(5.4, 0.3, 3.4), Vector3(vx, 3.5, zf - 2.9), db)
+		_glass(Vector3(vx, 1.35, zf - 4.42), Vector3(-1, 0, 0), 4.2, 2.5, 0.0)
+		_box("paint", Vector3(2.4, 2.2, 0.06), Vector3(vx, 1.1, zf - 4.46), Color("#2b2d2f"))
+		if fine_parts:
+			_cc_entry(vx, zf - 4.4, db, vx < ex, 6, 1.0 if vx < ex else -1.0, true, 1.5)
+	boxes.append([xd0, w * 0.5, dh])
+	sign_spec = spec
+	site.door = Vector2(hx + 6.0, zf - 4.5)
+	# The truck court: each box's docks, a trailer at some.
+	var dz := zf + dd
+	if depth - dz > 5.0:
+		_flat_rect("asphalt", -half + 0.6, half - 0.6, dz, depth - 0.6, 0.06)
+		for bx in boxes:
+			var bz: float = zf + dd if float(bx[1]) - float(bx[0]) > 30.0 else zf + 1.0 + minf(dd, 36.0)
+			var nk := 2 if float(bx[1]) - float(bx[0]) > 30.0 else 1
+			for k in nk:
+				var kx: float = float(bx[1]) - 5.0 - k * 5.0
+				_box("paint", Vector3(3.0, 3.2, 0.1), Vector3(kx, 1.6, bz + 0.06), Color("#5a5c5e"))
+				_box("paint", Vector3(3.4, 1.2, 0.5), Vector3(kx, 1.2, bz + 0.3), Color("#1e1f20"))
+				if k == 0 and depth - bz > 15.0 and cr.randf() < 0.6:
+					_box("paint", Vector3(2.6, 2.4, 14.6), Vector3(kx, 2.4, bz + 7.9), Color("#e6e4de"))
+					_box("paint", Vector3(2.6, 0.5, 14.6), Vector3(kx, 3.85, bz + 7.9), Color("#e6e4de"))
+					_box("paint", Vector3(2.4, 1.0, 0.4), Vector3(kx, 0.6, bz + 13.5), Color("#2a2a2a"))
+	_rooftop(w * 0.8, dd * 0.6, zf + dd * 0.5, hh, 8)
+	_cc_parking(to_curb, w, zf - 2.6, xd0, cr)
+
+
 ## A flat-roofed box between x0 and x1: walls, a membrane roof, a parapet
 ## and coping (_flat_roofed, off centre).
-func _cc_box(mat: String, x0: float, x1: float, z0: float, z1: float, deck: float, top: float, wall: Color) -> void:
+func _cc_box(mat: String, x0: float, x1: float, z0: float, z1: float, deck: float, top: float, wall: Color, bays := 0) -> void:
 	var w := x1 - x0
 	var d := z1 - z0
 	var cx := (x0 + x1) * 0.5
 	var cz := (z0 + z1) * 0.5
+	if fine_parts:
+		_cc_tilt_up(x0, x1, z0, z1, top, wall, bays)
 	_box(mat, Vector3(w + 0.1, 0.3, d + 0.1), Vector3(cx, 0.15, cz), FOUNDATION)
 	_box(mat, Vector3(w, deck, d), Vector3(cx, deck * 0.5, cz), wall)
 	var y := deck + 0.02
@@ -1054,11 +1323,84 @@ func _cc_box(mat: String, x0: float, x1: float, z0: float, z1: float, deck: floa
 		_box("paint", Vector3(0.35, 0.1, d), Vector3(cx + s * w * 0.5, top, cz), col)
 
 
+## Up close, the back and ends of a big box as tilt-up concrete panels
+## build them (any 1990s-2010s Midwestern center): a joint every 7.6 m
+## (25 ft panels), a scupper, conductor head and downspout every other
+## panel at the back, and the rear exit doors (one a tenant on an inline
+## row of `bays`, else one near each end) under wall-pack lights.
+func _cc_tilt_up(x0: float, x1: float, z0: float, z1: float, top: float, wall: Color, bays: int) -> void:
+	var joint := wall.darkened(0.3)
+	var pipe := wall.darkened(0.18)
+	var n := maxi(1, roundi((x1 - x0) / 7.6))
+	for i in range(1, n):
+		var x := x0 + i * (x1 - x0) / n
+		_box("paint", Vector3(0.05, top, 0.04), Vector3(x, top * 0.5, z1 + 0.01), joint)
+		if i % 2 == 1:
+			_box("paint", Vector3(0.5, 0.35, 0.3), Vector3(x + 0.6, top - 0.75, z1 + 0.15), pipe)  # scupper and head
+			_box("paint", Vector3(0.2, top - 0.9, 0.2), Vector3(x + 0.6, (top - 0.9) * 0.5, z1 + 0.12), pipe)
+	var m := maxi(1, roundi((z1 - z0) / 7.6))
+	for s in [-1.0, 1.0]:
+		for i in range(1, m):
+			_box("paint", Vector3(0.04, top, 0.05), Vector3((x0 if s < 0.0 else x1) + s * 0.01, top * 0.5, z0 + i * (z1 - z0) / m), joint)
+	var doors := []
+	if bays > 0:
+		for i in bays:
+			doors.append(x0 + (i + 0.75) * (x1 - x0) / bays)
+	else:
+		doors = [x0 + 2.4, x1 - 2.4]
+	for x: float in doors:
+		_box("paint", Vector3(1.0, 2.15, 0.06), Vector3(x, 1.08, z1 + 0.03), Color("#7d8184"))
+		_box("metal", Vector3(0.12, 0.05, 0.1), Vector3(x + 0.3, 1.0, z1 + 0.09), Color("#c9cbcc"))
+		_box("paint", Vector3(0.4, 0.3, 0.2), Vector3(x, 3.1, z1 + 0.1), Color("#3b3e40"))  # wall pack
+		_box("paint", Vector3(0.3, 0.06, 0.12), Vector3(x, 2.94, z1 + 0.12), Color("#f2ead2"))
+
+
 ## The community center's parking field: a walk and fire lane along the
 ## stores, then double-loaded rows (5.5 m stalls either side of a 7.3 m
 ## aisle, head to head between modules) down to the street, off a main
 ## drive from the curb cut; the pad building in the front corner by the
 ## supermarket. Notes every stall with the aisle it's reached from.
+## Desktop: a big-box entry up close (any Target, Walmart or Kroger built
+## since the 1990s): automatic sliding doors in aluminium frames under a
+## sensor header, side lights in the vestibule, a row of concrete-filled
+## bollards painted the chain's colour to stop cars, a nest of carts by the
+## door, and at the first entry the ice merchandiser and the propane
+## exchange cage. `fz` is the vestibule's glass face; `cart_side` which
+## side of the doors the carts stand and `back` how far behind the glass
+## (negative: out in front of a flush entry). No random draws.
+func _cc_entry(vx: float, fz: float, band: Color, first: bool, bollards: int, cart_side: float, side_lights: bool, back: float) -> void:
+	var alu := Color("#a7abae")
+	for sx in [-1.0, 1.0]:
+		var lx: float = vx + sx * 0.75  # each leaf slid part-way open
+		_box("metal", Vector3(1.25, 2.25, 0.06), Vector3(lx, 1.12, fz - 0.08), alu)
+		_glass(Vector3(lx, 1.15, fz - 0.12), Vector3(-1, 0, 0), 1.05, 2.0, 0.0)
+		_box("metal", Vector3(0.08, 2.4, 0.1), Vector3(vx + sx * 2.1, 1.2, fz - 0.05), alu)  # jamb
+	_box("metal", Vector3(4.4, 0.35, 0.3), Vector3(vx, 2.45, fz - 0.15), alu)  # operator header
+	_box("paint", Vector3(0.3, 0.1, 0.12), Vector3(vx, 2.22, fz - 0.28), Color("#1b1c1d"))  # motion sensor
+	if side_lights:
+		for sx in [-1.0, 1.0]:
+			_glass(Vector3(vx + sx * 2.53, 1.35, fz + 1.5), Vector3(0, 0, sx), 2.4, 2.4, 0.0)  # vestibule side lights
+	# Bollards in a row before the doors.
+	for i in bollards:
+		var bx: float = vx - (bollards - 1) * 0.75 + i * 1.5
+		_cylinder("concrete", Vector3(bx, 0, fz - 1.6), 0.2, 0.95, band)
+		_cylinder("concrete", Vector3(bx, 0.95, fz - 1.6), 0.17, 0.06, band.lightened(0.15), 8)
+	# A nest of carts along the wall beside the vestibule.
+	var cx := vx + cart_side * 3.6
+	var cl := 3.2 if back > 0.0 else 1.2  # a short nest against a flush front
+	_box("metal", Vector3(0.62, 0.85, cl), Vector3(cx, 0.6, fz + back), Color("#b9bcbf"))
+	_box("metal", Vector3(0.64, 0.06, cl), Vector3(cx, 1.05, fz + back), band)  # the handles
+	_box("metal", Vector3(0.6, 0.15, cl), Vector3(cx, 0.08, fz + back), Color("#2a2a2a"))  # wheels
+	if first:
+		var ix := vx - 4.6 if back > 0.0 else vx - 5.8
+		var iz := fz + back + 0.8 if back > 0.0 else fz - 0.55
+		_box("paint", Vector3(2.0, 1.6, 0.85), Vector3(ix, 0.8, iz), Color("#eef1f3"))  # ice merchandiser
+		_box("paint", Vector3(1.6, 0.4, 0.04), Vector3(ix, 1.2, iz - 0.44), Color("#2c6fb7"))
+		_box("metal", Vector3(1.8, 1.7, 0.9), Vector3(ix - 2.3, 0.85, iz), Color("#3a5d8c"))  # propane cage
+		for k in 5:
+			_cylinder("metal", Vector3(ix - 3.0 + k * 0.35, 0.1, iz - 0.65), 0.15, 0.55, Color("#e9ecee"), 8)
+
+
 func _cc_parking(to_curb: float, w: float, zw: float, xg0: float, cr: RandomNumberGenerator) -> void:
 	var lot0 := -half + 0.6
 	var lot1 := half - 0.6
@@ -1082,7 +1424,24 @@ func _cc_parking(to_curb: float, w: float, zw: float, xg0: float, cr: RandomNumb
 	_box("paint", Vector3(12.3, 0.55, 9.3), Vector3(pc.x, 4.45, pc.y + 1.0), accent)
 	_glass(Vector3(pc.x, 1.6, pc.y - 3.53), Vector3(-1, 0, 0), 8.0, 2.0, 0.1)
 	_sign(Vector3(pc.x, 3.0, pc.y - 3.6), 5.0, 0.8)
-	_box("paint", Vector3(2.0, 2.4, 6.0), Vector3(pc.x + 6.9, 2.6, pc.y + 1.0), accent.darkened(0.2))  # pickup window canopy
+	# The drive-through: a 3.5 m lane down the east side, cars heading for
+	# the road with the building on the driver's side; the pickup window
+	# under a slim canopy, and behind the building the menu board and
+	# order speaker (any McDonald's, Wendy's or Taco Bell pad).
+	_box("paint", Vector3(1.6, 0.3, 4.5), Vector3(pc.x + 6.8, 3.3, pc.y + 1.0), accent.darkened(0.2))  # pickup window canopy
+	_glass(Vector3(pc.x + 6.03, 1.5, pc.y + 1.0), Vector3(0, 0, -1), 1.6, 1.2, 0.0)
+	_box("paint", Vector3(0.1, 0.12, 1.9), Vector3(pc.x + 6.1, 0.85, pc.y + 1.0), Color("#8f9396"))  # sill
+	_flat_rect("line", pc.x + 9.5, pc.x + 9.62, pc.y - 3.5, pc.y + 7.4, 0.07, Color("#e9e6da"))
+	if fine_parts:
+		var dark := Color("#2a2c2e")
+		_box("paint", Vector3(0.3, 1.8, 2.6), Vector3(pc.x + 6.4, 1.8, pc.y + 6.6), dark)  # menu board
+		_box("paint", Vector3(0.04, 1.5, 2.3), Vector3(pc.x + 6.56, 1.85, pc.y + 6.6), Color("#e8ddc4"))
+		for k in 3:
+			_box("paint", Vector3(0.05, 0.3, 0.6), Vector3(pc.x + 6.6, 2.3 - k * 0.45, pc.y + 5.9 + k * 0.35), accent)
+		_box("paint", Vector3(0.25, 0.9, 0.12), Vector3(pc.x + 6.4, 0.45, pc.y + 6.6), dark)
+		_box("paint", Vector3(0.35, 1.3, 0.35), Vector3(pc.x + 6.5, 0.65, pc.y + 5.4), dark)  # order speaker
+		_box("paint", Vector3(0.45, 0.6, 0.6), Vector3(pc.x + 6.5, 1.15, pc.y + 5.1), accent)  # its little canopy
+	_flat_rect("mulch", pad.position.x + 0.6, pad.position.x + 9.4, pad.position.y - 0.2, pad.position.y + 1.6, 0.075)  # their bed
 	for i in 3:
 		_shrub(Vector3(pad.position.x + 2.0 + i * 3.0, 0, pad.position.y + 0.6), 0.7)
 	# Rows: the fire lane is the first aisle, then 18.3 m modules.
@@ -1122,6 +1481,7 @@ func _cc_parking(to_curb: float, w: float, zw: float, xg0: float, cr: RandomNumb
 					_box("concrete", Vector3(0.6, 0.9, 0.6), Vector3(x, 0.45, sz), FOUNDATION)
 					_box("paint", Vector3(0.16, 10.0, 0.16), Vector3(x, 5.9, sz), Color("#2e3032"))
 					_box("paint", Vector3(0.6, 0.18, 0.8), Vector3(x, 10.9, sz), Color("#2e3032"))
+					_box("sign", Vector3(0.5, 0.02, 0.7), Vector3(x, 10.8, sz), Color(0.95, 0.96, 1.0, 1.0))  # LED lens
 					_light_pool(Vector3(x, 0.13, sz), 26.0, 26.0, Color(0.95, 0.96, 1.0))
 				x += 30.0
 	for k in [-1.0, 1.0]:
@@ -1136,6 +1496,10 @@ func _cc_parking(to_curb: float, w: float, zw: float, xg0: float, cr: RandomNumb
 			if pad.grow(1.5).has_point(Vector2(x, zc)):
 				continue
 			_flat_rect("mulch", x - 0.9, x + 0.9, zc - 2.5, zc + 2.5, 0.09)
+			# Its curb: 15 cm of concrete all round.
+			for e in [[Vector3(2.0, 0.15, 0.15), Vector3(x, 0.075, zc - 2.55)], [Vector3(2.0, 0.15, 0.15), Vector3(x, 0.075, zc + 2.55)],
+					[Vector3(0.15, 0.15, 4.95), Vector3(x - 0.95, 0.075, zc)], [Vector3(0.15, 0.15, 4.95), Vector3(x + 0.95, 0.075, zc)]]:
+				_box("concrete", e[0], e[1], Color("#cfcac0"))
 			var pick := TreeField.pick(cr, true)
 			trees.append([Vector3(x, 0, zc), pick[0], pick[1], cr.randf_range(0.7, 0.95)])
 
@@ -1175,12 +1539,19 @@ func _grocery_anchor(x0: float, x1: float, zf: float, cz: float, d: float, wall:
 		_box("paint", Vector3(tw + 0.4, 0.6, 1.5), Vector3(tx, th + 0.3, zfa - 0.6), accent)
 	var spec := sign_spec
 	sign_spec = {}
-	_sign(Vector3(tx, th - 2.2, zfa - 1.25), tw * 0.8, 1.6)
+	if fine_parts:
+		# Desktop: the department in big lit channel letters, as grocers do.
+		_channel_letters(Vector3(tx, th - 2.2, zfa - 1.25), tw * 0.8, 1.6,
+			["GROCERY", "FOODS", "MARKET"][posmod(hash([rng.seed, "grocer word"]), 3)])
+	else:
+		_sign(Vector3(tx, th - 2.2, zfa - 1.25), tw * 0.8, 1.6)
 	sign_spec = spec
 	# The vestibule: glass across the tower's foot, in and out doors.
 	_glass(Vector3(tx, 1.7, zfa - 1.23), Vector3(-1, 0, 0), tw - 1.2, 3.0, 0.0)
 	for k in [-1.0, 1.0]:
 		_box("paint", Vector3(2.0, 2.3, 0.06), Vector3(tx + k * tw * 0.22, 1.15, zfa - 1.28), Color("#2b2d2f"))
+		if fine_parts:
+			_cc_entry(tx + k * tw * 0.22, zfa - 1.25, accent, k < 0.0, 3, k, false, -0.9)
 	_box("paint", Vector3(tw + 1.0, 0.25, 2.6), Vector3(tx, 3.6, zfa - 2.4), accent)  # entry canopy
 	# Windows along the front either side, high, with the store's banners.
 	for sx in [-1.0, 1.0]:
@@ -1209,6 +1580,26 @@ func _grocery_anchor(x0: float, x1: float, zf: float, cz: float, d: float, wall:
 			_box("paint", Vector3(3.6, 1.2, 0.5), Vector3(x0 + 6.0 + k * 6.0, 1.2, dock_z + 0.3), Color("#1e1f20"))  # seals
 
 
+## An accessible stall painted blue with the wheelchair symbol and the
+## R7-8 sign at its head, and the hatched access aisle beside it (ADA 502),
+## on two stalls starting at `x`, their heads on the walk at `back`.
+func _ada_stalls(x0: float, back: float) -> void:
+	var blue := Color("#2457a6")
+	for j in 2:
+		var x := x0 + j * 2.75
+		if j == 0:
+			_flat_rect("line", x + 0.07, x + 2.68, back - 5.4, back - 0.1, 0.065, blue)
+			_flat_rect("line", x + 1.05, x + 1.7, back - 3.1, back - 2.4, 0.075, LINE)  # the symbol
+			_box("metal", Vector3(0.06, 2.3, 0.06), Vector3(x + 1.375, 1.15, back + 0.4), Color("#7d8184"))
+			_box("paint", Vector3(0.3, 0.45, 0.03), Vector3(x + 1.375, 2.05, back + 0.36), Color("#f2f2ee"))
+			_box("paint", Vector3(0.2, 0.2, 0.01), Vector3(x + 1.375, 2.12, back + 0.34), blue)
+		else:
+			# The hatched aisle beside it.
+			for h in 7:
+				var z := back - 5.2 + h * 0.75
+				_flat_rect("line", x + 0.2, x + 2.55, z, z + 0.12, 0.072, LINE)
+
+
 ## What a real strip centre's lot has that a bare one doesn't (Marion's
 ## Eastbrook and Gas City strips, any Indiana US-route centre): two
 ## accessible stalls painted blue with the wheelchair symbol, a hatched
@@ -1225,20 +1616,7 @@ func _strip_lot_dress(to_curb: float, back: float, n: int, wall: Color) -> void:
 	if back > 6.0:
 		# Stalls run every 2.75 m from lot0: take the pair nearest the middle.
 		var k := int((0.0 - lot0) / 2.75)
-		var blue := Color("#2457a6")
-		for j in 2:
-			var x := lot0 + (k + j) * 2.75
-			if j == 0:
-				_flat_rect("line", x + 0.07, x + 2.68, back - 5.4, back - 0.1, 0.065, blue)
-				_flat_rect("line", x + 1.05, x + 1.7, back - 3.1, back - 2.4, 0.075, LINE)  # the symbol
-				_box("metal", Vector3(0.06, 2.3, 0.06), Vector3(x + 1.375, 1.15, back + 0.4), Color("#7d8184"))
-				_box("paint", Vector3(0.3, 0.45, 0.03), Vector3(x + 1.375, 2.05, back + 0.36), Color("#f2f2ee"))
-				_box("paint", Vector3(0.2, 0.2, 0.01), Vector3(x + 1.375, 2.12, back + 0.34), blue)
-			else:
-				# The hatched aisle beside it.
-				for h in 7:
-					var z := back - 5.2 + h * 0.75
-					_flat_rect("line", x + 0.2, x + 2.55, z, z + 0.12, 0.072, LINE)
+		_ada_stalls(lot0 + k * 2.75, back)
 	# Lot lights along the front of the lot.
 	var poles := maxi(1, int((lot1 - lot0) / 28.0))
 	var dark := Color("#2e3032")
@@ -1297,8 +1675,10 @@ func _shop_gas_station(to_curb: float) -> void:
 	_box("paint", Vector3(sw + 0.1, 0.3, sd + 0.1), Vector3(0, 0.15, cz), FOUNDATION)
 	_flat_roofed("paint", sw, sd, cz, 4.2, 4.8, wall)
 	_box("paint", Vector3(sw + 0.1, 0.7, 0.2), Vector3(0, 4.45, zf - 0.1), brand)
+	shopfront = fine_parts  # aisles of snacks and the cooler wall inside
 	for i in 4:
 		_glass(Vector3(-sw * 0.3 + i * 1.6, 1.7, zf - 0.03), Vector3(-1, 0, 0), 1.5, 2.3, 0.0)
+	shopfront = false
 	_box("paint", Vector3(6.6, 0.1, 0.12), Vector3(-sw * 0.3 + 2.4, 2.9, zf - 0.06), MULLION[1])
 	# Canopy: a deep flat roof on columns. Its fascia is in the brand colour,
 	# or white with a brand stripe (Speedway, Marathon and Casey's canopies on
@@ -1343,6 +1723,12 @@ func _shop_gas_station(to_curb: float) -> void:
 	var px := -half + 1.5
 	_box("paint", Vector3(0.3, 6.0, 0.3), Vector3(px, 3.0, 1.0), Color("#5a5e60"))
 	_box("sign" if fine_parts else "paint", Vector3(2.2, 1.4, 0.3), Vector3(px, 6.3, 1.0), Color(brand, 0.0))  # lit from inside
+	if fine_parts:
+		# An unbranded station's cabinet says what it sells, in white
+		# letters lit with the panel.
+		var word: String = ["GAS", "FUEL", "GAS", "GAS & GO"][posmod(hash([rng.seed, 43]), 4)]
+		var gp := minf(0.16, 1.9 / (word.length() * 4.0 - 1.0))
+		_pixel_text(word, px, 6.3 - gp * 2.5, 0.83, gp, 0.02, Color(0.97, 0.96, 0.92, 0.0), "sign")
 	_box("paint", Vector3(2.0, 1.6, 0.32), Vector3(px, 4.7, 1.0), Color("#1d1d1d"))
 	var reg := 0
 	for row in 3:
@@ -1350,7 +1736,8 @@ func _shop_gas_station(to_curb: float) -> void:
 		# Seen from the street (-z), +x is on the reader's left: digits there.
 		_box("paint", Vector3(0.7, 0.28, 0.34), Vector3(px - 0.55, ry, 1.0), Color("#f1efe8"))
 		if fine_parts:
-			_box("paint", Vector3(0.5, 0.07, 0.02), Vector3(px - 0.55, ry, 1.0 - 0.18), Color("#1d2a44"))  # the grade's name
+			var grade: String = ["REG", "PLUS", "DIESEL"][row]  # the grade's name
+			_pixel_text(grade, px - 0.55, ry - 0.06, 1.0 - 0.18, 0.024, 0.02, Color("#1d2a44"), "paint")
 		var digit := Color("#ff3b1f") if row < 2 else Color("#38d04a")
 		# $3.xx9: a price in the range Indiana pumps showed in 2024-25.
 		# Regular, then mid-grade about 40 cents more, then diesel (green).
@@ -1458,8 +1845,10 @@ func _shop_diner(to_curb: float) -> void:
 	_box("metal", Vector3(w + 0.1, 0.45, 0.12), Vector3(0, 1.0, zf - 0.06), Color("#c9cbc8"))
 	_box("paint", Vector3(w + 0.1, 0.55, 0.14), Vector3(0, 3.3, zf - 0.07), band)
 	var n := int((w - 3.0) / 1.5)
+	diner_room = 6.0 if fine_parts else 0.0
 	for i in n:
 		_glass(Vector3(-w * 0.5 + 2.6 + i * 1.5, 2.15, zf - 0.03), Vector3(-1, 0, 0), 1.4, 1.6, 0.05)
+	diner_room = 0.0
 	# Entry vestibule.
 	site.door = Vector2(-w * 0.5 + 1.0, zf - 2.0)
 	_box("paint", Vector3(2.6, 3.0, 2.0), Vector3(-w * 0.5 + 1.0, 1.8, zf - 1.0), band)
@@ -1474,14 +1863,21 @@ func _shop_diner(to_curb: float) -> void:
 	# Pole sign, with a changeable-letter reader board under it.
 	var px := half - 2.0
 	_box("paint", Vector3(0.35, 7.5, 0.35), Vector3(px, 3.75, 1.5), Color("#5a5e60"))
-	_sign(Vector3(px, 6.8, 1.3), 3.4, 1.6)
+	_sign(Vector3(px, 6.8, 1.3), 3.4, 1.6, [0, 1, 28][posmod(hash([rng.seed, 41]), 3)])  # DINER, CAFE, GRILL
 	_box("paint", Vector3(3.0, 1.1, 0.3), Vector3(px, 5.3, 1.5), Color("#f4f2ea"))
 	_box("paint", Vector3(3.1, 0.08, 0.32), Vector3(px, 5.88, 1.5), Color("#2b2b2b"))
 	_box("paint", Vector3(3.1, 0.08, 0.32), Vector3(px, 4.72, 1.5), Color("#2b2b2b"))
 	if fine_parts:
-		for line in 3:
-			var lw := r.randf_range(1.2, 2.6)
-			_box("paint", Vector3(lw * 0.8, 0.1, 0.02), Vector3(px + r.randf_range(-0.2, 0.2), 5.6 - line * 0.3, 1.34), Color("#2a2622"))
+		# Backlit, with the week's message in black plastic letters (the
+		# owner's ladder-and-pole job): the specials, the Friday fish fry,
+		# the county's own breaded tenderloin, the Marion Giants.
+		var lens := Color("#f4f2ea")
+		lens.a = 0.02  # a sign panel with no word on it: a soft glow after dark
+		_quad("sign", Vector3(px + 1.45, 4.8, 1.31), Vector3(px - 1.45, 4.8, 1.31), Vector3(px - 1.45, 5.8, 1.31), Vector3(px + 1.45, 5.8, 1.31), lens, [], Vector3.FORWARD)
+		var msg: Array = READER_BOARDS[r.randi() % READER_BOARDS.size()]
+		for line in msg.size():
+			var y := 5.3 - 0.15 + (msg.size() - 1) * 0.17 - line * 0.34
+			_pixel_text(msg[line], px, y, 1.29, 0.05, 0.02, Color("#1c1a18"), "paint")
 	_rooftop(w, d, cz, 4.0, 2)
 	_shop_parking(to_curb, w, zf, 0.0)
 	# Grown (shop level 1): a party room on the back, as family restaurants
@@ -1549,11 +1945,132 @@ func _bank(to_curb: float) -> void:
 	_box("metal", Vector3(0.8, 1.4, 0.8), Vector3(lx - 1.2, 0.7, cz), Color("#b9bcbc"))
 	_flat_rect("asphalt", lx - 2.2, lx + 2.2, 0.0, depth - 1.0, 0.07)
 	_shop_parking(to_curb, w, zf - 3.2, -3.0)
+	if fine_parts:
+		_bank_dress(w, zf, cz, lx)
 	# Grown (shop level 1): a one-storey wing on the back for the loan
 	# offices, under a hip roof of its own, as Indiana's town banks built on
 	# in the 1960s-80s.
 	if not small_store:
 		_rt_wing(w, zf + d, 3.8, brick, "brick", stone, true)
+
+
+## Desktop: what a small-town Indiana bank has around it (First Merchants,
+## Farmers State or any county bank of the 1950s-90s): the flag on a 9 m pole
+## on the front lawn; a time-and-temperature sign by the street in amber
+## LEDs; and at the drive-up, an ATM island, a yellow clearance bar hung at
+## the canopy's mouth, and lights under the canopy. Its own random numbers.
+func _bank_dress(w: float, zf: float, cz: float, lx: float) -> void:
+	var r := RandomNumberGenerator.new()
+	r.seed = hash([rng.seed, 41])
+	# The flag, on the lawn by the front corner away from the drive.
+	var fx := -(w * 0.5 + 1.3)
+	var fz := zf - 1.2
+	_box("concrete", Vector3(0.5, 0.15, 0.5), Vector3(fx, 0.075, fz), Color("#cfcac0"))
+	_cylinder("metal", Vector3(fx, 0.15, fz), 0.06, 8.8, Color("#c9ccce"), 8)
+	_box("metal", Vector3(0.16, 0.16, 0.16), Vector3(fx, 9.03, fz), Color("#c8a040"))  # the ball
+	_us_flag(Vector3(fx - 0.08, 8.85, fz), 1.52, 0.8, r.randf_range(0.0, TAU))
+	# Time and temperature by the street: a dark cabinet on a post, both faces.
+	var tx := -(half - 1.4)
+	var tz := -1.0
+	_box("paint", Vector3(0.15, 3.2, 0.15), Vector3(tx, 1.6, tz), Color("#3a3c3e"))
+	_box("paint", Vector3(1.3, 0.55, 0.25), Vector3(tx, 3.45, tz), Color("#1b1d1f"))
+	var amber := Color("#ffae2a")
+	var hour := r.randi_range(1, 12)
+	var mins := r.randi_range(0, 59)
+	var digits := [hour / 10, hour % 10, mins / 10, mins % 10] if r.randf() < 0.6 else [-1, r.randi_range(2, 9), r.randi_range(0, 9), -2]
+	for k in 4:
+		var dxk := tx + 0.42 - k * 0.27 - (0.06 if k >= 2 else 0.0)
+		var dg: int = digits[k]
+		if dg >= 0:
+			_seven_seg(dg, Vector3(dxk, 3.45, tz - 0.13), amber, 1.4)
+		elif dg == -2:
+			# The degree sign.
+			_box("sign", Vector3(0.06, 0.06, 0.02), Vector3(dxk + 0.06, 3.55, tz - 0.13), Color(amber, 1.0))
+	if digits[0] >= 0:
+		for y in [3.4, 3.5]:
+			_box("sign", Vector3(0.03, 0.03, 0.02), Vector3(tx - 0.0, y, tz - 0.13), Color(amber, 1.0))  # the colon
+	# The drive-up: an ATM island under the canopy's street end.
+	var az := cz - 2.2
+	_box("concrete", Vector3(0.9, 0.18, 2.4), Vector3(lx - 1.2, 0.09, az), Color("#cfcac0"))
+	_box("paint", Vector3(0.7, 1.6, 0.8), Vector3(lx - 1.2, 0.98, az), Color("#2b4f7a"))
+	_box("paint", Vector3(0.04, 0.3, 0.4), Vector3(lx - 0.825, 1.35, az), Color("#14181c"))
+	_box("sign", Vector3(0.02, 0.22, 0.3), Vector3(lx - 0.785, 1.35, az), Color(0.55, 0.8, 1.0, 1.0))  # the screen
+	for k in 2:
+		# Yellow bollards at the island's ends.
+		_cylinder("paint", Vector3(lx - 1.2, 0.18, az + (k * 2.0 - 1.0) * 1.05), 0.1, 0.9, Color("#e8c21a"), 8)
+	# The clearance bar at the canopy's mouth, on chains, in yellow and black.
+	var bz := cz - 3.9
+	for q in 8:
+		_box("paint", Vector3(0.5, 0.12, 0.12), Vector3(lx - 1.75 + q * 0.5, 3.2, bz), Color("#e8c21a") if q % 2 == 0 else Color("#1c1c1c"))
+	for sx in [-1.6, 1.6]:
+		_box("metal", Vector3(0.015, 0.75, 0.015), Vector3(lx + sx, 3.63, bz), Color("#8a8a8a"))
+	_box("paint", Vector3(4.2, 0.05, 0.05), Vector3(lx, 4.0, bz), Color("#5a5e60"))
+	# Lights under the canopy.
+	for k in 2:
+		_box("sign", Vector3(0.5, 0.02, 0.5), Vector3(lx, 3.99, cz + (k * 2.0 - 1.0) * 1.6), Color(0.95, 0.96, 1.0, 1.0))
+	_light_pool(Vector3(lx, 0.12, cz), 4.0, 7.0, Color(0.95, 0.96, 1.0))
+
+
+## The US flag flying from a pole at `c` (its hoist), out along `dir` x,
+## in four panels that ripple a little; stripes and the blue canton on both
+## faces.
+func _us_flag(c: Vector3, fl: float, fh: float, phase: float, dir := -1.0) -> void:
+	var red := Color("#b22234")
+	var white := Color("#f2f0ea")
+	var blue := Color("#3c3b6e")
+	var sh := fh / 13.0
+	for k in 13:
+		var c0 := red if k % 2 == 0 else white
+		# The canton covers the top seven stripes, two-fifths out.
+		var cols := [blue, blue, c0, c0] if k < 7 else [c0, c0, c0, c0]
+		_flag_strip(c + Vector3(0, -k * sh, 0), fl, sh, phase, dir, cols)
+	# A scatter of stars on the canton (both faces).
+	for i in 5:
+		for j in 4:
+			var t := 0.5 * (i + 0.6) / 5.4
+			_box("paint", Vector3(0.045, 0.045, 0.012), Vector3(c.x + dir * fl * t, c.y - sh * 7.0 * (j + 0.6) / 4.4,
+				c.z + _flag_wave(t, phase)), white)
+
+
+## Indiana's flag: gold torch and a ring of stars on blue (simplified).
+func _indiana_flag(c: Vector3, fl: float, fh: float, phase: float, dir := -1.0) -> void:
+	var blue := Color("#1f3a8a")
+	var gold := Color("#d4ab3a")
+	_flag_strip(c, fl, fh, phase, dir, [blue, blue, blue, blue])
+	var m := Vector3(c.x + dir * fl * 0.5, c.y - fh * 0.5, c.z + _flag_wave(0.5, phase))
+	_box("paint", Vector3(0.05, 0.36, 0.012), m + Vector3(0, -0.04, 0), gold)  # the torch
+	_box("paint", Vector3(0.12, 0.1, 0.012), m + Vector3(0, 0.2, 0), gold)
+	for i in 12:
+		var a := PI * (0.15 + 0.7 * i / 11.0)
+		var t := 0.5 - cos(a) * 0.28
+		_box("paint", Vector3(0.04, 0.04, 0.012), Vector3(c.x + dir * fl * t, m.y + sin(a) * fh * 0.36 - fh * 0.05,
+			c.z + _flag_wave(t, phase)), gold)
+
+
+## A plain flag in one colour with a pale square device: a company's.
+func _house_flag(c: Vector3, fl: float, fh: float, phase: float, col: Color, dir := -1.0) -> void:
+	_flag_strip(c, fl, fh, phase, dir, [col, col, col, col])
+	var m := Vector3(c.x + dir * fl * 0.5, c.y - fh * 0.5, c.z + _flag_wave(0.5, phase))
+	_box("paint", Vector3(fh * 0.4, fh * 0.4, 0.012), m, Color("#f2f0ea"))
+	_box("paint", Vector3(fh * 0.22, fh * 0.22, 0.014), m, col)
+
+
+## How far a flag ripples out of its plane at fraction `t` of its length.
+func _flag_wave(t: float, phase: float) -> float:
+	return sin(phase + t * 4.0 * 1.3) * 0.08 * t
+
+
+## One horizontal band of a flag, `h` deep below `c`, in four rippled
+## panels coloured `cols` from the hoist out, seen from both faces.
+func _flag_strip(c: Vector3, fl: float, h: float, phase: float, dir: float, cols: Array) -> void:
+	for p in 4:
+		var t0 := p / 4.0
+		var t1 := (p + 1) / 4.0
+		var a := Vector3(c.x + dir * fl * t0, c.y, c.z + _flag_wave(t0, phase))
+		var b := Vector3(c.x + dir * fl * t1, c.y, c.z + _flag_wave(t1, phase))
+		var dn := Vector3(0, -h, 0)
+		_quad("paint", a, b, b + dn, a + dn, cols[p], [], Vector3.FORWARD)
+		_quad("paint", a, b, b + dn, a + dn, cols[p], [], Vector3.BACK)
 
 
 ## A small brick church on the main street: a steep gable to the street,

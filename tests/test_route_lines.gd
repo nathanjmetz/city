@@ -46,6 +46,13 @@ func _init() -> void:
 	lines.sim = sim
 	lines.show_for({"type": "vehicle", "id": vid})
 	_check(lines._mesh.get_surface_count() == 1, "its route is drawn")
+	# A street the trip came along taken away (a park vacating it, say):
+	# the lines carry on from what's left, nothing breaks.
+	var came_seg := int(runs.came[0][0]) / 2
+	sim.apply({"type": "remove_road", "seg": came_seg})
+	lines.show_for({"type": "vehicle", "id": vid})
+	_check(not sim.network.segments.has(came_seg) and int(lines._came.get(vid, [[0, "", -1]])[0][2]) == sim.network.revision,
+		"a road removed under the route: the way it came is planned again")
 	lines.show_for({})
 	_check(lines._mesh.get_surface_count() == 0, "clearing the selection clears the lines")
 	lines.free()

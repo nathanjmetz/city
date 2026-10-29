@@ -28,6 +28,20 @@ func _init() -> void:
 	_check(far_n.steel == 0, "and the lighter tiers leave them off")
 	_check(fine_n.concrete > far_n.concrete, "desktop shows girders under the deck")
 
+	# An overpass: the pier that would stand on the road under it moves
+	# along the span clear of it (shoulder and all).
+	var deck := PackedVector3Array()
+	for i in 25:
+		deck.append(Vector3(-30.0 + i * 2.5, 0.0, 0.0))
+	var cum := [0.0]
+	for i in range(1, deck.size()):
+		cum.append(cum[-1] + 2.5)
+	var under := func(p: Vector3) -> bool: return absf(p.x) < 7.5
+	var at := BridgeMesh._clear_spot(deck, 0, cum, 30.0, 13.5, 5.0, under)
+	_check(at > 0.0 and absf(at - 30.0) >= 7.5, "the pier steps off the road under the bridge (%.0f m along)" % at)
+	var wide := func(p: Vector3) -> bool: return absf(p.x) < 25.0
+	_check(BridgeMesh._clear_spot(deck, 0, cum, 30.0, 13.5, 5.0, wide) < 0.0, "and where there's no room the span runs on over it")
+
 	# A road on the ground draws no bridge.
 	var flat := func(_x: float, _z: float) -> float:
 		return 0.0

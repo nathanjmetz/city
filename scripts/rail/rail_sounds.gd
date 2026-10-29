@@ -42,6 +42,12 @@ var _streams := {}
 var _wait := 0.0
 var _picks := -1
 var _mix_version := -1
+## The county's through freights near enough to hear: "c<id>" -> [head
+## (view coordinates, rail height), speed m/s], refreshed with the picks.
+var _county := {}
+## Each county corridor's grade crossings, metres along it (county roads and
+## the town's streets alike), sorted.
+static var _county_xings := {}
 
 
 func setup(s: CitySim, height: Callable) -> void:
@@ -127,6 +133,7 @@ func _process(delta: float) -> void:
 	_wait -= delta
 	if _wait <= 0.0:
 		_wait = 0.25
+		_watch_county(ear)
 		_watch_trains(0.25)
 		_pick_engines(ear)
 		_pick_bells(ear)
@@ -143,7 +150,7 @@ func _process(delta: float) -> void:
 ## pulls out after standing.
 func _watch_trains(dt: float) -> void:
 	for tid in _blow.keys():
-		if not sim.rail.trains.has(tid):
+		if not sim.rail.trains.has(tid) and not _county.has(tid):
 			_blow.erase(tid)
 	for tid in sim.rail.trains:
 		var t: Dictionary = sim.rail.trains[tid]
@@ -173,6 +180,69 @@ func _watch_trains(dt: float) -> void:
 			_blow[tid] = {"pattern": CROSSING_HORN, "t": 0.0, "crossing": int(nc.index), "reached": INF}
 
 
+## The county's through freights blow for every public grade crossing on
+## the line, out in the country as in town (no quiet zones out there). At
+## track speed the engine reaches the crossing a known time after the horn
+## starts, and holds the last long until then.
+func _watch_county(ear: Vector3) -> void:
+	_county.clear()
+	if not sim.county_rail:
+		return
+	var reach := HORN_RANGE * SoundMix.range_scale("world/rail/horn")
+	var cs := CountyTrains.corridors()
+	for t in sim.county_trains.now(sim.tick_count):
+		var c: Dictionary = cs[t.corridor]
+		var p := CountyTrains._at(c, float(t.s))
+		var head := Vector3(p.x - Terrain.view_origin.x, 0.0, p.y - Terrain.view_origin.y)
+		if head.distance_to(Vector3(ear.x, 0.0, ear.z)) > reach:
+			continue
+		var y := CountyTrainView._rail_y(p)
+		if is_nan(y):
+			continue  # inside a backdrop town
+		head.y = y
+		var key := "c%d" % int(t.id)
+		var v := 0.0 if t.get("stopped", false) else CountyTrains.SPEED
+		_county[key] = [head, v]
+		if v <= 0.0 or (_blow.has(key) and int(_blow[key].crossing) != -1):
+			continue
+		var ahead := INF
+		var at := -1.0
+		for xs in _xings_on(int(t.corridor)):
+			var d := (float(xs) - float(t.s)) * float(t.dir)
+			if d > 0.0 and d < ahead:
+				ahead = d
+				at = xs
+		if at < 0.0 or _honked.get(key, -1.0) == at:
+			continue
+		if horn_due(ahead, v):
+			_honked[key] = at
+			_blow[key] = {"pattern": CROSSING_HORN, "t": 0.0, "crossing": 0, "reached": ahead / v}
+
+
+## Grade crossings along county corridor `ci`, metres: the mapped county
+## roads' crossings (CountyRail kind 1) and the town's streets.
+func _xings_on(ci: int) -> Array:
+	if not _county_xings.has(ci):
+		var out := []
+		var c: Dictionary = CountyTrains.corridors()[ci]
+		var s := 0.0
+		var last := -INF
+		while s < float(c.length):
+			var p := CountyTrains._at(c, s)
+			var n := CountyRail.near(p.x, p.y, 8.0)
+			if not n.is_empty() and CountyRail.kind_at(n.route, n.along) == 1:
+				if s - last > 40.0:
+					out.append(s)
+				last = s
+			s += 10.0
+		_county_xings[ci] = out
+	var all: Array = _county_xings[ci].duplicate()
+	for x in sim.county_trains.crossings:
+		if int(x.corridor) == ci:
+			all.append(float(x.s))
+	return all
+
+
 func _update_horns(ear: Vector3, delta: float) -> void:
 	var want := {}
 	for tid in _blow:
@@ -188,16 +258,16 @@ func _update_horns(ear: Vector3, delta: float) -> void:
 	# The mix can allow fewer horns at once than there are players.
 	var usable := _horns.slice(0, SoundMix.cap("world/rail/horn", HORN_SLOTS))
 	for s in _horns:
-		if int(s.tid) != -1 and (not want.has(s.tid) or not s in usable):
+		if str(s.tid) != "-1" and (not want.has(s.tid) or not s in usable):
 			s.tid = -1
 	for tid in want:
 		var slot: Dictionary = {}
 		for s in usable:
-			if int(s.tid) == int(tid):
+			if str(s.tid) == str(tid):
 				slot = s
 		if slot.is_empty():
 			for s in usable:
-				if int(s.tid) == -1 and float(s.amp) <= 0.0:
+				if str(s.tid) == "-1" and float(s.amp) <= 0.0:
 					slot = s
 					slot.tid = tid
 					break
@@ -205,7 +275,7 @@ func _update_horns(ear: Vector3, delta: float) -> void:
 			continue
 		slot.player.global_position = want[tid][1] + Vector3.UP * 4.5
 	for s in _horns:
-		var on: bool = int(s.tid) != -1 and want[s.tid][0]
+		var on: bool = str(s.tid) != "-1" and want[s.tid][0]
 		s.amp = move_toward(float(s.amp), 1.0 if on else 0.0, delta / RAMP)
 		_apply(s, -2.0)
 
@@ -213,7 +283,7 @@ func _update_horns(ear: Vector3, delta: float) -> void:
 ## The nearest moving or idling locomotives get the diesel loop.
 func _pick_engines(ear: Vector3) -> void:
 	var near := []
-	for tid in sim.rail.trains:
+	for tid in sim.rail.trains.keys() + _county.keys():
 		var head := _head(tid)
 		if head.x == INF:
 			continue
@@ -222,28 +292,28 @@ func _pick_engines(ear: Vector3) -> void:
 			near.append([d, tid, head])
 	near.sort_custom(func(a, b): return a[0] < b[0])
 	near = near.slice(0, SoundMix.cap("world/rail/diesel", ENGINE_SLOTS))
-	var ids := near.map(func(e): return e[1])
+	var ids := near.map(func(e): return str(e[1]))
 	for s in _engines:
-		if not int(s.tid) in ids:
+		if not str(s.tid) in ids:
 			s.want = 0.0
 			if float(s.amp) <= 0.0:
 				s.tid = -1
 	for e in near:
 		var slot: Dictionary = {}
 		for s in _engines:
-			if int(s.tid) == int(e[1]):
+			if str(s.tid) == str(e[1]):
 				slot = s
 		if slot.is_empty():
 			for s in _engines:
-				if int(s.tid) == -1:
+				if str(s.tid) == "-1":
 					slot = s
 					slot.tid = e[1]
 					slot.vary = SoundMix.pitch_for("world/rail/diesel")
 					break
 		if slot.is_empty():
 			continue
-		var t: Dictionary = sim.rail.trains[e[1]]
-		var throttle := clampf(float(t.v) / 18.0, 0.0, 1.0)
+		var v: float = _county[e[1]][1] if _county.has(e[1]) else float(sim.rail.trains[e[1]].v)
+		var throttle := clampf(v / 18.0, 0.0, 1.0)
 		slot.player.global_position = e[2] + Vector3.UP * 3.5
 		# Notch 8 runs the prime mover near 900 rpm against about 300 at idle;
 		# the recording is sped up a little with the throttle.
@@ -254,8 +324,9 @@ func _pick_engines(ear: Vector3) -> void:
 ## Bells ring at the nearest crossings whose gates are down.
 func _pick_bells(ear: Vector3) -> void:
 	var near := []
-	for k in sim.rail.crossings.size():
-		var c: Dictionary = sim.rail.crossings[k]
+	var xs := sim.all_crossings()
+	for k in xs.size():
+		var c: Dictionary = xs[k]
 		if not c.closed:
 			continue
 		var p: Vector3 = c.pos
@@ -283,7 +354,7 @@ func _pick_bells(ear: Vector3) -> void:
 					break
 		if slot.is_empty():
 			continue
-		var p: Vector3 = sim.rail.crossings[e[1]].pos
+		var p: Vector3 = xs[e[1]].pos
 		var y: float = ground.call(p) if ground.is_valid() else p.y
 		# The bell sits on top of the signal mast, beside the road.
 		slot.player.global_position = Vector3(p.x, y + 4.0, p.z)
@@ -312,7 +383,9 @@ func _apply(s: Dictionary, gain_db: float) -> void:
 
 
 ## Where a train's lead engine is, with the rails' height (INF if it's away).
-func _head(tid: int) -> Vector3:
+func _head(tid) -> Vector3:
+	if tid is String:
+		return _county[tid][0] if _county.has(tid) else Vector3(INF, 0, 0)
 	var poses := sim.rail.car_poses(tid)
 	if poses.is_empty():
 		return Vector3(INF, 0, 0)

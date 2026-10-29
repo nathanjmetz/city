@@ -58,6 +58,7 @@ static var force := ""
 
 var sim: CitySim
 var _people: MultiMeshInstance3D
+var _women: MultiMeshInstance3D  # the same, in a woman's figure (WalkerView.figure)
 var _dogs: MultiMeshInstance3D
 var _month := 7
 var _desktop := true
@@ -81,6 +82,16 @@ func setup(s: CitySim, walker_material: Material) -> void:
 	_people.material_override = walker_material
 	_people.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(_people)
+	var wm := MultiMesh.new()
+	wm.transform_format = MultiMesh.TRANSFORM_3D
+	wm.use_colors = true
+	wm.use_custom_data = true
+	wm.mesh = WalkerView._person_mesh(1)
+	_women = MultiMeshInstance3D.new()
+	_women.multimesh = wm
+	_women.material_override = walker_material
+	_women.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(_women)
 	# Dogs trot in the walkers' shader too.
 	var dm := MultiMesh.new()
 	dm.transform_format = MultiMesh.TRANSFORM_3D
@@ -102,6 +113,12 @@ func setup(s: CitySim, walker_material: Material) -> void:
 	_prop("leafpile", _cyl(0.9, 0.35), Color(0.62, 0.36, 0.12))
 	_prop("ball", _cyl(0.12, 0.24), Color(0.95, 0.95, 0.95))
 	_prop("bench", _box(Vector3(1.8, 0.45, 0.5)), Color(0.42, 0.3, 0.18))
+	_prop("chair", _box(Vector3(0.55, 0.45, 0.5)), Color(0.86, 0.85, 0.8))
+	_prop("paddle_pole", _box(Vector3(0.03, 1.1, 0.03)), Color(0.85, 0.85, 0.85))
+	var octagon := _cyl(0.23, 0.02)
+	octagon.radial_segments = 8
+	_prop("paddle", octagon, Color(0.75, 0.05, 0.05))
+	_prop("chair_back", _box(Vector3(0.55, 0.55, 0.05)), Color(0.86, 0.85, 0.8))
 	_prop("blanket", _box(Vector3(2.0, 0.03, 1.6)), Color(0.75, 0.18, 0.16))
 	_prop("disc", _cyl(0.14, 0.03), Color(0.95, 0.75, 0.1))
 	_prop("snowball", _ball(0.5), Color(0.96, 0.97, 1.0))
@@ -253,6 +270,27 @@ func _pick() -> void:
 			var out := Vector3(float(site.out[0]), 0.0, float(site.out[1]))
 			_scenes.append({"kind": "crew", "front": fr, "out": out, "seed": hash([ref, "crew"])})
 			people += 3
+	# Bus stops: riders waiting for the next bus. About half a headway's
+	# worth of the stop's riders turn up between buses (a small-town route
+	# runs about hourly, and a stop sees about 8% of its day's riders in an
+	# hour, more at the rush).
+	if hour >= 6.0 and hour < 19.0:
+		for sid in sim.buses.stops:
+			if people >= cap:
+				break
+			var st: Dictionary = sim.buses.stops[sid]
+			if not st.has("pos") or int(st.get("depot", -1)) == -1:
+				continue
+			var sp: Vector3 = st.pos
+			if Vector2(sp.x - eye.x, sp.z - eye.z).length() > RADIUS:
+				continue
+			var rush := 1.6 if hour < 9.0 or hour >= 16.0 and hour < 18.0 else 1.0
+			var jitter := float(hash([sid, int(hour), "wait"]) % 100) / 100.0 - 0.5
+			var n := mini(roundi(float(st.get("riders", 0.0)) * 0.04 * rush + jitter), 6)
+			if n > 0:
+				_scenes.append({"kind": "bus_stop", "stop": st, "n": n, "seed": hash([sid, int(hour), "stop"]),
+					"shelter": BusView.has_shelter(sim, st)})
+				people += n
 	# Schools: recess in the yard on school days (late August to May).
 	var term := month >= 9 or month <= 5 or (month == 8 and fposmod(Seasons.months(sim.calendar_tick()), 1.0) > 0.6)
 	if weekday and term and (hour >= 10.0 and hour < 10.5 or hour >= 12.0 and hour < 12.75 or hour >= 14.0 and hour < 14.3):
@@ -265,6 +303,21 @@ func _pick() -> void:
 				continue
 			_scenes.append({"kind": "recess", "school": sb, "seed": hash([id, "recess"])})
 			people += 14
+	# Schools: a crossing guard at the corner nearest the doors while the
+	# children walk in and home (most Indiana towns post one at the busiest
+	# crossing by an elementary school).
+	if weekday and term and (hour >= 6.75 and hour < 8.5 or hour >= 14.0 and hour < 16.0):
+		for id in sim.services.buildings:
+			var sb: Dictionary = sim.services.buildings[id]
+			if int(sb.kind) != Services.Kind.SCHOOL or people >= cap:
+				continue
+			var sp: Vector3 = sb.pos
+			if Vector2(sp.x - eye.x, sp.z - eye.z).length() > RADIUS:
+				continue
+			var spot := _guard_spot(int(id), sb)
+			if not spot.is_empty():
+				_scenes.append({"kind": "guard", "spot": spot, "seed": hash([id, "guard"])})
+				people += 1
 	# Shops: window shoppers out front in the day, a worker on a break.
 	for key in sim.buildings:
 		if people >= cap:
@@ -283,20 +336,35 @@ func _pick() -> void:
 
 
 ## One person: where, facing, shirt, walk phase (0 standing), size.
-func _person(list: Array, at: Vector3, face: Vector3, seed: int, walked: float, size := 1.0) -> void:
-	# Dressed for the month like the town's walkers (age by size: a small
-	# one is a kid).
-	var worn := WalkerView.dress(seed, _month, 10 if size < 0.7 else 25 + seed % 55)
+func _person(list: Array, at: Vector3, face: Vector3, seed: int, walked: float, size := 1.0, sit := false,
+		lift := 0.0, talk := false) -> void:
+	# Age by size: a small one is a child, a bit bigger a teenager. Each
+	# one's figure and build as the town's walkers have theirs (CDC and
+	# NHANES heights), dressed for the month like them.
+	var age := 25 + seed % 55
+	if size < 0.7:
+		age = 6 + seed % 5
+	elif size < 0.9:
+		age = 13 + seed % 3
+	var worn := WalkerView.dress(seed, _month, age)
 	var shirt: Color = worn[0]
-	shirt.a = fposmod(walked, STRIDE * size) / (STRIDE * size) if walked >= 0.0 else 0.0
+	var body := WalkerView.build(seed, {"age": age})
+	var stride := STRIDE * body.y
+	shirt.a = fposmod(walked, stride) / stride if walked >= 0.0 else 0.0
 	if _desktop:
-		shirt.a = minf(shirt.a, 0.999) + float(worn[1])
+		# Seated people bend into the chair (WalkerView.SEATED).
+		# Standing about, they shift their weight (WalkerView.STANDING) and,
+		# talking, talk with their hands.
+		var still := 0 if sit or walked >= 0.0 else WalkerView.STANDING | (WalkerView.TALKING if talk else 0)
+		shirt.a = minf(shirt.a, 0.999) + float(int(worn[1]) | (WalkerView.SEATED if sit else 0) | still)
+	elif sit:
+		body.y *= 0.62  # the browser can't bend them: drawn short instead
+		lift = 0.0
 	var f := Vector3(face.x, 0.0, face.z)
 	if f.length() < 0.01:
 		f = Vector3.FORWARD
-	var tall := (0.92 + float(seed % 17) / 100.0) * size
-	list.append([Transform3D(Basis.looking_at(f.normalized(), Vector3.UP).scaled(Vector3(tall, tall, tall)),
-		Terrain.stand(at)), shirt, WalkerView.skin_tone(seed)])
+	list.append([Transform3D(Basis.looking_at(f.normalized(), Vector3.UP).scaled(body),
+		Terrain.stand(at) + Vector3(0, lift, 0)), shirt, WalkerView.skin_tone(seed), WalkerView.figure(seed)])
 
 
 func _draw() -> void:
@@ -315,6 +383,12 @@ func _draw() -> void:
 		if s.kind == "recess":
 			_recess_scene(people, s)
 			continue
+		if s.kind == "bus_stop":
+			_stop_scene(people, s)
+			continue
+		if s.kind == "guard":
+			_guard_scene(people, props, s)
+			continue
 		var lot: Dictionary = s.lot
 		var seed: int = s.seed
 		var into: Vector3 = lot.normal
@@ -329,8 +403,8 @@ func _draw() -> void:
 		match s.kind:
 			"talk":
 				var mid := walk + along * (float(seed % 9) - 4.0)
-				_person(people, mid - along * 0.45, along, seed, -1.0)
-				_person(people, mid + along * 0.45, -along, seed >> 5, -1.0)
+				_person(people, mid - along * 0.45, along, seed, -1.0, 1.0, false, 0.0, true)
+				_person(people, mid + along * 0.45, -along, seed >> 5, -1.0, 1.0, false, 0.0, true)
 			"grill":
 				var g := back + along * width * 0.15
 				props.grill.append(Transform3D(Basis(), Terrain.stand(g) + Vector3(0, 0.45, 0)))
@@ -353,7 +427,13 @@ func _draw() -> void:
 					var heading := -along * sin(a) + into * cos(a) * 0.6
 					_person(people, p, heading, seed >> i, a * r * (1.6 + i * 0.3) * 0.25, 0.62)
 			"porch":
-				_person(people, front + into * 7.5 + along * 1.5, -into, seed, -1.0)
+				# Out on the porch of an evening in a pair of chairs, watching
+				# the street.
+				for i in (2 if seed % 3 == 0 else 1):
+					var at := front + into * 7.6 + along * (1.5 - i * 0.9)
+					props.chair.append(Transform3D(Basis.looking_at(-into, Vector3.UP), Terrain.stand(at - into * 0.1) + Vector3(0, 0.22, 0)))
+					props.chair_back.append(Transform3D(Basis.looking_at(-into, Vector3.UP), Terrain.stand(at + into * 0.15) + Vector3(0, 0.7, 0)))
+					_person(people, at, -into, seed >> (i * 4), -1.0, 1.0, true)
 			"dog":
 				var u := fposmod(t * 1.1, 60.0)
 				var x := u if u < 30.0 else 60.0 - u
@@ -373,7 +453,7 @@ func _draw() -> void:
 					(hand + collar) * 0.5))
 			"garden":
 				var p := lawn + along * (width * 0.35)
-				_person(people, p, into, seed, -1.0, 0.8)  # bent over the bed
+				_person(people, p, into, seed, -1.0, 1.0, true, -0.4)  # down on the ground at the bed
 			"catch":
 				var a := back - along * 4.0
 				var b := back + along * 4.0
@@ -419,8 +499,13 @@ func _draw() -> void:
 				# Two kids at a table by the sidewalk; now and then a neighbour buys a cup.
 				var p := walk + into * 1.6 + along * (float(seed % 5) - 2.0)
 				props.table.append(Transform3D(Basis.looking_at(-into, Vector3.UP), Terrain.stand(p) + Vector3(0, 0.38, 0)))
-				_person(people, p + into * 0.7 - along * 0.4, -into, seed, -1.0, 0.62)
-				_person(people, p + into * 0.7 + along * 0.4, -into, seed >> 3, -1.0, 0.6)
+				# On little chairs behind it.
+				for k in [-1.0, 1.0]:
+					var c: Vector3 = p + into * 0.7 + along * 0.4 * k
+					props.chair.append(Transform3D(Basis.looking_at(-into, Vector3.UP).scaled(Vector3.ONE * 0.72),
+						Terrain.stand(c - into * 0.07) + Vector3(0, 0.16, 0)))
+				_person(people, p + into * 0.7 - along * 0.4, -into, seed, -1.0, 0.62, true)
+				_person(people, p + into * 0.7 + along * 0.4, -into, seed >> 3, -1.0, 0.6, true)
 				if fmod(t, 20.0) < 8.0:
 					_person(people, p - into * 0.9, into, seed >> 6, -1.0)
 			"bike":
@@ -447,10 +532,10 @@ func _draw() -> void:
 				for i in 2:
 					var p := lawn + along * (i * 2.4 - 1.2)
 					props.table.append(Transform3D(Basis.looking_at(-into, Vector3.UP), Terrain.stand(p) + Vector3(0, 0.38, 0)))
-				_person(people, lawn + into * 1.0, -into, seed, -1.0)
+				_person(people, lawn + into * 1.0, -into, seed, -1.0, 1.0, false, 0.0, true)
 				var k := fposmod(t * 0.3, 8.0)
 				_person(people, lawn - into * 1.0 + along * (k - 4.0) * 0.6, along, seed >> 3, t * 0.3)
-				_person(people, lawn - into * 1.1 - along * 1.5, into, seed >> 6, -1.0)
+				_person(people, lawn - into * 1.1 - along * 1.5, into, seed >> 6, -1.0, 1.0, false, 0.0, true)
 			"costumes":
 				# Little ones in costumes going door to door, a parent behind.
 				var u := fposmod(t * 1.0, 60.0)
@@ -465,14 +550,19 @@ func _draw() -> void:
 					dress.a = (people[before][1] as Color).a
 					people[before][1] = dress
 				_person(people, p - heading * 1.8, heading, seed >> 9, t * 1.0)
-	var mm := _people.multimesh
-	if mm.instance_count < people.size():
-		mm.instance_count = maxi(people.size() * 2, 32)
-	for i in people.size():
-		mm.set_instance_transform(i, people[i][0])
-		mm.set_instance_color(i, people[i][2])
-		mm.set_instance_custom_data(i, people[i][1])
-	mm.visible_instance_count = people.size()
+	for k in 2:
+		var mm: MultiMesh = (_people if k == 0 else _women).multimesh
+		var n := 0
+		if mm.instance_count < people.size():
+			mm.instance_count = maxi(people.size() * 2, 32)
+		for p in people:
+			if int(p[3]) != k:
+				continue
+			mm.set_instance_transform(n, p[0])
+			mm.set_instance_color(n, p[2])
+			mm.set_instance_custom_data(n, p[1])
+			n += 1
+		mm.visible_instance_count = n
 	var dm := _dogs.multimesh
 	if dm.instance_count < dogs.size():
 		dm.instance_count = maxi(dogs.size() * 2, 8)
@@ -491,6 +581,113 @@ func _draw() -> void:
 		pm.visible_instance_count = list.size()
 
 
+## Where a school's crossing guard stands: the corner of the junction
+## nearest its doors, on the school's side, and the way across the street
+## they walk out into. {} if no junction is near. Kept until the roads
+## change.
+var _guard_spots := {}  # school id -> [network revision, spot]
+
+
+func _guard_spot(id: int, sb: Dictionary) -> Dictionary:
+	var known: Array = _guard_spots.get(id, [])
+	if not known.is_empty() and int(known[0]) == sim.network.revision:
+		return known[1]
+	var spot := {}
+	var dir: Vector3 = sb.dir if sb.dir is Vector3 else Vector3.FORWARD
+	var gate: Vector3 = sb.pos + dir * (Services.size_of(sb).y * 0.5 + Services.SETBACK)
+	var n := sim.network.find_node_near(gate, 160.0)
+	if n != -1 and sim.network.segments_at(n).size() >= 3:
+		var c: Vector3 = sim.network.nodes[n]
+		var to_school := Vector3(gate.x - c.x, 0.0, gate.z - c.z).normalized()
+		# The street the children walk along to the school, and the widest
+		# street they cross at this corner.
+		var along := Vector3.ZERO
+		var hw_along := 0.0
+		var best := -2.0
+		var hw_cross := 0.0
+		for sid in sim.network.segments_at(n):
+			var cv := sim.network.curve_of(sid)
+			var out: Vector3 = (cv[1] - cv[0]) if sim.network.segments[sid].a == n else (cv[1] - cv[2])
+			out = Vector3(out.x, 0.0, out.z).normalized()
+			var hw := RoadStyle.half_width(sim.network.segments[sid].type)
+			if out.dot(to_school) > best:
+				best = out.dot(to_school)
+				along = out
+				hw_along = hw
+		for sid in sim.network.segments_at(n):
+			var cv := sim.network.curve_of(sid)
+			var out: Vector3 = (cv[1] - cv[0]) if sim.network.segments[sid].a == n else (cv[1] - cv[2])
+			out = Vector3(out.x, 0.0, out.z).normalized()
+			if absf(out.dot(along)) < 0.7:
+				hw_cross = maxf(hw_cross, RoadStyle.half_width(sim.network.segments[sid].type))
+		if along != Vector3.ZERO and hw_cross > 0.0:
+			var perp := Vector3(-along.z, 0.0, along.x)
+			if perp.dot(to_school) < 0.0:
+				perp = -perp
+			# On the school side's corner, a step back from the cross
+			# street's curb, facing across it.
+			spot = {"at": c + along * (hw_cross + 2.0) + perp * (hw_along + 2.5), "face": -along,
+				"reach": hw_cross + 2.0}
+	_guard_spots[id] = [sim.network.revision, spot]
+	return spot
+
+
+## The crossing guard: hi-vis vest and a hand-held STOP paddle (MUTCD
+## 7D-2), waiting at the corner, then out into the crosswalk holding the
+## paddle up while children cross, and back.
+func _guard_scene(people: Array, props: Dictionary, s: Dictionary) -> void:
+	var spot: Dictionary = s.spot
+	var face: Vector3 = spot.face
+	var u := fposmod(_clock + float(s.seed % 31), 30.0)
+	# 0-18 s at the corner, 3 s out, 6 s in the road, 3 s back.
+	var out := 0.0
+	if u >= 18.0 and u < 21.0:
+		out = (u - 18.0) / 3.0
+	elif u >= 21.0 and u < 27.0:
+		out = 1.0
+	elif u >= 27.0:
+		out = 1.0 - (u - 27.0) / 3.0
+	var at: Vector3 = spot.at + face * (float(spot.reach) * out)
+	var moving := (u >= 18.0 and u < 21.0) or u >= 27.0
+	var before := people.size()
+	_person(people, at, face if u < 27.0 else -face, s.seed, u * 1.2 if moving else -1.0)
+	var vest := Color(0.62, 1.0, 0.0).srgb_to_linear()  # ANSI 107 fluorescent yellow-green
+	vest.a = (people[before][1] as Color).a
+	people[before][1] = vest
+	var side := face.cross(Vector3.UP).normalized()
+	var hand := Terrain.stand(at) + side * 0.3 + face * 0.15
+	var raised := out > 0.0
+	props.paddle_pole.append(Transform3D(Basis(), hand + Vector3(0, 1.05 if raised else 0.55, 0)))
+	# The STOP face turned to the traffic on the street being crossed.
+	props.paddle.append(Transform3D(Basis.looking_at(side, Vector3.UP) * Basis(Vector3.RIGHT, PI * 0.5),
+		hand + Vector3(0, 1.75 if raised else 1.2, 0)))
+
+
+## People waiting at a bus stop: on the shelter's bench if it has one,
+## else standing by the pole, turned to look up the street for the bus.
+func _stop_scene(people: Array, s: Dictionary) -> void:
+	var st: Dictionary = s.stop
+	var along: Vector3 = st.dir
+	var out := Vector3(-along.z, 0.0, along.x) * float(st.side)
+	var base: Vector3 = st.pos + out * (RoadStyle.CURB_WIDTH + RoadStyle.PARKWAY_WIDTH * 0.5)
+	var walk := base + out * (RoadStyle.PARKWAY_WIDTH * 0.5 + RoadStyle.SIDEWALK_WIDTH * 0.5)
+	var coming := along * float(st.side)  # the way the bus comes from (it pulls in facing dir * -side)
+	var seed: int = s.seed
+	var standing := 0
+	for i in int(s.n):
+		if s.shelter and i < 3:
+			# The shelter's bench (BusView): 3 m back along the street, at the
+			# sidewalk's far side.
+			var back := -(RoadStyle.PARKWAY_WIDTH * 0.5 + RoadStyle.SIDEWALK_WIDTH + 0.9) - 0.6
+			var at := base + along * (-3.0 + (i - 1) * 0.75) - out * back
+			_person(people, at, -out, seed >> (i * 3), -1.0, 1.0, true)
+			continue
+		var at := walk + along * (-0.8 - standing * 0.9 + float((seed >> (i * 2)) % 5) * 0.1) \
+			+ out * (float((seed >> (i * 3)) % 3) - 1.0) * 0.35
+		_person(people, at, (-out * 0.6 + coming).normalized(), seed >> (i * 3), -1.0)
+		standing += 1
+
+
 ## A park scene: someone on a bench (drawn low, as if seated), a picnic on a
 ## blanket, a stroll round the park, a game of frisbee, or sledding in the
 ## snow.
@@ -507,14 +704,16 @@ func _park_scene(people: Array, props: Dictionary, s: Dictionary) -> void:
 	match s.kind:
 		"bench":
 			props.bench.append(Transform3D(Basis.looking_at(dir, Vector3.UP), Terrain.stand(spot) + Vector3(0, 0.22, 0)))
-			# Seated: drawn short and set back on the seat.
-			_person(people, spot + dir * 0.05, -dir, seed, -1.0, 0.62)
+			# Seated, set back on the seat.
+			_person(people, spot + dir * 0.12, -dir, seed, -1.0, 1.0, true)
 			if seed % 3 == 0:
-				_person(people, spot + side * 0.6 + dir * 0.05, -dir, seed >> 3, -1.0, 0.62)
+				_person(people, spot + side * 0.6 + dir * 0.12, -dir, seed >> 3, -1.0, 1.0, true)
 		"picnic":
 			props.blanket.append(Transform3D(Basis.looking_at(dir, Vector3.UP), Terrain.stand(spot) + Vector3(0, 0.02, 0)))
-			_person(people, spot - side * 0.5, side, seed, -1.0, 0.6)
-			_person(people, spot + side * 0.5, -side, seed >> 4, -1.0, 0.6)
+			# Sitting on the blanket: the seated pose let down to the ground
+			# (the shins go under it, as if cross-legged).
+			_person(people, spot - side * 0.5, side, seed, -1.0, 1.0, true, -0.4)
+			_person(people, spot + side * 0.5, -side, seed >> 4, -1.0, 1.0, true, -0.4)
 		"stroll":
 			var a := t * 0.05 + float(seed % 6)
 			var r := minf(size.x, size.y) * 0.35
@@ -528,7 +727,7 @@ func _park_scene(people: Array, props: Dictionary, s: Dictionary) -> void:
 			if u < 1.0:
 				var p := top.lerp(foot, u)
 				props.sled.append(Transform3D(Basis.looking_at(dir, Vector3.UP), Terrain.stand(p) + Vector3(0, 0.06, 0)))
-				_person(people, p, dir, seed, -1.0, 0.45)  # sitting on the sled
+				_person(people, p, dir, seed, -1.0, 0.62, true, -0.3)  # sitting on the sled
 			else:
 				var p := foot.lerp(top, (u - 1.0) / 2.0)
 				props.sled.append(Transform3D(Basis.looking_at(-dir, Vector3.UP), Terrain.stand(p - dir * 0.8) + Vector3(0, 0.06, 0)))

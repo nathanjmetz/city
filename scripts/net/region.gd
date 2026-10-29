@@ -180,6 +180,7 @@ static func new_sim() -> CitySim:
 	var sim := CitySim.new()
 	sim.require_utilities = true
 	sim.in_region = true
+	sim.county_rail = CountyRail.drawn()
 	return sim
 
 

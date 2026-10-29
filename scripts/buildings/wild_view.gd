@@ -271,6 +271,9 @@ func _wild_trees(c: Vector2i, detail: bool) -> Array:
 ## exactly the chunk's trees).
 func _wild_trees_in(area: Rect2, detail: bool) -> Array:
 	var plants := sim.vegetation.plants_in(area, sim.tick_count, detail)
+	if detail and _understory_on():
+		plants.append_array(_understory(area))
+		plants.append_array(_thicken_brush(plants))
 	# Roads the town doesn't own (a neighbor's, the county highways out to
 	# the horizon) keep their mowed verges clear too.
 	var mowed := Terrain.any_mowed(area)
@@ -309,6 +312,83 @@ func _wild_trees_in(area: Rect2, detail: bool) -> Array:
 			continue
 		trees.append(facts(p, low))
 	return trees
+
+
+## The desktop's understory: shrubs and saplings 1-3 m tall under the
+## woods' canopy, as in Indiana's upland woodlots (spicebush, pawpaw, sugar
+## maple seedlings, and Amur honeysuckle thickest toward the edges, which
+## the sim's brush, thin under a closed canopy, leaves out). Scenery only,
+## drawn with the brush near the camera, never on land the town has built.
+const UNDERSTORY_SPACING := 5.0
+
+
+static func _understory_on() -> bool:
+	return not OS.has_feature("web") and bool(GraphicsQuality.knob("understory", false))
+
+
+func _understory(area: Rect2) -> Array:
+	var out := []
+	var o := Terrain.view_origin
+	var s := UNDERSTORY_SPACING
+	for ix in range(floori(area.position.x / s), floori(area.end.x / s) + 1):
+		for iz in range(floori(area.position.y / s), floori(area.end.y / s) + 1):
+			var r := Vector2(ix * s + o.x, iz * s + o.y)
+			var h := CropCalendar.h01(floori(r.x / s), floori(r.y / s), 61)
+			var p := Vector3((ix + 0.15 + 0.7 * h) * s, 0.0,
+				(iz + 0.15 + 0.7 * CropCalendar.h01(floori(r.x / s), floori(r.y / s), 62)) * s)
+			if not area.has_point(Vector2(p.x, p.z)):
+				continue
+			var t := Terrain.trees(p.x + o.x, p.z + o.y)
+			# Under a closed canopy about one spot in three; more toward the
+			# edge, where light gets in (cover 0.55-0.75).
+			var chance := smoothstep(0.5, 0.62, t) * lerpf(0.65, 0.35, smoothstep(0.7, 0.9, t))
+			if CropCalendar.h01(floori(r.x / s), floori(r.y / s), 63) >= chance:
+				continue
+			if sim.vegetation.is_occupied(Vegetation.cell_of(p)):
+				continue
+			var k := CropCalendar.h01(floori(r.x / s), floori(r.y / s), 64)
+			# Spicebush and honeysuckle a fresh mid green; seedling maples darker.
+			var tint := Color("#4d6a28").lerp(Color("#3a5220"), k)
+			out.append({"pos": p, "kind": Vegetation.Kind.SHRUB, "species": TreeField.Species.CRABAPPLE,
+				"size": 0.55 + 0.55 * h, "tint": tint})
+	return out
+
+
+## The desktop's brushy fencerows: the sim's fencerow shrubs stand every
+## 6 m, which near the camera read as a dotted line of lone bushes. Real
+## brushy fencerows (aerial and roadside photos of Grant County) are one
+## tangled band of sumac, dogwood, multiflora rose and honeysuckle 3-5 m
+## wide, so each one gets two neighbours, filling the line every 3 m with
+## a ragged edge. Scenery only, like the understory.
+func _thicken_brush(plants: Array) -> Array:
+	var out := []
+	var o := Terrain.view_origin
+	for p in plants:
+		if p.kind != Vegetation.Kind.SHRUB:
+			continue
+		var pos: Vector3 = p.pos
+		if Terrain.trees(pos.x + o.x, pos.z + o.y) > 0.5:
+			continue
+		# Fencerows run on the survey's eighth-mile lines: along z where x
+		# sits on one, else along x.
+		var gx := absf(pos.x - roundf(pos.x / Vegetation.FENCE_GRID) * Vegetation.FENCE_GRID)
+		var gz := absf(pos.z - roundf(pos.z / Vegetation.FENCE_GRID) * Vegetation.FENCE_GRID)
+		if minf(gx, gz) > 2.5:
+			continue
+		var along := Vector3(0, 0, 1) if gx < gz else Vector3(1, 0, 0)
+		var side := Vector3(along.z, 0, along.x)
+		var hx := floori(pos.x * 4.0)
+		var hz := floori(pos.z * 4.0)
+		for k in 2:
+			var a := CropCalendar.h01(hx, hz, 71 + k)
+			var b := CropCalendar.h01(hx, hz, 73 + k)
+			var q: Vector3 = pos + along * (3.0 if k == 0 else -1.5) * (0.8 + 0.4 * a) + side * (b - 0.5) * 2.6
+			if sim.vegetation.is_occupied(Vegetation.cell_of(q)):
+				continue
+			var tint: Color = (p.tint as Color).lerp(Color("#3f5a22"), 0.35 * b)
+			out.append({"pos": q, "kind": Vegetation.Kind.SHRUB, "species": p.species,
+				"size": p.size * (0.9 + 0.6 * a), "tint": tint})
+	return out
 
 
 ## A wild plant as TreeField draws it: [placement, kind, tint, facts]. The

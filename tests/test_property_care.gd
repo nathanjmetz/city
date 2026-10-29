@@ -136,9 +136,37 @@ func _init() -> void:
 		_check(lay.spots.size() >= 20 and not lay.main_street, "with its own parking lot (%d stalls)" % lay.spots.size())
 	else:
 		_check(false, "a developer finds land on the avenue for an office park")
+	_hotel()
 	_community()
 	print("ALL TESTS PASSED" if not _failed else "SOME TESTS FAILED")
 	quit(1 if _failed else 0)
+
+
+## A hotel chain asks for lots on a busy road once the market fills a
+## highway hotel, and the hotel draws its field of parking.
+func _hotel() -> void:
+	var ho := _town(6, RoadStyle.Type.AVENUE, 300)
+	_care_month(ho)
+	ho.stats.population = 6000
+	ho.demand[ZoneMap.Zone.COMMERCIAL] = 1.0
+	ho.market.regional = 0
+	_check(ho.redevelopment._plan_hotel(ho, Redevelopment._faces(ho)).is_empty(), "a lone town of 6,000 gets no hotel ask")
+	ho.market.regional = 8000
+	var plan: Dictionary = ho.redevelopment._plan_hotel(ho, Redevelopment._faces(ho))
+	print("  hotel ask: ", plan.get("title", "(none)"), " / ", plan.get("yes", ""))
+	if plan.is_empty():
+		_check(false, "a hotel chain finds land on the avenue")
+		return
+	_check(str(plan.yes).find("rooms") != -1, "the card counts its rooms and trips")
+	_check(ho.redevelopment.build(ho, {"kind": "hotel", "keys": plan.keys, "type": plan.type,
+		"level": plan.level, "was": plan.was}), "a yes rezones the run for a hotel")
+	var site: String = plan.keys[0]
+	_check(BuildingTypes.type_of(ho.buildings[site]) == "hotel" and int(ho.buildings[site].level) == 0,
+		"a highway hotel goes up (%.0f m² lot)" % float(ho.lots[site].area))
+	var lay := SiteLayout.for_building(ZoneMap.Zone.COMMERCIAL, int(ho.buildings[site].seed), ho.lots[site], 4, "hotel", 0)
+	_check(lay.spots.size() >= 50 and not lay.main_street, "with a field of parking (%d stalls for about 90 rooms)" % lay.spots.size())
+	var art := BuildingView.build_for("hotel", 4, int(ho.buildings[site].seed), 3.9, {"width": float(ho.lots[site].width), "depth": 60.0}, {}, 2, "general", 0)
+	_check(not art.is_empty(), "it draws")
 
 
 ## A neighborhood center buys the houses behind it for a discount store,
@@ -194,6 +222,25 @@ func _community() -> void:
 	for sp in lay.spots:
 		aisles[sp.get("aisle", lay.aisle_z)] = true
 	_check(lay.spots.size() >= 50 and aisles.size() >= 2, "its field has %d stalls off %d aisles" % [lay.spots.size(), aisles.size()])
+	# Bigger still: in a market of 60,000 it grows into a power center.
+	sim.tick_count += 12 * MONTH
+	_check(sim.redevelopment._plan_power(sim, {}).is_empty(), "a market of 16,000 gets no power center")
+	sim.market.regional = 60_000
+	plan = sim.redevelopment._plan_power(sim, {})
+	print("  power ask: ", plan.get("title", "(none)"), " / ", plan.get("why", ""))
+	if plan.is_empty():
+		_check(false, "the community center finds more houses to buy")
+		return
+	_check(plan.keys[0] == site and plan.level == 3, "the center buys %d more lots" % (plan.keys.size() - 1))
+	_check(sim.redevelopment.build(sim, {"kind": "power", "keys": plan.keys, "type": plan.type,
+		"level": plan.level, "was": plan.was}), "a yes makes it a power center")
+	b = sim.buildings[site]
+	lot = sim.lots[site]
+	_check(int(b.level) == 3 and lot.area >= 12_000.0, "a %s on %.0f m²" % [BuildingTypes.name_of(b), lot.area])
+	lay = SiteLayout.for_building(ZoneMap.Zone.COMMERCIAL, int(b.seed), lot, 1, "shopping_center", 3)
+	_check(lay.spots.size() >= 60, "its field has %d stalls" % lay.spots.size())
+	var built := BuildingView.build_for("shopping_center", 1, int(b.seed), 3.9, SiteLayout._fit(lot), {}, 0, "general", 3)
+	_check(built[0].get_surface_count() > 0, "it draws")
 
 
 func _art() -> void:

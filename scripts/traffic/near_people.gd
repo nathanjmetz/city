@@ -37,6 +37,11 @@ const BOTTOMS := [Color(0.2, 0.22, 0.3), Color(0.022, 0.036, 0.089), Color(0.073
 	Color(0.234, 0.342, 0.508), Color(0.013, 0.013, 0.014), Color(0.54, 0.434, 0.243), Color(0.069, 0.069, 0.072),
 	Color(0.133, 0.147, 0.073)]
 const HAIR_COLOURS := [Color(0.16, 0.11, 0.07), Color(0.01, 0.009, 0.008), Color(0.45, 0.3, 0.133), Color(0.48, 0.46, 0.43)]
+## School backpacks, linear, as the walkers' shader colours them
+## (WalkerView HATS * 1.4 + 0.02), so a child's pack is the same near and far.
+const PACK_COLOURS := [Color(0.034, 0.034, 0.035), Color(0.258, 0.258, 0.272), Color(0.048, 0.062, 0.146),
+	Color(0.65, 0.038, 0.038), Color(1.0, 0.206, 0.02), Color(0.258, 0.038, 0.051), Color(1.0, 0.986, 0.776),
+	Color(0.188, 0.206, 0.11)]
 
 const CLOTH_SHADER := """shader_type spatial;
 render_mode cull_disabled;
@@ -121,13 +126,22 @@ func setup(t: TrafficSim, frac: Callable) -> void:
 		# What it wears, from its parts' names (Human_female_casualsuit01).
 		var probe := s.instantiate()
 		var suit := ""
+		var top := 0.0  # the top of its head, hair and all
 		for mi in probe.find_children("*", "MeshInstance3D", true, false):
 			var n := String(mi.name).trim_prefix("Human_")
 			if SUITS.has(n):
 				suit = n
+			var xf: Transform3D = mi.transform
+			var up: Node = mi.get_parent()
+			while up != null and up != probe:
+				if up is Node3D:
+					xf = (up as Node3D).transform * xf
+				up = up.get_parent()
+			top = maxf(top, (xf * (mi as MeshInstance3D).get_aabb()).end.y)
 		probe.free()
 		_models.append({"scene": s, "female": suit.begins_with("female"), "long": SUITS.get(suit, {}).get("long", true),
-			"rare": SUITS.get(suit, {}).get("rare", false), "overalls": suit == "male_worksuit01"})
+			"rare": SUITS.get(suit, {}).get("rare", false), "overalls": suit == "male_worksuit01",
+			"height": top if top > 1.0 else 1.7})
 
 
 ## The model a person is drawn with: one of their figure's (WalkerView.figure:
@@ -180,8 +194,37 @@ func _take(model: int, short := false) -> Dictionary:
 		elif HAIRS.has(n):
 			e.hair = mi
 			mi.material_override = _material(mi, {"top": HAIRS[n], "bottoms": 1.0}, true)
+	e.pack = _backpack(node)
 	pool.append(e)
 	return e
+
+
+## A school backpack on the model's back, riding on the spine, hidden until
+## a child on the school walk wears it.
+func _backpack(node: Node3D) -> MeshInstance3D:
+	var sks := node.find_children("*", "Skeleton3D", true, false)
+	if sks.is_empty():
+		return null
+	var sk: Skeleton3D = sks[0]
+	var bone := sk.find_bone("spine02")
+	if bone < 0:
+		return null
+	var at := BoneAttachment3D.new()
+	at.bone_name = "spine02"
+	sk.add_child(at)
+	var box := MeshInstance3D.new()
+	var bm := BoxMesh.new()
+	bm.size = Vector3(0.27, 0.32, 0.13)
+	box.mesh = bm
+	box.material_override = StandardMaterial3D.new()
+	(box.material_override as StandardMaterial3D).roughness = 0.85
+	# The model faces +Z, so its back is -Z: set out behind the spine, in
+	# the bone's own frame.
+	var rest := sk.get_bone_global_rest(bone)
+	box.transform = Transform3D(rest.basis.inverse(), rest.basis.inverse() * Vector3(0.0, -0.02, -0.15))
+	box.visible = false
+	at.add_child(box)
+	return box
 
 
 ## Bones whose part of a sleeve a short-sleeved shirt leaves bare: the
@@ -321,14 +364,22 @@ func _process(_delta: float) -> void:
 			e = _take(model, short)
 			e.walker = int(w.id)
 			_wear(e, worn)
+		if e.get("pack") != null:
+			var age := int(who.get("age", -1))
+			(e.pack as MeshInstance3D).visible = age >= 5 and age <= 11
+			((e.pack as MeshInstance3D).material_override as StandardMaterial3D).albedo_color = \
+				(PACK_COLOURS[(int(worn[1]) >> 6) & 7] as Color).linear_to_srgb()
 		var dir: Vector3 = pose[1]
 		if dir.length() < 0.5:
 			dir = Vector3.FORWARD
 		var node: Node3D = e.node
 		node.visible = true
-		# The model faces +Z; turn it to walk along `dir`.
-		node.global_transform = Transform3D(Basis.looking_at(-Vector3(dir.x, 0.0, dir.z).normalized(), Vector3.UP), p)
+		# The model faces +Z; turn it to walk along `dir`. Sized to the
+		# person's own height (WalkerView.build), so a child walking to school
+		# is a child's size close up too, and takes quicker, shorter steps.
+		var size: float = WalkerView.build(person, who).y * 1.7 / float(_models[model].height)
+		node.global_transform = Transform3D(Basis.looking_at(-Vector3(dir.x, 0.0, dir.z).normalized(), Vector3.UP).scaled(Vector3.ONE * size), p)
 		if e.player != null:
-			e.player.speed_scale = float(w.get("v", WALK_SPEED)) / WALK_SPEED
+			e.player.speed_scale = float(w.get("v", WALK_SPEED)) / WALK_SPEED / size
 		drawn[int(w.id)] = true
 	Terrain.shift = Vector2.ZERO
