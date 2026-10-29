@@ -110,6 +110,9 @@ var _deck := Rect2()  # while a plan is drawn: its back deck or patio and steps 
 ## While a plan is drawn: its owner has raised the roof (a "Two-storey home"
 ## grown from a cape or bungalow) with a full shed dormer.
 var _raised := false
+## True when a house grown to two storeys kept a plan that had them already
+## (see _grown_key): its owner finishes a room over the garage instead.
+var _kept := false
 var pad := 0.0
 var era := "recent"
 var _cell_seed := 0  # the street block this lot is in (its builder)
@@ -231,6 +234,8 @@ func _house(to_curb: float, storeys := 0) -> Array:
 	var info: Dictionary = body.info.duplicate()
 	if owner_care <= -2:
 		_board_up(body.arrays.get("glass", []))
+	if _kept:
+		_bonus_room(info, body.paint)
 	if grown >= 1:
 		_addition(info, body.paint)
 	if grown >= 2:
@@ -621,6 +626,7 @@ func _plan(storeys: int, info_only := false) -> Dictionary:
 	if storeys >= 2 and outline.size() < 3:
 		key = _grown_key(key)
 		storeys = key[4]
+		_kept = storeys == 0 and key.size() == 6
 	if info_only and not _plans.has(key):
 		return {"info": _placed_info(_shape(key).info, gs, zf, dx)}
 	var body: Dictionary = _plans.get(key, {})
@@ -637,6 +643,34 @@ func _plan(storeys: int, info_only := false) -> Dictionary:
 	if info_only:
 		return {"info": _placed_info(body.info, gs, zf, dx)}
 	return _placed(body, gs, zf, paint, dx)
+
+
+## A colonial's "bonus room" over its attached garage, how owners of the
+## 1990s-2010s two-storey colonials in Indiana subdivisions (Fishers,
+## Carmel, Avon) finish more space when they grow: the garage wing's walls
+## go up a half storey, a steep front-facing gable over them with a pair of
+## windows in it, and a window in each side. Its own random numbers.
+func _bonus_room(h: Dictionary, paint: Dictionary) -> void:
+	if h.get("kind", "") != "colonial" or float(h.get("drive_w", 0.0)) < 5.0 or outline.size() >= 3:
+		return
+	var own := RandomNumberGenerator.new()
+	own.seed = hash([rng.seed, "bonus room"])
+	var gx: float = h.drive_x
+	var gw: float = float(h.drive_w) + 0.8
+	var gz0: float = h.garage_z
+	var gd := 8.2  # the colonial's garage wing (see _colonial)
+	var gcz := gz0 + gd * 0.5
+	var siding: Color = paint.siding
+	var roof: Color = paint.roof
+	var y0 := 3.15
+	var top := y0 + own.randf_range(2.2, 2.5)  # over the old roof's ridge
+	_box("siding", Vector3(gw, top - y0 + 0.02, gd), Vector3(gx, (y0 + top) * 0.5, gcz), siding)
+	_corners(gx - gw * 0.5, gx + gw * 0.5, gz0, gz0 + gd, y0, top)
+	_gable_roof(gx, gcz, top, gw, gw * 0.5 * own.randf_range(0.75, 0.95), gd, false, roof, siding)
+	var wy := top + 0.35
+	for e in [-1.0, 1.0]:
+		_window(Vector3(gx + e * 0.62, wy, gz0), Vector3(-1, 0, 0), 0.8, 1.25, true, false, TRIM)
+		_window(Vector3(gx + e * gw * 0.5, (y0 + top) * 0.5 + 0.2, gcz + 1.2), Vector3(0, 0, -e), 0.8, 1.0, true, false, TRIM)
 
 
 ## The plan a house grown to two storeys (BuildingTypes "Two-storey home")
