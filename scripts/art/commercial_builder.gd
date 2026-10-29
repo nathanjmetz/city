@@ -58,6 +58,7 @@ func _shop(to_curb: float, lot: Dictionary, main_street := true) -> void:
 	match kind:
 		"main_street": _main_street(to_curb)
 		"strip": _strip_center(to_curb)
+		"center": _strip_center(to_curb, true)
 		"gas": _shop_gas_station(to_curb)
 		"diner": _shop_diner(to_curb)
 		"bank": _bank(to_curb)
@@ -485,7 +486,7 @@ func _awning(cx: float, w: float, zf: float, y: float, col: Color) -> void:
 ## A strip center, 1960s-now: one long flat-roofed building split into three
 ## to five tenants, each its own storefront and sign, under a continuous
 ## canopy on square columns, with a parking field in front.
-func _strip_center(to_curb: float) -> void:
+func _strip_center(to_curb: float, anchor := false) -> void:
 	var w := half * 2.0 - 2.0
 	var d := rng.randf_range(14.0, minf(18.0, maxf(depth - 18.0, 14.0)))
 	var h := rng.randf_range(5.2, 6.0)
@@ -493,6 +494,9 @@ func _strip_center(to_curb: float) -> void:
 	var cz := zf + d * 0.5
 	var wall := Color(_pick(BLOCK + ["#c9b79a", "#b8a58a"]))
 	var mull: Color = MULLION[rng.randi() % 2]
+	# A neighborhood center: a supermarket anchors the +x end.
+	var aw := clampf(w * 0.4, 32.0, 56.0) if anchor and w >= 70.0 else 0.0
+	var ax0 := w * 0.5 - aw
 	_box("paint", Vector3(w + 0.1, 0.3, d + 0.1), Vector3(0, 0.15, cz), FOUNDATION)
 	_flat_roofed("paint", w, d, cz, h, h + 1.2, wall)
 	var n := clampi(int(w / 7.0), 3, 14)
@@ -500,6 +504,8 @@ func _strip_center(to_curb: float) -> void:
 	site.door = Vector2(-w * 0.5 + bay * 0.5, zf)
 	for i in n:
 		var x := -w * 0.5 + (i + 0.5) * bay
+		if aw > 0.0 and x > ax0:
+			continue
 		var sw := bay - 1.4
 		shopfront = fine_parts
 		_glass(Vector3(x - 0.4, 1.7, zf - 0.03), Vector3(-1, 0, 0), sw - 1.4, 2.3, rng.randf_range(0.0, 0.2))
@@ -523,6 +529,8 @@ func _strip_center(to_curb: float) -> void:
 	while x <= w * 0.5 + 0.01:
 		_box("paint", Vector3(0.45, 3.0, 0.45), Vector3(clampf(x, -w * 0.5 + 0.3, w * 0.5 - 0.3), 1.9, zf - 2.3), wall.lightened(0.1))
 		x += bay
+	if aw > 0.0:
+		_grocery_anchor(ax0, w * 0.5, zf, cz, d, wall, mull)
 	_rooftop(w, d, cz, h, n)
 	# A raised false front over the end store, and over the middle on a
 	# long centre: what a strip centre's parapet does to break up its length.
@@ -532,6 +540,75 @@ func _strip_center(to_curb: float) -> void:
 	_shop_parking(to_curb, w, zf - 2.6, 0.0)
 	if fine_parts:
 		_strip_lot_dress(to_curb, zf - 4.6, n, wall)
+
+
+## The supermarket that anchors a neighborhood center (ICSC: 30,000 to
+## 125,000 sq ft with a grocer; Kroger, Marsh and Aldi in Indiana's 1990s-
+## 2010s centers): a taller, deeper box than the shops, its front a raised
+## entry tower with the store's name, a wide glass vestibule with in and
+## out doors, cart corrals in the lot, and a truck well at the back.
+func _grocery_anchor(x0: float, x1: float, zf: float, cz: float, d: float, wall: Color, mull: Color) -> void:
+	var r := RandomNumberGenerator.new()
+	r.seed = hash([rng.seed, "grocer"])
+	var aw := x1 - x0
+	var ax := (x0 + x1) * 0.5
+	var ad := minf(depth - zf - 2.0, maxf(d, r.randf_range(26.0, 34.0)))
+	var h := r.randf_range(7.8, 8.8)
+	var face := wall.lightened(0.12) if r.randf() < 0.5 else Color(_pick(["#d8cfbd", "#b9a68a", "#8f8a80"]))
+	var accent := Color(_pick(["#2b4a7a", "#7a2b2b", "#2f5a3a", "#3a3c3e"]))
+	var zfa := zf - 0.25
+	_box("paint", Vector3(aw, h, ad), Vector3(ax, h * 0.5, zfa + ad * 0.5), face)
+	_quad("membrane", Vector3(x0, h + 0.02, zfa), Vector3(x1, h + 0.02, zfa), Vector3(x1, h + 0.02, zfa + ad),
+		Vector3(x0, h + 0.02, zfa + ad), Color("#9a9790"), [], Vector3.UP)
+	_box("paint", Vector3(aw + 0.1, 0.5, 0.4), Vector3(ax, h + 0.25, zfa - 0.05), accent)  # cap band
+	# The entry tower: a raised front with a gable or a barrel over it.
+	var tx := ax + r.randf_range(-aw * 0.15, aw * 0.15)
+	var tw := minf(aw * 0.4, 16.0)
+	var th := h + 3.5
+	_box("paint", Vector3(tw, th, 1.2), Vector3(tx, th * 0.5, zfa - 0.6), face.lightened(0.05))
+	if r.randf() < 0.5:
+		_tri("roof", Vector3(tx - tw * 0.5 - 0.3, th, zfa - 1.25), Vector3(tx + tw * 0.5 + 0.3, th, zfa - 1.25),
+			Vector3(tx, th + tw * 0.22, zfa - 1.25), accent, [], Vector3(0, 0, -1))
+		_quad("roof", Vector3(tx - tw * 0.5 - 0.3, th, zfa - 1.25), Vector3(tx, th + tw * 0.22, zfa - 1.25),
+			Vector3(tx, th + tw * 0.22, zfa + 0.05), Vector3(tx - tw * 0.5 - 0.3, th, zfa + 0.05), accent, [], Vector3(-1, 1, 0))
+		_quad("roof", Vector3(tx, th + tw * 0.22, zfa - 1.25), Vector3(tx + tw * 0.5 + 0.3, th, zfa - 1.25),
+			Vector3(tx + tw * 0.5 + 0.3, th, zfa + 0.05), Vector3(tx, th + tw * 0.22, zfa + 0.05), accent, [], Vector3(1, 1, 0))
+	else:
+		_box("paint", Vector3(tw + 0.4, 0.6, 1.5), Vector3(tx, th + 0.3, zfa - 0.6), accent)
+	var spec := sign_spec
+	sign_spec = {}
+	_sign(Vector3(tx, th - 2.2, zfa - 1.25), tw * 0.8, 1.6)
+	sign_spec = spec
+	# The vestibule: glass across the tower's foot, in and out doors.
+	_glass(Vector3(tx, 1.7, zfa - 1.23), Vector3(-1, 0, 0), tw - 1.2, 3.0, 0.0)
+	for k in [-1.0, 1.0]:
+		_box("paint", Vector3(2.0, 2.3, 0.06), Vector3(tx + k * tw * 0.22, 1.15, zfa - 1.28), Color("#2b2d2f"))
+	_box("paint", Vector3(tw + 1.0, 0.25, 2.6), Vector3(tx, 3.6, zfa - 2.4), accent)  # entry canopy
+	# Windows along the front either side, high, with the store's banners.
+	for sx in [-1.0, 1.0]:
+		var fx0: float = tx + sx * (tw * 0.5 + 1.0)
+		var fx1: float = x0 + 1.0 if sx < 0.0 else x1 - 1.0
+		var len := absf(fx1 - fx0)
+		if len > 3.0:
+			_glass(Vector3((fx0 + fx1) * 0.5, 2.0, zfa - 0.03), Vector3(-1, 0, 0), len, 2.6, r.randf_range(0.2, 0.5))
+			_box("paint", Vector3(len, 0.12, 0.1), Vector3((fx0 + fx1) * 0.5, 3.35, zfa - 0.06), mull)
+	# Cart corrals in the lot, and the truck well at the back.
+	for k in 2:
+		var cx := lerpf(x0 + 4.0, x1 - 4.0, 0.25 + k * 0.5)
+		var czz := zf - 12.0 - k * 2.0
+		if czz < 2.0:
+			continue
+		for s in [-1.0, 1.0]:
+			_box("metal", Vector3(0.06, 1.1, 4.0), Vector3(cx + s * 0.8, 0.55, czz), Color("#a9adb0"))
+		_box("metal", Vector3(1.66, 0.06, 4.0), Vector3(cx, 1.1, czz), Color("#a9adb0"))
+		for c in 4:
+			_box("metal", Vector3(0.55, 0.6, 0.9), Vector3(cx, 0.5, czz - 1.4 + c * 0.75), Color("#c7c9c8"))
+	var dock_z := zfa + ad
+	if depth - dock_z > 6.0:
+		_flat_rect("asphalt", x0 + 2.0, x0 + 18.0, dock_z, minf(depth - 0.5, dock_z + 16.0), 0.07)
+		for k in 2:
+			_box("paint", Vector3(3.2, 3.4, 0.1), Vector3(x0 + 6.0 + k * 6.0, 1.7, dock_z + 0.06), Color("#5a5c5e"))  # dock doors
+			_box("paint", Vector3(3.6, 1.2, 0.5), Vector3(x0 + 6.0 + k * 6.0, 1.2, dock_z + 0.3), Color("#1e1f20"))  # seals
 
 
 ## What a real strip centre's lot has that a bare one doesn't (Marion's

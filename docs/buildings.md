@@ -10,6 +10,7 @@ made from what is around the lot:
 | Zone | Type | When an owner picks it |
 |---|---|---|
 | Homes | House | Room for a yard; less likely in a crowded core |
+| Homes | Duplex | 15+ buildings within 200 m: a few doubles among the houses |
 | Homes | Row homes | 30+ buildings within 200 m: land is dear |
 | Homes | Apartments | 20+ buildings within 200 m, or on an avenue |
 | Shops | Shop | The usual neighborhood store |
@@ -29,6 +30,7 @@ fully in favour at twice that:
 | Type | Stages (market needed) |
 |---|---|
 | Apartments | walk-up 10k, three-storey 25k, mid-rise 100k, high-rise 150k, tower 400k |
+| Duplex | 1.5k, fourplex 5k |
 | Row homes | 50k, three-storey 100k |
 | Shop with flats | two-storey any, three 5k, four 15k |
 | Offices | three storeys 10k, five 25k, eight 50k, 16 150k, 30 1M |
@@ -53,8 +55,14 @@ with a shopfront every 7-8 m. No re-platting is needed.
 Each type has stages (`BuildingTypes.TYPES`), and some turn into another
 type at the top of theirs:
 
-- House: family home, then two-storey home. In a very built-up area it can
-  make way for row homes.
+- House: family home, then two-storey home, then home with addition (a
+  family room, sunroom or two-storey wing built on out back, where the area
+  is well-off enough). Near the middle of town it can become a duplex; in a
+  very built-up area it can make way for row homes.
+- Duplex: a two-family house drawn for its street's era (an up-and-down
+  with a two-deck porch or an Indianapolis double before the war, a ranch
+  duplex after it, a two-storey one lately), then a fourplex. It can make
+  way for row homes or apartments.
 - Row homes: two storeys, then three.
 - Apartments: walk-up, three storeys, mid-rise (5).
 - Shop: corner store, then retail store. On a Main Street it gains flats

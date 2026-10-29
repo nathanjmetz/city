@@ -299,7 +299,7 @@ func _draw(key: String, lot: Dictionary, b: Dictionary, fit: Dictionary, s: int)
 	HouseBuilder.owner_care = sim.care.tier_of(key)
 	HouseBuilder.restored = sim.heritage.protected(key)
 	HouseBuilder.keep_arrays = true
-	var built := build_for(BuildingTypes.type_of(b), storeys, s, lot.to_curb, fit, spec, int(b.get("units", 2)), b.get("chain", "general"))
+	var built := build_for(BuildingTypes.type_of(b), storeys, s, lot.to_curb, fit, spec, int(b.get("units", 2)), b.get("chain", "general"), int(b.get("level", 0)))
 	HouseBuilder.keep_arrays = false
 	HouseBuilder.owner_care = 0
 	HouseBuilder.restored = false
@@ -311,10 +311,15 @@ func _draw(key: String, lot: Dictionary, b: Dictionary, fit: Dictionary, s: int)
 
 ## What a type's builder draws for a stage of `storeys` on lot `fit` (the
 ## game's own pick, shared with tools/growth_strip.gd).
-static func build_for(type: String, storeys: int, s: int, to_curb: float, fit: Dictionary, spec := {}, units := 2, chain := "general") -> Array:
+static func build_for(type: String, storeys: int, s: int, to_curb: float, fit: Dictionary, spec := {}, units := 2, chain := "general", level := 0) -> Array:
 	var built := []
 	match type:
-		"house": built = HouseBuilder.build(s, to_curb, fit, storeys)
+		"house":
+			# Its third stage has built on out back (Home with addition).
+			HouseBuilder.grown = maxi(0, level - 1)
+			built = HouseBuilder.build(s, to_curb, fit, storeys)
+			HouseBuilder.grown = 0
+		"duplex": built = DuplexBuilder.build(s, to_curb, fit, level)
 		"row_home": built = MetroBuilder.build_row(s, to_curb, fit, units, storeys)
 		"apartments":
 			# A high-rise is a tower like the offices (860-880 Lake Shore
@@ -325,7 +330,8 @@ static func build_for(type: String, storeys: int, s: int, to_curb: float, fit: D
 				built = MetroBuilder.build_apartments(s, to_curb, fit, storeys)
 		"shop": built = DenseBuilder.build_retail(s, to_curb, fit, spec)
 		"shopping_center":
-			CommercialBuilder.force_shop = "strip"
+			# A neighborhood center (the second stage) has a grocer anchor.
+			CommercialBuilder.force_shop = "center" if level >= 1 else "strip"
 			built = DenseBuilder.build_retail(s, to_curb, fit, spec)
 			CommercialBuilder.force_shop = ""
 		"mixed_use": built = DenseBuilder.build_mixed(s, to_curb, fit, storeys, spec)
@@ -398,7 +404,7 @@ func _spawn(key: String, refill := false) -> void:
 	if bulk.is_empty():
 		var box := MeshParts.aabb(solid)
 		bulk = [Rect2(box.position.x, box.position.z, box.size.x, box.size.z)]
-	var pitched: bool = BuildingTypes.type_of(b) in ["house", "row_home"]
+	var pitched: bool = BuildingTypes.type_of(b) in ["house", "duplex", "row_home"]
 	var far := far_arrays(_far_surfaces(solid), bulk, int(b.zone) == ZoneMap.Zone.INDUSTRIAL,
 		_wall_colour(int(b.zone), rng), _roof_colour(pitched, rng), flat[0][1] if not flat.is_empty() else [])
 	var parts := [solid, draped, footing, far, drawn[2], labels]

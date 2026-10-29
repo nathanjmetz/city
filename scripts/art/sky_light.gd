@@ -59,6 +59,14 @@ var shadow_reach := 2000.0
 var _gl := RenderingServer.get_current_rendering_method() == "gl_compatibility"
 var _light := 0.45 if _gl else 1.0
 var _sky_share := 0.0 if _gl else 0.6
+## The desktop's skylight. Open ground in a building's shadow on a clear
+## day gets about a quarter to a third of the light of ground in sun (sky
+## 15-25 klux against 60-80 klux of direct sun at 40 degrees up), and in
+## photos a lawn in shade is a darker green, never black. The desktop's
+## deeper blue sky (CloudSky) gives less skylight than the old pale one,
+## and lawns in shadow came out near black up close; this brings the
+## shade back to the measured share (Forward+ only).
+var _shade_k := 1.0 if _gl else 2.1
 
 
 ## Depth fog at street level (see _ready) and how high the haze reaches.
@@ -90,7 +98,7 @@ func _ready() -> void:
 	# reads blue-grey like in photos rather than saturated blue.
 	env.ambient_light_sky_contribution = _sky_share
 	env.ambient_light_color = Color(0.66, 0.66, 0.64)
-	env.ambient_light_energy = SHADE_ENERGY * _light
+	env.ambient_light_energy = SHADE_ENERGY * _light * _shade_k
 	env.reflected_light_source = Environment.REFLECTION_SOURCE_SKY
 	# AgX keeps bright roofs and concrete from clipping to flat white.
 	env.tonemap_mode = Environment.TONE_MAPPER_AGX
@@ -145,8 +153,9 @@ func _ready() -> void:
 		# heights it's played at: woods olive-grey, lawns khaki, shade
 		# lifted. Aerial photos of a Grant County town in July have dark
 		# tree crowns, saturated green lawns and crisp roofs; a steeper
-		# curve (1.25 -> 1.5) gets there (Forward+ only).
-		env.tonemap_agx_contrast = 1.5
+		# curve gets there (Forward+ only). Steeper than 1.3 crushes the
+		# shade on lawns to black.
+		env.tonemap_agx_contrast = 1.3
 	# Lamps, lit windows and headlights bloom a little; daylight never does.
 	env.glow_enabled = true
 	env.glow_hdr_threshold = 1.2
@@ -268,7 +277,8 @@ func set_time(hour: float, months: float) -> void:
 	env.fog_light_color = l.fog_color
 	haze_scale = l.haze
 	env.ambient_light_color = l.shade_color
-	env.ambient_light_energy = SHADE_ENERGY * _light * l.shade_energy
+	# Moonlit shade keeps its own tuned strength.
+	env.ambient_light_energy = SHADE_ENERGY * _light * lerpf(_shade_k, 1.0, darkness) * l.shade_energy
 	env.glow_intensity = 0.9 * darkness
 	env.tonemap_exposure = l.exposure
 	if elev > -2.0:
