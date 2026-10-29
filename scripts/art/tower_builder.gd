@@ -829,10 +829,10 @@ func _tw_glass_box(w: float, d: float, cz: float, ground_h: float, floor_h: floa
 
 ## Desktop: a mechanical floor's louvre blades, horizontal fins about
 ## 45 cm apart round a w by d band from `y`, `h` tall.
-func _tw_louvres(w: float, d: float, cz: float, y: float, h: float) -> void:
+func _tw_louvres(w: float, d: float, cz: float, y: float, h: float, x := 0.0) -> void:
 	if not fine_parts:
 		return
-	for face in _tw_faces(w, d, cz):
+	for face in _tw_faces(w, d, cz, x):
 		var out: Vector3 = face[1].cross(Vector3.UP)
 		for i in int((h - 0.3) / 0.45):
 			var c: Vector3 = face[0] + out * 0.08
@@ -1172,18 +1172,18 @@ func _tw_balcony(to_curb: float, width: float, storeys: int) -> void:
 ## it, on most, the residents' roof deck (grills, a pergola, planters and
 ## loungers behind a glass guard), as the rental and condo towers of
 ## Indianapolis and Chicago's River North have. Its own random numbers.
-func _tw_roof_deck(w: float, d: float, cz: float, y: float, mech: float, edge: Color, guard: Color) -> void:
+func _tw_roof_deck(w: float, d: float, cz: float, y: float, mech: float, edge: Color, guard: Color, x := 0.0) -> void:
 	var r := RandomNumberGenerator.new()
 	r.seed = hash([rng.seed, "roof deck"])
 	var pw := w * 0.55
 	var pd := d * 0.45
 	var pz := cz + d * 0.5 - pd * 0.5 - 1.5
 	var clad := edge.darkened(r.randf_range(0.25, 0.45))
-	_box("membrane", Vector3(pw, mech, pd), Vector3(0, y + mech * 0.5, pz), clad)
-	_tw_roof(pw, pd, pz, y + mech)
-	_tw_louvres(pw, pd, pz, y + mech * 0.3, mech * 0.5)
+	_box("membrane", Vector3(pw, mech, pd), Vector3(x, y + mech * 0.5, pz), clad)
+	_tw_roof(pw, pd, pz, y + mech, x)
+	_tw_louvres(pw, pd, pz, y + mech * 0.3, mech * 0.5, x)
 	# The elevator overrun, a little taller, over the core.
-	var ox := r.randf_range(-pw * 0.2, pw * 0.2)
+	var ox := x + r.randf_range(-pw * 0.2, pw * 0.2)
 	_box("membrane", Vector3(4.0, 1.8, 3.4), Vector3(ox, y + mech + 0.9, pz), clad.darkened(0.1))
 	_tw_roof(4.0, 3.4, pz, y + mech + 1.8, ox)
 	if r.randf() >= 0.7:
@@ -1194,11 +1194,11 @@ func _tw_roof_deck(w: float, d: float, cz: float, y: float, mech: float, edge: C
 	if z1 - z0 < 5.0:
 		return
 	var dw := w - 2.4
-	_box("paint", Vector3(dw, 0.12, z1 - z0), Vector3(0, y + 0.06, (z0 + z1) * 0.5), Color("#b9b1a3"))
-	_glass(Vector3(0, y + 0.65, z0 - 0.02), Vector3(-1, 0, 0), dw, 1.1, 0.0)
+	_box("paint", Vector3(dw, 0.12, z1 - z0), Vector3(x, y + 0.06, (z0 + z1) * 0.5), Color("#b9b1a3"))
+	_glass(Vector3(x, y + 0.65, z0 - 0.02), Vector3(-1, 0, 0), dw, 1.1, 0.0)
 	for s in [-1.0, 1.0]:
-		_glass(Vector3(s * dw * 0.5, y + 0.65, (z0 + z1) * 0.5), Vector3(0, 0, s), z1 - z0, 1.1, 0.0)
-	var gx := r.randf_range(-dw * 0.2, dw * 0.2)
+		_glass(Vector3(x + s * dw * 0.5, y + 0.65, (z0 + z1) * 0.5), Vector3(0, 0, s), z1 - z0, 1.1, 0.0)
+	var gx := x + r.randf_range(-dw * 0.2, dw * 0.2)
 	var gw := minf(dw * 0.4, 9.0)
 	var wood := Color("#6b4a32")
 	for cx in [gx - gw * 0.5, gx + gw * 0.5]:
@@ -1209,10 +1209,10 @@ func _tw_roof_deck(w: float, d: float, cz: float, y: float, mech: float, edge: C
 		for i in n + 1:
 			_box("paint", Vector3(0.08, 0.2, z1 - z0 - 1.6), Vector3(gx - gw * 0.5 + i * gw / n, y + 2.75, (z0 + z1) * 0.5 + 0.35), wood)
 		for i in 4:  # loungers along the guard
-			_box("paint", Vector3(0.7, 0.35, 1.9), Vector3(-dw * 0.5 + 2.0 + i * 1.4, y + 0.3, z0 + 1.6), Color("#e8e4da"))
-		_box("metal", Vector3(1.6, 0.9, 0.7), Vector3(dw * 0.5 - 2.0, y + 0.45, z1 - 0.8), Color("#8d9194"))  # grills
+			_box("paint", Vector3(0.7, 0.35, 1.9), Vector3(x - dw * 0.5 + 2.0 + i * 1.4, y + 0.3, z0 + 1.6), Color("#e8e4da"))
+		_box("metal", Vector3(1.6, 0.9, 0.7), Vector3(x + dw * 0.5 - 2.0, y + 0.45, z1 - 0.8), Color("#8d9194"))  # grills
 	for k in 3:  # planters with small trees and grasses
-		var px := lerpf(-dw * 0.5 + 1.5, dw * 0.5 - 1.5, k / 2.0)
+		var px := x + lerpf(-dw * 0.5 + 1.5, dw * 0.5 - 1.5, k / 2.0)
 		_box("concrete", Vector3(1.6, 0.8, 1.6), Vector3(px, y + 0.4, (z0 + z1) * 0.5), Color("#8f8b84"))
 		_shrub(Vector3(px, y + 0.8, (z0 + z1) * 0.5), 0.7)
 
@@ -1547,6 +1547,10 @@ func _tw_podium(to_curb: float, width: float, storeys: int) -> void:
 	# The mechanical screen on top, and on some offices a lit blade.
 	_tw_roof(tw, td, tz, top + 0.05, tx)  # the tower's own roof: far away it stops here, under the screen
 	_tw_rooftop(tw, td, tz, top + 0.05, tx, true, true)
+	if _homes:
+		# An apartment tower: a clad penthouse and the residents' roof deck.
+		_tw_roof_deck(tw, td, tz, top + 0.05, 4.5, slab, Color("#a9bcc4"), tx)
+		return
 	# (membrane-faced, so far away it keeps its dark grey instead of the walls' colour)
 	var mw := tw * 0.62
 	var md := td * 0.62
