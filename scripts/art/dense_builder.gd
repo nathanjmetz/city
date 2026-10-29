@@ -152,7 +152,7 @@ func _apartments(to_curb: float, width: float, storeys: int) -> void:
 	var trim := Color(_pick(["#d9d3c3", "#cfc8b6", "#efede6"]))
 	_box("paint", Vector3(w + 0.1, 0.5, d + 0.1), Vector3(0, 0.25, cz), FOUNDATION)
 	_block("brick", 0.0, w, d, cz, deck, top, wall)
-	_coping(w, d, cz, top)
+	_coping(w, d, cz, top, true)
 	# Centre entry: a glass door, a flat canopy and a walk to the street.
 	_box("paint", Vector3(2.2, 2.4, 0.08), Vector3(0, 1.7, zf - 0.04), trim)
 	_glass(Vector3(0, 1.65, zf - 0.09), Vector3(-1, 0, 0), 1.8, 2.2, 0.0)
@@ -384,7 +384,7 @@ func _office(to_curb: float, width: float, storeys: int) -> void:
 	var mat := "brick" if brick else "paint"
 	var band := Color(_pick(SPANDREL))
 	_block(mat, 0.0, w, d, cz, deck, top, wall)
-	_coping(w, d, cz, top)
+	_coping(w, d, cz, top, mat == "brick")
 	# Ribbon windows on every floor, wrapping the front and the sides.
 	for f in storeys:
 		var y := f * floor_h + 0.3 + (2.0 if f == 0 else 1.9)
@@ -486,8 +486,9 @@ func _rear_wall(x0: float, x1: float, zb: float, base: float, floor_h: float, st
 func _block(mat: String, cx: float, w: float, d: float, cz: float, deck: float, top: float, wall: Color) -> void:
 	_box(mat, Vector3(w, deck, d), Vector3(cx, deck * 0.5, cz), wall)
 	var y := deck + 0.02
-	_quad("paint", Vector3(cx - w * 0.5, y, cz - d * 0.5), Vector3(cx + w * 0.5, y, cz - d * 0.5),
-		Vector3(cx + w * 0.5, y, cz + d * 0.5), Vector3(cx - w * 0.5, y, cz + d * 0.5), Color("#bdbbb4"), [], Vector3.UP)
+	_quad("membrane", Vector3(cx - w * 0.5, y, cz - d * 0.5), Vector3(cx + w * 0.5, y, cz - d * 0.5),
+		Vector3(cx + w * 0.5, y, cz + d * 0.5), Vector3(cx - w * 0.5, y, cz + d * 0.5), _low_slope(w, d, cx + cz, mat == "brick"), [], Vector3.UP)
+	_roof_bits(cx, w, d, cz, y, mat == "brick")
 	var ph := top - deck
 	var t := 0.25
 	_box(mat, Vector3(w, ph, t), Vector3(cx, deck + ph * 0.5, cz - d * 0.5 + t * 0.5), wall)
