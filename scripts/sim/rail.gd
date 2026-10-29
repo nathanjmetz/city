@@ -38,6 +38,9 @@ const SETBACK := 4.0
 const TRACK_V := [18.0, 22.6, 27.2]
 ## Track runs on past the region link this far before trains leave the map.
 const REGION_RUN := 900.0
+## Track centres between the county's main and a town's interchange track
+## beside it, metres (AREMA: 14 ft minimum; 15 ft usual).
+const INTERCHANGE_GAP := 4.6
 ## The main line ends this far to the side of the county highway's link.
 const LINK_OFFSET := 70.0
 ## Farthest a depot reaches for a company to serve.
@@ -439,6 +442,8 @@ func _next_project(sim: CitySim, id: int) -> bool:
 				CitySim.money_text(plan.cost), CitySim.money_text(int(d.money))]
 			return false
 		_propose(sim, id, "main", link, plan,
+			"A main line out to an interchange with the county's railroad, where its through freights take the town's cars on"
+			if link.get("county", false) else
 			"A main line out to the region, so trains can carry the town's goods and people to the rest of the state")
 		return true
 	if lines[main].state != "open":
@@ -666,6 +671,8 @@ func _propose(sim: CitySim, id: int, kind: String, target: Dictionary, plan: Dic
 		l.start = {"node": from.node}
 	if target.has("heading"):
 		l.target.heading = [target.heading.x, target.heading.y]
+	if target.get("county", false):
+		l.target.county = true
 	lines[lid] = l
 	d.why = "Asked the town's permission: " + why
 	return true
@@ -822,6 +829,21 @@ func _skipped(sim: CitySim, d: Dictionary, ref: String) -> bool:
 func _region_target(sim: CitySim, near: Vector3) -> Dictionary:
 	var best := {}
 	var best_d := INF
+	# Out in the county (desktop), the main line meets the county's real
+	# railroad at an interchange track beside it, the way a short line hands
+	# its cars to the road railroad.
+	if sim.county_rail:
+		var off: Vector2 = sim.terrain_offset
+		var n := CountyTrains.nearest(Vector2(near.x, near.z) + off)
+		if not n.is_empty() and n.dist < CountyTrains.INTERCHANGE_REACH:
+			var at: Vector2 = n.at - off
+			var side := Vector2(-n.dir.y, n.dir.x)
+			if side.dot(Vector2(near.x, near.z) - at) < 0.0:
+				side = -side
+			var h: Vector2 = n.dir if n.dir.dot(at - Vector2(near.x, near.z)) >= 0.0 else -n.dir
+			var p := at + side * INTERCHANGE_GAP * 3.0 - h * REGION_RUN * 0.5
+			return {"ref": "region", "name": "the interchange", "pos": Vector3(p.x, 0.0, p.y), "heading": h,
+				"county": true}
 	for n in sim.region_links:
 		if not sim.network.nodes.has(n) or sim.network.segments_at(n).is_empty():
 			continue
@@ -901,7 +923,7 @@ func _construct(sim: CitySim) -> void:
 			l.built = total
 			l.state = "open"
 			if l.kind == "main":
-				_region_run(l)
+				_region_run(sim, l)
 				d.why = "The main line to the region is open."
 				if d.freight_train == -1:
 					d.freight_train = _new_train(l.depot, "freight")
@@ -909,7 +931,9 @@ func _construct(sim: CitySim) -> void:
 				d.why = "The spur to the %s is open. Cars load there for the local freight." % l.target.name.to_lower()
 
 
-func _region_run(l: Dictionary) -> void:
+func _region_run(sim: CitySim, l: Dictionary) -> void:
+	if l.target.get("county", false) and _county_run(sim, l):
+		return
 	var end: Vector3 = l.route[-1]
 	var h: Array = l.target.get("heading", [1.0, 0.0])
 	var out := Vector3(float(h[0]), 0.0, float(h[1])).normalized()
@@ -930,6 +954,44 @@ func _region_run(l: Dictionary) -> void:
 	region_nodes[b] = true
 	var pid := _add_piece(a, b, pts, "region", l.depot, -1, -1.0)
 	l.pieces.append(pid)
+
+
+## The interchange track: from the main line's end it eases over beside the
+## county's line, then runs alongside it REGION_RUN metres. False if the
+## county's line isn't there.
+func _county_run(sim: CitySim, l: Dictionary) -> bool:
+	var end: Vector3 = l.route[-1]
+	var off: Vector2 = sim.terrain_offset
+	var n := CountyTrains.nearest(Vector2(end.x, end.z) + off)
+	if n.is_empty() or n.dist > REGION_RUN:
+		return false
+	var h = l.target.heading
+	var hv: Vector2 = h if h is Vector2 else Vector2(float(h[0]), float(h[1]))
+	var sgn := 1.0 if n.dir.dot(hv) >= 0.0 else -1.0
+	var side := 1.0 if Vector2(-n.dir.y, n.dir.x).dot(Vector2(end.x, end.z) + off - n.at) >= 0.0 else -1.0
+	var lat0: float = n.dist
+	var c: Dictionary = CountyTrains.corridors()[n.corridor]
+	var pts := [end]
+	var s := 10.0
+	while s <= REGION_RUN:
+		var cs: float = float(n.s) + sgn * s
+		if cs < 0.0 or cs > float(c.length):
+			break
+		var pose := CountyTrains.pose(n.corridor, cs)
+		var dir: Vector2 = pose[1]
+		var lat := lerpf(lat0, INTERCHANGE_GAP, smoothstep(0.0, 300.0, s))
+		var q: Vector2 = pose[0] + Vector2(-dir.y, dir.x) * side * lat - off
+		pts.append(Vector3(q.x, end.y, q.y))
+		s += 10.0
+	if pts.size() < 20:
+		return false
+	var a: int = pieces[l.pieces[0]].b
+	var b := _add_node(pts[-1])
+	region_nodes[b] = true
+	var pid := _add_piece(a, b, pts, "region", l.depot, -1, -1.0)
+	pieces[pid].county = true
+	l.pieces.append(pid)
+	return true
 
 
 ## Splits a piece at a point index for a new turnout. Returns the new node.
@@ -1501,6 +1563,8 @@ func _arrive(sim: CitySim, tid: int) -> void:
 				d.money += fare
 				d.ledger.income += fare
 				t.riders = 0
+	elif leg == "region" and t.kind == "freight" and _interchange(sim, tid):
+		pass
 	elif leg == "region":
 		t.state = "away"
 		t.timer = roundi((Balance.RAIL_REGION_DAYS if t.kind == "freight" else Balance.RAIL_PAX_AWAY_DAYS) * TICKS_PER_DAY)
@@ -1526,6 +1590,59 @@ func _arrive(sim: CitySim, tid: int) -> void:
 			if held[pid] == tid:
 				held.erase(pid)
 		t.trail = []
+
+
+## At the county interchange the local freight leaves its loaded cars for the
+## next through freight, runs around them and heads back light (no trip off
+## the map). False if this main line doesn't end at one.
+func _interchange(sim: CitySim, tid: int) -> bool:
+	var t: Dictionary = trains[tid]
+	var d: Dictionary = depots[t.depot]
+	var main := _main_line(t.depot)
+	if main == -1:
+		return false
+	var rp: int = lines[main].pieces[-1]
+	if not pieces[rp].get("county", false):
+		return false
+	var cars := []
+	for k in t.consist:
+		if not STOCK[k].has("cargo"):
+			continue
+		cars.append([k, STOCK[k].cargo if t.cars > 0 else "empty"])
+	var mid: Array = pose_at(rp, _length(rp) * 0.5)
+	var at := Vector2(mid[0].x, mid[0].z) + sim.terrain_offset
+	if t.cars > 0 and not sim.county_trains.hand_off(sim.tick_count, at, rp, cars):
+		return false
+	if t.cars > 0:
+		var pay: float = t.cars * Balance.RAIL_CAR_RATE * fx(t.depot, "rate*")
+		d.money += pay
+		d.ledger.income += pay
+		d.delivered = int(d.get("delivered", 0)) + t.cars
+	var km := _main_length(t.depot) * 2.0
+	for lid in _lines_of(t.depot):
+		if lines[lid].kind == "spur" and t.has("job") and lid == t.job:
+			km += lines[lid].length * 2.0
+	var run := _run_cost(km) * fx(t.depot, "run*")
+	d.money -= run
+	d.ledger.costs += run
+	# The engine runs around its cars and comes back from the town end.
+	var tail := _behind(t, train_length(t))
+	t.consist = ["gp38"]
+	t.cars = 0
+	t.cargo = ""
+	if not tail.is_empty() and not tail.has("off"):
+		var trail := []
+		for i in range(int(tail.index), -1, -1):
+			trail.append([t.trail[i][0], -int(t.trail[i][1])])
+		t.trail = trail
+		t.s = tail.s
+	t.legs = ["yard"]
+	t.state = "dwell"
+	t.timer = DWELL_TICKS
+	t.purpose = "Local freight: left its cars at the interchange for the through freight"
+	t.from = "The interchange"
+	t.to = d.name + " yard"
+	return true
 
 
 ## A train comes back in from the region, empty cars or new riders aboard.

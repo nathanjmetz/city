@@ -161,6 +161,21 @@ static func _town(pts: PackedVector3Array, type: int, mats: Dictionary, cuts := 
 		mesh.surface_set_material(mesh.get_surface_count() - 1, mats.curb)
 		if mats.has("iron"):
 			_castings(mesh, pts, length, hw, lane_edge, mats)
+		if mats.has("wear"):
+			var centres := []
+			if spec.oneway:
+				for k in spec.lanes:
+					centres.append(-lane_edge + lane * (k + 0.5))
+			else:
+				for k in spec.lanes / 2:
+					centres.append(inner + lane * (k + 0.5))
+					centres.append(-inner - lane * (k + 0.5))
+			var wear := SurfaceTool.new()
+			wear.begin(Mesh.PRIMITIVE_TRIANGLES)
+			for c: float in centres:
+				add_strip(wear, marks, c - 1.5, c + 1.5, RoadStyle.Y_ASPHALT + 0.005)
+			wear.commit(mesh)
+			mesh.surface_set_material(mesh.get_surface_count() - 1, mats.wear)
 	# Downtown stall marks: T marks every 22 ft along parallel parking, and
 	# 45-degree stall lines 9 ft wide for angled parking.
 	var stalls := SurfaceTool.new()
