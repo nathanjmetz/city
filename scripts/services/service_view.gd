@@ -391,7 +391,7 @@ func _spawn(id: int, b: Dictionary) -> Node3D:
 	if int(b.kind) in Services.PARKING:
 		built = ParkingBuilder.build_lot(b, seed, to_curb)
 	elif int(b.kind) in Services.CARE:
-		built = HealthBuilder.build_care(int(b.kind), seed, size, to_curb, sim.healthcare.hubs.get(id, {}))
+		built = HealthBuilder.build_care(int(b.kind), seed, size, to_curb, sim.healthcare.hubs.get(id, {}), _dev(id))
 	else:
 		built = CivicBuilder.build_service(int(b.kind), seed, size, to_curb, _dev(id))
 	built[1] = Terrain.drape_local(built[1], Transform3D(root.basis, root.position))
