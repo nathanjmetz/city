@@ -138,6 +138,9 @@ const GLASS := """
 // bulkhead to a ceiling above the head, 6 m deep. Shelves of stock or racks
 // of clothes on the walls, tile floor, lay-in ceiling with light panels;
 // after dark most stay lit, as Main Street windows do.
+const vec3 CLOTH[12] = vec3[](vec3(0.06, 0.08, 0.16), vec3(0.03, 0.03, 0.035), vec3(0.16, 0.16, 0.17),
+	vec3(0.42, 0.42, 0.42), vec3(0.12, 0.2, 0.34), vec3(0.45, 0.38, 0.25), vec3(0.75, 0.74, 0.7),
+	vec3(0.2, 0.24, 0.14), vec3(0.3, 0.06, 0.08), vec3(0.06, 0.08, 0.16), vec3(0.55, 0.08, 0.08), vec3(0.75, 0.6, 0.15));
 bool shop_room(vec2 uv, vec3 vw, out vec3 col, out float glow) {
 	vec3 n = normalize(world_normal);
 	vec3 inw = dot(vw, n) > 0.0 ? n : -n;
@@ -186,8 +189,9 @@ bool shop_room(vec2 uv, vec3 vw, out vec3 col, out float glow) {
 			if (hy > 0.75 && hy < 1.75) {
 				float g = floor(u / 0.09);
 				float c = hash(vec2(g, sid));
-				vec3 cloth = vec3(c, hash(vec2(g, 5.0)), hash(vec2(g, 7.0)));
-				cloth = cloth * cloth * 0.7;
+				// What a real rack holds: mostly navy, black, greys, denim,
+				// khaki and white, with the odd bright piece.
+				vec3 cloth = CLOTH[clamp(int(hash(vec2(g, 5.0 + sid)) * 12.0), 0, 11)];
 				float len = 0.75 + 0.5 * hash(vec2(g, 11.0));
 				col = mix(col, cloth, step(1.75 - len, hy) * step(0.12, c));
 			}
@@ -201,6 +205,31 @@ bool shop_room(vec2 uv, vec3 vw, out vec3 col, out float glow) {
 			vec3 c = mix(wallc * 0.8, stock, step(0.18, p) * step(fy, 0.1 + 0.75 * hash(vec2(g, row + 9.0))));
 			col = mix(c, vec3(0.30, 0.27, 0.24), step(fy, 0.07));
 		}
+	}
+	// A display table in the middle of the floor (or a low gondola), stock
+	// on its top: the slab test of the ray against its box.
+	vec3 o = vec3(px, world_pos.y, 0.0);
+	vec3 bmin = vec3((xl + xr) * 0.5 - 0.8, yf, 2.0);
+	vec3 bmax = vec3((xl + xr) * 0.5 + 0.8, yf + mix(0.8, 1.4, step(0.5, hash(vec2(sid, 4.0)))), 3.4);
+	vec3 inv = 1.0 / rd;
+	vec3 t0 = (bmin - o) * inv;
+	vec3 t1 = (bmax - o) * inv;
+	vec3 tn = min(t0, t1);
+	vec3 tf = max(t0, t1);
+	float tin = max(max(tn.x, tn.y), tn.z);
+	float tout = min(min(tf.x, tf.y), tf.z);
+	if (tin > 0.0 && tin < tout && tin < t) {
+		vec3 b = o + rd * tin;
+		vec3 fix = mix(vec3(0.42, 0.30, 0.20), vec3(0.85, 0.84, 0.8), step(0.5, hash(vec2(sid, 6.0))));
+		if (tin == tn.y) {
+			// The top: folded stock in rows.
+			float g = floor(b.x / 0.3) + floor(b.z / 0.35) * 7.0;
+			col = mix(fix, CLOTH[clamp(int(hash(vec2(g, sid)) * 12.0), 0, 11)] + 0.08, step(0.3, hash(vec2(g, 2.0 + sid))));
+		} else {
+			col = fix * 0.7;
+		}
+		t = tin;
+		glow = 0.0;
 	}
 	// Further in, a little dimmer; and the corners darker.
 	col *= mix(1.0, 0.72, clamp(t * rd.z / 6.0, 0.0, 1.0));
