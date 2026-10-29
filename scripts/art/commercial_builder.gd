@@ -153,6 +153,8 @@ func _retail(to_curb: float) -> void:
 	_steel_door(Vector3(w * 0.3, 1.35, zf + d + 0.03), 1.0)
 	# Parking: a walk along the front, a row of stalls, the aisle and the curb cut.
 	_flat_rect("drive", -w * 0.5 - 0.5, w * 0.5 + 0.5, zf - 2.2, zf, 0.08)
+	if fine_parts:
+		_store_walk(w, zf, -sw * 0.5 + (door + 0.5) * sw / bays, half - 0.6)
 	var lot0 := -half + 0.6
 	var lot1 := half - 0.6
 	_flat_rect("asphalt", lot0, lot1, 0.0, zf - 2.2, 0.06)
@@ -226,6 +228,48 @@ func _main_street(to_curb: float) -> void:
 ## A freestanding store's front (1990s-2010s retail in Marion and Kokomo):
 ## a split-face block wainscot either side of the storefront and a raised
 ## false front with a cornice over the entrance.
+## The walk in front of a freestanding store (Dollar General, Rural King,
+## any IGA in Grant County): the curb painted yellow for the fire lane,
+## yellow-painted steel pipe bollards either side of the door against
+## cars, a trash can by the door, an ice merchandiser or a propane
+## exchange cage against the wall, and a cart corral out in the lot.
+## Desktop only, with its own random numbers so the builder's don't move.
+func _store_walk(w: float, zf: float, dx: float, lot1: float) -> void:
+	var r := RandomNumberGenerator.new()
+	r.seed = hash([rng.seed, 6203])
+	var yellow := Color("#d9b82a")
+	_flat_rect("line", -w * 0.5 - 0.5, w * 0.5 + 0.5, zf - 2.2, zf - 2.05, 0.085, yellow)
+	for s in [-1.0, 1.0]:
+		var bx: float = dx + s * 1.3
+		_box("paint", Vector3(0.17, 1.0, 0.17), Vector3(bx, 0.5, zf - 1.75), yellow)
+		_box("paint", Vector3(0.17, 0.06, 0.17), Vector3(bx, 1.03, zf - 1.75), yellow.darkened(0.1))
+	var out := 1.0 if dx > 0.0 else -1.0
+	_box("paint", Vector3(0.55, 0.9, 0.55), Vector3(dx - out * 1.9, 0.53, zf - 1.0), Color("#3a3c3e"))  # trash can
+	var ex := dx - out * 3.2
+	if absf(ex) < w * 0.5 - 1.0:
+		if r.randf() < 0.5:
+			# Ice merchandiser: a white chest with the blue band.
+			_box("metal", Vector3(1.6, 1.7, 0.8), Vector3(ex, 0.93, zf - 0.6), Color("#eef0f0"))
+			_box("paint", Vector3(1.62, 0.3, 0.02), Vector3(ex, 1.3, zf - 1.01), Color("#2a5ea8"))
+		else:
+			# Propane exchange: a steel mesh cage with the tanks inside.
+			_box("metal", Vector3(1.4, 1.8, 0.75), Vector3(ex, 0.98, zf - 0.6), Color("#b9bcbc"))
+			for t in 3:
+				_box("paint", Vector3(0.3, 0.45, 0.3), Vector3(ex - 0.4 + t * 0.4, 0.4, zf - 0.96), Color("#e8e8e4"))
+	# A row of nested carts along the wall the other side of the door
+	# (kept off the stalls, which the town's parking counts).
+	if r.randf() < 0.7:
+		var side := out
+		var steel := Color("#a9adb0")
+		var n := r.randi_range(3, 7)
+		var x0 := dx + side * 2.0
+		if absf(x0 + side * n * 0.3) < w * 0.5 - 0.5:
+			for k in n:
+				var x := x0 + side * k * 0.3
+				_box("metal", Vector3(0.85 - k * 0.006, 0.55 - k * 0.006, 0.55 - k * 0.006), Vector3(x, 0.6 + (k % 3) * 0.02, zf - 0.8 - (k % 3) * 0.02), steel.darkened(0.1 + 0.02 * (k % 2)))
+				_box("paint", Vector3(0.04, 0.04, 0.6 - k * 0.006), Vector3(x + side * 0.12, 1.0 + (k % 3) * 0.02, zf - 0.8 - (k % 3) * 0.02), Color("#c23a2a"))  # handle
+
+
 func _retail_front(cx: float, w: float, sw: float, zf: float, top: float, wall: Color, mat: String) -> void:
 	var base := Color(["#8b8478", "#a39a8a", "#6f6a62"][absi(hash([rng.seed, 9])) % 3])
 	var side := (w - sw) * 0.5 - 0.1
