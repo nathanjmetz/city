@@ -7,8 +7,9 @@ extends SceneTree
 ##   kind (with a dryer, for grain) going through seeds; yaw, pitch in
 ##   degrees and dist in metres about the yard's middle. "photo" turns on
 ##   the desktop High+ photo ground; a month (1-12) after it parks the
-##   machines for that month (FarmsteadParked); "house" after that looks
-##   at the farmhouse instead of the yard.
+##   machines for that month (FarmsteadParked); "house", "shed" or "barn"
+##   after that looks at the farmhouse, the first machine shed or the barn
+##   instead of the yard.
 
 var _frames := 0
 
@@ -69,6 +70,12 @@ func _build() -> void:
 	var target := Vector3(ext.get_center().x, 3.0, ext.get_center().y)
 	if args.size() > 8 and args[8] == "house":
 		target = Vector3(plan.house.x, 3.0, plan.house.d * 0.5)
+	elif args.size() > 8 and args[8] in ["shed", "barn", "quonset"]:
+		var kinds: Array = ["shed", "quonset"] if args[8] != "barn" else ["barn"]
+		for q in plan.parts:
+			if q.kind in kinds:
+				target = Vector3(q.pos.x, 3.0, q.pos.y)
+				break
 	cam.position = target + Vector3(sin(yaw) * cos(pitch), sin(pitch), -cos(yaw) * cos(pitch)) * dist
 	cam.basis = Basis.looking_at(target - cam.position)
 	cam.current = true

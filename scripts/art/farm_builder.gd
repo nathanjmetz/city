@@ -770,15 +770,76 @@ func _county_shed(s: Dictionary) -> void:
 	for e in [-1.0, 1.0]:
 		for sd in [-1.0, 1.0]:
 			_box("paint", Vector3(0.12, eave, 0.12), Vector3(cx + e * l * 0.5, top * 0.5, cz + sd * w * 0.5), roof)
-	# Doors on the yard side (-z): a big door (sliding on an older shed,
-	# overhead or bi-fold on a newer one) and a walk door.
+	# Trim in the roof colour (Morton, Lester, Cleary): a fascia along each
+	# eave, rake trim up the gables and a ridge cap.
+	for sd in [-1.0, 1.0]:
+		_box("paint", Vector3(l + 0.56, 0.22, 0.06), Vector3(cx, top - over / 3.0 - 0.08, cz + sd * (w * 0.5 + over + 0.03)), roof)
+	var rake := Vector2(w * 0.5 + over, rise + over / 3.0)
+	for e in [-1.0, 1.0]:
+		for sd in [-1.0, 1.0]:
+			var mid := Vector3(cx + e * (l * 0.5 + 0.28), top + rise * 0.5 - over / 6.0, cz + sd * rake.x * 0.5)
+			_box("paint", Vector3(0.06, 0.2, rake.length()), mid, roof, Basis(Vector3(1, 0, 0), sd * atan2(rake.y, rake.x)))
+	_box("paint", Vector3(l + 0.5, 0.08, 0.5), Vector3(cx, top + rise + 0.02, cz), roof)
+	# Doors on the yard side (-z): a big door (two sliding leaves under a
+	# track hood on an older shed, a sectional overhead door with a row of
+	# windows on a newer one) and a walk door.
 	var face := cz - w * 0.5 - 0.05
 	var dw := minf(l * 0.45, 9.0 + (3.0 if s.year > 1995 else 0.0))
 	var dh := minf(eave - 0.6, 4.9)
 	var dx := cx - l * 0.18
-	_box("metal", Vector3(dw, dh, 0.08), Vector3(dx, 0.2 + dh * 0.5, face), wall.darkened(0.12) if s.year < 1995 else Color("#e8e6df"))
-	_box("paint", Vector3(dw + 0.6, 0.12, 0.12), Vector3(dx, 0.3 + dh, face - 0.05), Color("#3a3a3a"))
-	_box("paint", Vector3(0.95, 2.1, 0.08), Vector3(cx + l * 0.3, 1.25, face), Color("#e8e6df"))
+	var t := 0.14
+	if s.year < 1995:
+		var leaf := wall.darkened(0.06)
+		for e in [-1.0, 1.0]:
+			var lx: float = dx + e * dw * 0.25
+			_box("metal", Vector3(dw * 0.5 - 0.02, dh, 0.08), Vector3(lx, 0.2 + dh * 0.5, face), leaf)
+			# Each leaf's trim, its handle and a guide at its foot.
+			_box("paint", Vector3(dw * 0.5, t, 0.04), Vector3(lx, 0.2 + dh - t * 0.5, face - 0.06), roof)
+			_box("paint", Vector3(dw * 0.5, t, 0.04), Vector3(lx, 0.2 + t * 0.5, face - 0.06), roof)
+			for f in [-1.0, 1.0]:
+				_box("paint", Vector3(t, dh, 0.04), Vector3(lx + f * (dw * 0.25 - t * 0.5), 0.2 + dh * 0.5, face - 0.06), roof)
+			_box("paint", Vector3(0.05, 0.5, 0.06), Vector3(dx + e * 0.35, 1.3, face - 0.1), Color("#3a3a3a"))
+			_box("paint", Vector3(0.15, 0.2, 0.15), Vector3(dx + e * (dw * 0.5 + 0.15), 0.3, face - 0.1), Color("#3a3a3a"))
+		# The hood over the track: the leaves part to either side, so it
+		# runs on past the door each way, as far as the wall goes.
+		var h0 := maxf(dx - dw, cx - l * 0.5 + 0.2)
+		var h1 := minf(dx + dw, cx + l * 0.5 - 0.2)
+		_box("paint", Vector3(h1 - h0, 0.3, 0.22), Vector3((h0 + h1) * 0.5, 0.35 + dh + 0.1, face - 0.12), roof)
+	else:
+		var door := Color("#e8e6df")
+		_box("metal", Vector3(dw, dh, 0.08), Vector3(dx, 0.2 + dh * 0.5, face), door)
+		# Sections about 2 ft tall, their joints in shadow, windows in the
+		# second from the top.
+		var n := maxi(int(round(dh / 0.61)), 4)
+		var sec := dh / n
+		for i in range(1, n):
+			_box("paint", Vector3(dw, 0.035, 0.03), Vector3(dx, 0.2 + i * sec, face - 0.05), door.darkened(0.3))
+		var panes := int(dw / 1.2)
+		for i in panes:
+			var px := dx - dw * 0.5 + (i + 0.5) * dw / panes
+			_box("glass", Vector3(0.6, sec * 0.45, 0.03), Vector3(px, 0.2 + dh - sec * 1.5, face - 0.05), Color("#2c3338"))
+		# The jamb and header trim round the opening.
+		_box("paint", Vector3(dw + t * 2.0, t, 0.05), Vector3(dx, 0.2 + dh + t * 0.5, face - 0.04), roof)
+		for f in [-1.0, 1.0]:
+			_box("paint", Vector3(t, dh, 0.05), Vector3(dx + f * (dw * 0.5 + t * 0.5), 0.2 + dh * 0.5, face - 0.04), roof)
+	# A steel walk door (3 ft by 6 ft 8 in) in its trim, half glass, with
+	# its knob.
+	var wx := cx + l * 0.3
+	_box("paint", Vector3(0.92, 2.03, 0.08), Vector3(wx, 1.22, face), Color("#e8e6df"))
+	_box("glass", Vector3(0.55, 0.7, 0.03), Vector3(wx, 1.75, face - 0.05), Color("#2c3338"))
+	_box("paint", Vector3(1.12, 0.1, 0.05), Vector3(wx, 2.28, face - 0.04), roof)
+	for f in [-1.0, 1.0]:
+		_box("paint", Vector3(0.1, 2.08, 0.05), Vector3(wx + f * 0.51, 1.24, face - 0.04), roof)
+	_box("paint", Vector3(0.07, 0.07, 0.08), Vector3(wx + 0.34, 1.12, face - 0.08), Color("#b8b4a8"))
+	# A few 3 ft square windows high on the long walls, trimmed.
+	for sd in [-1.0, 1.0]:
+		var wz: float = cz + sd * (w * 0.5 + 0.06)
+		for f in [-0.35, 0.05, 0.4]:
+			var x: float = cx + f * l
+			if sd < 0.0 and (absf(x - dx) < dw * 0.5 + 1.0 or absf(x - wx) < 1.5):
+				continue
+			_box("glass", Vector3(0.9, 0.9, 0.03), Vector3(x, eave - 1.4, wz), Color("#2c3338"))
+			_box("paint", Vector3(1.06, 1.06, 0.02), Vector3(x, eave - 1.4, wz - sd * 0.005), roof)
 
 
 ## A Quonset hut: corrugated steel arches on a slab, end walls of steel.
@@ -802,7 +863,25 @@ func _county_quonset(s: Dictionary) -> void:
 		for e in [-1.0, 1.0]:
 			_tri("metal", Vector3(c.x + e * l * 0.5, 0.2, c.y), Vector3(c.x + e * l * 0.5, p0.y + 0.2, c.y + p0.x),
 				Vector3(c.x + e * l * 0.5, p1.y + 0.2, c.y + p1.x), steel.darkened(0.08), [], Vector3(e, 0, 0))
-	_box("metal", Vector3(0.08, r * 1.1, r * 1.2), Vector3(c.x - l * 0.5 - 0.05, r * 0.55 + 0.2, c.y), steel.darkened(0.25))
+	# The big door in the end nearer the gravel yard: two sliding leaves
+	# under a track, kept inside the arch (a Behlen or Wonder Building end
+	# wall), with its trim.
+	var e := 1.0
+	var near := INF
+	for f in [-1.0, 1.0]:
+		var end := Vector2(c.x + f * (l * 0.5 + 6.0), c.y)
+		for g: Rect2 in _county.get("gravel", []):
+			var d := (g.get_center() - end).length() if not g.has_point(end) else 0.0
+			if d < near:
+				near = d
+				e = f
+	var x := c.x + e * (l * 0.5 + 0.05)
+	var dw := r * 1.1
+	var dh := sqrt(r * r - dw * dw * 0.25) - 0.4
+	_box("metal", Vector3(0.08, dh, dw), Vector3(x, 0.2 + dh * 0.5, c.y), steel.darkened(0.2))
+	for f in [-1.0, 0.0, 1.0]:
+		_box("paint", Vector3(0.1, dh, 0.12), Vector3(x + e * 0.03, 0.2 + dh * 0.5, c.y + f * (dw * 0.5 - 0.06)), steel.darkened(0.4))
+	_box("paint", Vector3(0.18, 0.22, dw + 0.4), Vector3(x + e * 0.08, 0.3 + dh, c.y), steel.darkened(0.4))
 
 
 ## The dryer and bucket elevator leg (UpgradeKits), with spouts to each bin.
@@ -836,7 +915,7 @@ func _county_silo(s: Dictionary) -> void:
 	# Steel hoops round the staves, closer together toward the foot.
 	var y := 0.6
 	while y < h:
-		_cylinder("paint", base + Vector3(0, y, 0), r + 0.03, 0.05, Color("#5d5a54"), 12)
+		_cylinder("paint", base + Vector3(0, y, 0), r + 0.04, 0.05, Color("#5d5a54"), 18)
 		y += 0.6 + y * 0.03
 	if s.dome:
 		_cone(base + Vector3(0, h, 0), r + 0.1, r * 0.8, GALV if s.used else Color("#8a7a68"))
