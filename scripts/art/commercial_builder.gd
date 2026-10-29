@@ -121,7 +121,9 @@ func _retail(to_curb: float) -> void:
 		var x := -sw * 0.5 + (i + 0.5) * sw / bays
 		var y := 1.55 if i == door else 1.8
 		var gh := 2.6 if i == door else 2.1
+		shopfront = fine_parts and i != door
 		_glass(Vector3(x, y, zf - 0.03), Vector3(-1, 0, 0), sw / bays - 0.08, gh, 0.0 if i == door else rng.randf_range(0.0, 0.15))
+		shopfront = false
 		_box("paint", Vector3(0.08, 2.7, 0.12), Vector3(x - sw / bays * 0.5, 1.6, zf - 0.06), mull)
 	_box("paint", Vector3(0.08, 2.7, 0.12), Vector3(sw * 0.5, 1.6, zf - 0.06), mull)
 	_box("paint", Vector3(sw, 0.1, 0.14), Vector3(0, 2.92, zf - 0.07), mull)
@@ -151,6 +153,8 @@ func _retail(to_curb: float) -> void:
 	_steel_door(Vector3(w * 0.3, 1.35, zf + d + 0.03), 1.0)
 	# Parking: a walk along the front, a row of stalls, the aisle and the curb cut.
 	_flat_rect("drive", -w * 0.5 - 0.5, w * 0.5 + 0.5, zf - 2.2, zf, 0.08)
+	if fine_parts:
+		_store_walk(w, zf, -sw * 0.5 + (door + 0.5) * sw / bays, half - 0.6)
 	var lot0 := -half + 0.6
 	var lot1 := half - 0.6
 	_flat_rect("asphalt", lot0, lot1, 0.0, zf - 2.2, 0.06)
@@ -192,7 +196,9 @@ func _main_street(to_curb: float) -> void:
 	var bays := 4
 	for i in bays:
 		var x := -sw * 0.5 + (i + 0.5) * sw / bays
+		shopfront = fine_parts
 		_glass(Vector3(x, 1.85, zf - 0.03), Vector3(-1, 0, 0), sw / bays - 0.12, 2.3, rng.randf_range(0.0, 0.2))
+		shopfront = false
 		_box("paint", Vector3(0.1, 3.0, 0.14), Vector3(x - sw / bays * 0.5, 1.75, zf - 0.07), mull)
 	_box("paint", Vector3(0.1, 3.0, 0.14), Vector3(sw * 0.5, 1.75, zf - 0.07), mull)
 	_box("paint", Vector3(sw + 0.3, 0.6, 0.16), Vector3(0, 0.4, zf - 0.08), trim)
@@ -222,6 +228,48 @@ func _main_street(to_curb: float) -> void:
 ## A freestanding store's front (1990s-2010s retail in Marion and Kokomo):
 ## a split-face block wainscot either side of the storefront and a raised
 ## false front with a cornice over the entrance.
+## The walk in front of a freestanding store (Dollar General, Rural King,
+## any IGA in Grant County): the curb painted yellow for the fire lane,
+## yellow-painted steel pipe bollards either side of the door against
+## cars, a trash can by the door, an ice merchandiser or a propane
+## exchange cage against the wall, and a cart corral out in the lot.
+## Desktop only, with its own random numbers so the builder's don't move.
+func _store_walk(w: float, zf: float, dx: float, lot1: float) -> void:
+	var r := RandomNumberGenerator.new()
+	r.seed = hash([rng.seed, 6203])
+	var yellow := Color("#d9b82a")
+	_flat_rect("line", -w * 0.5 - 0.5, w * 0.5 + 0.5, zf - 2.2, zf - 2.05, 0.085, yellow)
+	for s in [-1.0, 1.0]:
+		var bx: float = dx + s * 1.3
+		_box("paint", Vector3(0.17, 1.0, 0.17), Vector3(bx, 0.5, zf - 1.75), yellow)
+		_box("paint", Vector3(0.17, 0.06, 0.17), Vector3(bx, 1.03, zf - 1.75), yellow.darkened(0.1))
+	var out := 1.0 if dx > 0.0 else -1.0
+	_box("paint", Vector3(0.55, 0.9, 0.55), Vector3(dx - out * 1.9, 0.53, zf - 1.0), Color("#3a3c3e"))  # trash can
+	var ex := dx - out * 3.2
+	if absf(ex) < w * 0.5 - 1.0:
+		if r.randf() < 0.5:
+			# Ice merchandiser: a white chest with the blue band.
+			_box("metal", Vector3(1.6, 1.7, 0.8), Vector3(ex, 0.93, zf - 0.6), Color("#eef0f0"))
+			_box("paint", Vector3(1.62, 0.3, 0.02), Vector3(ex, 1.3, zf - 1.01), Color("#2a5ea8"))
+		else:
+			# Propane exchange: a steel mesh cage with the tanks inside.
+			_box("metal", Vector3(1.4, 1.8, 0.75), Vector3(ex, 0.98, zf - 0.6), Color("#b9bcbc"))
+			for t in 3:
+				_box("paint", Vector3(0.3, 0.45, 0.3), Vector3(ex - 0.4 + t * 0.4, 0.4, zf - 0.96), Color("#e8e8e4"))
+	# A row of nested carts along the wall the other side of the door
+	# (kept off the stalls, which the town's parking counts).
+	if r.randf() < 0.7:
+		var side := out
+		var steel := Color("#a9adb0")
+		var n := r.randi_range(3, 7)
+		var x0 := dx + side * 2.0
+		if absf(x0 + side * n * 0.3) < w * 0.5 - 0.5:
+			for k in n:
+				var x := x0 + side * k * 0.3
+				_box("metal", Vector3(0.85 - k * 0.006, 0.55 - k * 0.006, 0.55 - k * 0.006), Vector3(x, 0.6 + (k % 3) * 0.02, zf - 0.8 - (k % 3) * 0.02), steel.darkened(0.1 + 0.02 * (k % 2)))
+				_box("paint", Vector3(0.04, 0.04, 0.6 - k * 0.006), Vector3(x + side * 0.12, 1.0 + (k % 3) * 0.02, zf - 0.8 - (k % 3) * 0.02), Color("#c23a2a"))  # handle
+
+
 func _retail_front(cx: float, w: float, sw: float, zf: float, top: float, wall: Color, mat: String) -> void:
 	var base := Color(["#8b8478", "#a39a8a", "#6f6a62"][absi(hash([rng.seed, 9])) % 3])
 	var side := (w - sw) * 0.5 - 0.1
@@ -424,7 +472,9 @@ func _strip_center(to_curb: float) -> void:
 	for i in n:
 		var x := -w * 0.5 + (i + 0.5) * bay
 		var sw := bay - 1.4
+		shopfront = fine_parts
 		_glass(Vector3(x - 0.4, 1.7, zf - 0.03), Vector3(-1, 0, 0), sw - 1.4, 2.3, rng.randf_range(0.0, 0.2))
+		shopfront = false
 		_glass(Vector3(x + sw * 0.5 - 0.5, 1.45, zf - 0.03), Vector3(-1, 0, 0), 0.95, 2.4, 0.0)
 		_box("paint", Vector3(sw, 0.1, 0.12), Vector3(x, 2.9, zf - 0.06), mull)
 		_box("paint", Vector3(sw, 0.35, 0.12), Vector3(x, 0.47, zf - 0.06), mull)
@@ -451,6 +501,76 @@ func _strip_center(to_curb: float) -> void:
 	if n >= 5:
 		_raised_front(-w * 0.5 + (n / 2 + 0.5) * bay, bay, zf, h + 1.2, wall, "paint")
 	_shop_parking(to_curb, w, zf - 2.6, 0.0)
+	if fine_parts:
+		_strip_lot_dress(to_curb, zf - 4.6, n, wall)
+
+
+## What a real strip centre's lot has that a bare one doesn't (Marion's
+## Eastbrook and Gas City strips, any Indiana US-route centre): two
+## accessible stalls painted blue with the wheelchair symbol, a hatched
+## access aisle and the R7-8 sign at their heads, by the centre door (ADA
+## 208: 1 per 25 stalls); twin-head shoebox lights on 9 m poles along the
+## front of the lot about every 28 m; and a multi-tenant pylon sign by the
+## curb cut, a panel per tenant on a masonry base. Desktop only, with its
+## own random numbers so the builder's don't move.
+func _strip_lot_dress(to_curb: float, back: float, n: int, wall: Color) -> void:
+	var r := RandomNumberGenerator.new()
+	r.seed = hash([rng.seed, 9127])
+	var lot0 := -half + 0.6
+	var lot1 := half - 0.6
+	if back > 6.0:
+		# Stalls run every 2.75 m from lot0: take the pair nearest the middle.
+		var k := int((0.0 - lot0) / 2.75)
+		var blue := Color("#2457a6")
+		for j in 2:
+			var x := lot0 + (k + j) * 2.75
+			if j == 0:
+				_flat_rect("line", x + 0.07, x + 2.68, back - 5.4, back - 0.1, 0.065, blue)
+				_flat_rect("line", x + 1.05, x + 1.7, back - 3.1, back - 2.4, 0.075, LINE)  # the symbol
+				_box("metal", Vector3(0.06, 2.3, 0.06), Vector3(x + 1.375, 1.15, back + 0.4), Color("#7d8184"))
+				_box("paint", Vector3(0.3, 0.45, 0.03), Vector3(x + 1.375, 2.05, back + 0.36), Color("#f2f2ee"))
+				_box("paint", Vector3(0.2, 0.2, 0.01), Vector3(x + 1.375, 2.12, back + 0.34), blue)
+			else:
+				# The hatched aisle beside it.
+				for h in 7:
+					var z := back - 5.2 + h * 0.75
+					_flat_rect("line", x + 0.2, x + 2.55, z, z + 0.12, 0.072, LINE)
+	# Lot lights along the front of the lot.
+	var poles := maxi(1, int((lot1 - lot0) / 28.0))
+	var dark := Color("#2e3032")
+	for i in poles:
+		var px := lerpf(lot0, lot1, (i + 0.5) / poles)
+		if absf(px) < 4.5:
+			px += 6.0  # clear of the curb cut
+		_box("concrete", Vector3(0.6, 0.6, 0.6), Vector3(px, 0.3, 0.7), FOUNDATION)
+		_box("paint", Vector3(0.15, 8.6, 0.15), Vector3(px, 4.9, 0.7), dark)
+		for s in [-1.0, 1.0]:
+			_box("paint", Vector3(0.08, 0.08, 0.7), Vector3(px, 9.1, 0.7 + s * 0.35), dark)
+			_box("paint", Vector3(0.55, 0.16, 0.75), Vector3(px, 9.1, 0.7 + s * 1.0), dark)
+			_box("paint", Vector3(0.45, 0.02, 0.6), Vector3(px, 9.01, 0.7 + s * 1.0), Color("#efeee6"))
+	# Pylon sign at the curb cut's side, set back from the right of way.
+	var sx := 6.5 if r.randf() < 0.5 else -6.5
+	var sz := -to_curb + 3.0
+	if sz > -0.8:
+		return
+	var tenants := clampi(n - 1, 2, 5)
+	var ph := 0.55
+	var base := 1.2
+	var cab_h := tenants * ph + 1.0
+	var caps := ["#2c3e5c", "#5b2a2a", "#3a3c3e"]
+	var cap := Color(caps[r.randi() % caps.size()])
+	for s in [-1.0, 1.0]:
+		_box("brick", Vector3(0.6, base + cab_h + 0.4, 0.6), Vector3(sx + s * 1.5, (base + cab_h + 0.4) * 0.5, sz), wall.darkened(0.25))
+	_box("paint", Vector3(2.5, cab_h, 0.4), Vector3(sx, base + cab_h * 0.5, sz), Color("#d9d6cc"))
+	_box("paint", Vector3(2.5, 1.0, 0.44), Vector3(sx, base + cab_h - 0.5, sz), cap)  # the centre's name
+	for side in [-1.0, 1.0]:
+		_box("paint", Vector3(1.6, 0.18, 0.02), Vector3(sx, base + cab_h - 0.5, sz + side * 0.23), Color("#f2efe4"))
+		for t in tenants:
+			var y := base + 0.3 + t * ph
+			var col := Color(AWNING[r.randi() % AWNING.size()]).lightened(r.randf_range(0.0, 0.15))
+			_box("paint", Vector3(2.3, ph - 0.08, 0.02), Vector3(sx, y, sz + side * 0.21), col)
+			_box("paint", Vector3(r.randf_range(0.9, 1.7), 0.14, 0.01), Vector3(sx, y, sz + side * 0.225), Color("#f4f2ea"))
+	_box("concrete", Vector3(4.2, 0.25, 1.2), Vector3(sx, 0.125, sz), FOUNDATION)
 
 
 ## A gas station: a lit canopy over two or three pump islands, a
@@ -920,8 +1040,8 @@ var _dr_main := -1  # the hall that takes the utility corner (-1: the biggest)
 
 ## Notes a hall to dress: centre, width along x, depth along z, eave height.
 ## `busy` is an end wall (-1 or 1 along x) already taken by docks or doors.
-func _dr_note(cx: float, cz: float, w: float, d: float, h: float, roof: String, busy := 0.0) -> void:
-	_dr_halls.append([cx, cz, w, d, h, roof, busy])
+func _dr_note(cx: float, cz: float, w: float, d: float, h: float, roof: String, busy := 0.0, mat := "", wall := Color.WHITE) -> void:
+	_dr_halls.append([cx, cz, w, d, h, roof, busy, mat, wall])
 
 
 ## Dresses every noted hall, then the site's yard (`yard` false: no fence,
@@ -937,6 +1057,8 @@ func _dress(yard := true, civic := false) -> void:
 		if hall[2] * hall[3] > big[2] * big[3]:
 			big = hall
 		_dr_walls(hall, civic)
+		if civic and hall[7] == "brick":
+			_dr_brick(hall)
 		if hall[5] == "gable":
 			_dr_roof_gable(hall)
 		elif hall[5] == "flat":
@@ -998,6 +1120,121 @@ func _dr_walls(hall: Array, civic := false) -> void:
 	# Translucent wall lights under a metal eave, along the back.
 	if not flat and h > 6.0:
 		_box("paint", Vector3(w - 1.0, 0.9, 0.04), Vector3(cx, h - 0.9, cz + d * 0.5 + 0.12), Color("#dfe0d6"))
+
+
+## Brick detail on a public building's walls, after Indiana schools,
+## courthouses' annexes and hospitals of the 1950s-70s: a limestone water
+## table at the foot, a precast band a metre under the coping, and on long blank
+## stretches (gyms, stair towers, hospital ends) brick pilasters every
+## 4.5 m and a high aluminium louvre. Everything keeps off windows and
+## doors (_glass_log).
+func _dr_brick(hall: Array) -> void:
+	var cx: float = hall[0]
+	var cz: float = hall[1]
+	var w: float = hall[2]
+	var d: float = hall[3]
+	var h: float = hall[4]
+	var brick: Color = hall[8]
+	var stone := Color(_pick(["#cfc6b0", "#d8d0bc", "#bdb6a6"]))
+	# Each wall: a point at its left end (seen from outside), the way along
+	# it, its outward normal and its length.
+	var walls := [
+		[Vector3(cx + w * 0.5, 0, cz - d * 0.5), Vector3(-1, 0, 0), Vector3(0, 0, -1), w],
+		[Vector3(cx - w * 0.5, 0, cz + d * 0.5), Vector3(1, 0, 0), Vector3(0, 0, 1), w],
+		[Vector3(cx - w * 0.5, 0, cz - d * 0.5), Vector3(0, 0, 1), Vector3(-1, 0, 0), d],
+		[Vector3(cx + w * 0.5, 0, cz + d * 0.5), Vector3(0, 0, -1), Vector3(1, 0, 0), d],
+	]
+	for wall in walls:
+		var p0: Vector3 = wall[0]
+		var along: Vector3 = wall[1]
+		var n: Vector3 = wall[2]
+		var len: float = wall[3]
+		var seg := 1.0
+		var count := int(len / seg)
+		if count < 2:
+			continue
+		var step := len / count
+		var low := []  # blank at the foot (water table)
+		var high := []  # blank under the coping
+		var tall := []  # blank all the way up
+		for i in count:
+			var t0 := i * step
+			var t1 := t0 + step
+			var mid := p0 + along * (t0 + step * 0.5) + n * 0.4
+			var outside := _dr_free(mid, 0.05)
+			low.append(outside and _dr_blank(p0, along, n, t0, t1, 0.0, 0.62))
+			high.append(outside and _dr_blank(p0, along, n, t0, t1, h - 1.1, h - 0.6))
+			tall.append(outside and _dr_blank(p0, along, n, t0 - 0.4, t1 + 0.4, 0.0, h))
+		var a2 := Basis(along, Vector3.UP, n)
+		# Runs of blank segments become one band each.
+		for band in [[low, 0.33, 0.62, 0.07, 0.02], [high, h - 1.0, h - 0.72, 0.06, 0.045]]:
+			var flags: Array = band[0]
+			var i := 0
+			while i < count:
+				if not flags[i]:
+					i += 1
+					continue
+				var j := i
+				while j < count and flags[j]:
+					j += 1
+				# Wrap 14 cm round an open corner (past the other wall's band);
+				# stop 10 cm short of a window or the building next door.
+				var t0 := i * step + 0.1
+				var t1 := j * step - 0.1
+				if i == 0 and _dr_free(p0 - along * 0.3 + n * 0.3, 0.05) and _dr_free(p0 - along * 0.3 - n * 0.3, 0.05):
+					t0 = -0.14
+				if j == count and _dr_free(p0 + along * (len + 0.3) + n * 0.3, 0.05) and _dr_free(p0 + along * (len + 0.3) - n * 0.3, 0.05):
+					t1 = len + 0.14
+				var y0: float = band[1]
+				var y1: float = band[2]
+				# Held off the wall (and clear of any stucco band) so no face lies in
+				# another's plane.
+				var c: Vector3 = p0 + along * ((t0 + t1) * 0.5) + n * (float(band[3]) * 0.5 + float(band[4])) + Vector3(0, (y0 + y1) * 0.5, 0)
+				_box("concrete", Vector3(t1 - t0, y1 - y0, float(band[3])), c, stone, a2)
+				i = j
+		# Pilasters and a louvre on long blank stretches.
+		if h < 5.0:
+			continue
+		var i := 0
+		while i < count:
+			if not tall[i]:
+				i += 1
+				continue
+			var j := i
+			while j < count and tall[j]:
+				j += 1
+			var run := (j - i) * step
+			if run >= 9.0:
+				var k := maxi(1, int(run / 4.5))
+				for q in k + 1:
+					var t := i * step + 0.5 + q * (run - 1.0) / k
+					var c := p0 + along * t + n * 0.115 + Vector3(0, h * 0.5, 0)
+					_box("brick", Vector3(0.6, h - 0.05, 0.16), c, brick.darkened(0.05), a2)
+					_box("concrete", Vector3(0.72, 0.18, 0.24), p0 + along * t + n * 0.18 + Vector3(0, h - 0.35, 0), stone, a2)
+				if run >= 12.0:
+					var lc := p0 + along * (i * step + run * 0.5 + 2.25) + n * 0.06 + Vector3(0, h - 1.9, 0)
+					_box("metal", Vector3(1.5, 1.2, 0.06), lc, Color("#9ea2a2"), a2)
+					for r in 5:
+						_box("metal", Vector3(1.44, 0.04, 0.06), lc + n * 0.02 + Vector3(0, -0.48 + r * 0.24, 0), Color("#7f8484"), a2)
+			i = j
+
+
+## Whether a stretch of wall (t0..t1 along it from p0, y0..y1 up) is clear of
+## every logged window and door on that wall.
+func _dr_blank(p0: Vector3, along: Vector3, n: Vector3, t0: float, t1: float, y0: float, y1: float) -> bool:
+	for g in _glass_log:
+		var c: Vector3 = g[0]
+		if absf((c - p0).dot(n)) > 0.45:
+			continue
+		var right: Vector3 = g[1]
+		if absf(right.normalized().dot(along)) < 0.7:
+			continue  # a pane at right angles to this wall (a vestibule side)
+		var t := (c - p0).dot(along)
+		var hw: float = g[2] * 0.5 + 0.25
+		var hh: float = g[3] * 0.5 + 0.2
+		if t + hw > t0 and t - hw < t1 and c.y + hh > y0 and c.y - hh < y1:
+			return false
+	return true
 
 
 func _dr_spout(foot: Vector3, h: float, col: Color, out: Vector3, scupper: bool) -> void:

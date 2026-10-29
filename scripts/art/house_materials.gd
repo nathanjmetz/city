@@ -131,7 +131,102 @@ void fragment() {
 ## Window glass: dark rooms behind, blinds pulled to different heights
 ## (vertex alpha), and sky reflected more strongly at grazing angles.
 const GLASS := """
+// A shop window (UV.x in 2..3, set by the builders' `shopfront` on the
+// desktop): a lit sales floor behind the glass, found by casting the view
+// ray into a box room the width of the pane, from the floor below the
+// bulkhead to a ceiling above the head, 6 m deep. Shelves of stock or racks
+// of clothes on the walls, tile floor, lay-in ceiling with light panels;
+// after dark most stay lit, as Main Street windows do.
+bool shop_room(vec2 uv, vec3 vw, out vec3 col, out float glow) {
+	vec3 n = normalize(world_normal);
+	vec3 inw = dot(vw, n) > 0.0 ? n : -n;
+	vec3 rt = normalize(cross(vec3(0.0, 1.0, 0.0), inw));
+	float px = dot(world_pos, rt);
+	float gx = dFdx(uv.x) * dFdx(uv.x) + dFdy(uv.x) * dFdy(uv.x);
+	float gy = dFdx(uv.y) * dFdx(uv.y) + dFdy(uv.y) * dFdy(uv.y);
+	if (gx < 1e-12 || gy < 1e-12) {
+		return false;
+	}
+	float sx = (dFdx(px) * dFdx(uv.x) + dFdy(px) * dFdy(uv.x)) / gx;
+	float sy = (dFdx(world_pos.y) * dFdx(uv.y) + dFdy(world_pos.y) * dFdy(uv.y)) / gy;
+	float a = px - (uv.x - 2.0) * sx;
+	float xl = min(a, a + sx) - 1.2;
+	float xr = max(a, a + sx) + 1.2;
+	float yb = world_pos.y - uv.y * sy;
+	float yf = yb - 0.45;
+	float yc = yb + abs(sy) + 0.5;
+	vec3 rd = vec3(dot(vw, rt), vw.y, max(dot(vw, inw), 0.02));
+	float tx = abs(rd.x) < 1e-4 ? 1e9 : ((rd.x > 0.0 ? xr : xl) - px) / rd.x;
+	float ty = abs(rd.y) < 1e-4 ? 1e9 : ((rd.y > 0.0 ? yc : yf) - world_pos.y) / rd.y;
+	float tz = 6.0 / rd.z;
+	float t = min(min(tx, ty), tz);
+	vec3 h = vec3(px, world_pos.y, 0.0) + rd * t;
+	float sid = hash(vec2(floor(xl * 2.0), floor(dot(world_pos, inw) * 2.0) + floor(yb)));
+	vec3 wallc = mix(vec3(0.56, 0.52, 0.46), vec3(0.46, 0.50, 0.53), hash(vec2(sid, 1.0)));
+	glow = 0.0;
+	float hy = h.y - yf;
+	if (t == ty && rd.y < 0.0) {
+		vec2 f = vec2(h.x, h.z) / 0.6;
+		float chk = mod(floor(f.x) + floor(f.y), 2.0);
+		vec3 tile = mix(vec3(0.50, 0.48, 0.45), vec3(0.58, 0.56, 0.52), chk);
+		vec3 wood = vec3(0.42, 0.30, 0.20) * (0.85 + 0.3 * hash(vec2(floor(h.x / 0.15), floor(h.z / 1.2))));
+		col = mix(tile, wood, step(0.55, hash(vec2(sid, 2.0))));
+	} else if (t == ty) {
+		vec2 f = fract(vec2(h.x, h.z) / 1.2);
+		float panel = step(0.25, f.x) * step(f.x, 0.75) * step(0.05, f.y) * step(f.y, 0.95);
+		col = mix(vec3(0.62), vec3(1.0, 0.97, 0.9), panel);
+		glow = panel;
+	} else {
+		// A wall: the back one (along x) or a side one (along depth).
+		float u = t == tz ? h.x : h.z;
+		col = wallc;
+		bool racks = hash(vec2(sid, 3.0)) > 0.72;
+		if (racks) {
+			if (hy > 0.75 && hy < 1.75) {
+				float g = floor(u / 0.09);
+				float c = hash(vec2(g, sid));
+				vec3 cloth = vec3(c, hash(vec2(g, 5.0)), hash(vec2(g, 7.0)));
+				cloth = cloth * cloth * 0.7;
+				float len = 0.75 + 0.5 * hash(vec2(g, 11.0));
+				col = mix(col, cloth, step(1.75 - len, hy) * step(0.12, c));
+			}
+			col = mix(col, vec3(0.6), step(abs(hy - 1.78), 0.025));
+		} else if (hy > 0.1 && hy < 2.1) {
+			float row = floor(hy / 0.42);
+			float fy = fract(hy / 0.42);
+			float g = floor(u / 0.22);
+			float p = hash(vec2(g, row) + sid * 7.0);
+			vec3 stock = mix(vec3(hash(vec2(g, row + 1.0)), hash(vec2(g + 3.0, row)), hash(vec2(row, g + 5.0))), vec3(0.55), 0.45);
+			vec3 c = mix(wallc * 0.8, stock, step(0.18, p) * step(fy, 0.1 + 0.75 * hash(vec2(g, row + 9.0))));
+			col = mix(c, vec3(0.30, 0.27, 0.24), step(fy, 0.07));
+		}
+	}
+	// Further in, a little dimmer; and the corners darker.
+	col *= mix(1.0, 0.72, clamp(t * rd.z / 6.0, 0.0, 1.0));
+	return true;
+}
+
 void fragment() {
+	bool shop = false;
+	if (UV.x >= 2.0) {
+		vec3 vw = normalize((INV_VIEW_MATRIX * vec4(-VIEW, 0.0)).xyz);
+		vec3 inside;
+		float glow;
+		if (shop_room(UV, vw, inside, glow)) {
+			float fres = pow(1.0 - clamp(dot(NORMAL, VIEW), 0.0, 1.0), 4.0);
+			vec3 sky = mix(vec3(0.20, 0.26, 0.34), vec3(0.45, 0.52, 0.60), UV.y) * (1.0 - night * 0.85);
+			float blinds = step(1.0 - COLOR.a, UV.y);
+			inside = mix(inside, vcol(COLOR.rgb) * 0.3, blinds);
+			float open = mix(1.0, step(hash(floor(world_pos.xz / 4.0)), 0.75), smoothstep(0.2, 0.6, night));
+			float k = 0.12 + 0.5 * fres;
+			ALBEDO = mix(inside * 0.16, sky, k);
+			ROUGHNESS = 0.08;
+			SPECULAR = 0.6;
+			EMISSION = (inside * (0.07 + 0.8 * night) + vec3(1.0, 0.95, 0.85) * glow * (0.35 + 1.4 * night)) * open * (1.0 - k);
+			shop = true;
+		}
+	}
+	if (!shop) {
 	vec3 room = vec3(0.018, 0.02, 0.022);
 	float blinds = step(1.0 - COLOR.a, UV.y);
 	float slat = 0.85 + 0.15 * smoothstep(0.3, 0.5, fract(UV.y * 28.0));
@@ -163,6 +258,7 @@ void fragment() {
 	vec3 lamp = mix(warm, vec3(0.55, 0.7, 1.0), step(0.9, hash(cell + 7.7)));
 	// Light through blinds is dimmer and softer.
 	EMISSION = lamp * on * mix(2.2, 1.1, blinds) * (0.8 + 0.4 * UV.y);
+	}
 }
 """
 

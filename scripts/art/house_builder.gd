@@ -105,6 +105,7 @@ var outline := PackedVector2Array()
 var _back_z := -INF  # the furthest back anything built so far reaches (for the back yard)
 var _mass_back_z := -INF  # the same for building masses only
 var _masses := []  # the building masses' footprints (Rect2 in lot x/z), for tree spacing
+var _glass_log := []  # [centre, right, width, height] of each pane and opening, so trim can keep off them
 var pad := 0.0
 var era := "recent"
 var _cell_seed := 0  # the street block this lot is in (its builder)
@@ -147,6 +148,9 @@ var trees := []
 ## Where the home's curbside mailbox stands across the lot (local x), or INF.
 var mail_x := INF
 var rng: RandomNumberGenerator
+## Set around a shop's display windows on the desktop: the glass shows a
+## lit sales floor behind it (HouseMaterials GLASS, UV.x 2..3).
+var shopfront := false
 
 
 ## `lot` (optional): width, depth, outline (local x/z points) and pad.
@@ -222,7 +226,125 @@ func _house(to_curb: float, storeys := 0) -> Array:
 	_yard_trees(info, to_curb)
 	_street_trees(info, to_curb)
 	_back_yard(info)
+	_utilities(info)
+	_front_yard(info)
 	return [_commit_house(), _commit_flat(), trees]
+
+
+## What an owner adds out front: mulch rings round the yard trees (most
+## newer yards, few old ones), a post lantern by the walk on postwar and
+## newer houses, and the American flag on its bracket by the front door
+## that about one Indiana house in four flies. Drawn after everything else
+## in the lot, like _utilities.
+func _front_yard(h: Dictionary) -> void:
+	var ring_odds: float = {"prewar": 0.2, "postwar": 0.5}.get(era, 0.75)
+	var fz: float = h.front_z
+	for t in trees:
+		var p: Vector3 = t[0]
+		if p.z > 0.5 and p.z < fz and rng.randf() < ring_odds:
+			_mulch_ring(Vector2(p.x, p.z), rng.randf_range(0.8, 1.2), MULCH)
+	var door_x: float = h.door_x
+	var dx: float = h.drive_x
+	var dw: float = h.drive_w
+	if era != "prewar" and rng.randf() < 0.35:
+		var lamp := Vector3(door_x + (0.9 if door_x < dx else -0.9), 0.0, maxf(1.5, fz - 3.2))
+		if absf(lamp.x - dx) > dw * 0.5 + 0.6 and _in_lot(lamp, 0.5):
+			_box("paint", Vector3(0.08, 1.9, 0.08), lamp + Vector3(0, 0.95, 0), Color("#1d1e1f"))
+			_box("paint", Vector3(0.26, 0.34, 0.26), lamp + Vector3(0, 2.05, 0), Color("#e8e2c8"))
+			_box("paint", Vector3(0.34, 0.06, 0.34), lamp + Vector3(0, 2.25, 0), Color("#1d1e1f"))
+	if rng.randf() < 0.25:
+		# A 3 x 5 ft flag on a 5 ft pole, its bracket by the door at 45 degrees.
+		var side := 1.0 if door_x <= dx else -1.0
+		var base := Vector3(door_x - side * 1.1, 2.3, fz - 0.06)
+		var out := Vector3(0, 0.7071, -0.7071)
+		_box("paint", Vector3(0.03, 0.03, 1.5), base + out * 0.75, Color("#c9c3a8"), Basis(Vector3.RIGHT, PI * 0.25))
+		var a := base + out * 0.35
+		var b := base + out * 1.45
+		var drop := Vector3(0, -0.9, 0)
+		for f in [-1.0, 1.0]:
+			var o := Vector3(f * 0.012, 0, 0)
+			# Thirteen stripes read as pink from the street: three bands and the canton.
+			for k in 3:
+				var t0 := drop * (k / 3.0)
+				var t1 := drop * ((k + 1) / 3.0)
+				_quad("paint", a + t0 + o, b + t0 + o, b + t1 + o, a + t1 + o,
+					Color("#b22234") if k != 1 else Color("#f2efe8"), [], Vector3(f, 0, 0))
+			var c0 := a + o * 1.6
+			var c1 := a + (b - a) * 0.4 + o * 1.6
+			_quad("paint", c0, c1, c1 + drop * 0.53, c0 + drop * 0.53, Color("#3c3b6e"), [], Vector3(f, 0, 0))
+
+
+## A round bed of loose ground (mulch) of radius `r`, its edge cut clean.
+func _mulch_ring(c: Vector2, r: float, col: Color) -> void:
+	col.a = 1.0
+	var n := 14
+	var mid := Vector3(c.x, 0.07, c.y)
+	for k in n:
+		var a0 := TAU * k / n
+		var a1 := TAU * (k + 1) / n
+		var p0 := Vector3(c.x + cos(a0) * r, 0.07, c.y + sin(a0) * r)
+		var p1 := Vector3(c.x + cos(a1) * r, 0.07, c.y + sin(a1) * r)
+		for v in [mid, p0, p1]:
+			_flat.set_normal(Vector3.UP)
+			_flat.set_color(col)
+			_flat.set_uv(Vector2(v.x, v.z) * 0.25)
+			_flat.add_vertex(v)
+
+
+## The working side of a real house: the air conditioner's condenser on its
+## pad by the back corner of the side away from the drive, the electric and
+## gas meters on that wall, and the trash and recycling carts by the garage.
+## Drawn last, so its dice never shift anything the lot drew before.
+func _utilities(h: Dictionary) -> void:
+	var dx: float = h.drive_x
+	var away := -1.0 if dx >= (float(h.x0) + float(h.x1)) * 0.5 else 1.0
+	var wall_x: float = h.x0 if away < 0.0 else h.x1
+	# The side wall's own stretch: the mass whose side is that wall.
+	var span := Vector2.INF
+	for r: Rect2 in _masses:
+		var edge := r.position.x if away < 0.0 else r.end.x
+		if absf(edge - wall_x) < 0.4 and r.size.y > 4.0:
+			span = Vector2(r.position.y, r.end.y)
+			break
+	if span != Vector2.INF and rng.randf() < 0.88:
+		var zc := maxf(span.x + 2.0, span.y - 1.5)
+		var unit := Vector3(wall_x + away * 0.85, 0.0, zc)
+		if _in_lot(unit, 0.6) and not _hits_mass(unit, 0.5):
+			var shell := Color(_pick(["#c9c5b9", "#b4b6b3", "#8c8f8e", "#c2beb2"]))
+			_box("paint", Vector3(0.95, 0.08, 0.95), unit + Vector3(0, 0.04, 0), Color("#a7a59e"))
+			_box("paint", Vector3(0.76, 0.74, 0.76), unit + Vector3(0, 0.45, 0), shell)
+			_box("paint", Vector3(0.6, 0.03, 0.6), unit + Vector3(0, 0.83, 0), Color("#2a2b2c"))
+			# Line set into the wall.
+			_box("paint", Vector3(absf(unit.x - wall_x), 0.05, 0.05), Vector3((unit.x + wall_x) * 0.5, 0.55, zc), Color("#2b2b2b"))
+			# The meters, a few feet toward the street: electric at eye
+			# height, gas low with its regulator.
+			var mz := maxf(span.x + 0.8, zc - 2.2)
+			_box("paint", Vector3(0.3, 0.38, 0.26), Vector3(wall_x + away * 0.06, 1.55, mz), Color("#9fa3a6"))
+			_box("paint", Vector3(0.36, 0.42, 0.34), Vector3(wall_x + away * 0.1, 0.55, mz - 0.9), Color("#b8b9b4"))
+			_box("paint", Vector3(0.06, 0.5, 0.06), Vector3(wall_x + away * 0.12, 0.25, mz - 0.9), Color("#d9b02a"))
+	# Trash and recycling carts (96 gal: 0.74 x 0.86 m, 1.1 m tall) beside
+	# the garage door, on its outer side.
+	if h.has("garage_z") and rng.randf() < 0.8:
+		var s := 1.0 if dx >= 0.0 else -1.0
+		var dw: float = h.drive_w
+		var gz: float = h.garage_z
+		var lids := [Color(_pick(["#2a2b2c", "#2f4a35", "#3a3d40"])), Color(_pick(["#2f4f8a", "#2f4f8a", "#2f4a35"]))]
+		for k in 2:
+			var c := Vector3(dx + s * (dw * 0.5 + 0.55 + k * 0.82), 0.0, gz - 0.6)
+			if not _in_lot(c, 0.4) or _hits_mass(c, 0.45):
+				continue
+			var body: Color = lids[k].darkened(0.08)
+			var lid: Color = Color("#d9b02a") if k == 1 and rng.randf() < 0.4 else lids[k]
+			_box("paint", Vector3(0.66, 1.0, 0.72), c + Vector3(0, 0.5, 0), body)
+			_box("paint", Vector3(0.72, 0.06, 0.8), c + Vector3(0, 1.04, 0.02), lid)
+
+
+## Whether a part at `p` (radius `r`) would stand in one of the building's masses.
+func _hits_mass(p: Vector3, r: float) -> bool:
+	for m: Rect2 in _masses:
+		if m.grow(r).has_point(Vector2(p.x, p.z)):
+			return true
+	return false
 
 
 ## The plan this lot gets from its block's builder, drawn or from the
@@ -2165,13 +2287,15 @@ func _note(mat: String, kind: int, count: int) -> void:
 ## blind height rides in the vertex colour's alpha. A derelict building's
 ## ground-floor windows are boarded over with plywood.
 func _glass(c: Vector3, right: Vector3, w: float, h: float, blinds: float) -> void:
+	_glass_log.append([c, right, w, h])
 	var r := right * w * 0.5
 	var u := Vector3(0, h * 0.5, 0)
 	if owner_care <= -2 and c.y < 3.6:
 		var out := right.cross(Vector3.UP).normalized()
 		_box("paint", Vector3(w + 0.12, h + 0.12, 0.05), c + out * 0.07, PLYWOOD, Basis(right.normalized(), Vector3.UP, out))
+	var o := 2.0 if shopfront else 0.0
 	_quad("glass", c - r - u, c + r - u, c + r + u, c - r + u, Color(0.85, 0.82, 0.74, blinds),
-		[Vector2(0, 0), Vector2(1, 0), Vector2(1, 1), Vector2(0, 1)])
+		[Vector2(o, 0), Vector2(o + 1, 0), Vector2(o + 1, 1), Vector2(o, 1)])
 
 
 ## Flat ground work. Kinds (packed into vertex alpha for the yard shader):

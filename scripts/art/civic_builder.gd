@@ -865,14 +865,57 @@ func _builder_yard(size: Vector2, front: float, to_curb: float) -> void:
 		_box("paint", Vector3(0.12, 2.4, 0.12), Vector3(rx, 1.2, rz + k * 2.4), GALV)
 	for lvl in 3:
 		_box("paint", Vector3(1.0, 0.3, 7.6), Vector3(rx + 0.2, 0.5 + lvl * 0.75, rz + 3.6), Color("#c9a66b").darkened(lvl * 0.06))
-	# Crushed stone in a low heap at the back corner.
-	var heap := Vector3(drive_x - 2.0, 0.0, back - 4.5)
-	for lvl in 3:
-		var r := 3.2 - lvl * 1.0
-		_box("paint", Vector3(r * 2.0, 0.45, r * 1.6), heap + Vector3(0, 0.22 + lvl * 0.45, 0), Color("#8d877d").lightened(lvl * 0.04))
+	# Bulk material bays along the back fence, walled with interlocking
+	# 2 x 2 x 6 ft concrete blocks as real contractors' yards are: #57
+	# stone, fill sand, topsoil and mulch, each heaped at its angle of repose.
+	var mats := [Color("#8d877d"), Color("#c9ad7a"), Color("#4e3b2c"), Color("#6a4630")]
+	var bay := 6.0
+	var bays := clampi(int((drive_x - 6.0 + w * 0.5 - 4.0) / bay), 1, 4)
+	var bx0 := drive_x - 6.0 - bays * bay
+	var bz := back - 4.2
+	for i in bays + 1:
+		_lego_wall(Vector3(bx0 + i * bay, 0, bz - 0.4), 0.6, 5.2)  # short of the back wall
+	_lego_wall(Vector3(bx0 + bays * bay * 0.5, 0, back - 1.0), bays * bay + 0.6, 0.6)
+	for i in bays:
+		var c := Vector3(bx0 + (i + 0.5) * bay, 0, bz + 0.6)
+		_aggregate_pile(c, 2.5, 1.7 - 0.2 * (i % 2), mats[i % mats.size()])
 	_fence(Vector2(-w * 0.5 + 0.2, lot_z), Vector2(-w * 0.5 + 0.4, back - 0.3), 1.8)
 	_fence(Vector2(-w * 0.5 + 0.2, back - 0.5), Vector2(w * 0.5 - 0.2, back - 0.3), 1.8)
 	_fence(Vector2(w * 0.5 - 0.4, lot_z), Vector2(w * 0.5 - 0.2, back - 0.3), 1.8)
+
+
+## A wall of interlocking concrete blocks (0.6 m cubes stacked two high
+## and 1.8 m long), `sx` by `sz` on the ground, centred at `c`.
+func _lego_wall(c: Vector3, sx: float, sz: float) -> void:
+	var col := Color("#a7a399")
+	var along_x := sx > sz
+	var len := sx if along_x else sz
+	var n := maxi(1, int(round(len / 1.8)))
+	for k in n:
+		for lvl in 2:
+			var t := -len * 0.5 + (k + 0.5) * len / n + (0.45 if lvl == 1 else 0.0)
+			if absf(t) > len * 0.5 - 0.3:
+				continue
+			var size := Vector3(len / n - 0.04, 0.58, 0.6) if along_x else Vector3(0.6, 0.58, len / n - 0.04)
+			var at := c + (Vector3(t, 0, 0) if along_x else Vector3(0, 0, t)) + Vector3(0, 0.3 + lvl * 0.6, 0)
+			_box("concrete", size, at, col.darkened(0.05 * ((k + lvl) % 2)))
+
+
+## A heap of loose material: a cone with a slightly rounded top.
+func _aggregate_pile(base: Vector3, r: float, h: float, col: Color, segs := 18) -> void:
+	var rings := [[1.0, 0.0], [0.66, 0.42], [0.3, 0.8], [0.0, 1.0]]
+	for i in segs:
+		var a0 := TAU * i / segs
+		var a1 := TAU * (i + 1) / segs
+		for k in rings.size() - 1:
+			var lo: Array = rings[k]
+			var hi: Array = rings[k + 1]
+			var p0 := base + Vector3(cos(a0) * r * lo[0], h * lo[1], sin(a0) * r * lo[0])
+			var p1 := base + Vector3(cos(a1) * r * lo[0], h * lo[1], sin(a1) * r * lo[0])
+			var q0 := base + Vector3(cos(a0) * r * hi[0], h * hi[1], sin(a0) * r * hi[0])
+			var q1 := base + Vector3(cos(a1) * r * hi[0], h * hi[1], sin(a1) * r * hi[0])
+			var n := Vector3(cos((a0 + a1) * 0.5), 0.9, sin((a0 + a1) * 0.5)).normalized()
+			_quad("paint", p0, p1, q1, q0, col.darkened(0.04 * k), [], n)
 
 
 # ---------------------------------------------------------------- shared parts
@@ -886,7 +929,7 @@ func _flat_roofed_at(mat: String, cx: float, w: float, d: float, cz: float, deck
 	var t := 0.25
 	var ph := top - deck
 	_box(mat, Vector3(w, deck, d), Vector3(cx, deck * 0.5, cz), wall)
-	_dr_note(cx, cz, w, d, deck, "none")
+	_dr_note(cx, cz, w, d, deck, "none", 0.0, mat, wall)
 	var y := deck + 0.02
 	_quad("membrane", Vector3(cx - w * 0.5, y, cz - d * 0.5), Vector3(cx + w * 0.5, y, cz - d * 0.5),
 		Vector3(cx + w * 0.5, y, cz + d * 0.5), Vector3(cx - w * 0.5, y, cz + d * 0.5), _low_slope(w, d, cx + cz, mat == "brick"), [], Vector3.UP)
@@ -906,6 +949,7 @@ func _flat_roofed_at(mat: String, cx: float, w: float, d: float, cz: float, deck
 ## when `back`).
 func _overhead_door(x: float, z: float, w: float, h: float, col: Color, back := false) -> void:
 	var s := 1.0 if back else -1.0
+	_glass_log.append([Vector3(x, 0.3 + h * 0.5, z), Vector3(1, 0, 0), w + 0.6, h + 0.5])
 	_box("siding", Vector3(w, h, 0.08), Vector3(x, 0.3 + h * 0.5, z + s * 0.03), Color(col, 0.0))
 	_glass(Vector3(x, 0.3 + h * 0.72, z + s * 0.08), Vector3(1 if back else -1, 0, 0), w - 0.5, 0.45, 0.0)
 	_box("paint", Vector3(w + 0.3, 0.18, 0.12), Vector3(x, 0.3 + h + 0.09, z + s * 0.06), Color("#cfcbc2"))
