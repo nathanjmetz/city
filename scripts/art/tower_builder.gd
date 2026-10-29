@@ -637,6 +637,8 @@ func _tw_deco(to_curb: float, width: float, storeys: int) -> void:
 			_glass(c, face[1], w0 / n - 1.2, 3.8, 0.0)
 	_box("brick", Vector3(5.0, 8.0, 0.6), Vector3(0, 4.0, zf - 0.3), base_stone.lightened(0.1))  # limestone portal
 	_box("paint", Vector3(3.0, 6.5, 0.1), Vector3(0, 3.25, zf - 0.62), Color("#3b2f22"))  # bronze and glass
+	if fine_parts:
+		_tw_deco_portal(zf - 0.67, base_stone.lightened(0.1))
 	if not _homes:
 		_sign(Vector3(0, 7.3, zf - 0.66), 4.2, 0.6)
 	# The crown: two more small steps.
@@ -672,6 +674,57 @@ func _tw_deco(to_curb: float, width: float, storeys: int) -> void:
 		_:
 			_box("metal", Vector3(0.2, 9.0, 0.2), Vector3(0, top + 4.5, cz1), Color("#c9cccd"))  # flagpole
 			_box("paint", Vector3(2.2, 1.3, 0.04), Vector3(-1.2, top + 8.3, cz1), Color("#3c3b6e"))
+
+
+## Desktop: the deco portal as you walk up to it (Indianapolis's Circle
+## Tower and Indiana Bell Building, Chicago's Board of Trade): stepped,
+## fluted limestone jambs, a pair of bronze-framed glass doors under a
+## transom, a cast bronze grille of chevrons and a sunburst filling the
+## tall opening above, and bronze lanterns either side. `fz` is the face of
+## the bronze panel. Draws no random numbers.
+func _tw_deco_portal(fz: float, stone: Color) -> void:
+	var bronze := Color("#5a4632")
+	var dark := Color("#2e251b")
+	# Stepped jambs: two reveals inside the portal, then flutes on its face.
+	for k in 2:
+		var jw := 3.0 + 0.5 * (k + 1)
+		for sx in [-1.0, 1.0]:
+			_box("brick", Vector3(0.25, 6.6 + k * 0.3, 0.2 + k * 0.15), Vector3(sx * (jw * 0.5 - 0.12), 3.3 + k * 0.15, fz - 0.1 - k * 0.07), stone.darkened(0.04 * k))
+		_box("brick", Vector3(jw, 0.25, 0.2 + k * 0.15), Vector3(0, 6.6 + k * 0.3, fz - 0.1 - k * 0.07), stone.darkened(0.04 * k))
+	for sx in [-1.0, 1.0]:
+		for i in 3:
+			_box("brick", Vector3(0.12, 7.4, 0.08), Vector3(sx * (2.05 + i * 0.22), 3.7, fz + 0.03), stone.lightened(0.06))
+	# The doors: two leaves, each a glass light in a bronze frame.
+	for sx in [-0.7, 0.7]:
+		_box("metal", Vector3(1.3, 2.7, 0.06), Vector3(sx, 1.35, fz - 0.03), bronze)
+		_glass(Vector3(sx, 1.45, fz - 0.07), Vector3(-1, 0, 0), 0.9, 2.1, 0.0)
+		_box("metal", Vector3(0.05, 0.6, 0.08), Vector3(sx * 0.2, 1.1, fz - 0.1), Color("#b08d57"))  # pull
+	_box("metal", Vector3(3.0, 0.18, 0.1), Vector3(0, 2.8, fz - 0.05), bronze)  # transom bar
+	_glass(Vector3(0, 3.15, fz - 0.03), Vector3(-1, 0, 0), 2.7, 0.5, 0.0)
+	_box("metal", Vector3(3.0, 0.12, 0.1), Vector3(0, 3.45, fz - 0.05), bronze)
+	# The grille above: upright bars, rows of chevrons, and a sunburst.
+	for i in 7:
+		_box("metal", Vector3(0.06, 3.0, 0.06), Vector3(-1.35 + i * 0.45, 5.0, fz - 0.05), bronze)
+	for row in 3:
+		var y := 3.9 + row * 0.55
+		for i in 3:
+			var x := -0.9 + i * 0.9
+			for sx in [-1.0, 1.0]:
+				_box("metal", Vector3(0.5, 0.06, 0.06), Vector3(x + sx * 0.2, y + 0.12, fz - 0.08), Color("#8a6a3e"),
+					Basis(Vector3(0, 0, 1), sx * 0.55))
+	var sc := Vector3(0, 5.9, fz - 0.08)
+	_box("metal", Vector3(0.5, 0.25, 0.06), sc, Color("#b08d57"))
+	for i in 9:
+		var a := PI * (i + 0.5) / 9.0
+		_box("metal", Vector3(0.9, 0.05, 0.05), sc + Vector3(cos(a) * 0.5, sin(a) * 0.5, 0), Color("#b08d57"),
+			Basis(Vector3(0, 0, 1), a))
+	# Bronze lanterns on brackets either side of the doors.
+	for sx in [-1.0, 1.0]:
+		var lc := Vector3(sx * 2.9, 3.2, fz + 0.2)
+		_box("metal", Vector3(0.08, 0.08, 0.5), lc + Vector3(0, 0.45, 0.25), dark)  # bracket back to the wall
+		_box("metal", Vector3(0.36, 0.6, 0.36), lc, dark)
+		_box("paint", Vector3(0.28, 0.45, 0.38), lc, Color("#efe2bd"))
+		_box("metal", Vector3(0.44, 0.08, 0.44), lc + Vector3(0, 0.34, 0), dark)
 
 
 # ---------------------------------------------------------------- postwar glass
