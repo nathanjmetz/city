@@ -237,13 +237,13 @@ func _init() -> void:
 	_check(kinds.min() > 70, "the three postwar walk-up kinds share the low apartments (%s)" % str(kinds))
 	# A store's second stage keeps the first and builds a stockroom on the
 	# back, inside its lot.
-	for kind in ["retail", "diner", "bank", "gas"]:
+	for kind in ["retail", "diner", "bank", "gas", "corner"]:
 		var stockrooms := 0
 		CommercialBuilder.force_shop = kind
 		for s in 40:
 			# A car wash wants a wide lot.
 			var w: float = ([34.0, 36.0, 40.0] if kind == "gas" else [16.0, 20.0, 26.0])[s % 3]
-			var lot := {"width": w, "depth": [32.0, 40.0, 50.0][s % 3], "era": ["postwar", "recent"][s % 2]}
+			var lot := {"width": w, "depth": [32.0, 40.0, 50.0][s % 3], "era": ["postwar", "prewar" if kind == "corner" else "recent"][s % 2]}
 			DenseBuilder.build_retail(s, 3.9, lot, {}, 0)
 			var m0 := HouseBuilder.last_masses.duplicate()
 			var out := DenseBuilder.build_retail(s, 3.9, lot, {}, 1)
@@ -254,6 +254,17 @@ func _init() -> void:
 				stockrooms += 1
 		CommercialBuilder.force_shop = ""
 		_check(stockrooms > 20, "most grown %s shops build on (%d of 40)" % [kind, stockrooms])
+	# A corner store's second stage is the same store (Brawn's strip showed
+	# a corner grocery turning into a bank).
+	var kept_stores := 0
+	var grocers := 0
+	for s in 60:
+		var lot := {"width": 20.0, "depth": 36.0, "era": ["prewar", "postwar"][s % 2]}
+		if CornerStore.wanted(DenseBuilder._start(s, lot)):
+			grocers += 1
+			if DenseBuilder.site_plan(s, lot, false, 0).door == DenseBuilder.site_plan(s, lot, false, 1).door:
+				kept_stores += 1
+	_check(grocers > 10 and kept_stores == grocers, "a grown corner store is the store it was (%d of %d)" % [kept_stores, grocers])
 	print("FAILED" if failed else "ALL PASSED")
 	quit(1 if failed else 0)
 

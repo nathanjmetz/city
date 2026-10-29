@@ -1174,6 +1174,8 @@ static func _fill_vertices(d: Dictionary, i0: int, i1: int, j0: int, j1: int) ->
 	var coarse: PackedFloat32Array = d.coarse
 	var wet: PackedFloat32Array = d.wet
 	var any_water := false
+	var rail_row := CountyRail.drawn() and CountyRail.any_in(Rect2(o.x + i0 * step + Terrain.view_origin.x,
+		o.y + j0 * step + Terrain.view_origin.y, (i1 - i0) * step, (j1 - j0) * step).grow(CountyRail.TREE_CLEAR + 3.0))
 	for j in range(j0, j1 + 1):
 		for i in range(i0, i1 + 1):
 			var k := j * (n + 1) + i
@@ -1202,6 +1204,13 @@ static func _fill_vertices(d: Dictionary, i0: int, i1: int, j0: int, j1: int) ->
 			# showed tilled soil in May and a hard-edged rectangle of winter
 			# wheat in November, lined up with the field outside town).
 			var crops := cov.b * clampf(1.0 - 1.25 * maxf(mowed, graded), 0.0, 1.0)
+			# A railroad's right of way (desktop): rough grass and weeds
+			# between its fences, cut back from the woods and never cropped.
+			if rail_row:
+				var row := smoothstep(CountyRail.TREE_CLEAR - 3.0, CountyRail.TREE_CLEAR + 3.0,
+					CountyRail.distance(x + Terrain.view_origin.x, z + Terrain.view_origin.y, CountyRail.TREE_CLEAR + 3.0))
+				keep *= row
+				crops *= row
 			colors[k] = Color(cov.r * keep * (1.0 - YARD_THIN * yard), cov.g, crops, cov.a * keep)
 			# Towns' roads and lots, where the county roads give way.
 			town[k] = Vector2(mowed, graded)
