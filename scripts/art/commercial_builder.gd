@@ -1111,6 +1111,44 @@ func _power_center(to_curb: float) -> void:
 		if fine_parts:
 			_cc_entry(vx, zf - 4.4, hb, false, 6, -1.0 if vx < hx else 1.0, true, 1.5)
 	boxes.append([xh0, xh1, hh])
+	# Block pilasters every bay along the front, and on desktop the
+	# sidewalk display a home improvement store sets out along its front
+	# all season: storage sheds, riding mowers in a row, grills.
+	var npil := maxi(2, int(wh / 9.0))
+	for i in npil + 1:
+		var px := xh0 + i * wh / npil
+		if absf(px - hx) > 10.5:
+			_box("paint", Vector3(0.9, hh, 0.5), Vector3(px, hh * 0.5, zf - 0.25), hw.darkened(0.06))
+	if fine_parts:
+		var x := xh0 + 2.5
+		var k := 0
+		while x < xh1 - 3.0:
+			if absf(x - hx) < 13.0:
+				x = hx + 13.0
+				continue
+			match k % 3:
+				0:  # a storage shed: a little gabled building
+					_box("paint", Vector3(2.4, 2.0, 2.4), Vector3(x + 0.6, 1.0, zf - 3.0), Color(["#c9b48f", "#8a5a3c", "#a7b3a0"][k % 3 if k % 2 == 0 else (k + 1) % 3]))
+					_tri("roof", Vector3(x - 0.7, 2.0, zf - 4.25), Vector3(x + 1.9, 2.0, zf - 4.25), Vector3(x + 0.6, 2.7, zf - 4.25),
+						Color("#4a4440"), [], Vector3(0, 0, -1))
+					_quad("roof", Vector3(x - 0.7, 2.0, zf - 4.25), Vector3(x + 0.6, 2.7, zf - 4.25), Vector3(x + 0.6, 2.7, zf - 1.75),
+						Vector3(x - 0.7, 2.0, zf - 1.75), Color("#4a4440"), [], Vector3(-1, 1, 0))
+					_quad("roof", Vector3(x + 0.6, 2.7, zf - 4.25), Vector3(x + 1.9, 2.0, zf - 4.25), Vector3(x + 1.9, 2.0, zf - 1.75),
+						Vector3(x + 0.6, 2.7, zf - 1.75), Color("#4a4440"), [], Vector3(1, 1, 0))
+					x += 3.4
+				1:  # riding mowers, nose out
+					var mc := Color(["#2f6a3e", "#c9a227", "#b0262b"][(k / 3) % 3])
+					for m in 4:
+						var mx := x + m * 1.2
+						_box("paint", Vector3(0.95, 0.5, 1.7), Vector3(mx, 0.45, zf - 2.6), mc)
+						_box("paint", Vector3(0.5, 0.45, 0.4), Vector3(mx, 0.85, zf - 2.3), Color("#1e1e1e"))  # seat
+						_box("paint", Vector3(1.0, 0.25, 0.25), Vector3(mx, 0.2, zf - 1.9), Color("#1e1e1e"))  # back tires
+					x += 5.2
+				2:  # grills under their covers
+					for m in 3:
+						_box("paint", Vector3(1.2, 1.1, 0.6), Vector3(x + m * 1.4, 0.55, zf - 1.6), Color("#2a2c2e"))
+					x += 4.6
+			k += 1
 	# The yard on the outer end: block knee wall and black fence, a shed roof
 	# over the lumber racks along the store's wall, the drive-in gate.
 	var yz0 := zf - 4.0
@@ -1174,6 +1212,8 @@ func _power_center(to_curb: float) -> void:
 			var wx: float = jx + k * (tw * 0.5 + 3.0)
 			if wx > x0 + 2.0 and wx < x1 - 2.0:
 				_glass(Vector3(wx, 2.0, zf + 0.97), Vector3(-1, 0, 0), 3.4, 2.2, cr.randf_range(0.2, 0.5))
+		for px in [x0 + 0.45, x1 - 0.45]:
+			_box("paint", Vector3(0.9, jh, 0.5), Vector3(px, jh * 0.5, zf + 0.75), jc.darkened(0.06))
 		boxes.append([x0, x1, jh])
 	# The discount store at the other end.
 	var dh := cr.randf_range(8.4, 9.4)
