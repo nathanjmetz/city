@@ -631,7 +631,7 @@ void fragment() {
 	} else {
 		// Damp low spots go dark and shiny; the high ground dries pale.
 		float wet = smoothstep(0.7, 0.9, big);
-		base *= mix(0.9 + 0.2 * fine, 0.58, wet);
+		base *= mix(0.9 + 0.2 * fine, 0.68, wet);
 		rough = mix(0.95, 0.7, wet);
 		float rut = sg_ruts(dr, 26.0);
 		base *= 1.0 - 0.32 * rut;
@@ -1223,7 +1223,7 @@ func _cs_trusses(st: SurfaceTool, at: Vector3, span: float, fine: bool) -> void:
 
 
 ## A heaped pile of dirt: a lumpy dome, `rx` by `rz` across and `h` high.
-func _cs_mound(st: SurfaceTool, c: Vector3, rx: float, rz: float, h: float, col: Color, k: int) -> void:
+static func _cs_mound(st: SurfaceTool, c: Vector3, rx: float, rz: float, h: float, col: Color, k: int) -> void:
 	var rings := 8
 	var segs := 20
 	var pt := func(i: int, j: int) -> Vector3:
@@ -1240,7 +1240,7 @@ func _cs_mound(st: SurfaceTool, c: Vector3, rx: float, rz: float, h: float, col:
 				n = -n
 			st.set_color(col.darkened(0.05 * (i % 2)))
 			st.set_normal(n)
-			for v in [q[0], q[1], q[2], q[0], q[2], q[3]]:
+			for v in [q[0], q[2], q[1], q[0], q[3], q[2]]:
 				st.add_vertex(v)
 
 
