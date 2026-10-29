@@ -28,6 +28,8 @@ var _repaved := UiStyle.label("", 11, UiStyle.MUTED)
 var _due := DueBars.new()
 var _laws := {}         # law -> {"name": Label, "button": Button}
 var _no_council := UiStyle.label("The county makes the rules until the town incorporates.", 11, UiStyle.MUTED)
+var _chains := ProductionView.new()
+var _chains_arrow := Button.new()
 var _town := {}         # slider -> StepSlider
 var _areas := VBoxContainer.new()
 var _open_areas := {}   # area -> true while expanded
@@ -143,6 +145,28 @@ func _ready() -> void:
 		b.pressed.connect(func(): sim.apply({"type": "law", "law": law, "on": not sim.laws.has(law)}))
 		row.add_child(b)
 		_laws[law] = {"name": name, "button": b}
+	# Production chains (ProductionView): where the town's loads went, shut
+	# until opened.
+	body.add_child(HSeparator.new())
+	var chain_head := HBoxContainer.new()
+	chain_head.add_theme_constant_override("separation", 6)
+	body.add_child(chain_head)
+	_chains_arrow.flat = true
+	_chains_arrow.focus_mode = Control.FOCUS_NONE
+	_chains_arrow.custom_minimum_size = Vector2(20, 20)
+	_chains_arrow.text = "▸"
+	_chains_arrow.tooltip_text = "Show where the town's goods go"
+	chain_head.add_child(_chains_arrow)
+	var ch := UiStyle.label("PRODUCTION CHAINS", 10, UiStyle.MUTED)
+	ch.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	chain_head.add_child(ch)
+	_chains.setup(sim)
+	_chains.visible = false
+	body.add_child(_chains)
+	_chains_arrow.pressed.connect(func():
+		_chains.visible = not _chains.visible
+		_chains_arrow.text = "▾" if _chains.visible else "▸"
+		_chains.refresh())
 
 	# The whole town: the default every area follows.
 	body.add_child(HSeparator.new())
@@ -228,6 +252,8 @@ func refresh() -> void:
 		b.text = "Repeal" if on else ("Adopt · $%s" % CitySim.money_text(TownLaws.cost(law)) if TownLaws.cost(law) > 0 else "Adopt")
 		b.disabled = not council and not on
 		_laws[law].name.add_theme_color_override("font_color", UiStyle.TEXT if on else UiStyle.MUTED)
+	if _chains.visible:
+		_chains.refresh()
 	for area in _area_rows:
 		_area_rows[area].sum.text = _summary(area)
 		if _open_areas.has(area) and _hub_sig.get(area, []) != hubs_in(area):

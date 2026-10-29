@@ -1081,6 +1081,7 @@ func _load_sidings(sim: CitySim) -> void:
 		var per: float = Balance.RAIL_LOADS_PER_CAR[Industry.KINDS[s.kind].cargo]
 		while s.stock >= 1.0 and l.cars < MAX_CARS:
 			s.stock -= 1.0
+			sim.chains.count(sim.calendar_tick(), str(s.kind), "rail", Industry.KINDS[s.kind].cargo)
 			l.loads += 1.0
 			if l.loads >= per:
 				l.loads -= per
@@ -1107,6 +1108,7 @@ func _load_elevator(sim: CitySim, l: Dictionary) -> void:
 		var load := sim.warehouses.take_load(int(l.store), Warehouses.RAW)
 		if load.is_empty():
 			break
+		sim.chains.count(sim.calendar_tick(), "elevator", "rail", "grain")
 		l.loads += 1.0
 		if l.loads >= per:
 			l.loads -= per

@@ -401,14 +401,35 @@ func value_factor(p: Vector3, key := "") -> float:
 	var total := 0.0
 	for id in hubs:
 		var h: Dictionary = hubs[id]
-		var d: float = _near_cell(id, h, p, key) * h.cell if key != "" else distance(h, p)
-		total += _effect(h.kind, d)
-		# Its tree's built nodes that lift land, in tree order: [value, reach].
-		for vr in _value_nodes(id, h):
-			total += float(vr[0]) * maxf(0.0, 1.0 - d / float(vr[1]))
-		if h.scar > 0.0:
-			total += _effect("landfill", d) * h.scar / Balance.LANDFILL_RECOVERY_DAYS
+		total += _lift(id, h, _near_cell(id, h, p, key) * h.cell if key != "" else distance(h, p))
 	return clampf(1.0 + total, 0.5, 1.5)
+
+
+## How much hub `id` alone changes land value at `p`: -0.15 is 15% lower.
+func lift_from(id: int, p: Vector3) -> float:
+	return _lift(id, hubs[id], distance(hubs[id], p))
+
+
+## How far from its land hub `id` changes land value at all, metres.
+func lift_reach(id: int) -> float:
+	var h: Dictionary = hubs[id]
+	var r: float = Balance.WASTE_SITES[h.kind].reach
+	for vr in _value_nodes(id, h):
+		r = maxf(r, float(vr[1]))
+	if h.scar > 0.0:
+		r = maxf(r, float(Balance.WASTE_SITES.landfill.reach))
+	return r
+
+
+## The change hub `id` makes to land value `d` metres from its land.
+func _lift(id: int, h: Dictionary, d: float) -> float:
+	var total := _effect(h.kind, d)
+	# Its tree's built nodes that lift land, in tree order: [value, reach].
+	for vr in _value_nodes(id, h):
+		total += float(vr[0]) * maxf(0.0, 1.0 - d / float(vr[1]))
+	if h.scar > 0.0:
+		total += _effect("landfill", d) * h.scar / Balance.LANDFILL_RECOVERY_DAYS
+	return total
 
 
 static func _effect(kind: String, d: float) -> float:

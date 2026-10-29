@@ -134,6 +134,8 @@ var hubs := CivicHubs.new()
 var parks := Parks.new()
 ## The post office, its postmaster, and the carriers on their routes.
 var mail := Mail.new()
+## Police cruisers on patrol and the streets they drove (Patrols).
+var patrols := Patrols.new()
 ## Services shared with neighbor towns under signed deals (Interlocal).
 var interlocal := Interlocal.new()
 ## What the region's shared projects do in this town (Regional).
@@ -161,6 +163,8 @@ var policies := Policies.new()
 var culture := TownCulture.new()
 ## Buildings going up, stage by stage, with their crews and deliveries.
 var construction := Construction.new()
+## Where the last year's loads went, link by link (the production chain page).
+var chains := ProductionChains.new()
 ## Smoke, noise and dirty ground, each traced to the source that makes it.
 var pollution := Pollution.new()
 ## Hospitals run by their administrators, ambulances, nursing homes, daycare.
@@ -981,6 +985,7 @@ func _apply_cmd(cmd: Dictionary) -> bool:
 			power.offset = terrain_offset
 			logistics = Logistics.new()
 			construction = Construction.new()
+			chains = ProductionChains.new()
 			warehouses = Warehouses.new()
 			big = BigFactories.new()
 			big_factories_changed.emit()
@@ -1003,6 +1008,7 @@ func _apply_cmd(cmd: Dictionary) -> bool:
 			parks = Parks.new()
 			parks_changed.emit()
 			mail = Mail.new()
+			patrols = Patrols.new()
 			neighborhoods = Neighborhoods.new()
 			neighborhoods_changed.emit()
 			policies.from_dict({})
@@ -1554,6 +1560,9 @@ func tick() -> void:
 	t = Perf.now()
 	mail.tick(self)
 	Perf.add("sim.mail", t)
+	t = Perf.now()
+	patrols.tick(self)
+	Perf.add("sim.patrols", t)
 	t = Perf.now()
 	interlocal.tick(self)
 	Perf.add("sim.interlocal", t)
@@ -4890,6 +4899,7 @@ func save_steps(postcard := false) -> Array:
 		["parks", func(): return parks.to_dict()],
 		["neighborhoods", func(): return neighborhoods.to_dict()],
 		["mail", func(): return mail.to_dict()],
+		["patrols", func(): return patrols.to_dict()],
 		["interlocal", func(): return interlocal.to_dict()],
 		["regional", func(): return regional.to_dict()],
 		["market", func(): return market.to_dict()],
@@ -4927,6 +4937,7 @@ func save_steps(postcard := false) -> Array:
 			["buses", func(): return buses.to_dict()],
 			["taxis", func(): return taxis.to_dict()],
 			["builders", func(): return builders.to_dict()],
+			["chains", func(): return chains.to_dict()],
 			["people", func(): return people.to_dict()],
 		])
 	return steps
@@ -4984,6 +4995,7 @@ func from_dict(d: Dictionary) -> void:
 	banks.from_dict(d.get("banks", {}))
 	logistics.from_dict(d.get("logistics", {}))
 	construction.from_dict(d.get("construction", {}))
+	chains.from_dict(d.get("chains", {}))
 	warehouses.from_dict(d.get("warehouses", {}))
 	big.from_dict(d.get("big_factories", {}))
 	reserves.from_list(d.get("reserves", []))
@@ -4995,6 +5007,7 @@ func from_dict(d: Dictionary) -> void:
 	parks.from_dict(d.get("parks", {}))
 	neighborhoods.from_dict(d.get("neighborhoods", {}))
 	mail.from_dict(d.get("mail", {}))
+	patrols.from_dict(d.get("patrols", {}))
 	interlocal.from_dict(d.get("interlocal", {}))
 	regional.from_dict(d.get("regional", {}))
 	market.from_dict(d.get("market", {}))

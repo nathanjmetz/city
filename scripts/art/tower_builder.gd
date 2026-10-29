@@ -77,6 +77,9 @@ static func _tw_start(seed: int, to_curb: float, lot: Dictionary, storeys: int, 
 			var pr := RandomNumberGenerator.new()
 			pr.seed = hash([seed, "prewar form"])
 			kind = "deco" if storeys >= 14 or pr.randf() < 0.3 else "chicago"
+			# On a single storefront lot a 1920s bank often built up instead.
+			if kind == "chicago" and storeys >= 8 and b.half * 2.0 <= 34.0 and pr.randf() < 0.45:
+				kind = "bank"
 			# Flats on an old street are a 1920s apartment tower, not an
 			# office block with flats in it.
 			if homes:
@@ -90,6 +93,8 @@ static func _tw_start(seed: int, to_curb: float, lot: Dictionary, storeys: int, 
 		"podium": b._tw_podium(to_curb, b.half * 2.0, storeys)
 		"tubes": b._tw_tubes(to_curb, b.half * 2.0, storeys)
 		"flats": b._tw_flats(to_curb, b.half * 2.0, storeys)
+		"bank": b._tw_bank(to_curb, b.half * 2.0, storeys)
+		"balcony": b._tw_balcony(to_curb, b.half * 2.0, storeys)
 		_:
 			if homes:
 				b._tw_slab(to_curb, b.half * 2.0, storeys)
@@ -107,10 +112,102 @@ static func _tw_form(seed: int, width: float, homes: bool) -> String:
 	var x := r.randf()
 	var wide := width >= 44.0
 	if homes:
-		return "podium" if x < (0.55 if wide else 0.2) else "glass"
+		# Flats: a podium tower, a 2010s glass tower with shifting balconies,
+		# or the 1960s-70s slab ("glass" here).
+		var p := 0.55 if wide else 0.2
+		return "podium" if x < p else ("balcony" if x < p + 0.3 else "glass")
 	if x < 0.3:
 		return "glass"
 	return "pomo" if x < (0.55 if wide else 0.72) else "podium"
+
+
+# ---------------------------------------------------------------- bank tower
+
+## A 1910s-20s county-seat bank tower (the eight-to-twelve-storey bank and
+## office buildings of Indiana's county seats, after Sullivan's and Burnham's
+## "base, shaft and capital"): built to the sidewalk on one storefront lot,
+## a two-storey limestone banking hall with three tall arched windows
+## between columns, the bank's door in the middle arch, a brick shaft of
+## paired windows, a limestone attic under a deep cornice, and the bank's
+## name on a rooftop sign. Its own random numbers, so the builder's don't move.
+func _tw_bank(to_curb: float, width: float, storeys: int) -> void:
+	if _far:
+		_tw_chicago(to_curb, width, storeys)
+		return
+	var r := RandomNumberGenerator.new()
+	r.seed = hash([rng.seed, "bank tower"])
+	var w := minf(width - 1.0, r.randf_range(20.0, 28.0))
+	var d := minf(depth - 4.0, r.randf_range(22.0, 30.0))
+	var zf := 0.4
+	var cz := zf + d * 0.5
+	var hall := 10.0  # the two-storey banking hall
+	var floor_h := 3.7
+	var top := hall + floor_h * (storeys - 2)
+	var lime := Color(["#d8d0bf", "#cfc6b2", "#e0d9c8"][r.randi() % 3])
+	var shaft := Color(["#8a4a38", "#9b5a42", "#b89b72", "#c9b48a"][r.randi() % 4])
+	_downtown_walk(to_curb, width, zf)
+	# The banking hall: limestone, three arched windows between columns.
+	_box("brick", Vector3(w, hall, d), Vector3(0, hall * 0.5, cz), lime)
+	var aw := (w - 4.0) / 3.0
+	for i in 3:
+		var x := -w * 0.5 + 2.0 + (i + 0.5) * aw
+		_tw_arch(Vector3(x, 0.6, zf), aw - 1.2, hall - 1.6, lime, Color("#2a3036"))
+		if i == 1:
+			# Bronze doors in the middle arch, under a transom.
+			_box("paint", Vector3(2.6, 3.2, 0.1), Vector3(x, 1.6 + 0.6, zf - 0.78), Color("#5a4a32"))
+			_box("paint", Vector3(0.06, 3.2, 0.12), Vector3(x, 2.2, zf - 0.84), Color("#3a2f20"))
+	for i in 4:
+		var x := -w * 0.5 + 2.0 + i * aw
+		_box("paint", Vector3(1.1, hall - 1.4, 1.1), Vector3(x, (hall - 1.4) * 0.5 + 0.6, zf - 0.55), lime.lightened(0.06))  # column
+		_box("paint", Vector3(1.5, 0.6, 1.5), Vector3(x, hall - 0.5, zf - 0.55), lime.lightened(0.1))  # capital
+		_box("paint", Vector3(1.5, 0.6, 1.5), Vector3(x, 0.3, zf - 0.55), lime.darkened(0.08))  # base
+	_box("paint", Vector3(w + 0.6, 0.9, 1.2), Vector3(0, hall + 0.25, zf - 0.2), lime.lightened(0.08))  # entablature
+	_box("paint", Vector3(w + 0.6, 0.6, d + 0.6), Vector3(0, 0.3, cz), lime.darkened(0.1))  # water table
+	# The shaft: brick with paired windows in every bay, on all four sides.
+	var y_attic := top - floor_h
+	_box("brick", Vector3(w, y_attic - hall, d), Vector3(0, (hall + y_attic) * 0.5, cz), shaft)
+	for face in _tw_faces(w, d, cz):
+		var n := maxi(3, roundi(face[2] / 4.2))
+		var len_b: float = face[2] / n
+		var out: Vector3 = face[1].cross(Vector3.UP)
+		for f in range(2, storeys - 1):
+			var y := hall + floor_h * (f - 2) + 1.9
+			for i in n:
+				var c: Vector3 = face[0] + face[1] * (-face[2] * 0.5 + (i + 0.5) * len_b)
+				c.y = y
+				for k in [-1.0, 1.0]:
+					_glass(c + face[1] * k * 0.75, face[1], 1.15, 2.0, r.randf_range(0.0, 0.6))
+				_box("paint", Vector3(len_b * 0.8, 0.12, 0.25), c + out * 0.1 + Vector3(0, -1.08, 0), lime, _tw_yaw(face[1]))  # sill
+	# The attic storey in limestone, a deep cornice and a balustraded parapet.
+	_box("brick", Vector3(w, floor_h, d), Vector3(0, y_attic + floor_h * 0.5, cz), lime)
+	_box("paint", Vector3(w + 0.3, 0.4, d + 0.3), Vector3(0, y_attic, cz), lime.lightened(0.08))  # belt
+	for face in _tw_faces(w, d, cz):
+		var n := maxi(4, roundi(face[2] / 2.4))
+		for i in n:
+			var c: Vector3 = face[0] + face[1] * (-face[2] * 0.5 + (i + 0.5) * face[2] / n)
+			c.y = y_attic + floor_h * 0.5
+			_glass(c, face[1], 1.0, 1.2, 0.3)
+	_box("paint", Vector3(w + 2.2, 0.9, d + 2.2), Vector3(0, top + 0.45, cz), lime.lightened(0.1))  # cornice
+	_box("paint", Vector3(w + 1.4, 0.3, d + 1.4), Vector3(0, top + 0.05, cz), lime.darkened(0.05))  # bed mould
+	_box("brick", Vector3(w, 1.2, d), Vector3(0, top + 1.5, cz), lime)  # parapet
+	_tw_roof(w, d, cz, top + 2.1)
+	if fine:
+		for face in _tw_faces(w, d, cz):
+			var out: Vector3 = face[1].cross(Vector3.UP)
+			var n := maxi(6, roundi(face[2] / 0.6))
+			for i in n:
+				var c: Vector3 = face[0] + face[1] * (-face[2] * 0.5 + (i + 0.5) * face[2] / n) + out * 0.12
+				c.y = top + 1.45
+				_box("paint", Vector3(0.18, 0.8, 0.18), c, lime.lightened(0.14))  # balusters
+	_box("brick", Vector3(4.5, 3.4, 5.5), Vector3(w * 0.25, top + 2.1 + 1.7, cz + d * 0.2), shaft.darkened(0.1))  # elevator penthouse
+	_tw_roof(4.5, 5.5, cz + d * 0.2, top + 2.1 + 3.4, w * 0.25)
+	if not _homes:
+		_sign(Vector3(0, hall + 0.75, zf - 0.85), w * 0.5, 0.6)  # carved in the frieze
+		_tw_roof_sign(Vector3(-w * 0.1, top + 2.1, zf + 1.6), minf(w * 0.7, 16.0))
+	if width - w > 6.0:
+		# The rest of the lot: a side lawn with a tree.
+		var pick := TreeField.pick(rng)
+		trees.append([Vector3(-(w * 0.5 + (width - w) * 0.25), 0, zf + 3.0), pick[0], pick[1], rng.randf_range(0.7, 0.9)])
 
 
 # ---------------------------------------------------------------- Chicago School
@@ -628,6 +725,83 @@ func _tw_slab(to_curb: float, width: float, storeys: int) -> void:
 	for s in [-1.0, 1.0]:
 		var pick := TreeField.pick(rng)
 		trees.append([Vector3(s * (width * 0.5 - 4.0), 0, zf * 0.5), pick[0], pick[1], rng.randf_range(0.8, 1.0)])
+
+
+## A 2010s apartment tower (the glass point towers of Chicago's West Loop
+## and South Loop, Indianapolis's and Columbus's new downtown high-rises):
+## floor-to-ceiling glass behind white slab edges, and cantilevered
+## balconies that shift from side to side floor by floor, so the faces
+## read as a checkerboard; frosted glass guards; a glass lobby under a
+## porte-cochere on a drop-off loop; a dark mechanical penthouse on top.
+## Its own random numbers, so the builder's don't move.
+func _tw_balcony(to_curb: float, width: float, storeys: int) -> void:
+	var r := RandomNumberGenerator.new()
+	r.seed = hash([rng.seed, "balcony tower"])
+	var w := minf(width - 10.0, r.randf_range(24.0, 30.0))
+	var d := minf(depth - 22.0, r.randf_range(22.0, 28.0))
+	if w < 16.0 or d < 14.0 or _far:
+		_tw_slab(to_curb, width, storeys)
+		return
+	var zf := minf(r.randf_range(11.0, 14.0), depth - d - 2.0)
+	var cz := zf + d * 0.5
+	var ground_h := 5.0
+	var floor_h := 3.1
+	var top := ground_h + floor_h * (storeys - 1)
+	var edge := Color(["#e6e4de", "#d9d6cf", "#c9ccce"][r.randi() % 3])
+	var guard := Color("#a9bcc4")
+	var mech := 4.0
+	# The core behind the glass, and the glass floor by floor.
+	_box("paint", Vector3(w - 0.4, top, d - 0.4), Vector3(0, top * 0.5, cz), Color("#2a2d30"))
+	var shift := r.randf_range(0.35, 0.5)  # how much of a face one floor's balconies cover
+	for f in range(1, storeys):
+		var y0 := ground_h + floor_h * (f - 1)
+		_box("paint", Vector3(w + 0.2, 0.28, d + 0.2), Vector3(0, y0 + 0.14, cz), edge)  # slab edge
+		for face in _tw_faces(w, d, cz):
+			var c: Vector3 = face[0]
+			var along: Vector3 = face[1]
+			var len: float = face[2]
+			var out := along.cross(Vector3.UP)
+			_glass(c + Vector3(0, y0 + 0.28 + (floor_h - 0.4) * 0.5, 0), along, len - 0.3, floor_h - 0.45, r.randf_range(0.05, 0.6))
+			# This floor's balcony: at one end of the face or the other, by floor.
+			var bl := len * shift
+			var off := (len - bl) * 0.5 * (1.0 if (f + int(face[3])) % 2 == 0 else -1.0)
+			var bc: Vector3 = c + along * off + out * 0.9
+			var yaw := _tw_yaw(along)
+			_box("paint", Vector3(bl, 0.24, 1.8), bc + Vector3(0, y0 + 0.12, 0), edge, yaw)
+			_box("paint", Vector3(bl, 1.05, 0.04), bc + out * 0.88 + Vector3(0, y0 + 0.24 + 0.53, 0), guard, yaw)
+			if fine:
+				_box("metal", Vector3(bl, 0.05, 0.08), bc + out * 0.88 + Vector3(0, y0 + 1.32, 0), Color("#5d6266"), yaw)
+				for sd in [-1.0, 1.0]:
+					_box("paint", Vector3(0.04, 1.05, 1.76), bc + along * sd * (bl * 0.5 - 0.02) + Vector3(0, y0 + 0.77, 0), guard, yaw)
+	# The lobby: glass all round, set back under the second floor.
+	for face in _tw_faces(w - 3.0, d - 3.0, cz):
+		_glass(face[0] + Vector3(0, ground_h * 0.5, 0), face[1], face[2] - 0.4, ground_h - 0.5, 0.0)
+	# Parapet, roof and the dark mechanical penthouse.
+	_box("paint", Vector3(w + 0.2, 1.0, d + 0.2), Vector3(0, top + 0.5, cz), edge)
+	_tw_roof(w, d, cz, top + 1.0)
+	_box("membrane", Vector3(w * 0.55, mech, d * 0.55), Vector3(0, top + 1.0 + mech * 0.5, cz), Color("#33373b"))
+	_tw_roof(w * 0.55, d * 0.55, cz, top + 1.0 + mech)
+	# The porte-cochere over a drop-off loop, and the walk to the curb.
+	_box("paint", Vector3(10.0, 0.6, 7.0), Vector3(0, ground_h - 0.3, zf - 3.5), edge)
+	for sx in [-1.0, 1.0]:
+		_box("metal", Vector3(0.3, ground_h - 0.6, 0.3), Vector3(sx * 4.6, (ground_h - 0.6) * 0.5, zf - 6.6), Color("#5d6266"))
+	_flat_rect("drive", -8.0, 8.0, zf - 9.0, zf - 0.5, 0.07)
+	for sx in [-1.0, 1.0]:
+		_flat_rect("drive", sx * 8.0 - 3.0, sx * 8.0 + 3.0, -to_curb + RoadStyle.CURB_WIDTH, zf - 9.0, 0.07)
+	_box("concrete", Vector3(5.0, 0.6, 3.0), Vector3(0, 0.3, zf - 13.0 + 3.0), Color("#8f8b84"))  # island planter
+	_shrub(Vector3(0, 0.6, zf - 10.0), 0.8)
+	_sign(Vector3(0, 0.3, zf - 11.6), 3.0, 0.6)
+	var keep := rng
+	rng = r
+	var sx := -w * 0.5 + 1.0
+	while sx < w * 0.5 - 1.0:
+		if absf(sx) > 6.0:
+			_shrub(Vector3(sx, 0, zf - 0.9), r.randf_range(0.5, 0.8))
+		sx += r.randf_range(2.2, 3.4)
+	rng = keep
+	for s2 in [-1.0, 1.0]:
+		var pick := TreeField.pick(rng)
+		trees.append([Vector3(s2 * (width * 0.5 - 3.5), 0, zf * 0.5), pick[0], pick[1], rng.randf_range(0.8, 1.0)])
 
 
 # ---------------------------------------------------------------- postmodern

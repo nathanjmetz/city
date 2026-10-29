@@ -15,7 +15,7 @@ const LADDERS := {
 	"main": [["shop", 0, 2.2], ["shop", 1, 2.2], ["mixed_use", 0, 3.0], ["mixed_use", 1, 5.0], ["mixed_use", 2, 5.0]],
 	# One 30-storey office in every form, on the same assembled site.
 	"forms": [["office", 4, 16.0, "chicago"], ["office", 4, 16.0, "deco"], ["office", 4, 16.0, "glass"], ["office", 4, 16.0, "pomo"], ["office", 4, 16.0, "podium"]],
-	"homeforms": [["apartments", 4, 6.6, "glass"], ["apartments", 4, 6.6, "podium"], ["apartments", 3, 4.4, "podium"], ["apartments", 3, 4.4, "glass"]],
+	"homeforms": [["apartments", 4, 6.6, "glass"], ["apartments", 4, 6.6, "podium"], ["apartments", 4, 6.6, "balcony"], ["apartments", 3, 4.4, "balcony"], ["apartments", 3, 4.4, "glass"]],
 	# One prewar office on a storefront lot and on sites bought up next door.
 	"sites": [["office", 3, 12.0, "chicago", 30.0], ["office", 3, 12.0, "chicago", 62.0], ["office", 4, 16.0, "deco", 36.0], ["office", 4, 16.0, "deco", 66.0]],
 	# A row of houses bought for a strip center, then a grocer-anchored one.

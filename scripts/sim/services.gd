@@ -174,14 +174,29 @@ var _alloc_use := {"power": [0, 0], "water": [0, 0]}
 
 
 ## Road distance from `front` to every road node (node -> metres), for a
-## service not built yet (the builder's yard shows its reach while placed).
-func reach_from(network: RoadNetwork, front: Vector3) -> Dictionary:
+## service not built yet (the builder's yard shows its reach while placed),
+## out to `limit` metres.
+func reach_from(network: RoadNetwork, front: Vector3, limit := INF) -> Dictionary:
 	if _lengths.size() != network.segments.size():
 		_lengths = {}
 		for id in network.segments:
 			_lengths[id] = RoadNetwork.polyline_length(network.sample_segment(id, 16))
 	var dist := {}
-	_spread_from(network, _lengths, front, dist)
+	_spread_from(network, _lengths, front, dist, 1.0, limit)
+	return dist
+
+
+## Road distance from built service `id` alone (node -> metres, counted as
+## its funding stretches or shrinks them), out to `limit`: what one
+## station reaches, shown when it's clicked.
+func reach_of(network: RoadNetwork, id: int, limit := INF) -> Dictionary:
+	var b: Dictionary = buildings[id]
+	if _lengths.size() != network.segments.size():
+		_lengths = {}
+		for sid in network.segments:
+			_lengths[sid] = RoadNetwork.polyline_length(network.sample_segment(sid, 16))
+	var dist := {}
+	_spread_from(network, _lengths, b.pos + b.dir * size_of(b).y * 0.5, dist, funding(id, Balance.POLICY_EFFECT), limit)
 	return dist
 
 
@@ -843,7 +858,8 @@ func _spread(network: RoadNetwork, lengths: Dictionary, b: Dictionary, dist: Dic
 	_spread_from(network, lengths, b.pos + b.dir * size_of(b).y * 0.5, dist, effect)
 
 
-func _spread_from(network: RoadNetwork, lengths: Dictionary, front: Vector3, dist: Dictionary, effect := 1.0) -> void:
+func _spread_from(network: RoadNetwork, lengths: Dictionary, front: Vector3, dist: Dictionary, effect := 1.0,
+		limit := INF) -> void:
 	var near := RoadIndex.segment_near(network, front, 80.0, 1.0)
 	if near.is_empty():
 		return
@@ -853,12 +869,14 @@ func _spread_from(network: RoadNetwork, lengths: Dictionary, front: Vector3, dis
 	var k := 1.0 / maxf(effect, 0.01)
 	frontier[s.a] = near.t * l * k
 	frontier[s.b] = (1.0 - near.t) * l * k
-	_spread_nodes(network, lengths, frontier, dist, k)
+	_spread_nodes(network, lengths, frontier, dist, k, limit)
 
 
 ## Road distance out from the starting nodes (node -> metres already
 ## travelled), keeping the shortest in `dist`. Each road metre counts `k`.
-func _spread_nodes(network: RoadNetwork, lengths: Dictionary, frontier: Dictionary, dist: Dictionary, k := 1.0) -> void:
+## Nodes past `limit` metres are left out.
+func _spread_nodes(network: RoadNetwork, lengths: Dictionary, frontier: Dictionary, dist: Dictionary, k := 1.0,
+		limit := INF) -> void:
 	var done := {}
 	while not frontier.is_empty():
 		var best := -1
@@ -868,6 +886,8 @@ func _spread_nodes(network: RoadNetwork, lengths: Dictionary, frontier: Dictiona
 		var d: float = frontier[best]
 		frontier.erase(best)
 		done[best] = true
+		if d > limit:
+			continue
 		if not dist.has(best) or d < dist[best]:
 			dist[best] = d
 		elif dist[best] < d:
