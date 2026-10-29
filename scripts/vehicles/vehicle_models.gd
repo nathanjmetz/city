@@ -441,12 +441,12 @@ func _hatchback() -> void:  # Honda Civic hatch
 
 func _crossover() -> void:  # Toyota RAV4
 	_car({"L": 4.6, "W": 1.86, "H": 1.7, "clear": 0.22, "hood": 1.0, "belt": 1.12, "a": 1.15,
-		"b": 1.9, "c": 3.85, "e": 4.42, "tail": 1.14, "wr": 0.37, "axles": [0.95, 3.6], "c_pillar": false})
+		"b": 1.9, "c": 3.85, "e": 4.42, "tail": 1.14, "wr": 0.37, "axles": [0.95, 3.6], "c_pillar": false, "clad": true})
 
 
 func _suv() -> void:  # Chevrolet Tahoe
 	_car({"L": 5.35, "W": 2.06, "H": 1.93, "clear": 0.26, "hood": 1.2, "belt": 1.3, "a": 1.45,
-		"b": 2.15, "c": 4.95, "e": 5.2, "tail": 1.3, "wr": 0.4, "axles": [1.05, 4.15], "c_pillar": false})
+		"b": 2.15, "c": 4.95, "e": 5.2, "tail": 1.3, "wr": 0.4, "axles": [1.05, 4.15], "c_pillar": false, "clad": true})
 	if not _lo:
 		for x in [-0.8, 0.8]:
 			_box(Vector3(x, 1.96, 3.5), Vector3(0.05, 0.05, 2.4), TRIM)
@@ -474,14 +474,14 @@ func _minivan_pacifica() -> void:  # Chrysler Pacifica: lower, sleeker nose
 
 func _crossover_compact() -> void:  # Honda HR-V / Ford Escape
 	_car({"L": 4.39, "W": 1.82, "H": 1.6, "clear": 0.19, "hood": 0.96, "belt": 1.08, "a": 1.1,
-		"b": 1.85, "c": 3.65, "e": 4.22, "tail": 1.1, "wr": 0.35, "axles": [0.92, 3.55], "c_pillar": false})
+		"b": 1.85, "c": 3.65, "e": 4.22, "tail": 1.1, "wr": 0.35, "axles": [0.92, 3.55], "c_pillar": false, "clad": true})
 
 
 ## Jeep Wrangler Unlimited: upright windshield, flat fenders, a spare on
 ## the tailgate and the seven-slot grille.
 func _suv_jeep() -> void:
 	_car({"L": 4.88, "W": 1.89, "H": 1.85, "clear": 0.28, "hood": 1.1, "belt": 1.16, "a": 1.55,
-		"b": 1.75, "c": 4.55, "e": 4.75, "tail": 1.16, "wr": 0.4, "axles": [0.95, 3.95], "c_pillar": false,
+		"b": 1.75, "c": 4.55, "e": 4.75, "tail": 1.16, "wr": 0.4, "axles": [0.95, 3.95], "c_pillar": false, "clad": true,
 		"grille": Color(0.06, 0.06, 0.06, 0.3)})
 	if not _lo:
 		_cyl(Vector3(0, 1.28, 4.9), Vector3(0, 1.28, 5.05), 0.38, TIRE, 10)
@@ -522,7 +522,7 @@ func _sedan_fullsize() -> void:  # Chevrolet Impala: long hood and trunk, chrome
 
 func _suv_mid() -> void:  # Ford Explorer
 	_car({"L": 5.05, "W": 2.0, "H": 1.78, "clear": 0.2, "hood": 1.05, "belt": 1.15, "a": 1.3,
-		"b": 2.0, "c": 4.45, "e": 4.85, "tail": 1.15, "wr": 0.38, "axles": [0.98, 3.9], "c_pillar": false})
+		"b": 2.0, "c": 4.45, "e": 4.85, "tail": 1.15, "wr": 0.38, "axles": [0.98, 3.9], "c_pillar": false, "clad": true})
 	if not _lo:
 		for x in [-0.78, 0.78]:
 			_box(Vector3(x, 1.81, 3.2), Vector3(0.05, 0.05, 2.0), TRIM)
@@ -530,7 +530,7 @@ func _suv_mid() -> void:  # Ford Explorer
 
 func _wagon() -> void:  # Subaru Outback: low wagon roof, rails, cladding
 	_car({"L": 4.87, "W": 1.86, "H": 1.67, "clear": 0.22, "hood": 0.95, "belt": 1.08, "a": 1.25,
-		"b": 2.05, "c": 4.45, "e": 4.72, "tail": 1.1, "wr": 0.36, "axles": [0.95, 3.7], "c_pillar": false})
+		"b": 2.05, "c": 4.45, "e": 4.72, "tail": 1.1, "wr": 0.36, "axles": [0.95, 3.7], "c_pillar": false, "clad": true})
 	if not _lo:
 		for x in [-0.75, 0.75]:
 			_box(Vector3(x, 1.71, 3.2), Vector3(0.05, 0.06, 2.4), TRIM)
@@ -632,6 +632,44 @@ func _car_detail(p: Dictionary) -> void:
 		_box(Vector3(x, belt + 0.03, p.a + 0.1), Vector3(0.5, 0.015, 0.02), seam)
 	_box(Vector3(0, p.hood - 0.42, -0.005), Vector3(0.3, 0.15, 0.02), WHITE)
 	_box(Vector3(0, p.hood - 0.17, -0.008), Vector3(0.1, 0.06, 0.02), CHROME)
+	if p.get("clad", false):
+		_cladding(p)
+
+
+## Ultra: the unpainted black plastic that SUVs and crossovers wear (RAV4,
+## Explorer, Outback, Wrangler): flares round the wheel arches and a rocker
+## strip along the sills between them. It stands 12 mm proud of the body,
+## clear of the dark wheel well (4 mm) and the door seams.
+func _cladding(p: Dictionary) -> void:
+	var hw: float = p.W * 0.5
+	var r: float = p.wr + 0.07
+	var band := 0.075
+	var axles: Array = p.axles
+	for s in [-1.0, 1.0]:
+		for z in axles:
+			_flare(Vector3(s * hw, p.wr, z), r, r + band, s, 0.012)
+		var z0: float = axles[0] + r + band * 0.5
+		var z1: float = axles[1] - r - band * 0.5
+		_box(Vector3(s * (hw - 0.018), p.clear + 0.08, (z0 + z1) * 0.5), Vector3(0.06, 0.16, z1 - z0), TRIM)
+
+
+## A flat half-ring round a wheel arch from radius r0 to r1, `depth` proud
+## of the body side at `c` (x on the body side), with its outer lip
+## running back into the body where it tucks in toward the sill.
+func _flare(c: Vector3, r0: float, r1: float, side: float, depth: float) -> void:
+	var n := 14
+	var x := c.x + side * depth
+	var inside := Vector3(c.x - side, c.y, c.z)
+	for i in n:
+		var a1 := PI * i / n
+		var a2 := PI * (i + 1) / n
+		var d1 := Vector3(0, sin(a1), cos(a1))
+		var d2 := Vector3(0, sin(a2), cos(a2))
+		var o1 := Vector3(x, c.y, c.z) + d1 * r1
+		var o2 := Vector3(x, c.y, c.z) + d2 * r1
+		_quad(Vector3(x, c.y, c.z) + d1 * r0, Vector3(x, c.y, c.z) + d2 * r0, o2, o1, TRIM, inside)
+		var mid := Vector3(c.x, c.y, c.z) + (d1 + d2) * 0.5 * (r1 - 0.05)
+		_quad(o1, o2, o2 - Vector3(side * (depth + 0.04), 0, 0), o1 - Vector3(side * (depth + 0.04), 0, 0), TRIM, mid)
 
 
 # --- Pickups ----------------------------------------------------------------
