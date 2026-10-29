@@ -15,6 +15,9 @@ extends CommercialBuilder
 
 const SPANDREL := ["#c9c4b8", "#b8b2a6", "#8f8a80", "#d8d4ca", "#6e6a64"]
 const OFFICE_GLASS := Color(0.55, 0.62, 0.66, 0.35)
+## Small parts only the desktop draws (door pulls, bulkhead panels, transom
+## muntins, sash frames); the browser keeps its triangle budget.
+static var fine := not OS.has_feature("web")
 
 
 static func _start(seed: int, lot: Dictionary, spec := {}) -> DenseBuilder:
@@ -236,12 +239,31 @@ func _mixed(to_curb: float, width: float, storeys: int) -> void:
 		var fx := -w * 0.5 + (k + 0.5) * fw
 		var sw := fw - 1.0
 		var bays := 3
+		var bw := sw / bays
+		# The classic 1880s-1920s Indiana storefront (Fairmount, Wabash,
+		# Huntington): paneled bulkheads, tall display windows, a glass
+		# entry door in the middle bay and a band of transom lights above,
+		# under the sign board.
 		for i in bays:
-			var x := fx - sw * 0.5 + (i + 0.5) * sw / bays
-			_glass(Vector3(x, 1.85, zf - 0.03), Vector3(-1, 0, 0), sw / bays - 0.12, 2.3, rng.randf_range(0.0, 0.2))
-			_box("paint", Vector3(0.1, 3.0, 0.14), Vector3(x - sw / bays * 0.5, 1.75, zf - 0.07), mull)
+			var x := fx - sw * 0.5 + (i + 0.5) * bw
+			if i == bays / 2 and bw > 1.5:
+				_shop_door(x, bw, zf, mull)
+			else:
+				_glass(Vector3(x, 1.65, zf - 0.03), Vector3(-1, 0, 0), bw - 0.12, 1.9, rng.randf_range(0.0, 0.2))
+				_box("paint", Vector3(bw - 0.02, 0.6, 0.16), Vector3(x, 0.4, zf - 0.08), trim)
+				if fine:
+					# Raised panels on the bulkhead.
+					_box("paint", Vector3(bw * 0.38, 0.32, 0.04), Vector3(x - bw * 0.22, 0.4, zf - 0.17), trim.darkened(0.1))
+					_box("paint", Vector3(bw * 0.38, 0.32, 0.04), Vector3(x + bw * 0.22, 0.4, zf - 0.17), trim.darkened(0.1))
+			# Transom lights, divided into small panes.
+			_glass(Vector3(x, 2.93, zf - 0.03), Vector3(-1, 0, 0), bw - 0.12, 0.46, 0.0)
+			if fine:
+				var panes := maxi(2, roundi(bw / 0.45))
+				for q in range(1, panes):
+					_box("paint", Vector3(0.04, 0.46, 0.05), Vector3(x - bw * 0.5 + q * bw / panes, 2.93, zf - 0.06), mull)
+			_box("paint", Vector3(0.1, 3.0, 0.14), Vector3(x - bw * 0.5, 1.75, zf - 0.07), mull)
 		_box("paint", Vector3(0.1, 3.0, 0.14), Vector3(fx + sw * 0.5, 1.75, zf - 0.07), mull)
-		_box("paint", Vector3(sw + 0.3, 0.6, 0.16), Vector3(fx, 0.4, zf - 0.08), trim)
+		_box("paint", Vector3(sw + 0.3, 0.08, 0.15), Vector3(fx, 2.66, zf - 0.08), mull)  # transom bar
 		_box("paint", Vector3(sw + 0.3, 0.12, 0.18), Vector3(fx, 3.25, zf - 0.09), trim)
 		# The lot's own business takes the middle shopfront; its neighbours
 		# in the block keep their own painted signs.
@@ -276,6 +298,8 @@ func _mixed(to_curb: float, width: float, storeys: int) -> void:
 			var wh := rng.randf_range(1.8, 2.0)
 			_glass(Vector3(x, y, zf - 0.02), Vector3(-1, 0, 0), 1.0, wh, rng.randf_range(0.0, 0.7))
 			_box("paint", Vector3(1.3, 0.1, 0.16), Vector3(x, y - wh * 0.5 - 0.05, zf - 0.08), trim)
+			if fine:
+				_sash(x, y, 1.0, wh, zf, trim)
 			if italianate:
 				# A hood mould: a wider cap with a raised crown.
 				_box("paint", Vector3(1.5, 0.3, 0.16), Vector3(x, y + wh * 0.5 + 0.15, zf - 0.08), trim)
@@ -308,6 +332,33 @@ func _mixed(to_curb: float, width: float, storeys: int) -> void:
 	if depth > zf + d + 3.0:
 		_flat_rect("asphalt", -width * 0.5, width * 0.5, zf + d, minf(depth, zf + d + 10.0), 0.06)
 	_downtown_walk(to_curb, width, zf)
+
+
+## A storefront's entry in the middle bay: a wood or aluminium door with a
+## tall glass light and a kick panel, narrow sidelights either side, and a
+## low step (fronts in Fairmount and Wabash, Indiana).
+func _shop_door(x: float, bw: float, zf: float, mull: Color) -> void:
+	var dw := 1.0
+	var side := (bw - dw - 0.12) * 0.5
+	for sgn in [-1.0, 1.0]:
+		var sx: float = x + sgn * (dw + side) * 0.5
+		_glass(Vector3(sx, 1.65, zf - 0.03), Vector3(-1, 0, 0), side, 1.9, 0.0)
+		_box("paint", Vector3(side, 0.6, 0.16), Vector3(sx, 0.4, zf - 0.08), mull)
+	var col := Color(_pick(["#3a2a1e", "#1c1d1f", "#5a3a22"])) if fine else mull
+	_box("paint", Vector3(dw + 0.12, 2.62, 0.08), Vector3(x, 1.31, zf - 0.02), col)  # frame, kick panel and head
+	_glass(Vector3(x, 1.5, zf - 0.07), Vector3(-1, 0, 0), dw - 0.24, 1.5, 0.0)
+	if fine:
+		_box("metal", Vector3(0.03, 0.3, 0.05), Vector3(x + dw * 0.36, 1.1, zf - 0.11), Color("#8a8478"))  # pull
+	_box("paint", Vector3(dw + 0.5, 0.15, 0.4), Vector3(x, 0.075, zf - 0.2), FOUNDATION)  # step
+
+
+## A double-hung window's frame and sashes: side and head casing, and the
+## meeting rail where the two sashes cross, in the trim colour.
+func _sash(x: float, y: float, w: float, h: float, zf: float, trim: Color) -> void:
+	_box("paint", Vector3(0.07, h, 0.06), Vector3(x - w * 0.5 + 0.035, y, zf - 0.05), trim)
+	_box("paint", Vector3(0.07, h, 0.06), Vector3(x + w * 0.5 - 0.035, y, zf - 0.05), trim)
+	_box("paint", Vector3(w, 0.07, 0.06), Vector3(x, y + h * 0.5 - 0.035, zf - 0.05), trim)
+	_box("paint", Vector3(w, 0.05, 0.05), Vector3(x, y + 0.04, zf - 0.05), trim)
 
 
 ## The back of a Main Street block, on the alley: a steel service door and
