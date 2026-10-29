@@ -32,6 +32,11 @@ const MOON_COLOR := Color(0.62, 0.72, 0.95)
 var sun := DirectionalLight3D.new()
 var env := Environment.new()
 var sky_mat := ProceduralSkyMaterial.new()
+## The desktop app's sky with clouds (CloudSky); null in the browser, which
+## draws sky_mat. sky_mat still holds the colours either way.
+var clouds: ShaderMaterial
+var _sky: Sky
+var _moving := false
 ## 0 in full daylight, 1 at full night. DayNight reads it.
 var darkness := 0.0
 var _day := {}  # the fixed late-morning look, to go back to
@@ -73,6 +78,7 @@ func _ready() -> void:
 	sky_mat.sun_curve = 0.08
 	var sky := Sky.new()
 	sky.sky_material = sky_mat
+	_sky = sky
 
 	env.background_mode = Environment.BG_SKY
 	env.sky = sky
@@ -126,6 +132,13 @@ func _ready() -> void:
 	# Stars, faded in at night.
 	sky_mat.sky_cover = _stars()
 	sky_mat.sky_cover_modulate = Color(1, 1, 1, 0)
+	if not _gl:
+		_use_clouds(false)
+		# The desktop sky does its own haze toward the horizon; fog laid
+		# over the whole dome greyed the blue overhead to slate (a quarter
+		# of the haze colour at every height); about half that keeps a hazy
+		# summer sky pale but blue.
+		env.fog_sky_affect = 0.14
 	# Lamps, lit windows and headlights bloom a little; daylight never does.
 	env.glow_enabled = true
 	env.glow_hdr_threshold = 1.2
@@ -154,8 +167,15 @@ func _apply_quality() -> void:
 		else DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS
 	if q.browser:
 		return  # the effects below need Forward+
+	if clouds != null and (q.tier >= GraphicsQuality.HIGH) != _moving:
+		_use_clouds(q.tier >= GraphicsQuality.HIGH)
 	# Low's coarse 2-split map stripes lawns even at 3.0; it needs more.
 	sun.shadow_normal_bias = 4.5 if t.splits == 2 else 3.0
+	# The real sun is a disc half a degree across, so a shadow is crisp
+	# where it touches what casts it and softens the farther it falls: a
+	# pole's shadow blurs toward its tip, a house's along its far edge.
+	# Ultra and up (soft shadows of this kind cost more to draw).
+	sun.light_angular_distance = 0.53 if q.tier >= GraphicsQuality.ULTRA else 0.0
 	env.ssao_enabled = t.ssao
 	env.ssao_radius = 1.5
 	env.ssao_intensity = 1.6
@@ -269,6 +289,41 @@ func _sky_colors(top: Color, horizon: Color, stars: float) -> void:
 	sky_mat.ground_horizon_color = horizon
 	sky_mat.ground_bottom_color = horizon
 	sky_mat.sky_cover_modulate = Color(1, 1, 1, stars)
+	_clouds_colors()
+
+
+## Puts up the desktop sky (CloudSky), its clouds drifting or still.
+func _use_clouds(moving: bool) -> void:
+	var cov := 0.15
+	var off := Vector2.ZERO
+	if clouds != null:
+		cov = clouds.get_shader_parameter("cover")
+		off = clouds.get_shader_parameter("drift")
+	_moving = moving
+	clouds = CloudSky.make(moving)
+	clouds.set_shader_parameter("stars", sky_mat.sky_cover)
+	clouds.set_shader_parameter("cover", cov)
+	clouds.set_shader_parameter("drift", off)
+	_clouds_colors()
+	_sky.sky_material = clouds
+
+
+func _clouds_colors() -> void:
+	if clouds == null:
+		return
+	clouds.set_shader_parameter("top_color", sky_mat.sky_top_color)
+	clouds.set_shader_parameter("horizon_color", sky_mat.sky_horizon_color)
+	clouds.set_shader_parameter("curve", sky_mat.sky_curve)
+	clouds.set_shader_parameter("stars_alpha", sky_mat.sky_cover_modulate.a)
+
+
+## How much of the sky is cloud, 0 to 1 (Weather sets it). Only the desktop
+## sky draws clouds; sent on only when it changes enough to see.
+func set_cover(c: float) -> void:
+	if clouds == null:
+		return
+	if absf(float(clouds.get_shader_parameter("cover")) - c) > 0.004:
+		clouds.set_shader_parameter("cover", c)
 
 
 static func _near(a: Color, b: Color) -> bool:
