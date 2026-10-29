@@ -154,7 +154,13 @@ static func office_park(art_seed: int, fit: Dictionary, level: int) -> Dictionar
 	var plan := DenseBuilder.office_park_plan(art_seed, fit.get("art", {"width": float(fit.half) * 2.0, "depth": fit.depth}), level)
 	var spots := []
 	for st in plan.stalls:
-		spots.append({"pos": st[0], "face": st[1], "kind": "stall"})
+		var spot := {"pos": st[0], "face": st[1], "kind": "stall"}
+		if st.size() > 2:
+			spot.aisle = st[2]  # a campus's rows out front have their own aisles
+		spots.append(spot)
+	# A corporate campus's parking deck: cars drive in and are out of sight.
+	for st in plan.get("deck", []):
+		spots.append({"pos": st[0], "face": st[1], "kind": "garage"})
 	return {"spots": spots, "door": plan.door, "cut_x": plan.cut_x, "aisle_z": plan.aisle_z,
 		"walk_z": plan.door.y - 1.1, "main_street": false}
 
@@ -213,6 +219,17 @@ static func corner_side(net: RoadNetwork, lot: Dictionary) -> float:
 			best_d = float(hit.dist)
 			best = s
 	return best
+
+
+## Whether a road runs along the lot's back line (an alley, a gravel lane,
+## or a street behind a through lot), so a row's garages and lot out back
+## have a way in. True when there is no network to ask.
+static func back_lane(net: RoadNetwork, lot: Dictionary) -> bool:
+	if net == null or not lot.has("front") or not lot.has("normal"):
+		return true
+	var z := float(_fit(lot).depth) + 1.0
+	var hit := net.find_segment_near(world(lot, Vector2(0.0, z)), 7.0)
+	return not hit.is_empty() and int(hit.seg) != int(lot.get("seg", -1))
 
 
 static func frame(lot: Dictionary) -> Transform3D:

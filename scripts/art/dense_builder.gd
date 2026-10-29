@@ -122,7 +122,12 @@ func _office_park(to_curb: float, width: float, level: int) -> void:
 	# headquarters; the low buildings fill the rest.
 	var hq := level >= 3
 	var hq_w := clampf(width * 0.28, 34.0, 50.0) if hq else 0.0
-	var x1b := x1 - (hq_w + 8.0 if hq else 0.0)
+	# And a two-bay precast parking deck beside it: 500 people at a suburban
+	# headquarters need about 4 spaces per 1,000 sq ft (ITE), more than
+	# any surface field the site has room for.
+	var deck_w := 36.0 if hq else 0.0
+	var deck_x1 := x1 - hq_w - 8.0
+	var x1b := x1 - (hq_w + 8.0 + deck_w + 6.0 if hq else 0.0)
 	var n := clampi(int((x1b - x0 - 3.4) / 34.0), 1, 3)
 	var bd := clampf(depth - 30.0, 14.0, 20.0)
 	var zb := depth - 3.0
@@ -143,6 +148,19 @@ func _office_park(to_curb: float, width: float, level: int) -> void:
 	var rowb := aisle - 5.5
 	var two := rowb >= 2.0
 	var lot0 := rowb if two else aisle
+	# The campus paves its front lawn into more pairs of rows, each pair
+	# nose to nose across its own aisle, keeping a 6 m planted setback.
+	var rows := [[rowa, Vector2(0, 1), aisle + 3.5]]
+	if two:
+		rows.append([rowb, Vector2(0, -1), aisle + 3.5])
+	if hq and two:
+		var rz := rowb
+		while rz - 5.5 - 7.0 - 5.5 >= 6.0:
+			var ai := rz - 5.5 - 7.0
+			rows.append([rz - 5.5, Vector2(0, 1), ai + 3.5])
+			rows.append([ai - 5.5, Vector2(0, -1), ai + 3.5])
+			rz = ai - 5.5
+		lot0 = rz
 	_flat_rect("drive", cut_x - 4.4, cut_x + 4.4, -to_curb, 0.0, 0.08)
 	_flat_rect("asphalt", cut_x - 3.5, cut_x + 3.5, 0.0, lot0, 0.06)
 	_flat_rect("asphalt", x0 + (pw + 2.0 if pond else 0.0), x1, lot0, zfb - 2.5, 0.06)
@@ -150,19 +168,23 @@ func _office_park(to_curb: float, width: float, level: int) -> void:
 	site.main_street = false
 	site.cut_x = cut_x
 	site.aisle_z = aisle + 3.5
-	for row in (2 if two else 1):
-		var a := rowa if row == 0 else rowb
+	for row in rows.size():
+		var a: float = rows[row][0]
 		var x := x0 + 1.0
 		while x + 2.75 <= x1 - 1.0:
 			var mid := x + 1.375
-			var skip := row == 1 and absf(mid - cut_x) < 4.5
-			skip = skip or (pond and mid < px + pw * 0.5 + 1.0)
+			var skip := row >= 1 and absf(mid - cut_x) < 4.5
+			skip = skip or (pond and mid < px + pw * 0.5 + 1.0 and a < rowa * 0.5 + 2.0 + maxf(rowa + 1.0, 9.0) * 0.5)
+			skip = skip or (hq and row == 0 and mid > deck_x1 - deck_w - 1.0 and mid < deck_x1 + 1.0)
 			# A landscaped island every ten stalls.
 			var isle := int((x - x0) / 2.75) % 11 == 10
 			if not skip and not isle:
 				_flat_rect("line", x - 0.06, x + 0.06, a, a + 5.5, 0.07, LINE)
 				_flat_rect("line", x + 2.69, x + 2.81, a, a + 5.5, 0.07, LINE)
-				site.stalls.append([Vector2(mid, a + 2.75), Vector2(0, 1) if row == 0 else Vector2(0, -1)])
+				if row < 2:
+					site.stalls.append([Vector2(mid, a + 2.75), rows[row][1]])
+				else:
+					site.stalls.append([Vector2(mid, a + 2.75), rows[row][1], rows[row][2]])
 			elif isle and not skip:
 				_flat_rect("mulch", x + 0.3, x + 2.45, a + 0.3, a + 5.2, 0.075)
 				if not _dry:
@@ -178,10 +200,23 @@ func _office_park(to_curb: float, width: float, level: int) -> void:
 		if k == 0:
 			door = Vector2(cx, zfb)
 	site.door = door
+	if hq:
+		# The deck's spaces: two bays of nose-to-nose rows on five levels and
+		# the roof, out of sight once parked.
+		var deck := []
+		var dd := zb - rowa
+		for lv in 6:
+			var x := deck_x1 - deck_w + 1.0
+			while x + 2.75 <= deck_x1 - 1.0:
+				for k in int((dd - 2.0) / 9.0):
+					deck.append([Vector2(x + 1.375, rowa + 1.0 + k * 9.0 + 2.75), Vector2(0, 1)])
+				x += 2.75
+		site.deck = deck
 	if _dry:
 		return
 	if hq:
 		_park_hq(x1 - 4.0 - hq_w * 0.5, hq_w, zfb, bd, band, r)
+		_park_deck(deck_x1 - deck_w * 0.5, deck_w, rowa, zb, x1 - 4.0 - hq_w, zfb + bd * 0.5)
 	# The monument sign by the drive, on a brick base in a planting bed.
 	var sx := cut_x - 7.0
 	_flat_rect("mulch", sx - 3.0, sx + 3.0, 0.8, 3.6, 0.075)
@@ -247,6 +282,55 @@ func _park_hq(cx: float, w: float, zf: float, d: float, band: Color, r: RandomNu
 		_box("metal", Vector3(0.14, 10.0, 0.14), Vector3(fx, 5.0, zf - 1.4), Color("#cfd2d4"))
 		_box("paint", Vector3(1.8, 1.1, 0.04), Vector3(fx + 0.95, 9.3, zf - 1.4),
 			[Color("#3c3b6e"), Color("#1f3b6e"), band.lightened(0.2)][i])
+
+
+## The campus parking deck: precast double tees on five supported levels
+## and the roof, 3.2 m floor to floor behind 1.1 m spandrel panels, its
+## shadowed decks seen through the open sides, a glass stair and elevator
+## tower on the corner by the walk, the entry under a clearance bar off
+## the main aisle, light poles on the roof, and an enclosed skybridge to the
+## headquarters' second floor (as Cummins's and Lincoln's garages have).
+func _park_deck(cx: float, w: float, z0: float, z1: float, hq_x: float, link_z: float) -> void:
+	var levels := 5
+	var lh := 3.2
+	var h := lh * levels
+	var d := z1 - z0
+	var cz := (z0 + z1) * 0.5
+	var concrete := Color("#c4c0b6")
+	_box("paint", Vector3(w - 0.8, h, d - 0.8), Vector3(cx, h * 0.5, cz), Color("#2c2d2e"))
+	for k in range(1, levels + 1):
+		var y := k * lh
+		for e in [[Vector3(w, 1.1, 0.3), Vector3(cx, y + 0.25, z0 + 0.15)], [Vector3(w, 1.1, 0.3), Vector3(cx, y + 0.25, z1 - 0.15)],
+				[Vector3(0.3, 1.1, d), Vector3(cx - w * 0.5 + 0.15, y + 0.25, cz)], [Vector3(0.3, 1.1, d), Vector3(cx + w * 0.5 - 0.15, y + 0.25, cz)]]:
+			_box("concrete", e[0], e[1], concrete)
+		if fine_parts:
+			# The slab edge under each spandrel and its drip reveal.
+			_box("concrete", Vector3(w + 0.1, 0.35, 0.36), Vector3(cx, y - 0.48, z0 + 0.18), concrete.darkened(0.12))
+	for i in 3:
+		for zz in [z0 + 0.3, z1 - 0.3]:
+			_box("concrete", Vector3(0.6, h + 1.1, 0.6), Vector3(cx - w * 0.5 + 0.3 + i * (w - 0.6) * 0.5, (h + 1.1) * 0.5, zz), concrete.darkened(0.05))
+	_quad("paint", Vector3(cx - w * 0.5, h + 0.31, z0), Vector3(cx + w * 0.5, h + 0.31, z0), Vector3(cx + w * 0.5, h + 0.31, z1),
+		Vector3(cx - w * 0.5, h + 0.31, z1), Color("#8d8a84"), [], Vector3.UP)
+	for i in 2:
+		var at := Vector3(cx + (i - 0.5) * w * 0.5, h + 0.3, cz)
+		_box("metal", Vector3(0.18, 7.0, 0.18), at + Vector3(0, 3.5, 0), Color("#5f6266"))
+		_box("metal", Vector3(1.2, 0.25, 0.5), at + Vector3(0, 7.0, 0), Color("#5f6266"))
+	# The stair and elevator tower on the street corner nearest the walk.
+	var sx := cx - w * 0.5 + 2.5
+	_box("concrete", Vector3(5.0, h + 3.4, 5.0), Vector3(sx, (h + 3.4) * 0.5, z0 - 2.5), concrete)
+	_glass(Vector3(sx, (h + 3.4) * 0.5, z0 - 5.03), Vector3(-1, 0, 0), 3.6, h + 2.4, 0.0)
+	# The entry lane off the aisle under its clearance bar, and the sign.
+	var ex := cx + w * 0.25
+	_box("paint", Vector3(7.0, 0.3, 0.3), Vector3(ex, 2.6, z0 - 0.2), Color("#e2b23a"))
+	_box("paint", Vector3(0.4, 1.1, 0.4), Vector3(ex + 3.0, 0.55, z0 - 0.6), Color("#d2a22a"))
+	_sign(Vector3(ex, lh + 0.45, z0 - 0.16), 4.4, 0.8)
+	# The skybridge to the headquarters, over the gap between them.
+	var gap := hq_x - (cx + w * 0.5)
+	if gap > 0.5:
+		var bx := cx + w * 0.5 + gap * 0.5
+		_box("paint", Vector3(gap + 0.4, 3.4, 3.6), Vector3(bx, lh * 2.0 + 1.7, link_z), Color("#d6d4ce"))
+		for s in [-1.0, 1.0]:
+			_glass(Vector3(bx, lh * 2.0 + 1.9, link_z + s * 1.83), Vector3(-s, 0, 0), gap - 0.4, 2.2, 0.0)
 
 
 ## One office building of the park: a flat-roofed box with ribbon windows
@@ -417,7 +501,7 @@ func _row(to_curb: float, width: float, units: int, storeys: int) -> void:
 		_gable_roof(0.0, zf + d * 0.5, deck, d, d * 0.5 * rng.randf_range(0.33, 0.5), x1 - x0, true,
 			Color(_pick(ROOF)), siding)
 	# The alley garage pad at the back.
-	if depth - 1.0 > zf + d + 8.0:
+	if alley and depth - 1.0 > zf + d + 8.0:
 		_flat_rect("drive", -width * 0.5 + 0.5, width * 0.5 - 0.5, depth - 7.0, depth - 1.0, 0.06)
 	if rng.randf() < 0.7:
 		var pick := TreeField.pick(rng)
@@ -475,7 +559,7 @@ func _apartments(to_curb: float, width: float, storeys: int) -> void:
 	for i in rng.randi_range(1, 3):
 		_box("metal", Vector3(1.6, 1.0, 1.1), Vector3(rng.randf_range(-w * 0.35, w * 0.35), deck + 0.5, cz),
 			Color("#b9bcbc"))
-	_parking(-width * 0.5 + 0.6, width * 0.5 - 0.6, zf + d + 1.5, zf + d + 14.0, width)
+	_rl_back(-width * 0.5 + 0.6, width * 0.5 - 0.6, zf + d + 1.5, zf + d + 14.0, width)
 	# Foundation shrubs and a street tree.
 	var x := -w * 0.5 + 0.6
 	while x < w * 0.5 - 0.5:
@@ -1093,10 +1177,24 @@ func _downtown_walk(to_curb: float, width: float, zf: float) -> void:
 	if rng.randf() < 0.4:
 		var lx := (width * 0.5 - 0.4) * (-1.0 if rng.randf() < 0.5 else 1.0)
 		var black := Color("#1f2224")
-		_box("paint", Vector3(0.45, 0.5, 0.45), Vector3(lx, 0.25, tz), black)
-		_box("paint", Vector3(0.14, 3.6, 0.14), Vector3(lx, 2.3, tz), black)
-		_box("paint", Vector3(0.42, 0.55, 0.42), Vector3(lx, 4.35, tz), Color("#efe9d8"))  # the acorn globe
-		_box("paint", Vector3(0.3, 0.12, 0.3), Vector3(lx, 4.7, tz), black)
+		if fine:
+			# Desktop: a cast-iron post (fluted base, slim shaft, a collar) and
+			# a ribbed acorn globe that lights after dark, with its pool of
+			# warm light on the walk.
+			_cylinder("paint", Vector3(lx, 0.0, tz), 0.24, 0.9, black, 8)
+			_cylinder("paint", Vector3(lx, 0.9, tz), 0.15, 0.15, black, 8)
+			_cylinder("paint", Vector3(lx, 1.05, tz), 0.08, 2.95, black, 8)
+			_cylinder("paint", Vector3(lx, 3.95, tz), 0.16, 0.12, black, 8)
+			_cylinder("sign", Vector3(lx, 4.07, tz), 0.2, 0.32, Color(1.0, 0.9, 0.72, 1.0), 8)
+			_cylinder("sign", Vector3(lx, 4.39, tz), 0.15, 0.2, Color(1.0, 0.9, 0.72, 1.0), 8)
+			_cylinder("paint", Vector3(lx, 4.59, tz), 0.17, 0.06, black, 8)
+			_cylinder("paint", Vector3(lx, 4.65, tz), 0.04, 0.22, black, 6)  # the finial
+			_light_pool(Vector3(lx, 0.09, tz + 1.2), 7.0, 6.0, Color(1.0, 0.86, 0.62))
+		else:
+			_box("paint", Vector3(0.45, 0.5, 0.45), Vector3(lx, 0.25, tz), black)
+			_box("paint", Vector3(0.14, 3.6, 0.14), Vector3(lx, 2.3, tz), black)
+			_box("paint", Vector3(0.42, 0.55, 0.42), Vector3(lx, 4.35, tz), Color("#efe9d8"))  # the acorn globe
+			_box("paint", Vector3(0.3, 0.12, 0.3), Vector3(lx, 4.7, tz), black)
 	_street_furniture(width, tz)
 
 
@@ -1524,6 +1622,41 @@ func _block(mat: String, cx: float, w: float, d: float, cz: float, deck: float, 
 	_box(mat, Vector3(w, ph, t), Vector3(cx, deck + ph * 0.5, cz + d * 0.5 - t * 0.5), wall)
 	_box(mat, Vector3(t, ph, d), Vector3(cx - w * 0.5 + t * 0.5, deck + ph * 0.5, cz), wall)
 	_box(mat, Vector3(t, ph, d), Vector3(cx + w * 0.5 - t * 0.5, deck + ph * 0.5, cz), wall)
+
+
+## The ground behind a residential building: its parking lot when a road
+## runs behind to reach it (`alley`), otherwise the tenants' shared back
+## yard (they park on the street, as SiteLayout has them): lawn, a
+## concrete patio with a picnic table and a kettle grill, and a
+## clothesline on older streets. Its own random numbers.
+func _rl_back(x0: float, x1: float, z0: float, z1: float, width: float) -> void:
+	if alley:
+		_parking(x0, x1, z0, z1, width)
+		return
+	z1 = minf(z1, depth - 1.0)
+	if z1 - z0 < 4.0:
+		return
+	var r := RandomNumberGenerator.new()
+	r.seed = hash([rng.seed, "back yard"])
+	var px := lerpf(x0 + 3.0, x1 - 3.0, r.randf())
+	var pz := z0 + 2.2
+	_flat_rect("drive", px - 2.4, px + 2.4, z0 + 0.4, z0 + 4.0, 0.06)
+	var wood := Color("#8d7b5f")
+	_box("paint", Vector3(1.8, 0.05, 0.75), Vector3(px, 0.74, pz), wood)
+	for s in [-1.0, 1.0]:
+		_box("paint", Vector3(1.8, 0.04, 0.25), Vector3(px, 0.45, pz + s * 0.62), wood)
+		_box("paint", Vector3(0.06, 0.72, 1.5), Vector3(px + s * 0.7, 0.36, pz), wood.darkened(0.15))
+	var gx := px + (1.7 if px < (x0 + x1) * 0.5 else -1.7)
+	_box("metal", Vector3(0.05, 0.6, 0.05), Vector3(gx, 0.3, pz + 0.9), Color("#2a2b2c"))
+	_box("metal", Vector3(0.55, 0.45, 0.55), Vector3(gx, 0.82, pz + 0.9), Color("#1f2021"))
+	if era != "recent" and z1 - z0 > 9.0:
+		var cx := lerpf(x0 + 2.0, x1 - 2.0, 1.0 - r.randf())
+		for s in [-1.0, 1.0]:
+			var post := Vector3(cx, 0.0, (z0 + z1) * 0.5 + 2.0 + s * 3.0)
+			_box("metal", Vector3(0.06, 2.0, 0.06), post + Vector3(0, 1.0, 0), Color("#9a9c9e"))
+			_box("metal", Vector3(1.2, 0.05, 0.05), post + Vector3(0, 1.95, 0), Color("#9a9c9e"))
+		for k in 3:
+			_box("metal", Vector3(0.012, 0.012, 6.0), Vector3(cx - 0.5 + k * 0.5, 1.93, (z0 + z1) * 0.5 + 2.0), Color("#d8d6d0"))
 
 
 ## An asphalt lot with 9 ft stalls along both long edges, cut short at the

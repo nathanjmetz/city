@@ -153,6 +153,10 @@ var _flat := SurfaceTool.new()
 var _reach := 0.0
 ## Ground an improvement took, so trees keep off it.
 var _improved := Rect2()
+## Whether a road (an alley, a lane or a street) runs along the back lot
+## line (BuildingView sets it for rows and walk-ups; true when unknown), so
+## garages and parking out back have a way in.
+var alley := true
 ## A backyard cottage (_cottage), once built: yard things keep off it.
 var _cottage_at := Rect2()
 ## The outside stair of a house cut into flats (_cf_flats), and how many
@@ -186,6 +190,7 @@ func _fit(lot: Dictionary) -> void:
 	half = float(lot.get("width", LOT_HALF * 2.0)) * 0.5
 	pad = float(lot.get("pad", 0.0))
 	mail_x = float(lot.get("mail_x", INF))
+	alley = bool(lot.get("alley", true))
 	outline = lot.get("outline", PackedVector2Array())
 	depth = float(lot.get("depth", 32.0)) - pad
 	# The era comes from where the lot is, in blocks of about a quarter mile.

@@ -16,7 +16,7 @@ const FILL := 2.0
 ## A bridge's barrier sits this far out past the travelled way.
 const SHY := 0.6
 ## Surface of each kind of road on a bridge and on fill.
-const DECK := {"county": "concrete", "highway": "asphalt"}
+const DECK := {"county": "deck", "highway": "asphalt"}
 const ON_FILL := {"county": "gravel", "highway": "asphalt"}
 
 var sim: CitySim
@@ -37,7 +37,8 @@ func _ready() -> void:
 	_mats = {
 		"asphalt": Surfaces.asphalt(),
 		"gravel": Surfaces.gravel(),
-		"concrete": Surfaces.concrete(Color(0.66, 0.65, 0.62)),
+		"concrete": BridgeMesh.concrete(),
+		"deck": Surfaces.concrete(Color(0.66, 0.65, 0.62)),
 		"fill": Ground.grass(),
 		"steel": RoadView._galvanized(),
 		"marker": RoadStyle.material(Color(0.95, 0.76, 0.1)),
