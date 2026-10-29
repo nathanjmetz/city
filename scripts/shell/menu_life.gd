@@ -38,6 +38,7 @@ var conditions := {"cloud": 0.0, "rain": 0.0, "snow": 0.0, "fog": 0.0}
 var _tick := 0
 var _accum := 0.0
 var _preroll := PREROLL
+var _settling := true
 var _next_police := 20.0
 var _police_lot := Vector2.ZERO
 var _rng := RandomNumberGenerator.new()
@@ -106,7 +107,13 @@ func _process(delta: float) -> void:
 	var t0 := Time.get_ticks_usec()
 	var budget := BUDGET_MS * 1000.0
 	_accum += delta
-	if _preroll > 0:
+	if _settling:
+		# The town was saved at some other hour: first the day's workers go
+		# to work, their cars into the lots, on the town's own step clock
+		# (People.settle), a frame's share at a time.
+		sim.tick_count = _tick
+		_settling = not sim.people.settle(sim, sim.traffic, int(budget * (1.0 if LoadGate.loading else 2.0)))
+	elif _preroll > 0:
 		# Catching the morning up: as many steps as fit, a few frames' worth
 		# of time, not a stall (half that while the town is still being drawn
 		# behind its picture, which needs the frame more: BackdropReveal).
@@ -121,7 +128,7 @@ func _process(delta: float) -> void:
 			_step()
 			n += 1
 	# A frame that fell behind drops the backlog rather than rushing the cars.
-	_accum = minf(_accum, STEP) if _preroll <= 0 else 0.0
+	_accum = minf(_accum, STEP) if _preroll <= 0 and not _settling else 0.0
 	sim.minute_bias = _accum / STEP
 	sim.tick_count = _pinned()
 	_patrol(delta)
