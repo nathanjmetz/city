@@ -1281,6 +1281,23 @@ func _city_bus() -> void:  # 40 ft low-floor transit bus (Gillig, New Flyer)
 	_box(Vector3(hw - 0.25, 0.75, -0.02), Vector3(0.3, 0.16, 0.06), HEAD, true)
 	_box(Vector3(hw - 0.15, 1.1, L + 0.01), Vector3(0.14, 0.3, 0.04), TAIL, true)
 	_box(Vector3(0, 2.85, -0.03), Vector3(1.8, 0.22, 0.03), Color(1.0, 0.6, 0.1, 0.5))
+	if _lo:
+		return
+	# Window pillars down both sides, the two curb-side doors (glass leaves
+	# in dark frames) and a folded bike rack on the front, as on most US
+	# transit buses.
+	for s in [-1.0, 1.0]:
+		for i in 8:
+			if s > 0.0 and i == 4:
+				continue  # the back door
+			_box(Vector3(s * (hw + 0.012), 1.9, 1.8 + i * 1.3), Vector3(0.006, 1.0, 0.1), PAINT)
+	for z in [0.95, 6.9]:
+		_box(Vector3(hw + 0.016, 1.45, z), Vector3(0.006, 2.3, 1.2), DARK)
+		_box(Vector3(hw + 0.022, 1.5, z - 0.28), Vector3(0.006, 2.0, 0.5), GLASS)
+		_box(Vector3(hw + 0.022, 1.5, z + 0.28), Vector3(0.006, 2.0, 0.5), GLASS)
+	for x in [-0.6, 0.6]:
+		_box(Vector3(x, 0.75, -0.12), Vector3(0.05, 0.5, 0.05), STEEL)
+	_box(Vector3(0, 0.98, -0.16), Vector3(1.3, 0.05, 0.12), STEEL)
 
 
 ## A 45 ft intercity motorcoach (MCI J4500, Prevost H3-45): high deck over
