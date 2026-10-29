@@ -3,7 +3,9 @@
 Generated with MakeHuman (MPFB 2.0.18 for Blender, https://static.makehumancommunity.org/mpfb.html), using
 the MakeHuman system assets (CC0: skins, eyes, eyebrows, hair, clothes, shoes). MakeHuman's output is
 free to use; the assets are CC0. Made by tools/people/make_people.py. Desktop app only: the Web export
-leaves art/people out.
+leaves art/people out. tools/people/make_masks.py painted the MakeHuman logo off the T-shirt and the
+body suit off the "special suit" skins, and drew art/people/masks (where each outfit's top and bottoms
+are, for recolouring).
 
 ## Road and sidewalk photo scans (art/textures/roads/*.jpg)
 From Poly Haven (https://polyhaven.com), CC0: "Clean Asphalt" by Dimitrios Savva

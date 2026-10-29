@@ -58,6 +58,9 @@ static var force := ""
 
 var sim: CitySim
 var _people: MultiMeshInstance3D
+var _dogs: MultiMeshInstance3D
+var _month := 7
+var _desktop := true
 var _props := {}            # prop name -> MultiMeshInstance3D
 var _scenes := []           # [{kind, lot, seed}] picked near the camera
 var _wait := 0.0
@@ -78,10 +81,22 @@ func setup(s: CitySim, walker_material: Material) -> void:
 	_people.material_override = walker_material
 	_people.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(_people)
+	# Dogs trot in the walkers' shader too.
+	var dm := MultiMesh.new()
+	dm.transform_format = MultiMesh.TRANSFORM_3D
+	dm.use_colors = true
+	dm.use_custom_data = true
+	dm.mesh = WalkerView._dog_mesh(2 if OS.has_feature("web") else 3)
+	_dogs = MultiMeshInstance3D.new()
+	_dogs.multimesh = dm
+	_dogs.material_override = walker_material
+	_dogs.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(_dogs)
+	_desktop = RenderingServer.get_current_rendering_method() != "gl_compatibility"
 	_prop("grill", _cyl(0.32, 0.9), Color(0.08, 0.08, 0.08))
 	_prop("smoke", _cyl(0.25, 1.6), Color(0.85, 0.85, 0.85, 0.35))
 	_prop("mower", _box(Vector3(0.55, 0.4, 0.8)), Color(0.75, 0.12, 0.1))
-	_prop("dog", _box(Vector3(0.25, 0.4, 0.75)), Color(0.45, 0.32, 0.2))
+	_prop("leash", _box(Vector3(0.012, 0.012, 1.0)), Color(0.55, 0.1, 0.1))
 	_prop("shovel", _box(Vector3(0.45, 0.05, 0.35)), Color(0.15, 0.25, 0.5))
 	_prop("bucket", _cyl(0.15, 0.3), Color(0.9, 0.85, 0.2))
 	_prop("leafpile", _cyl(0.9, 0.35), Color(0.62, 0.36, 0.12))
@@ -167,6 +182,7 @@ func _pick() -> void:
 	var when := _when()
 	var hour: float = when[0]
 	var month: int = when[1]
+	_month = DayNight.visible_month(sim)
 	var cap := MAX_PEOPLE_WEB if OS.has_feature("web") else MAX_PEOPLE
 	var people := 0
 	var wd := Mail.weekday_of(sim.tick_count)
@@ -268,8 +284,13 @@ func _pick() -> void:
 
 ## One person: where, facing, shirt, walk phase (0 standing), size.
 func _person(list: Array, at: Vector3, face: Vector3, seed: int, walked: float, size := 1.0) -> void:
-	var shirt: Color = SHIRTS[(seed >> 3) % SHIRTS.size()]
+	# Dressed for the month like the town's walkers (age by size: a small
+	# one is a kid).
+	var worn := WalkerView.dress(seed, _month, 10 if size < 0.7 else 25 + seed % 55)
+	var shirt: Color = worn[0]
 	shirt.a = fposmod(walked, STRIDE * size) / (STRIDE * size) if walked >= 0.0 else 0.0
+	if _desktop:
+		shirt.a = minf(shirt.a, 0.999) + float(worn[1])
 	var f := Vector3(face.x, 0.0, face.z)
 	if f.length() < 0.01:
 		f = Vector3.FORWARD
@@ -280,6 +301,7 @@ func _person(list: Array, at: Vector3, face: Vector3, seed: int, walked: float, 
 
 func _draw() -> void:
 	var people := []
+	var dogs := []
 	var props := {}
 	for k in _props:
 		props[k] = []
@@ -338,7 +360,17 @@ func _draw() -> void:
 				var heading := along if u < 30.0 else -along
 				var p := walk + along * (x - 15.0)
 				_person(people, p, heading, seed, t * 1.1)
-				props.dog.append(Transform3D(Basis.looking_at(heading, Vector3.UP), Terrain.stand(p + heading * 1.6 + along.cross(Vector3.UP) * 0.4) + Vector3(0, 0.2, 0)))
+				# The dog a leash-length ahead and to the side, trotting.
+				var side := heading.cross(Vector3.UP).normalized()
+				var dog := WalkerView.dog_of(seed)
+				var dp := Terrain.stand(p + heading * 1.5 + side * 0.45)
+				var coat: Color = dog[0]
+				coat.a = fposmod(t * 1.1, WalkerView.DOG_STRIDE * dog[1]) / (WalkerView.DOG_STRIDE * dog[1])
+				dogs.append([Transform3D(Basis.looking_at(heading, Vector3.UP).scaled(Vector3.ONE * dog[1]), dp), coat])
+				var hand := Terrain.stand(p) + side * 0.25 + Vector3(0, 0.82, 0)
+				var collar: Vector3 = dp + Vector3(0, 0.55 * float(dog[1]), 0) - heading * 0.3 * float(dog[1])
+				props.leash.append(Transform3D(Basis.looking_at(collar - hand, Vector3.UP).scaled(Vector3(1, 1, hand.distance_to(collar))),
+					(hand + collar) * 0.5))
 			"garden":
 				var p := lawn + along * (width * 0.35)
 				_person(people, p, into, seed, -1.0, 0.8)  # bent over the bed
@@ -441,6 +473,14 @@ func _draw() -> void:
 		mm.set_instance_color(i, people[i][2])
 		mm.set_instance_custom_data(i, people[i][1])
 	mm.visible_instance_count = people.size()
+	var dm := _dogs.multimesh
+	if dm.instance_count < dogs.size():
+		dm.instance_count = maxi(dogs.size() * 2, 8)
+	for i in dogs.size():
+		dm.set_instance_transform(i, dogs[i][0])
+		dm.set_instance_color(i, Color.WHITE)
+		dm.set_instance_custom_data(i, dogs[i][1])
+	dm.visible_instance_count = dogs.size()
 	for k in props:
 		var pm: MultiMesh = _props[k].multimesh
 		var list: Array = props[k]
