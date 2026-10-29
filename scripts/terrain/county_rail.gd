@@ -211,6 +211,18 @@ static func routes_in(b: Vector2i) -> Array:
 	return out
 
 
+## Whether any track runs through a box (region coordinates), by its bins.
+static func any_in(box: Rect2) -> bool:
+	_load()
+	var lo := Vector2i((box.position / BIN).floor())
+	var hi := Vector2i((box.end / BIN).floor())
+	for bx in range(lo.x, hi.x + 1):
+		for bz in range(lo.y, hi.y + 1):
+			if _bins.has(Vector2i(bx, bz)):
+				return true
+	return false
+
+
 ## A route's profile every STEP metres (see _profiles).
 static func profile(route: int) -> Dictionary:
 	_load()
