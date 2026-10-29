@@ -39,6 +39,9 @@ var site := {"stalls": [], "door": Vector2(0.0, 0.4), "cut_x": 0.0, "aisle_z": 0
 ## A shop's first stage (BuildingTypes "shop" level 0), which may be drawn
 ## as a corner store (CornerStore).
 var small_store := false
+## A shop's second stage (BuildingTypes "shop" level 1): a corner store
+## stays one, built on.
+var grow_shop := false
 
 
 static func build_shop(seed: int, to_curb: float, lot := {}, spec := {}) -> Array:
@@ -59,7 +62,7 @@ func _shop(to_curb: float, lot: Dictionary, main_street := true) -> void:
 	if kind == "main_street" and not main_street and force_shop == "":
 		kind = "retail"
 	match kind:
-		"corner": CornerStore.draw(self, to_curb, float(lot.get("side", 0.0)))
+		"corner": CornerStore.draw(self, to_curb, float(lot.get("side", 0.0)), 0, not small_store)
 		"main_street": _main_street(to_curb)
 		"strip": _strip_center(to_curb)
 		"center": _strip_center(to_curb, true)
@@ -74,7 +77,8 @@ func _shop(to_curb: float, lot: Dictionary, main_street := true) -> void:
 ## Which kind of shop fits this lot: strip centers need a wide lot, gas
 ## stations like corners, and main-street blocks the old part of town.
 func _shop_kind(lot: Dictionary) -> String:
-	if small_store and CornerStore.wanted(self):
+	# A corner store's second stage is the same store, built on.
+	if (small_store or grow_shop) and CornerStore.wanted(self):
 		return "corner"
 	var w := half * 2.0
 	var picks := ["retail", "retail", "diner", "bank"]

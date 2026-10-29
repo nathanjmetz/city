@@ -47,17 +47,19 @@ static func wanted(b: CommercialBuilder) -> bool:
 ## `flats`: storeys of flats over the store (a prewar corner store grown
 ## into a store with flats, BuildingTypes "mixed_use", keeps its ground
 ## floor and goes up).
-static func draw(b: CommercialBuilder, to_curb: float, side: float, flats := 0) -> void:
+## `grown`: the shop's second stage (BuildingTypes "shop" level 1, "Retail
+## store"): the same store, built on (_cs_annex, or a wing out back).
+static func draw(b: CommercialBuilder, to_curb: float, side: float, flats := 0, grown := false) -> void:
 	var r := RandomNumberGenerator.new()
 	r.seed = hash([b.rng.seed, "corner store art"])
 	if b.era == "prewar":
-		_cs_grocery(b, r, to_curb, side, flats)
+		_cs_grocery(b, r, to_curb, side, flats, grown)
 	else:
-		_cs_market(b, r, to_curb, side)
+		_cs_market(b, r, to_curb, side, grown)
 
 
 ## The prewar brick grocery at the sidewalk.
-static func _cs_grocery(b: CommercialBuilder, r: RandomNumberGenerator, to_curb: float, side: float, flats := 0) -> void:
+static func _cs_grocery(b: CommercialBuilder, r: RandomNumberGenerator, to_curb: float, side: float, flats := 0, grown := false) -> void:
 	var lw := b.half * 2.0
 	var bw := clampf(lw - 2.4, 7.0, 10.5)  # 24-34 ft fronts
 	if flats > 0:
@@ -211,6 +213,55 @@ static func _cs_grocery(b: CommercialBuilder, r: RandomNumberGenerator, to_curb:
 		b.site.door = Vector2(xe - e * clip * 0.5, zf + clip * 0.5)
 	else:
 		b.site.door = Vector2(door_x, zf)
+	if grown and flats == 0:
+		_cs_annex(b, xo, e, zf, bd, deck, gh, wall, cornice, trim, bulk, cap)
+
+
+## A grown corner grocery: the storefront it built next door on its side
+## yard, as Indiana's neighborhood grocers did when trade outgrew one room
+## (a meat counter, a hardware or dry-goods side): one storey of brick a
+## shade off the first (a later kiln's), not as deep and a little lower,
+## its own plate glass, door and sign frieze, a plain cornice, the opening
+## between the two inside. Only where the side yard is wide enough for a
+## storefront. Its own random numbers.
+static func _cs_annex(b: CommercialBuilder, xo: float, e: float, zf: float, bd: float, deck: float, gh: float,
+		wall: Color, cornice: Color, trim: Color, bulk: Color, cap: Color) -> void:
+	var r := RandomNumberGenerator.new()
+	r.seed = hash([b.rng.seed, "corner annex"])
+	var edge := -e * (b.half - 0.3)  # the far side lot line, less a little
+	var aw := absf(edge - xo)
+	if aw < 4.5:
+		return
+	aw = minf(aw, 8.0)
+	var ax := xo - e * aw * 0.5
+	var ad := bd * r.randf_range(0.65, 0.85)
+	var adeck := deck - r.randf_range(0.2, 0.5)
+	var atop := adeck + r.randf_range(0.7, 1.0)
+	var brick := wall.darkened(r.randf_range(-0.08, 0.1))
+	b._box("brick", Vector3(aw, adeck, ad), Vector3(ax, adeck * 0.5, zf + ad * 0.5), brick)
+	var y := adeck + 0.02
+	b._quad("membrane", Vector3(ax - aw * 0.5, y, zf), Vector3(ax + aw * 0.5, y, zf),
+		Vector3(ax + aw * 0.5, y, zf + ad), Vector3(ax - aw * 0.5, y, zf + ad), b._low_slope(aw, ad, zf + ad * 0.5, true), [], Vector3.UP)
+	b._box("brick", Vector3(aw, atop - adeck, 0.3), Vector3(ax, adeck + (atop - adeck) * 0.5, zf + 0.15), brick)
+	b._box("paint", Vector3(aw + 0.1, 0.22, 0.4), Vector3(ax, atop - 0.08, zf - 0.05), cornice.darkened(0.1))
+	for sx in [-1.0, 1.0]:
+		var x: float = ax + sx * (aw * 0.5 - 0.12)
+		b._box("brick", Vector3(0.24, atop - adeck - 0.3, ad - 0.3), Vector3(x, adeck + (atop - adeck - 0.3) * 0.5, zf + 0.3 + (ad - 0.3) * 0.5), brick)
+	b._box("paint", Vector3(aw, 0.1, 0.36), Vector3(ax, adeck + 0.5, zf + ad - 0.12), cap)
+	# The front: a door to one side, plate glass the rest, the sign frieze.
+	var ag := minf(gh, adeck - 0.6)
+	var a0 := ax - aw * 0.5 + 0.35
+	var a1 := ax + aw * 0.5 - 0.35
+	var dx := a0 + 0.8 if e > 0.0 else a1 - 0.8
+	_cs_front_door(b, Vector3(dx, 0.0, zf), ag, bulk, trim)
+	if e > 0.0:
+		_cs_shop_glass(b, dx + 0.7, a1, zf, ag, bulk, trim, r)
+	else:
+		_cs_shop_glass(b, a0, dx - 0.7, zf, ag, bulk, trim, r)
+	b._sign(Vector3(ax, ag + 0.1, zf - 0.08), aw * 0.7, minf(adeck - ag - 0.2, 0.6))
+	b._steel_door(Vector3(ax, 1.15, zf + ad + 0.03), 1.0)
+	if r.randf() < 0.5:
+		b._awning(ax, aw - 0.4, zf, ag - 0.3, Color(CommercialBuilder.AWNING[r.randi() % 5]))
 
 
 ## The flats over a grown corner store: the brick walls carried up a
@@ -338,7 +389,7 @@ static func _cs_clipped_door(b: CommercialBuilder, p0: Vector3, p1: Vector3, e: 
 
 
 ## The postwar neighborhood market, set back for a row of stalls.
-static func _cs_market(b: CommercialBuilder, r: RandomNumberGenerator, to_curb: float, side: float) -> void:
+static func _cs_market(b: CommercialBuilder, r: RandomNumberGenerator, to_curb: float, side: float, grown := false) -> void:
 	var lw := b.half * 2.0
 	var bw := clampf(lw - 3.0, 8.0, 15.0)
 	var bd := clampf(b.depth - 21.0, 10.0, 15.0)
@@ -394,6 +445,9 @@ static func _cs_market(b: CommercialBuilder, r: RandomNumberGenerator, to_curb: 
 	b._sign(Vector3(cx, 3.75, zf - 0.22), bw * 0.6, 0.85)
 	b.site.door = Vector2(gx - gw * 0.5 + gw / n * 0.5, zf)
 	b._steel_door(Vector3(cx + bw * 0.3, 1.15, zf + bd + 0.03), 1.0)
+	if grown:
+		# Grown: a block stockroom built on out back.
+		b._rt_wing(bw, zf + bd, deck - 0.4, block, "paint", b._coping_color(false), false)
 	# The pylon sign by the street: a steel post and a two-sided panel,
 	# on the side street's corner when there is one.
 	var px := (side if side != 0.0 else -1.0) * (b.half - 1.3)
