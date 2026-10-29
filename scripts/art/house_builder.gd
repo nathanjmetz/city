@@ -2453,8 +2453,8 @@ func _front_door(x: float, zf: float, sill: float, c: Color) -> void:
 ## back and utility building): pressed-steel frame, lever at 38 in, a
 ## surface closer at the head, a wall-pack light above and a concrete stoop.
 ## `c` is the door's centre on the wall face; `out_z` is the wall's outward
-## z direction (+1 or -1).
-func _steel_door(c: Vector3, out_z: float, col := Color("#5a5e60")) -> void:
+## z direction (+1 or -1). `stoop` false: it opens onto a landing instead.
+func _steel_door(c: Vector3, out_z: float, col := Color("#5a5e60"), stoop := true) -> void:
 	var o := out_z
 	var bottom := c.y - 1.05
 	var frame := col.darkened(0.25)
@@ -2466,7 +2466,7 @@ func _steel_door(c: Vector3, out_z: float, col := Color("#5a5e60")) -> void:
 	_box("metal", Vector3(0.3, 0.07, 0.07), Vector3(c.x - 0.22, bottom + 1.98, c.z + o * 0.07), Color("#8a8c8e"))
 	_box("metal", Vector3(0.26, 0.2, 0.14), Vector3(c.x, bottom + 2.55, c.z + o * 0.07), Color("#2a2b2c"))
 	_box("paint", Vector3(0.2, 0.06, 0.02), Vector3(c.x, bottom + 2.47, c.z + o * 0.145), Color("#e8e2c8"))
-	if bottom > 0.05:
+	if stoop and bottom > 0.05:
 		# 4 cm proud of any slab it meets so the two tops don't flicker.
 		_box("paint", Vector3(1.5, bottom + 0.04, 1.1), Vector3(c.x, (bottom + 0.04) * 0.5, c.z + o * 0.61), Color("#b9b5ab"))
 
