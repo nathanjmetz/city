@@ -1119,14 +1119,48 @@ func _dump_truck() -> void:  # tandem dump on a conventional chassis
 	var L := 9.0
 	_md_cab(2.5)
 	_box(Vector3(0, 0.75, 5.5), Vector3(1.0, 0.3, 6.5), TRIM)
-	_loft([
-		[3.3, 1.05, 2.9, 3.0, 1.15, 1.25, 1.25],
-		[L - 0.1, 1.05, 2.9, 3.0, 1.15, 1.25, 1.25],
-		[L, 1.25, 2.9, 3.0, 1.1, 1.25, 1.25],
-	], [_edges(PAINT, TRIM)], PAINT, PAINT)
-	_box(Vector3(0, 2.75, 6.2), Vector3(2.3, 0.004, 5.5), DARK)
+	if _hi:
+		_dump_bed(L)
+	else:
+		_loft([
+			[3.3, 1.05, 2.9, 3.0, 1.15, 1.25, 1.25],
+			[L - 0.1, 1.05, 2.9, 3.0, 1.15, 1.25, 1.25],
+			[L, 1.25, 2.9, 3.0, 1.1, 1.25, 1.25],
+		], [_edges(PAINT, TRIM)], PAINT, PAINT)
+		_box(Vector3(0, 2.75, 6.2), Vector3(2.3, 0.004, 5.5), DARK)
 	_wheels([1.2, 6.2, 7.6], 0.52, 1.25, 0.3)
 	_box(Vector3(1.1, 1.2, L + 0.01), Vector3(0.12, 0.2, 0.04), TAIL, true)
+
+
+## Ultra: a real open dump body (Ox, Rugby): steel sides 1.4 m tall with
+## upright stiffeners and a top rail, the headboard with its cab shield
+## reaching forward over the cab roof, a tailgate, and the worn floor
+## inside, on a long sill over the frame.
+func _dump_bed(L: float) -> void:
+	_loft([
+		[3.3, 1.05, 1.5, 1.6, 1.15, 1.25, 1.25],
+		[L - 0.1, 1.05, 1.5, 1.6, 1.15, 1.25, 1.25],
+		[L, 1.25, 1.5, 1.6, 1.1, 1.25, 1.25],
+	], [_edges(PAINT, TRIM)], PAINT, PAINT)
+	var mid := (3.38 + L - 0.08) * 0.5
+	var len := L - 0.08 - 3.38
+	for s in [-1.0, 1.0]:
+		_box(Vector3(s * 1.21, 2.3, mid), Vector3(0.08, 1.4, len), PAINT)
+		_box(Vector3(s * 1.22, 3.02, mid), Vector3(0.12, 0.06, len), PAINT)
+		var z := 3.9
+		while z < L - 0.4:
+			_box(Vector3(s * 1.265, 2.3, z), Vector3(0.03, 1.3, 0.08), PAINT)
+			z += 0.9
+	_box(Vector3(0, 2.3, 3.34), Vector3(2.5, 1.4, 0.08), PAINT)
+	_box(Vector3(0, 2.3, L - 0.04), Vector3(2.5, 1.4, 0.08), PAINT)
+	_box(Vector3(0, 2.98, 2.98), Vector3(2.0, 0.06, 0.72), PAINT)
+	# Inside, the paint is scraped back to dull steel by the loads.
+	var worn := Color(0.3, 0.28, 0.26, 0.4)
+	_box(Vector3(0, 1.62, mid), Vector3(2.34, 0.04, len), worn)
+	for s in [-1.0, 1.0]:
+		_box(Vector3(s * 1.166, 2.315, mid), Vector3(0.004, 1.35, len - 0.02), worn)
+	_box(Vector3(0, 2.315, 3.386), Vector3(2.32, 1.35, 0.004), worn)
+	_box(Vector3(0, 2.315, L - 0.086), Vector3(2.32, 1.35, 0.004), worn)
 
 
 ## A rear-discharge ready-mix truck (Kenworth T880 with a McNeilus drum):
