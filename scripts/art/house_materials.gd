@@ -469,7 +469,13 @@ void fragment() {
 	// (Rounded first: the hash would turn interpolation's last-bit wobble
 	// into a different word from one pixel to the next.)
 	vec4 qc = floor(COLOR * 255.0 + 0.5);
-	int wi = clamp(int(hash(vec2(qc.r * 0.97 + qc.a * 4.13, qc.g * 0.31 + qc.b * 0.57)) * 50.0), 0, 49);
+	vec2 at = floor(MODEL_MATRIX[3].xz);
+	int wi = clamp(int(hash(vec2(qc.r * 0.97 + qc.a * 4.13 + at.x * 0.013, qc.g * 0.31 + qc.b * 0.57 + at.y * 0.017)) * 50.0), 0, 49);
+	// A builder can name the word instead, so a shop's board and awning
+	// agree: UV.y then runs from 2 * (word + 1), and vy is its 0..1.
+	float slot = floor(UV.y * 0.5);
+	float vy = UV.y - 2.0 * slot;
+	wi = slot > 0.5 ? clamp(int(slot) - 1, 0, 49) : wi;
 	int len = WLEN[wi];
 	float pitch = min(0.42, wdt * 0.78 / float(len));
 	// Read left to right on screen whichever way the sign's UVs run.
@@ -478,7 +484,7 @@ void fragment() {
 	float fi = floor((u - start) / pitch);
 	float band = step(0.0, fi) * step(fi, float(len) - 1.0);
 	int li = clamp(int(fi), 0, len - 1);
-	vec2 q = (vec2(fract((u - start) / pitch), UV.y) - vec2(0.15, 0.25)) / vec2(0.7, 0.53);
+	vec2 q = (vec2(fract((u - start) / pitch), vy) - vec2(0.15, 0.25)) / vec2(0.7, 0.53);
 	float inside = step(0.0, q.x) * step(q.x, 1.0) * step(0.0, q.y) * step(q.y, 1.0);
 	ivec2 cell = ivec2(clamp(floor(q * vec2(3.0, 5.0)), vec2(0.0), vec2(2.0, 4.0)));
 	int glyph = GLYPHS[LETTERS[WSTART[wi] + li]];
@@ -486,7 +492,7 @@ void fragment() {
 	// Alpha 0: the business's real name is lettered on (SignText).
 	float text = inside * on * band * step(0.0001, COLOR.a) * (1.0 - neon);
 	float aa = smoothstep(0.08, 0.3, fwidth(u / pitch));
-	text = mix(text, 0.3 * band * step(0.25, UV.y) * step(UV.y, 0.78) * step(0.0001, COLOR.a), aa);
+	text = mix(text, 0.3 * band * step(0.25, vy) * step(vy, 0.78) * step(0.0001, COLOR.a), aa);
 	ALBEDO = mix(vcol(COLOR.rgb), vec3(0.86, 0.84, 0.79), text);
 	ROUGHNESS = 0.4;
 	SPECULAR = 0.5;
