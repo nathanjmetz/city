@@ -134,6 +134,8 @@ var hubs := CivicHubs.new()
 var parks := Parks.new()
 ## The post office, its postmaster, and the carriers on their routes.
 var mail := Mail.new()
+## Police cruisers on patrol and the streets they drove (Patrols).
+var patrols := Patrols.new()
 ## Services shared with neighbor towns under signed deals (Interlocal).
 var interlocal := Interlocal.new()
 ## What the region's shared projects do in this town (Regional).
@@ -1003,6 +1005,7 @@ func _apply_cmd(cmd: Dictionary) -> bool:
 			parks = Parks.new()
 			parks_changed.emit()
 			mail = Mail.new()
+			patrols = Patrols.new()
 			neighborhoods = Neighborhoods.new()
 			neighborhoods_changed.emit()
 			policies.from_dict({})
@@ -1554,6 +1557,9 @@ func tick() -> void:
 	t = Perf.now()
 	mail.tick(self)
 	Perf.add("sim.mail", t)
+	t = Perf.now()
+	patrols.tick(self)
+	Perf.add("sim.patrols", t)
 	t = Perf.now()
 	interlocal.tick(self)
 	Perf.add("sim.interlocal", t)
@@ -4890,6 +4896,7 @@ func save_steps(postcard := false) -> Array:
 		["parks", func(): return parks.to_dict()],
 		["neighborhoods", func(): return neighborhoods.to_dict()],
 		["mail", func(): return mail.to_dict()],
+		["patrols", func(): return patrols.to_dict()],
 		["interlocal", func(): return interlocal.to_dict()],
 		["regional", func(): return regional.to_dict()],
 		["market", func(): return market.to_dict()],
@@ -4995,6 +5002,7 @@ func from_dict(d: Dictionary) -> void:
 	parks.from_dict(d.get("parks", {}))
 	neighborhoods.from_dict(d.get("neighborhoods", {}))
 	mail.from_dict(d.get("mail", {}))
+	patrols.from_dict(d.get("patrols", {}))
 	interlocal.from_dict(d.get("interlocal", {}))
 	regional.from_dict(d.get("regional", {}))
 	market.from_dict(d.get("market", {}))

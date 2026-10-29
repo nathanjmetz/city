@@ -107,11 +107,13 @@ func _process(_delta: float) -> void:
 		_ghost.position = Terrain.lift(_site[0]) + Vector3(0, 2.0, 0)
 		_ghost.basis = Basis.looking_at(_site[1], Vector3.UP)
 		_ghost.material_override = _ok_mat if problem == "" else _bad_mat
-		if kind == Services.Kind.BUILDER_YARD and _site[0].distance_to(_need_at) > 12.0:
-			# Its reach from here: where its crews get to a new house in time.
+		if Services.KINDS[kind].has("reach") and _site[0].distance_to(_need_at) > 12.0:
+			# Its reach from here, on top of the ones already built: where a
+			# new station fills a gap (or a builder's yard's crews get to a
+			# new house in time).
 			_need_at = _site[0]
 			view.preview = sim.services.reach_from(sim.network,
-				_site[0] + _site[1] * (Services.KINDS[kind].size.y * 0.5 + Services.SETBACK))
+				_site[0] + _site[1] * (Services.KINDS[kind].size.y * 0.5 + Services.SETBACK), float(Services.KINDS[kind].reach))
 		if kind in Services.PARKING and _site[0].distance_to(_need_at) > 8.0:
 			_need_at = _site[0]
 			var need := sim.traffic.parking_need(_site[0] + _site[1] * Services.KINDS[kind].size.y * 0.5)

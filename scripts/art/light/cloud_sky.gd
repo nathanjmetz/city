@@ -199,7 +199,11 @@ void fragment() {
 		float sh = smoothstep(thr - 0.02, thr + 0.12, n);
 		float clear_air = exp(-fog_density * length(v.xyz));
 		float day = smoothstep(0.02, 0.2, to_sun.y);
-		mul = vec3(1.0 - sun_share * sh * clear_air * day);
+		// Under a closed lid of cloud there are no cloud shadows to see, only
+		// a duller day, which Weather already draws; the pass fades out as
+		// broken cloud closes up.
+		float broken = 1.0 - smoothstep(0.6, 0.95, cover);
+		mul = vec3(1.0 - sun_share * sh * clear_air * day * broken);
 	}
 	ALBEDO = mul;
 }

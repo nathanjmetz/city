@@ -184,6 +184,67 @@ static func open(sim: CitySim, hub: Dictionary, tree: Array, at: Vector3, profit
 	return out
 
 
+## Why a hub isn't growing (after Caesar III's and Anno's "what this house
+## needs to evolve"): of the next steps in its tree whose earlier steps are
+## built, the one closest to opening, as "Name: needs ...", with what it
+## still lacks in plain words. "" when something is open already, or the
+## tree is all built.
+static func held_back(sim: CitySim, hub: Dictionary, tree: Array, at: Vector3, profit: float) -> String:
+	var built: Array = hub.get("built", [])
+	var best := ""
+	var best_n := 1 << 20
+	for node in tree:
+		if node.id in built:
+			continue
+		var lacks := []
+		for r in node.get("requires", []):
+			if not r in built:
+				lacks.append(_node_name(tree, str(r)) + " first")
+		for c in node.get("needs", {}):
+			if not holds(sim, hub, at, profit, c, node.needs[c]):
+				lacks.append(need_words(sim, hub, at, profit, c, node.needs[c]))
+		if lacks.is_empty():
+			return ""
+		if lacks.size() < best_n:
+			best_n = lacks.size()
+			best = "%s: needs %s" % [node.name, " and ".join(lacks)]
+	return best
+
+
+static func _node_name(tree: Array, id: String) -> String:
+	for node in tree:
+		if str(node.id) == id:
+			return str(node.name)
+	return id.replace("_", " ")
+
+
+## One unmet condition in plain words, with how far off it is.
+static func need_words(sim: CitySim, hub: Dictionary, at: Vector3, profit: float, cond: String, value) -> String:
+	match cond:
+		"education":
+			return "more homes in reach of a school (%d%% now, %d%% wanted)" % [roundi(education(sim) * 100.0),
+				roundi(float(value) * 100.0)]
+		"leader_edu": return "an owner with more schooling"
+		"profit":
+			return "$%s a year in profit ($%s now)" % [CitySim.money_text(roundi(float(value))),
+				CitySim.money_text(roundi(maxf(profit, 0.0)))]
+		"population":
+			return "a town of %s people (%s now)" % [CitySim.money_text(int(value)), CitySim.money_text(sim.stats.population)]
+		"link": return "a road link to a neighboring town"
+	if cond.begins_with("hub:"):
+		return "more %s (%s of %s)" % [cond.substr(4).replace("_", " "), str(roundi(float(hub.get("facts", {}).get(cond.substr(4), 0.0)))),
+			str(roundi(float(value)))]
+	if cond.begins_with("local:"):
+		var what := cond.substr(6).replace("_", " ")
+		return "%d %s nearby (%d now)" % [int(value), what + ("s" if int(value) != 1 and not what.ends_with("s") else ""),
+			_local(sim, at, cond.substr(6))]
+	if cond.begins_with("region_buys:"):
+		return "a neighboring town buying %s" % cond.substr(12)
+	if cond.begins_with("region_makes:"):
+		return "a neighboring town making %s" % cond.substr(13)
+	return cond.replace("_", " ")
+
+
 ## The leader's next move: of what's open and affordable from the hub's
 ## own money, the node it values most. Ambitious leaders reach for bigger
 ## projects; cautious ones keep a cushion. Records "built" and "why".
