@@ -254,6 +254,40 @@ func _rt_grown(w: float, d: float, h: float, zf: float, door_x: float, sw: float
 			_box("paint", Vector3(1.05, bh, 1.0), Vector3(px, 0.14 + bh * 0.5, walk_z), bag)
 
 
+## A one-storey wing on the back of a grown shop (the diner's party room,
+## the bank's loan offices): as wide as the building or a little less, set
+## to one side, windows down its sides, a flat roof behind a band in the
+## shop's own colour or a low hip roof. Its own dice.
+func _rt_wing(w: float, back: float, h: float, wall: Color, mat: String, band: Color, hip: bool) -> void:
+	var r := RandomNumberGenerator.new()
+	r.seed = hash([rng.seed, "shop wing"])
+	var ad := minf(r.randf_range(6.0, 9.0), depth - back - 4.0)
+	if ad < 3.5:
+		return
+	var aw := w - r.randf_range(0.0, 2.5)
+	var ax := (w - aw) * 0.5 * (1.0 if r.randf() < 0.5 else -1.0)
+	var cz := back + ad * 0.5
+	_box("paint", Vector3(aw + 0.1, 0.3, ad), Vector3(ax, 0.15, cz), FOUNDATION)
+	_box(mat, Vector3(aw, h, ad), Vector3(ax, h * 0.5, cz), wall)
+	if hip:
+		_hip_roof(ax, cz, h, aw, ad, minf(aw, ad) * 0.18, Color(ROOF[r.randi() % ROOF.size()]))
+		_box("paint", Vector3(aw + 0.2, 0.25, ad + 0.2), Vector3(ax, h - 0.1, cz), band)
+	else:
+		var y := h + 0.02
+		_quad("membrane", Vector3(ax - aw * 0.5, y, back), Vector3(ax + aw * 0.5, y, back),
+			Vector3(ax + aw * 0.5, y, back + ad), Vector3(ax - aw * 0.5, y, back + ad), Color("#d9d8d2"), [], Vector3.UP)
+		_box("paint", Vector3(aw + 0.1, 0.5, 0.14), Vector3(ax, h + 0.05, back + ad), band)
+		for sx in [-1.0, 1.0]:
+			_box("paint", Vector3(0.14, 0.5, ad), Vector3(ax + sx * aw * 0.5, h + 0.05, cz), band)
+	# Windows down both sides, and a door out the back.
+	var n := int((ad - 1.5) / 2.2)
+	for sx in [-1.0, 1.0]:
+		for k in n:
+			_window(Vector3(ax + sx * aw * 0.5, 1.8, back + 1.4 + k * 2.2), Vector3(0, 0, -sx), 1.1, 1.5, true, false, Color("#e9e6dc"))
+	_steel_door(Vector3(ax + aw * 0.25, 1.35, back + ad + 0.03), 1.0)
+	_box("concrete", Vector3(1.8, 0.15, 1.4), Vector3(ax + aw * 0.25, 0.08, back + ad + 0.7), FOUNDATION)
+
+
 func _main_street(to_curb: float) -> void:
 	var w := 2.0 * half - 0.4  # wall to wall with its neighbours
 	var d := rng.randf_range(16.0, minf(22.0, maxf(depth - 6.0, 16.0)))
@@ -1304,6 +1338,10 @@ func _shop_diner(to_curb: float) -> void:
 			_box("paint", Vector3(lw * 0.8, 0.1, 0.02), Vector3(px + r.randf_range(-0.2, 0.2), 5.6 - line * 0.3, 1.34), Color("#2a2622"))
 	_rooftop(w, d, cz, 4.0, 2)
 	_shop_parking(to_curb, w, zf, 0.0)
+	# Grown (shop level 1): a party room on the back, as family restaurants
+	# add one for Rotary lunches and rehearsal dinners.
+	if not small_store:
+		_rt_wing(w, zf + d, 3.6, wall, "paint", band, false)
 
 
 ## A small-town bank: brick, two storeys of tall windows, a stone portico
@@ -1365,6 +1403,11 @@ func _bank(to_curb: float) -> void:
 	_box("metal", Vector3(0.8, 1.4, 0.8), Vector3(lx - 1.2, 0.7, cz), Color("#b9bcbc"))
 	_flat_rect("asphalt", lx - 2.2, lx + 2.2, 0.0, depth - 1.0, 0.07)
 	_shop_parking(to_curb, w, zf - 3.2, -3.0)
+	# Grown (shop level 1): a one-storey wing on the back for the loan
+	# offices, under a hip roof of its own, as Indiana's town banks built on
+	# in the 1960s-80s.
+	if not small_store:
+		_rt_wing(w, zf + d, 3.8, brick, "brick", stone, true)
 
 
 ## A small brick church on the main street: a steep gable to the street,
