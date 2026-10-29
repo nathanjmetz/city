@@ -923,14 +923,15 @@ func _th_urban(to_curb: float, width: float, units: int, storeys: int) -> void:
 		_box("metal", Vector3(1.7, 0.1, 1.1), Vector3(door_x, base + 2.95, zf - 0.55), black)
 		# A tall window beside the door, a window pair on each floor above.
 		var wx := cx - side * uw * 0.12
-		_glass(Vector3(wx, base + 1.35, zf - 0.03), Vector3(-1, 0, 0), uw * 0.4, 2.1, r.randf_range(0.0, 0.4))
+		# The glass 1 cm proud of its black frame's face, so the two never fight.
+		_glass(Vector3(wx, base + 1.35, zf - 0.04), Vector3(-1, 0, 0), uw * 0.4, 2.1, r.randf_range(0.0, 0.4))
 		_box("metal", Vector3(uw * 0.4 + 0.1, 2.2, 0.04), Vector3(wx, base + 1.35, zf - 0.01), black)
 		for f in range(1, storeys):
 			var y := base + f * floor_h + 1.3
 			var gw := minf(uw - 1.6, 2.6)
 			_box("metal", Vector3(gw + 0.12, 2.15, 0.04), Vector3(cx, y, zf - 0.01), black)
 			for e in [-0.5, 0.5]:
-				_glass(Vector3(cx + e * gw * 0.5, y, zf - 0.03), Vector3(-1, 0, 0), gw * 0.5 - 0.06, 2.0, r.randf_range(0.0, 0.6))
+				_glass(Vector3(cx + e * gw * 0.5, y, zf - 0.04), Vector3(-1, 0, 0), gw * 0.5 - 0.06, 2.0, r.randf_range(0.0, 0.6))
 			if f == 1:
 				_box("metal", Vector3(gw + 0.2, 0.05, 0.05), Vector3(cx, y - 0.1, zf - 0.3), black)
 				for q in 7:
