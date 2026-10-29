@@ -856,7 +856,7 @@ func _tw_podium(to_curb: float, width: float, storeys: int) -> void:
 	if _far:
 		_tw_far_box(Vector3(pw, ph, pd), Vector3(0, ph * 0.5, pcz), panel, 0.3)
 		_tw_far_box(Vector3(tw, top - ph, td), Vector3(tx, (ph + top) * 0.5, tz), tint.darkened(0.3), 1.0)
-		_tw_far_box(Vector3(tw - 2.0, mech, td - 2.0), Vector3(tx, top + mech * 0.5, tz), Color("#3a3f44"), 0.0)
+		_tw_far_box(Vector3(tw * 0.62, mech, td * 0.62), Vector3(tx, top + mech * 0.5, tz), Color("#3a3f44"), 0.0)
 		return
 	_downtown_walk(to_curb, width, zf)
 	# The podium: storefronts at the sidewalk, parking decks above.
@@ -947,8 +947,12 @@ func _tw_podium(to_curb: float, width: float, storeys: int) -> void:
 				c.y = (ph + top) * 0.5
 				_box("metal", Vector3(0.1, top - ph, 0.45), c, Color("#a9adb0"), _tw_yaw(face[1]))
 	# The mechanical screen on top, and on some offices a lit blade.
-	_box("metal", Vector3(tw - 2.0, mech, td - 2.0), Vector3(tx, top + mech * 0.5, tz), Color("#3a3f44"))
-	for face in _tw_faces(tw - 2.0, td - 2.0, tz, tx):
+	_tw_roof(tw, td, tz, top + 0.05, tx)  # the tower's own roof: far away it stops here, under the screen
+	# (membrane-faced, so far away it keeps its dark grey instead of the walls' colour)
+	var mw := tw * 0.62
+	var md := td * 0.62
+	_box("membrane", Vector3(mw, mech, md), Vector3(tx, top + mech * 0.5, tz), Color("#3a3f44"))
+	for face in _tw_faces(mw, md, tz, tx):
 		var n := maxi(4, roundi(face[2] / 0.8))
 		var out: Vector3 = face[1].cross(Vector3.UP)
 		for i in n:
@@ -956,7 +960,7 @@ func _tw_podium(to_curb: float, width: float, storeys: int) -> void:
 			c.y = top + mech * 0.5
 			if fine:
 				_box("metal", Vector3(0.08, mech - 0.4, 0.2), c, Color("#5b6166"), _tw_yaw(face[1]))
-	_tw_roof(tw - 2.0, td - 2.0, tz, top + mech)
+	_tw_roof(mw, md, tz, top + mech, tx)
 	if blade:
 		var bx := tx + (tw * 0.5 - 0.6) * (1.0 if rng.randf() < 0.5 else -1.0)
 		_box("paint", Vector3(0.8, mech + 12.0, td * 0.8), Vector3(bx, top + (mech + 12.0) * 0.5 - 2.0, tz), Color("#d9dde0"))
