@@ -883,6 +883,29 @@ func _draw_trains() -> void:
 			if not lists.has(car[0]):
 				lists[car[0]] = []
 			lists[car[0]].append(Transform3D(Basis.looking_at(dir.normalized(), Vector3.UP), mid))
+	# Cars left at the county interchange for the next through freight, from
+	# the interchange track's far end back.
+	for h in sim.county_trains.handoffs:
+		var pid := int(h.piece)
+		if not sim.rail.pieces.has(pid):
+			continue
+		var L: float = sim.rail._length(pid)
+		var x := 0.5
+		for car in h.cars:
+			var k: String = car[0]
+			var len: float = Rail.STOCK[k].len if Rail.STOCK.has(k) else 18.0
+			var f: Vector3 = sim.rail.pose_at(pid, L - x)[0]
+			var b: Vector3 = sim.rail.pose_at(pid, L - x - len + 1.0)[0]
+			x += len + 1.0
+			if f.distance_to(eye) > FAR or not _cars.has(k):
+				continue
+			var front := Vector3(f.x, height_at(f) + RAIL_Y, f.z)
+			var back := Vector3(b.x, height_at(b) + RAIL_Y, b.z)
+			if (front - back).length() < 0.1:
+				continue
+			if not lists.has(k):
+				lists[k] = []
+			lists[k].append(Transform3D(Basis.looking_at((front - back).normalized(), Vector3.UP), (front + back) * 0.5))
 	for kind in _cars:
 		var mm: MultiMesh = _cars[kind].multimesh
 		var list: Array = lists.get(kind, [])

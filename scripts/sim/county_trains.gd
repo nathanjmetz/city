@@ -24,6 +24,8 @@ extends RefCounted
 const SEED := 1869
 ## Track speed, m/s (40 mph, as Rail.SPEED.main).
 const SPEED := 17.9
+## How far from a county line a town's railroad meets it.
+const INTERCHANGE_REACH := 4500.0
 ## Two lines' ends this near (metres) are one junction.
 const JOIN := 12.0
 ## A train turns from one line onto another only this sharply (a junction's
@@ -54,12 +56,16 @@ const MAX_CORRIDORS := 6
 ## line stands clear before the fleet the other way.
 const FLEET := 3
 const HEADWAY := 6000
-const CLEAR := 600
+const CLEAR := 600 + STOP
+## Ticks a through freight stands at an interchange to couple on the cars a
+## town's railroad left there (one stop a train, so a fleet never closes up
+## by more than this).
+const STOP := 1800
 ## Gate warning (s) and the gap kept around the train (m), as Rail.
 const GATE_WARNING := Rail.GATE_WARNING
 const GATE_PAD := 6.0
 ## A car's coupled length, metres, and how many cars a train takes.
-const CAR_LEN := {"covered": 18.0, "tank": 18.0, "hopper": 16.5, "boxcar": 16.8}
+const CAR_LEN := {"covered": 18.0, "tank": 18.0, "hopper": 16.5, "boxcar": 16.8, "flat": 22.0}
 const LOCO_LEN := {"gp38": 18.0, "sd40": 21.0}
 const CARS := Vector2i(40, 90)
 ## Space between coupled cars (knuckles and slack), metres.
@@ -90,6 +96,13 @@ static var _built := false
 ## Grade crossings with this town's roads: [{seg, pos (local Vector3),
 ## corridor, s, closed}]. TrafficSim stops cars at closed ones.
 var crossings := []
+## Cars a town's railroad left at its interchange with the county's line,
+## waiting for the next through freight: [{corridor, s, piece, cars:
+## [[stock, cargo]], since}]. `piece` is the town's interchange track.
+var handoffs := []
+## Through freights that stop to take a town's cars: train id -> {s, reach
+## (ticks after the train came on the map that it reaches s), cars}.
+var stops := {}
 ## Bumps when the crossings change (roads or the town's place).
 var version := 0
 var _xing_key := []
@@ -339,7 +352,7 @@ static func pose(ci: int, s: float) -> Array:
 ## run them: FLEET trains one way, HEADWAY apart at the same speed (so none
 ## catches the one ahead), then, once the last has cleared, FLEET the
 ## other way. No two trains ever meet.
-static func trains_at(tick: int, seed: int) -> Array:
+static func trains_at(tick: int, seed: int, stops := {}) -> Array:
 	var out := []
 	var cs := corridors()
 	for ci in cs.size():
@@ -352,11 +365,22 @@ static func trains_at(tick: int, seed: int) -> Array:
 			for phase in 2:
 				for j in FLEET:
 					var start := k * cycle + phase * half + j * HEADWAY
-					if start > t0 or t0 - start > run:
-						continue
 					var t := train(seed, ci, (k * 2 + phase) * FLEET + j)
+					var st: Dictionary = stops.get(t.id, {})
+					var wait := STOP if not st.is_empty() else 0
+					if start > t0 or t0 - start > run + wait:
+						continue
 					t.dir = 1 if phase == 0 else -1
-					var gone := float(t0 - start) * SPEED * TrafficSim.DT
+					t.elapsed = t0 - start
+					var moving := t0 - start
+					if not st.is_empty():
+						# Stands at the interchange, then runs on with the town's cars.
+						moving -= clampi(moving - int(st.reach), 0, wait)
+						if t0 - start >= int(st.reach) + wait:
+							t.consist = t.consist + st.cars
+							t.length = float(t.length) + _cars_len(st.cars)
+						t.stopped = t0 - start >= int(st.reach) and t0 - start < int(st.reach) + wait
+					var gone := float(moving) * SPEED * TrafficSim.DT
 					t.s = gone if t.dir > 0 else c.length - gone
 					out.append(t)
 	return out
@@ -419,7 +443,47 @@ static func _make(seed: int, ci: int, n: int) -> Dictionary:
 
 ## The longest a train can be, metres.
 static func _max_len() -> float:
-	return 3.0 * (LOCO_LEN.sd40 + GAP_CARS) + CARS.y * (18.0 + GAP_CARS)
+	return 3.0 * (LOCO_LEN.sd40 + GAP_CARS) + CARS.y * (18.0 + GAP_CARS) + Rail.MAX_CARS * (22.0 + GAP_CARS)
+
+
+static func _cars_len(cars: Array) -> float:
+	var n := 0.0
+	for c in cars:
+		n += stock_len(c[0]) + GAP_CARS
+	return n
+
+
+## The trains on the line now, with the stops they make.
+func now(tick: int) -> Array:
+	return trains_at(tick, SEED, stops)
+
+
+## A town's railroad leaves `cars` ([[stock, cargo]]) on its interchange
+## track `piece`, beside `at` (region coordinates). False if no county line
+## runs there.
+func hand_off(tick: int, at: Vector2, piece: int, cars: Array) -> bool:
+	var near := nearest(at)
+	if near.is_empty() or near.dist > INTERCHANGE_REACH:
+		return false
+	handoffs.append({"corridor": near.corridor, "s": near.s, "piece": piece, "cars": cars, "since": tick})
+	return true
+
+
+## The nearest open stretch of the county's through lines to `p` (region
+## coordinates): {corridor, s, at, dir, dist} or {}.
+static func nearest(p: Vector2) -> Dictionary:
+	var best := {}
+	var cs := corridors()
+	for ci in cs.size():
+		var c: Dictionary = cs[ci]
+		var pts: PackedVector2Array = c.pts
+		for i in pts.size() - 1:
+			var on := Geometry2D.get_closest_point_to_segment(p, pts[i], pts[i + 1])
+			var d := on.distance_to(p)
+			if (best.is_empty() or d < best.dist) and not _hidden(on):
+				var s: float = c.cum[i] + pts[i].distance_to(on)
+				best = {"corridor": ci, "s": s, "at": on, "dir": (pts[i + 1] - pts[i]).normalized(), "dist": d}
+	return best
 
 
 # --- Crossings with the town's roads -------------------------------------------
@@ -430,13 +494,14 @@ func tick(sim) -> void:
 	var cs := corridors()
 	if cs.is_empty():
 		return
+	var trains := now(sim.tick_count)
+	_pick_up(sim.tick_count, trains)
 	var key := [sim.network.revision, sim.terrain_offset]
 	if key != _xing_key:
 		_xing_key = key
 		_find(sim)
 	if crossings.is_empty():
 		return
-	var trains := trains_at(sim.tick_count, SEED)
 	for c in crossings:
 		var down := false
 		for t in trains:
@@ -444,7 +509,7 @@ func tick(sim) -> void:
 				continue
 			# The train covers from its head (plus the warning ahead of it) back
 			# to its last car.
-			var ahead: float = SPEED * GATE_WARNING
+			var ahead: float = 0.0 if t.get("stopped", false) else SPEED * GATE_WARNING
 			var head: float = t.s
 			var lo: float = head - (t.length if t.dir > 0 else -ahead)
 			var hi: float = head + (ahead if t.dir > 0 else t.length)
@@ -452,6 +517,58 @@ func tick(sim) -> void:
 				down = true
 				break
 		c.closed = down
+
+
+## The next through freight to come up to waiting cars, either way, and not
+## already stopping for another town's, stops there and takes them.
+func _pick_up(tick: int, trains: Array) -> void:
+	if handoffs.is_empty():
+		return
+	var step := SPEED * TrafficSim.DT
+	for h in handoffs.duplicate():
+		for t in trains:
+			if int(t.corridor) != int(h.corridor) or stops.has(t.id):
+				continue
+			var to_go: float = (float(h.s) - float(t.s)) * float(t.dir)
+			if to_go < 0.0 or to_go > step * 2.0:
+				continue
+			stops[t.id] = {"s": h.s, "reach": int(t.elapsed) + int(to_go / step), "cars": h.cars,
+				"until": tick + int(to_go / step) + STOP + run_ticks(int(t.corridor)) + STOP}
+			h.train = t.id
+			h.due = tick + int(to_go / step) + STOP
+			break
+	# Cars go from the interchange track once their train has coupled on and
+	# left; a stop is forgotten once its train is off the map.
+	handoffs = handoffs.filter(func(h): return not h.has("due") or tick < int(h.due))
+	for id in stops.keys():
+		if tick > int(stops[id].until):
+			stops.erase(id)
+
+
+func to_dict() -> Dictionary:
+	var st := {}
+	for id in stops:
+		st[str(id)] = stops[id]
+	return {"handoffs": handoffs, "stops": st}
+
+
+func from_dict(d: Dictionary) -> void:
+	handoffs = []
+	for h in d.get("handoffs", []):
+		var x: Dictionary = h
+		x.corridor = int(x.corridor)
+		x.piece = int(x.piece)
+		x.since = int(x.since)
+		if x.has("train"):
+			x.train = int(x.train)
+			x.due = int(x.due)
+		handoffs.append(x)
+	stops = {}
+	for id in d.get("stops", {}):
+		var x: Dictionary = d.stops[id]
+		x.reach = int(x.reach)
+		x.until = int(x.until)
+		stops[int(id)] = x
 
 
 func _find(sim) -> void:

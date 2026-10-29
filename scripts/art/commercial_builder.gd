@@ -679,9 +679,10 @@ func _sign(c: Vector3, w: float, h: float) -> void:
 		labels.append_array(SignText.on_panel(sign_spec, c + Vector3(0, 0, -0.01), w, h, Vector3.FORWARD, true))
 	var r := Vector3(-w * 0.5, 0, 0)
 	var u := Vector3(0, h, 0)
+	var v0 := _word_slot(c.x) if sign_spec.is_empty() else 0.0
 	# Faces the street (-z); x runs right to left as seen from the street.
 	_quad("sign", c + r, c - r, c - r + u, c + r + u, col,
-		[Vector2(0, 0), Vector2(w, 0), Vector2(w, 1), Vector2(0, 1)], Vector3.FORWARD)
+		[Vector2(0, v0), Vector2(w, v0), Vector2(w, v0 + 1.0), Vector2(0, v0 + 1.0)], Vector3.FORWARD)
 	_box("paint", Vector3(w + 0.1, h + 0.1, 0.06), c + Vector3(0, h * 0.5, 0.04), col.darkened(0.3))
 
 
@@ -694,6 +695,12 @@ const TRADE_WORDS := [
 	"ANTIQUES", "BIKES", "CANDY", "SPORTS", "HOBBY", "REALTY", "PAINT", "QUILTS", "APPLIANCE", "JEWELRY", "FABRIC",
 	"CELLULAR", "FITNESS", "SEWING",
 ]
+
+
+## Which stand-in trade word a shop at `x` letters, as the sign shader reads
+## it from UV.y (2 * (word + 1) on): its board and awning say the same.
+func _word_slot(x: float) -> float:
+	return 2.0 * (1 + posmod(hash([rng.seed, snappedf(x, 0.1)]), TRADE_WORDS.size()))
 
 
 ## Desktop: a strip tenant's name in channel letters, the way strip-centre
@@ -757,7 +764,9 @@ func _awning(cx: float, w: float, zf: float, y: float, col: Color) -> void:
 		# Painted letters (sign alpha 0.5-0.99: unlit, width (a - 0.5) * 60).
 		var v := col.darkened(0.15)
 		v.a = 0.5 + w / 60.0
-		_quad("sign", d, c, c + drop, d + drop, v, [Vector2(0, 1), Vector2(w, 1), Vector2(w, 0), Vector2(0, 0)], Vector3.FORWARD)
+		var v0 := _word_slot(cx)
+		_quad("sign", d, c, c + drop, d + drop, v,
+			[Vector2(0, v0 + 1.0), Vector2(w, v0 + 1.0), Vector2(w, v0), Vector2(0, v0)], Vector3.FORWARD)
 	else:
 		_quad("paint", d, c, c + drop, d + drop, col.darkened(0.15), [], Vector3.FORWARD)
 	if pick > 0.7:

@@ -1913,15 +1913,60 @@ func _combine() -> void:  # John Deere S790, header off for the road
 	], [_edges(PAINT, TRIM)], TRIM, PAINT)
 	_box(Vector3(0, 3.0, 1.2), Vector3(1.7, 1.5, 1.4), GLASS)
 	_box(Vector3(0, 3.8, 1.2), Vector3(1.9, 0.12, 1.6), WHITE)
-	_box(Vector3(0, 4.0, 5.0), Vector3(2.6, 0.6, 3.6), PAINT)
+	if _hi:
+		# The grain tank's folding extensions flare out above the body,
+		# open on top over the grain.
+		_loft([
+			[3.2, 3.7, 4.05, 4.3, 1.25, 1.32, 1.42],
+			[6.8, 3.7, 4.05, 4.3, 1.25, 1.32, 1.42],
+		], [_edges(PAINT, PAINT)], PAINT, PAINT)
+		_box(Vector3(0, 4.306, 5.0), Vector3(2.6, 0.004, 3.4), Color(0.82, 0.68, 0.3, 0.4))
+	else:
+		_box(Vector3(0, 4.0, 5.0), Vector3(2.6, 0.6, 3.6), PAINT)
 	_box(Vector3(0, 3.96, 1.4), Vector3(0.14, 0.12, 0.14), BEACON_AMBER)
 	_beam(Vector3(-1.2, 3.8, 3.6), Vector3(-1.4, 3.8, 8.6), 0.18, PAINT)
 	var rim := Color(0.95, 0.75, 0.05, 0.4)
-	_wheel(Vector3(-1.4, 0.0, 2.4), 0.95, 0.7, rim)
-	_wheel(Vector3(1.4, 0.0, 2.4), 0.95, 0.7, rim)
-	_wheel(Vector3(-1.2, 0.0, 7.0), 0.7, 0.45, rim)
-	_wheel(Vector3(1.2, 0.0, 7.0), 0.7, 0.45, rim)
+	if _hi:
+		_combine_hi(L, rim)
+	else:
+		_wheel(Vector3(-1.4, 0.0, 2.4), 0.95, 0.7, rim)
+		_wheel(Vector3(1.4, 0.0, 2.4), 0.95, 0.7, rim)
+		_wheel(Vector3(-1.2, 0.0, 7.0), 0.7, 0.45, rim)
+		_wheel(Vector3(1.2, 0.0, 7.0), 0.7, 0.45, rim)
 	_box(Vector3(0.5, 3.4, 0.45), Vector3(0.3, 0.12, 0.08), HEAD, true)
+
+
+## Ultra: a combine close up (JD S790, Case IH Axial-Flow): lugged drive
+## and steer tyres, the cab's corner posts and mirrors, the stair up the
+## left front to the platform, the dark mouth of the feeder house with
+## its header off, the rotary radiator screen and louvres at the back of
+## the engine bay, the straw chopper's housing, tail lamps and the
+## slow-moving-vehicle triangle.
+func _combine_hi(L: float, rim: Color) -> void:
+	for s in [-1.0, 1.0]:
+		_ag_wheel(Vector3(s * 1.4, 0.0, 2.4), 0.95, 0.7, rim)
+		_ag_wheel(Vector3(s * 1.2, 0.0, 7.0), 0.7, 0.45, rim)
+		for z in [0.5, 1.9]:
+			_box(Vector3(s * 0.85, 3.0, z), Vector3(0.08, 1.5, 0.08), TRIM)
+		_box(Vector3(s * 1.08, 3.45, 0.7), Vector3(0.38, 0.04, 0.04), TRIM)
+		_box(Vector3(s * 1.28, 3.25, 0.7), Vector3(0.06, 0.4, 0.2), TRIM)
+		_box(Vector3(s * 1.0, 1.05, L - 0.2), Vector3(0.14, 0.18, 0.04), TAIL)
+	# The stair: treads stepping up the left front, with its rail.
+	for i in 6:
+		_box(Vector3(-1.05, 0.55 + i * 0.32, 0.55 + i * 0.12), Vector3(0.5, 0.04, 0.25), STEEL)
+	_beam(Vector3(-1.3, 1.1, 0.4), Vector3(-1.3, 2.9, 1.1), 0.05, STEEL)
+	# The feeder house's mouth, open with the header off.
+	_box(Vector3(0, 1.32, -0.006), Vector3(1.1, 0.6, 0.012), Color(0.04, 0.04, 0.04, 0.3))
+	# Radiator screen and engine louvres on the right side at the back.
+	_disc(Vector3(1.51, 3.0, L - 1.6), Vector3(1, 0, 0), 0.55, Color(0.1, 0.1, 0.1, 0.3))
+	for i in 5:
+		_box(Vector3(1.506, 2.3 + i * 0.16, L - 3.2), Vector3(0.012, 0.06, 1.2), TRIM)
+	# Straw chopper housing under the back, and the SMV sign above it.
+	_box(Vector3(0, 1.25, L + 0.15), Vector3(1.9, 0.5, 0.3), TRIM)
+	var o := Vector3(0, 2.2, L + 0.006)
+	_tri(o + Vector3(-0.21, -0.18, 0), o + Vector3(0.21, -0.18, 0), o + Vector3(0, 0.18, 0), TAPE_RED, o - Vector3(0, 0, 1))
+	o.z += 0.006
+	_tri(o + Vector3(-0.15, -0.14, 0), o + Vector3(0.15, -0.14, 0), o + Vector3(0, 0.12, 0), Color(1.0, 0.38, 0.04, 0.4), o - Vector3(0, 0, 1))
 
 
 func _motorcycle() -> void:  # cruiser (Harley-Davidson Street Glide) with rider
