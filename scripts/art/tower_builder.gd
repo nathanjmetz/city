@@ -311,6 +311,14 @@ func _tw_deco(to_curb: float, width: float, storeys: int) -> void:
 	var floor_h := 3.7
 	var stone := Color(_pick(TW_LIMESTONE))
 	var spandrel := Color(_pick(TW_SPANDREL))
+	# About a third are buff or tan brick with a limestone portal, as many
+	# Midwest deco towers are (own random numbers, so no draw moves).
+	var dr := RandomNumberGenerator.new()
+	dr.seed = hash([rng.seed, "deco look"])
+	var base_stone := stone
+	if dr.randf() < 0.35:
+		stone = Color(["#c9a974", "#b8956a", "#d2b98c"][dr.randi() % 3])
+	var crown_kind := dr.randi() % 3
 	# The 1916 rule: the street wall rises about a third of the way, then
 	# each tier steps back, ending in a slim tower and a stepped crown.
 	# On an assembled site the street wall runs the whole frontage and the
@@ -372,7 +380,7 @@ func _tw_deco(to_curb: float, width: float, storeys: int) -> void:
 			var c: Vector3 = face[0] + face[1] * (-w0 * 0.5 + (i + 0.5) * w0 / n)
 			c.y = 2.6
 			_glass(c, face[1], w0 / n - 1.2, 3.8, 0.0)
-	_box("brick", Vector3(5.0, 8.0, 0.6), Vector3(0, 4.0, zf - 0.3), stone.lightened(0.1))
+	_box("brick", Vector3(5.0, 8.0, 0.6), Vector3(0, 4.0, zf - 0.3), base_stone.lightened(0.1))  # limestone portal
 	_box("paint", Vector3(3.0, 6.5, 0.1), Vector3(0, 3.25, zf - 0.62), Color("#3b2f22"))  # bronze and glass
 	if not _homes:
 		_sign(Vector3(0, 7.3, zf - 0.66), 4.2, 0.6)
@@ -387,7 +395,28 @@ func _tw_deco(to_curb: float, width: float, storeys: int) -> void:
 			break
 		_box("brick", Vector3(cw, 3.5, cd), Vector3(0, top + 1.75, zf + d * 0.5), stone)
 		top += 3.5
-	_tw_tank(Vector3(0, top, zf + d * 0.5))
+	# The crown hides the house tank, as deco towers did: steps under a
+	# flagpole (Indianapolis's Circle Tower), a copper or gilded pyramid
+	# (the Chicago Board of Trade, Fort Wayne's Lincoln Tower's lantern
+	# cousins), or a lit lantern with a mast.
+	var cz1 := zf + d * 0.5
+	match crown_kind:
+		1:
+			var pcol := TW_COPPER if dr.randf() < 0.6 else Color("#b89a4a")
+			_tw_pyramid(Vector3(0, top, cz1), cw + 0.6, cd + 0.6, minf(cw, cd) * 0.6, pcol)
+		2:
+			var lw := maxf(cw * 0.55, 3.0)
+			var ld := maxf(cd * 0.55, 3.0)
+			_box("brick", Vector3(lw, 5.0, ld), Vector3(0, top + 2.5, cz1), stone)
+			for face in _tw_faces(lw, ld, cz1):
+				var c: Vector3 = face[0]
+				c.y = top + 2.6
+				_glass(c, face[1], face[2] - 1.2, 3.6, 0.0)
+			_tw_pyramid(Vector3(0, top + 5.0, cz1), lw + 0.4, ld + 0.4, minf(lw, ld) * 0.5, TW_COPPER)
+			_tw_mast(Vector3(0, top + 5.0 + minf(lw, ld) * 0.5, cz1), 6.0)
+		_:
+			_box("metal", Vector3(0.2, 9.0, 0.2), Vector3(0, top + 4.5, cz1), Color("#c9cccd"))  # flagpole
+			_box("paint", Vector3(2.2, 1.3, 0.04), Vector3(-1.2, top + 8.3, cz1), Color("#3c3b6e"))
 
 
 # ---------------------------------------------------------------- postwar glass
