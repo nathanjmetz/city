@@ -19,6 +19,8 @@ var spot_clicks := false
 var _ring := MeshInstance3D.new()
 ## Arcs to where a selected home's people work, or a workplace's staff live.
 var _lines := ConnectionLines.new()
+## The trips using a selected road, place or vehicle, on their streets.
+var _routes := RouteLines.new()
 var _press := Vector2(-1, -1)
 
 
@@ -45,6 +47,7 @@ func _ready() -> void:
 	_ring.visible = false
 	add_child(_ring)
 	add_child(_lines)
+	add_child(_routes)
 
 
 func select(sel: Dictionary) -> void:
@@ -54,6 +57,8 @@ func select(sel: Dictionary) -> void:
 	_ring.visible = false
 	_lines.sim = sim
 	_lines.show_for(sel)
+	_routes.sim = sim
+	_routes.show_for(sel)
 	selected.emit(sel)
 
 

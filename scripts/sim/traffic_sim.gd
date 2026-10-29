@@ -939,6 +939,78 @@ func lanes_for(way: int, next: int) -> Array:
 	return _arrows.get(way, {}).get(next, [])
 
 
+## A vehicle's trip on the roads for the route view (Cities: Skylines'
+## "show routes"): {came: the way it came from where it set off, ahead: the
+## rest of its route}, each [way, from d, to d] runs. A driving car keeps
+## only the route ahead, so where it came from is planned again from its
+## start, the way it would have driven. `came` is left out when `ahead_only`.
+func trip_runs(car: Dictionary, ahead_only := false) -> Dictionary:
+	var out := {"came": [], "ahead": []}
+	if car.has("flow_in"):
+		var ins: Array = car.flow_in
+		for i in ins.size():
+			var wid: int = ins[i][1]
+			if not ways.has(wid):
+				continue
+			var run := [wid, float(car.d) if i == 0 else 0.0,
+				float(car.end_d) if i == ins.size() - 1 else float(ways[wid].len)]
+			var now := i + 1 >= ins.size() or int(ins[i + 1][0]) > _tick
+			(out.ahead if now or not out.ahead.is_empty() else out.came).append(run)
+		return out
+	var route: Array = car.get("route", [])
+	var leg: int = car.get("leg", 0)
+	if leg >= route.size() or not ways.has(route[leg]):
+		return out
+	var d: float = car.d
+	if car.j != null and int(car.j.get("wo", -1)) == int(route[leg]):
+		d = 0.0
+	for i in range(leg, route.size()):
+		var wid: int = route[i]
+		if not ways.has(wid):
+			break
+		out.ahead.append([wid, d if i == leg else 0.0,
+			float(car.end_d) if i == route.size() - 1 else float(ways[wid].len)])
+	if ahead_only or _dirty:
+		return out  # a view never rebuilds the roads between ticks
+	var start = car.get("from_stop")
+	var from_ref: String = car.get("from_ref", "")
+	if from_ref != "" and from_ref != "edge" and place(from_ref).get("stop") is Dictionary:
+		start = place(from_ref).stop
+	if not start is Dictionary or not start.has("seg"):
+		return out
+	var w: Dictionary = ways[route[leg]]
+	var fwd: bool = w.fwd
+	var here := {"seg": w.seg, "at_frac": d / w.len if fwd else 1.0 - d / w.len, "side": 1 if fwd else -1}
+	var back := _route(start, here)
+	if back.is_empty():
+		return out
+	var r: Array = back.route
+	for i in r.size():
+		out.came.append([r[i], float(back.d) if i == 0 else 0.0,
+			float(back.end_d) if i == r.size() - 1 else float(ways[r[i]].len)])
+	return out
+
+
+## Points down the middle of a way's lanes from `d0` to `d1` metres along.
+func way_line(wid: int, d0: float, d1: float) -> PackedVector3Array:
+	var out := PackedVector3Array()
+	if not ways.has(wid):
+		return out
+	var w: Dictionary = ways[wid]
+	var mid: float = (w.offs[0] + w.offs[w.lanes - 1]) * 0.5
+	d0 = clampf(d0, 0.0, w.len)
+	d1 = clampf(d1, d0, w.len)
+	var at := [d0]
+	for c in w.cum:
+		if c > d0 + 0.5 and c < d1 - 0.5:
+			at.append(c)
+	at.append(d1)
+	for d in at:
+		var f := _way_dir(w, d)
+		out.append(_poly_point(w.pts, w.cum, d) + Vector3(-f.z, 0.0, f.x) * mid)
+	return out
+
+
 ## Share of the speed limit cars manage on a way, 0 to 1 (1 if empty).
 func way_speed(way: int) -> float:
 	return _speed.get(way, 1.0)
