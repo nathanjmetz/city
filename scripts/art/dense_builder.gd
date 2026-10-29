@@ -443,6 +443,8 @@ func _office(to_curb: float, width: float, storeys: int) -> void:
 		_glass(Vector3(0, y, zf - 0.03), Vector3(-1, 0, 0), w - 1.6, gh, 0.0 if f == 0 else rng.randf_range(0.05, 0.3))
 		for s in [-1.0, 1.0]:
 			_glass(Vector3(s * (w * 0.5 + 0.03), y, cz), Vector3(0, 0, -s), d - 1.6, gh, rng.randf_range(0.05, 0.3))
+		# And the back, over the lot: offices have windows all round.
+		_glass(Vector3(0, y if f > 0 else 1.9, zf + d + 0.03), Vector3(1, 0, 0), w - 1.6, 1.7, 0.2)
 		if f > 0:
 			_box("paint", Vector3(w + 0.06, 0.9, 0.08), Vector3(0, f * floor_h + 0.3 + 0.45, zf - 0.04), band)
 		# Mullions every 1.5 m.
@@ -460,12 +462,39 @@ func _office(to_curb: float, width: float, storeys: int) -> void:
 	for i in rng.randi_range(2, 4):
 		_box("metal", Vector3(2.2, 1.4, 1.6), Vector3(rng.randf_range(-w * 0.3, w * 0.3), deck + 0.7,
 			cz + rng.randf_range(-d * 0.2, d * 0.2)), Color("#b9bcbc"))
+	_office_roof(w, d, cz, deck, wall, mat, storeys)
 	_office_lot(to_curb, w, zf, zf + d, width)
 	for s in [-1.0, 1.0]:
 		var pick := TreeField.pick(rng)
 		# The one on the drive side stands in the front lawn, off the drive.
 		var at := Vector3(-w * 0.5 - 1.5, 0, zf - 2.0) if s < 0.0 else Vector3(w * 0.5 - 2.5, 0, zf - 4.5)
 		trees.append([at, pick[0], pick[1], rng.randf_range(0.8, 1.0)])
+
+
+## An office's roof (aerials of suburban Indianapolis and Fort Wayne
+## offices): the elevator overrun as a small penthouse in the wall material,
+## and on three storeys or more a louvred metal screen hiding the units.
+## Its own random numbers, so the builder's don't move.
+func _office_roof(w: float, d: float, cz: float, deck: float, wall: Color, mat: String, storeys: int) -> void:
+	var r := RandomNumberGenerator.new()
+	r.seed = hash([rng.seed, 11])
+	if storeys >= 2:
+		var px := r.randf_range(-w * 0.25, w * 0.25)
+		_box(mat, Vector3(3.0, 3.4, 4.2), Vector3(px, deck + 1.7, cz + d * 0.15), wall)
+		_box("paint", Vector3(3.2, 0.12, 4.4), Vector3(px, deck + 3.46, cz + d * 0.15), Color("#8e8c86"))
+	if storeys >= 3:
+		var sw := minf(w * 0.5, 14.0)
+		var sd := minf(d * 0.45, 8.0)
+		var sx := r.randf_range(-w * 0.2, w * 0.2)
+		var screen := Color(_pick(["#8f9294", "#b9b6ad", "#5f6266"]))
+		for sgn in [-1.0, 1.0]:
+			_box("metal", Vector3(sw, 2.0, 0.1), Vector3(sx, deck + 1.0, cz + sgn * sd * 0.5), screen)
+			_box("metal", Vector3(0.1, 2.0, sd), Vector3(sx + sgn * sw * 0.5, deck + 1.0, cz), screen)
+		if fine:
+			# Louvres: horizontal blades on the long sides.
+			for k in 6:
+				for sgn in [-1.0, 1.0]:
+					_box("paint", Vector3(sw, 0.04, 0.06), Vector3(sx, deck + 0.2 + k * 0.32, cz + sgn * (sd * 0.5 + 0.07)), screen.darkened(0.25))
 
 
 ## The office's lot out back, reached by a drive down the side from a curb

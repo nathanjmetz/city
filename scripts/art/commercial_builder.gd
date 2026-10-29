@@ -123,6 +123,7 @@ func _retail(to_curb: float) -> void:
 	_box("paint", Vector3(0.08, 2.7, 0.12), Vector3(sw * 0.5, 1.6, zf - 0.06), mull)
 	_box("paint", Vector3(sw, 0.1, 0.14), Vector3(0, 2.92, zf - 0.07), mull)
 	_box("paint", Vector3(sw, 0.5, 0.12), Vector3(0, 0.5, zf - 0.06), mull)
+	_retail_front(0.0, w, sw, zf, h + 0.9, wall, mat)
 	# Sign band above the storefront.
 	_sign(Vector3(0, 3.35, zf - 0.08), sw * rng.randf_range(0.55, 0.85), 0.9)
 	if rng.randf() < 0.5:
@@ -213,6 +214,30 @@ func _main_street(to_curb: float) -> void:
 	_box("metal", Vector3(1.8, 1.1, 1.2), Vector3(rng.randf_range(-4.0, 4.0), h - 0.6 + 0.55, cz + 2.0), Color("#b9bcbc"))
 	if depth > zf + d + 1.0:
 		_flat_rect("asphalt", -half, half, zf + d, depth, 0.06)
+
+
+## A freestanding store's front (1990s-2010s retail in Marion and Kokomo):
+## a split-face block wainscot either side of the storefront and a raised
+## false front with a cornice over the entrance.
+func _retail_front(cx: float, w: float, sw: float, zf: float, top: float, wall: Color, mat: String) -> void:
+	var base := Color(["#8b8478", "#a39a8a", "#6f6a62"][absi(hash([rng.seed, 9])) % 3])
+	var side := (w - sw) * 0.5 - 0.1
+	if side > 0.3:
+		for sgn in [-1.0, 1.0]:
+			_box("concrete", Vector3(side, 0.9, 0.06), Vector3(cx + sgn * (sw * 0.5 + 0.1 + side * 0.5), 0.75, zf - 0.03), base)
+	_raised_front(cx, minf(sw * 0.55, 8.0), zf, top, wall, mat)
+
+
+## A raised parapet front over an entrance: a wall panel standing above the
+## roof line, slightly proud of the wall, with a projecting cornice cap.
+func _raised_front(cx: float, fw: float, zf: float, top: float, wall: Color, mat: String) -> void:
+	var r := RandomNumberGenerator.new()
+	r.seed = hash([rng.seed, snappedf(cx, 0.01), 5])
+	var rise := r.randf_range(1.0, 1.8)
+	var cap := Color(["#e7e1d2", "#d6cdb8", "#cfcbc2", "#4b4239"][r.randi() % 4])
+	_box(mat, Vector3(fw, rise + 0.6, 0.5), Vector3(cx, top + rise * 0.5 - 0.3, zf - 0.2), wall.lightened(0.04))
+	_box("paint", Vector3(fw + 0.4, 0.3, 0.8), Vector3(cx, top + rise + 0.1, zf - 0.25), cap)
+	_box("paint", Vector3(fw + 0.1, 0.18, 0.6), Vector3(cx, top - 0.35, zf - 0.25), cap)
 
 
 ## A flat-roofed box: walls up to the roof deck, a pale membrane roof, and a
@@ -417,6 +442,11 @@ func _strip_center(to_curb: float) -> void:
 		_box("paint", Vector3(0.45, 3.0, 0.45), Vector3(clampf(x, -w * 0.5 + 0.3, w * 0.5 - 0.3), 1.9, zf - 2.3), wall.lightened(0.1))
 		x += bay
 	_rooftop(w, d, cz, h, n)
+	# A raised false front over the end store, and over the middle on a
+	# long centre: what a strip centre's parapet does to break up its length.
+	_raised_front(-w * 0.5 + bay * 0.5, bay, zf, h + 1.2, wall, "paint")
+	if n >= 5:
+		_raised_front(-w * 0.5 + (n / 2 + 0.5) * bay, bay, zf, h + 1.2, wall, "paint")
 	_shop_parking(to_curb, w, zf - 2.6, 0.0)
 
 
