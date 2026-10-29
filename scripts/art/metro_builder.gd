@@ -474,7 +474,13 @@ func _mb_walkup(to_curb: float, width: float, storeys: int) -> void:
 			if f < storeys - 1:
 				var tilt := Basis(Vector3.FORWARD, 0.95)
 				_box("metal", Vector3(floor_h * 1.25, 0.05, 0.45), Vector3(r[0] + (0.3 if f % 2 == 0 else -0.3), y + floor_h * 0.5, zf - 0.85), MB_IRON, tilt if f % 2 == 0 else tilt.inverse())
-	_rear_wall(-w * 0.5, w * 0.5, zf + d, base, floor_h, storeys, trim)
+	# The back porch the flats share, as on the two-flats (wood only up to
+	# three storeys, as Chicago's code allows), and the yard to the alley.
+	var porch := storeys <= 3 and depth - (zf + d) >= 7.0
+	_rear_wall(-w * 0.5, w * 0.5, zf + d, base, floor_h, storeys, trim, porch)
+	if porch:
+		_mb_porch(0.0, minf(w - 2.0, 6.0), zf + d, base, floor_h, storeys, hash([rng.seed, "walkup porch"]))
+		_mb_yards(width, width - 1.0, [[0.0, zf + d + 3.2]], hash([rng.seed, "walkup yard"]))
 	_box("metal", Vector3(2.0, 1.0, 1.2), Vector3(rng.randf_range(-w * 0.3, w * 0.3), top + 0.5, cz + d * 0.2), Color("#b9bcbc"))
 
 

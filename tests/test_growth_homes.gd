@@ -298,6 +298,12 @@ func _init() -> void:
 				for v: Vector3 in m.surface_get_arrays(i)[Mesh.ARRAY_VERTEX]:
 					if absf(v.x) > 12.1 or v.z > 45.0:
 						spill += 1
+		var walkup := MetroBuilder.build_apartments(700 + s, 3.9, {"width": 24.0, "depth": 45.0, "era": "prewar"}, 3)
+		for m: ArrayMesh in walkup.slice(0, 2):
+			for i in m.get_surface_count():
+				for v: Vector3 in m.surface_get_arrays(i)[Mesh.ARRAY_VERTEX]:
+					if absf(v.x) > 12.1 or v.z > 45.0:
+						spill += 1
 	MetroBuilder.force_row = ""
 	_check(porches == 20, "flats with a back yard get back porches (%d of 20)" % porches)
 	_check(spill == 0, "back porches and yards stay inside the lot (%d points out)" % spill)
