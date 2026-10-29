@@ -16,6 +16,16 @@ extends DenseBuilder
 ##     Indiana State Office Building): a tinted curtain wall hung from
 ##     steel I-beam mullions about 1.6 m apart, set back on a plaza over a
 ##     recessed lobby on columns, with a louvred mechanical floor on top
+##   - pomo: 1980s-90s postmodern towers (Chase Tower, now Salesforce
+##     Tower, Indianapolis 1990; Market Tower, Indianapolis 1988; Indiana
+##     Michigan Power Center, Fort Wayne 1982): granite and reflective
+##     glass, notched corners, setbacks and a crown
+##   - podium: 2000s-2020s towers on a podium that fills an assembled site
+##     (360 Market Square, Indianapolis 2020; Ash Skyline Plaza, Fort Wayne
+##     2015): shops at the sidewalk, parking decks behind screens, a roof
+##     deck and a glass tower set back on top
+## A grown tower on a bought-up lot uses the land: the podium spreads across
+## it, so each stage of growth reads differently from the street.
 ## Same output as the other builders: [building, ground work, trees, labels].
 
 const TW_STONE := ["#9c9384", "#8b8476", "#a89f8e"]  # granite or rusticated limestone
@@ -59,16 +69,33 @@ static func _tw_start(seed: int, to_curb: float, lot: Dictionary, storeys: int, 
 		if b.era == "prewar":
 			kind = "deco" if storeys >= 14 or b.rng.randf() < 0.3 else "chicago"
 		else:
-			kind = "glass"
+			kind = _tw_form(seed, b.half * 2.0, homes)
 	match kind:
 		"chicago": b._tw_chicago(to_curb, b.half * 2.0, storeys)
 		"deco": b._tw_deco(to_curb, b.half * 2.0, storeys)
+		"pomo": b._tw_pomo(to_curb, b.half * 2.0, storeys)
+		"podium": b._tw_podium(to_curb, b.half * 2.0, storeys)
 		_:
 			if homes:
 				b._tw_slab(to_curb, b.half * 2.0, storeys)
 			else:
 				b._tw_glass(to_curb, b.half * 2.0, storeys)
 	return b
+
+
+## A postwar tower's form, from its own random numbers (so the builder's
+## don't move): a wide, assembled site favours a podium; flats are a slab
+## or a podium tower, offices any of the three.
+static func _tw_form(seed: int, width: float, homes: bool) -> String:
+	var r := RandomNumberGenerator.new()
+	r.seed = hash([seed, "tower form"])
+	var x := r.randf()
+	var wide := width >= 44.0
+	if homes:
+		return "podium" if x < (0.55 if wide else 0.2) else "glass"
+	if x < 0.3:
+		return "glass"
+	return "pomo" if x < (0.55 if wide else 0.72) else "podium"
 
 
 # ---------------------------------------------------------------- Chicago School
@@ -390,6 +417,329 @@ func _tw_slab(to_curb: float, width: float, storeys: int) -> void:
 		trees.append([Vector3(s * (width * 0.5 - 4.0), 0, zf * 0.5), pick[0], pick[1], rng.randf_range(0.8, 1.0)])
 
 
+# ---------------------------------------------------------------- postmodern
+
+const TW_GRANITE := ["#b48f80", "#a3897a", "#c4b29c", "#8c7b70", "#d0c4b4"]  # rose, buff and grey granite
+const TW_MIRROR := ["#2e3b44", "#33443c", "#463b33", "#2b3440"]  # reflective blue, green, bronze, grey glass
+const TW_COPPER := Color("#6f9a86")  # weathered copper
+
+
+## A 1980s-90s postmodern office tower: built to the sidewalk on a tall
+## granite base with an arched entry; notched corners (eight corner
+## offices a floor); bands of reflective glass between granite spandrels
+## and a glass slot up the middle of the street faces; one or two setbacks
+## near the top and a crown (_tw_crown).
+func _tw_pomo(to_curb: float, width: float, storeys: int) -> void:
+	var w := minf(width - 2.0, rng.randf_range(26.0, 36.0))
+	var d := minf(depth - 6.0, rng.randf_range(24.0, 32.0))
+	if w < 16.0 or d < 14.0:
+		_tw_glass(to_curb, width, storeys)
+		return
+	var zf := rng.randf_range(1.0, 4.0)
+	var cz := zf + d * 0.5
+	var ground_h := 6.0
+	var floor_h := 3.9
+	var base_f := 3 if storeys >= 12 else 2
+	var y_base := ground_h + floor_h * (base_f - 1)
+	var granite := Color(_pick(TW_GRANITE))
+	var base_col := granite.darkened(0.18)
+	var mirror := Color(_pick(TW_MIRROR))
+	var crown: String = ["gable", "pyramid", "spires", "stepped"][rng.randi() % 4]
+	# The shaft and two setbacks, each tier 3 m in on every side.
+	var tiers := [[w, d, ceili(storeys * 0.8)], [w - 6.0, d - 6.0, ceili(storeys * 0.92)], [w - 12.0, d - 12.0, storeys]]
+	if storeys < 14:
+		tiers = [[w, d, storeys]]
+	if _far:
+		_tw_far_box(Vector3(w, y_base, d), Vector3(0, y_base * 0.5, cz), base_col, 0.5)
+		var fy := y_base
+		for t in tiers:
+			var y1: float = ground_h + floor_h * (int(t[2]) - 1)
+			_tw_far_box(Vector3(t[0], y1 - fy, t[1]), Vector3(0, (fy + y1) * 0.5, cz), granite.lerp(mirror, 0.45), 0.8)
+			fy = y1
+		_tw_far_box(Vector3(tiers[-1][0] * 0.7, 6.0, tiers[-1][1] * 0.7), Vector3(0, fy + 3.0, cz), TW_COPPER if crown != "spires" else granite, 0.0)
+		return
+	_downtown_walk(to_curb, width, zf)
+	# The base: dark polished granite, tall shop windows, the arched entry.
+	_tw_notched("brick", w, d, cz, 0.0, y_base, base_col, minf(w, d) * 0.14)
+	var bays := maxi(3, roundi(w / 7.0))
+	for i in bays:
+		var x := -w * 0.5 + (i + 0.5) * w / bays
+		if absf(x) < 4.0:
+			continue
+		_glass(Vector3(x, 2.6, zf - 0.03), Vector3(-1, 0, 0), w / bays - 1.8, 4.2, rng.randf_range(0.0, 0.2))
+		for f in range(1, base_f):
+			_glass(Vector3(x, ground_h + floor_h * (f - 1) + 1.8, zf - 0.03), Vector3(-1, 0, 0), w / bays - 2.2, 2.2, rng.randf_range(0.1, 0.5))
+	_tw_arch(Vector3(0, 0, zf), 7.0, minf(y_base - 1.0, 10.0), granite.lightened(0.08), mirror)
+	_sign(Vector3(0, minf(y_base - 1.0, 10.0) + 0.6, zf - 0.7), 6.0, 0.7)
+	# The shaft, tier by tier: granite with a band of glass on every floor,
+	# on the notches too, and the glass slot up the street faces.
+	var y0 := y_base
+	var f0 := base_f
+	var cw := w
+	var cd := d
+	for t in tiers:
+		cw = t[0]
+		cd = t[1]
+		var f1: int = t[2]
+		var y1 := ground_h + floor_h * (f1 - 1)
+		var notch := minf(cw, cd) * 0.14
+		_tw_notched("brick", cw, cd, cz, y0, y1, granite, notch)
+		for f in range(f0, f1):
+			var y := ground_h + floor_h * (f - 1) + floor_h * 0.55
+			for face in _tw_notch_faces(cw, cd, cz, notch):
+				_glass(face[0] + Vector3(0, y, 0), face[1], face[2] - 0.8, floor_h * 0.5, rng.randf_range(0.05, 0.4))
+		for face in _tw_faces(cw - notch * 2.0, cd, cz):
+			if face[3]:
+				var out: Vector3 = face[1].cross(Vector3.UP)
+				_glass(face[0] + out * 0.02 + Vector3(0, (y0 + y1) * 0.5, 0), face[1], 3.6, y1 - y0 - 0.6, 0.0)
+				# Aluminium floor lines and a centre mullion across the slot.
+				for f in range(f0, f1):
+					_box("metal", Vector3(3.6, 0.18, 0.08), face[0] + out * 0.06 + Vector3(0, ground_h + floor_h * (f - 1), 0), Color("#8d9296"), _tw_yaw(face[1]))
+				_box("metal", Vector3(0.12, y1 - y0 - 0.6, 0.08), face[0] + out * 0.06 + Vector3(0, (y0 + y1) * 0.5, 0), Color("#8d9296"), _tw_yaw(face[1]))
+		_box("paint", Vector3(cw - notch * 2.0 + 0.4, 0.5, cd + 0.4), Vector3(0, y1 + 0.25, cz), granite.lightened(0.1))  # coping
+		_box("paint", Vector3(cw + 0.4, 0.5, cd - notch * 2.0 + 0.4), Vector3(0, y1 + 0.25, cz), granite.lightened(0.1))
+		_tw_roof(cw - notch * 2.0, cd, cz, y1 + 0.5)
+		y0 = y1
+		f0 = f1
+	_tw_crown(crown, cw, cd, cz, y0 + 0.5, granite, mirror)
+
+
+## A box with its four corners notched in by `n` (a cross in plan).
+func _tw_notched(mat: String, w: float, d: float, cz: float, y0: float, y1: float, col: Color, n: float) -> void:
+	_box(mat, Vector3(w - n * 2.0, y1 - y0, d), Vector3(0, (y0 + y1) * 0.5, cz), col)
+	_box(mat, Vector3(w, y1 - y0, d - n * 2.0), Vector3(0, (y0 + y1) * 0.5, cz), col)
+
+
+## The twelve outside faces of a notched box, as _tw_faces gives them.
+func _tw_notch_faces(w: float, d: float, cz: float, n: float) -> Array:
+	var out := []
+	for f in _tw_faces(w - n * 2.0, d, cz):
+		out.append(f)
+	for f in _tw_faces(w, d - n * 2.0, cz):
+		if not f[3]:
+			out.append(f)
+	# The notch walls, facing the street or the back and the sides.
+	for sx in [-1.0, 1.0]:
+		for sz in [-1.0, 1.0]:
+			var x: float = sx * (w * 0.5 - n * 0.5)
+			out.append([Vector3(x, 0, cz + sz * (d * 0.5 - n) + sz * 0.03), Vector3(-sz, 0, 0), n, true])
+			var z: float = cz + sz * (d * 0.5 - n * 0.5)
+			out.append([Vector3(sx * (w * 0.5 - n) + sx * 0.03, 0, z), Vector3(0, 0, sx), n, false])
+	return out
+
+
+## A round-arched entry: a granite surround, glass doors and a fanlight.
+func _tw_arch(at: Vector3, w: float, h: float, stone: Color, glass_col: Color) -> void:
+	var r := w * 0.5 - 0.8
+	var spring := h - r - 0.6
+	_box("brick", Vector3(w, h, 0.7), at + Vector3(0, h * 0.5, -0.35), stone)
+	_glass(at + Vector3(0, spring * 0.5, -0.73), Vector3(-1, 0, 0), r * 2.0, spring, 0.0)
+	var segs := 10
+	var c := at + Vector3(0, spring, -0.73)
+	for i in segs:
+		var a0 := PI * i / segs
+		var a1 := PI * (i + 1) / segs
+		_tri("paint", c, c + Vector3(cos(a1) * r, sin(a1) * r, 0), c + Vector3(cos(a0) * r, sin(a0) * r, 0),
+			glass_col.darkened(0.2), [], Vector3(0, 0, -1))
+	_box("paint", Vector3(r * 2.0 + 0.2, 0.15, 0.1), c + Vector3(0, 0, -0.03), stone.darkened(0.3))  # transom bar
+
+
+## The top of a postmodern tower over a w by d roof at height y:
+##   gable    a pitched copper roof with glass gable ends (a 1980s nod to
+##            the gabled skyscraper tops of the 1920s)
+##   pyramid  a stepped base under a copper or glass pyramid
+##   spires   two slim spires on the street corners (Chase Tower)
+##   stepped  three shrinking tiers and a lantern
+func _tw_crown(kind: String, w: float, d: float, cz: float, y: float, stone: Color, glass_col: Color) -> void:
+	match kind:
+		"gable":
+			var h := minf(w, 30.0) * 0.35
+			var hw := w * 0.5
+			var f := Vector3(0, 0, cz - d * 0.5)
+			var bk := Vector3(0, 0, cz + d * 0.5)
+			for e in [[f, Vector3(0, 0, -1)], [bk, Vector3(0, 0, 1)]]:
+				var z: Vector3 = e[0]
+				_tri("paint", z + Vector3(-hw, y, 0), z + Vector3(hw, y, 0), z + Vector3(0, y + h, 0), glass_col.lightened(0.1), [], e[1])
+			for sx in [-1.0, 1.0]:
+				_quad("roof", Vector3(sx * hw, y, f.z - 0.3), Vector3(sx * hw, y, bk.z + 0.3), Vector3(0, y + h, bk.z + 0.3),
+					Vector3(0, y + h, f.z - 0.3), TW_COPPER, [], Vector3(sx, 1, 0))
+			_tw_mast(Vector3(0, y + h, cz), 8.0)
+		"pyramid":
+			var cw := w
+			var cd := d
+			var yy := y
+			for k in 2:
+				cw -= 3.0
+				cd -= 3.0
+				_box("brick", Vector3(cw, 3.0, cd), Vector3(0, yy + 1.5, cz), stone)
+				yy += 3.0
+			var top_col := TW_COPPER if rng.randf() < 0.6 else glass_col.lightened(0.15)
+			_tw_pyramid(Vector3(0, yy, cz), cw, cd, minf(cw, cd) * 0.75, top_col)
+		"spires":
+			_box("brick", Vector3(w - 2.0, 4.0, d - 2.0), Vector3(0, y + 2.0, cz), stone)
+			for sx in [-1.0, 1.0]:
+				var b := Vector3(sx * (w * 0.5 - 4.0), y + 4.0, cz - d * 0.5 + 4.0)
+				_box("brick", Vector3(4.0, 6.0, 4.0), b + Vector3(0, 3.0, 0), stone.lightened(0.05))
+				_tw_pyramid(b + Vector3(0, 6.0, 0), 4.0, 4.0, 16.0, stone.lightened(0.1))
+				_tw_mast(b + Vector3(0, 22.0, 0), 6.0)
+		_:
+			var cw := w
+			var cd := d
+			var yy := y
+			for k in 3:
+				cw *= 0.72
+				cd *= 0.72
+				_box("brick", Vector3(cw, 3.2, cd), Vector3(0, yy + 1.6, cz), stone)
+				for face in _tw_faces(cw, cd, cz):
+					_glass(face[0] + Vector3(0, yy + 1.8, 0), face[1], face[2] * 0.6, 1.6, 0.0)
+				yy += 3.2
+			_tw_pyramid(Vector3(0, yy, cz), cw, cd, cw * 0.6, TW_COPPER)
+
+
+## A four-sided pyramid of base w by d rising h from `base`.
+func _tw_pyramid(base: Vector3, w: float, d: float, h: float, col: Color) -> void:
+	var apex := base + Vector3(0, h, 0)
+	var c := [base + Vector3(-w * 0.5, 0, -d * 0.5), base + Vector3(w * 0.5, 0, -d * 0.5),
+		base + Vector3(w * 0.5, 0, d * 0.5), base + Vector3(-w * 0.5, 0, d * 0.5)]
+	for i in 4:
+		var a: Vector3 = c[i]
+		var b: Vector3 = c[(i + 1) % 4]
+		_tri("roof", a, b, apex, col, [], (a + b) * 0.5 - base + Vector3(0, h * 0.3, 0))
+
+
+## A steel antenna mast with an aircraft warning light.
+func _tw_mast(at: Vector3, h: float) -> void:
+	_box("metal", Vector3(0.25, h, 0.25), at + Vector3(0, h * 0.5, 0), TW_STEEL)
+	_box("paint", Vector3(0.4, 0.4, 0.4), at + Vector3(0, h + 0.2, 0), Color("#c0281e"))
+
+
+# ---------------------------------------------------------------- podium towers
+
+## A 2000s-2020s tower on a podium that fills the whole assembled site:
+## shops and the lobby in glass at the sidewalk, parking decks above them
+## behind metal screens, a roof deck (a pool and lawn for flats), and the
+## tower set back on the podium in floor-to-ceiling glass with its slab
+## edges showing: offices with vertical fins and a lit blade over the
+## mechanical screen, flats with glass balconies at the corners.
+func _tw_podium(to_curb: float, width: float, storeys: int) -> void:
+	var pw := width - 1.0
+	var pd := minf(depth - 2.0, rng.randf_range(34.0, 46.0))
+	var tw := minf(pw - 4.0, rng.randf_range(26.0, 38.0) if _homes else rng.randf_range(24.0, 32.0))
+	var td := minf(pd - 8.0, rng.randf_range(18.0, 22.0) if _homes else rng.randf_range(20.0, 26.0))
+	if pw < 26.0 or tw < 16.0 or td < 14.0:
+		_tw_glass(to_curb, width, storeys)
+		return
+	var zf := 0.4
+	var levels := 4 if storeys >= 16 else 3
+	var ground_h := 5.5
+	var park_h := 3.2
+	var ph := ground_h + park_h * (levels - 1)
+	var floor_h := 3.1 if _homes else 4.0
+	var top := ph + floor_h * maxi(4, storeys - levels)
+	var slack := (pw - tw) * 0.5 - 2.0
+	var tx := 0.0 if slack < 3.0 else rng.randf_range(-slack, slack)
+	var tz := zf + rng.randf_range(4.0, maxf(4.0, pd - td - 3.0)) + td * 0.5
+	var pcz := zf + pd * 0.5
+	var panel := Color(_pick(["#bdb7ac", "#8e9294", "#5a5e62", "#c9c2b4"]))  # precast or metal panel
+	var tint := Color(_pick(["#5f7f8a", "#4f6a74", "#6a8478", "#7b8a90"]))
+	var slab := Color("#d6d3cc") if _homes else Color("#3a3e42")
+	var mech := 7.0
+	var blade := not _homes and rng.randf() < 0.6
+	if _far:
+		_tw_far_box(Vector3(pw, ph, pd), Vector3(0, ph * 0.5, pcz), panel, 0.3)
+		_tw_far_box(Vector3(tw, top - ph, td), Vector3(tx, (ph + top) * 0.5, tz), tint.darkened(0.3), 1.0)
+		_tw_far_box(Vector3(tw - 2.0, mech, td - 2.0), Vector3(tx, top + mech * 0.5, tz), Color("#3a3f44"), 0.0)
+		return
+	_downtown_walk(to_curb, width, zf)
+	# The podium: storefronts at the sidewalk, parking decks above.
+	_box("paint", Vector3(pw, ph, pd), Vector3(0, ph * 0.5, pcz), panel)
+	var shops := maxi(2, roundi(pw / 9.0))
+	for i in shops:
+		var x := -pw * 0.5 + (i + 0.5) * pw / shops
+		_glass(Vector3(x, 2.5, zf - 0.03), Vector3(-1, 0, 0), pw / shops - 1.2, 4.0, rng.randf_range(0.0, 0.15))
+	for s in [-1.0, 1.0]:
+		_glass(Vector3(s * (pw * 0.5 + 0.03), 2.5, zf + 5.0), Vector3(0, 0, -s), 8.0, 4.0, 0.0)  # corner shops wrap round
+	_box("paint", Vector3(pw - 1.0, 0.25, 1.8), Vector3(0, ground_h - 0.6, zf - 0.9), Color("#2b2d2f"))  # canopy
+	_sign(Vector3(tx, ground_h - 0.2, zf - 1.85), 5.0, 0.6)
+	var ramp_x := pw * 0.5 - 4.0 if tx < 0.0 else -pw * 0.5 + 4.0
+	_box("paint", Vector3(6.0, 3.8, 0.1), Vector3(ramp_x, 1.9, zf - 0.05), Color("#1c1d1e"))  # the garage door
+	for lv in range(1, levels):
+		var y := ground_h + park_h * (lv - 1)
+		for face in [[Vector3(0, 0, zf - 0.03), Vector3(-1, 0, 0), pw], [Vector3(-pw * 0.5 - 0.03, 0, pcz), Vector3(0, 0, 1), pd],
+				[Vector3(pw * 0.5 + 0.03, 0, pcz), Vector3(0, 0, -1), pd]]:
+			var out: Vector3 = face[1].cross(Vector3.UP)
+			var c: Vector3 = face[0] + Vector3(0, y + park_h * 0.55, 0)
+			var r: Vector3 = face[1] * (face[2] - 1.2) * 0.5
+			var u := Vector3(0, park_h * 0.3, 0)
+			_quad("paint", c - r - u + out * 0.01, c + r - u + out * 0.01, c + r + u + out * 0.01, c - r + u + out * 0.01, Color("#232527"), [], out)
+			if fine:
+				# Vertical screen fins in front of the open deck.
+				var n := int((face[2] - 1.2) / 0.9)
+				for i in n:
+					var p: Vector3 = c - r + face[1] * (i + 0.5) * (face[2] - 1.2) / n + out * 0.15
+					_box("metal", Vector3(0.12, park_h * 0.62, 0.3), p, panel.lightened(0.12), _tw_yaw(face[1]))
+	_box("paint", Vector3(pw + 0.2, 0.9, pd + 0.2), Vector3(0, ph + 0.45, pcz), panel.darkened(0.1))  # parapet
+	# The roof deck around the tower.
+	_quad("paint", Vector3(-pw * 0.5 + 0.4, ph + 0.92, zf + 0.4), Vector3(pw * 0.5 - 0.4, ph + 0.92, zf + 0.4),
+		Vector3(pw * 0.5 - 0.4, ph + 0.92, zf + pd - 0.4), Vector3(-pw * 0.5 + 0.4, ph + 0.92, zf + pd - 0.4), Color("#a39e94"), [], Vector3.UP)
+	var deck_z := zf + 3.0
+	if tz - td * 0.5 - deck_z > 3.0:
+		_quad("paint", Vector3(-pw * 0.5 + 2.0, ph + 0.95, deck_z), Vector3(pw * 0.5 - 2.0, ph + 0.95, deck_z),
+			Vector3(pw * 0.5 - 2.0, ph + 0.95, tz - td * 0.5 - 1.0), Vector3(-pw * 0.5 + 2.0, ph + 0.95, tz - td * 0.5 - 1.0),
+			Color("#6f8a52"), [], Vector3.UP)  # green roof
+	if _homes:
+		var px := -tx * 0.5
+		_quad("paint", Vector3(px - 6.0, ph + 0.97, deck_z + 0.5), Vector3(px + 6.0, ph + 0.97, deck_z + 0.5),
+			Vector3(px + 6.0, ph + 0.97, deck_z + 3.5), Vector3(px - 6.0, ph + 0.97, deck_z + 3.5), Color("#3f8fb0"), [], Vector3.UP)  # the pool
+	var sx := -pw * 0.5 + 3.0
+	while sx < pw * 0.5 - 3.0:
+		if absf(sx - tx) > tw * 0.5 + 1.0:
+			_shrub(Vector3(sx, ph + 0.95, zf + 1.5), rng.randf_range(0.5, 0.8))
+		sx += rng.randf_range(3.0, 5.0)
+	# The tower: a dark core wrapped in glass floor by floor, slab edges between.
+	_box("paint", Vector3(tw, top - ph, td), Vector3(tx, (ph + top) * 0.5, tz), Color("#1c1e20"))
+	var floors := int((top - ph) / floor_h)
+	for f in floors:
+		var y0 := ph + f * floor_h
+		_box("paint", Vector3(tw + 0.1, 0.32, td + 0.1), Vector3(tx, y0 + 0.16, tz), slab)
+		for face in _tw_faces(tw, td, tz, tx):
+			_glass(face[0] + Vector3(0, y0 + 0.32 + (floor_h - 0.32) * 0.5, 0), face[1], face[2] - 0.2, floor_h - 0.4, rng.randf_range(0.05, 0.5))
+	if _homes:
+		# Glass balconies stacked at the four corners.
+		for f in range(1, floors):
+			var y0 := ph + f * floor_h
+			for cxs in [-1.0, 1.0]:
+				for czs in [-1.0, 1.0]:
+					var c := Vector3(tx + cxs * (tw * 0.5 - 2.5), y0, tz + czs * (td * 0.5 + 0.8))
+					_box("paint", Vector3(5.0, 0.2, 1.6), c + Vector3(0, 0.1, 0), slab)
+					_glass(c + Vector3(0, 0.75, czs * 0.8), Vector3(czs, 0, 0), 5.0, 1.05, 0.0)
+	else:
+		# Vertical aluminium fins on the street and back faces, 1.5 m apart.
+		for face in _tw_faces(tw, td, tz, tx):
+			if not face[3]:
+				continue
+			var n := maxi(4, roundi(face[2] / 1.5))
+			var out: Vector3 = face[1].cross(Vector3.UP)
+			for i in n + 1:
+				var c: Vector3 = face[0] + face[1] * (-face[2] * 0.5 + i * face[2] / n) + out * 0.25
+				c.y = (ph + top) * 0.5
+				_box("metal", Vector3(0.1, top - ph, 0.45), c, Color("#a9adb0"), _tw_yaw(face[1]))
+	# The mechanical screen on top, and on some offices a lit blade.
+	_box("metal", Vector3(tw - 2.0, mech, td - 2.0), Vector3(tx, top + mech * 0.5, tz), Color("#3a3f44"))
+	for face in _tw_faces(tw - 2.0, td - 2.0, tz, tx):
+		var n := maxi(4, roundi(face[2] / 0.8))
+		var out: Vector3 = face[1].cross(Vector3.UP)
+		for i in n:
+			var c: Vector3 = face[0] + face[1] * (-face[2] * 0.5 + (i + 0.5) * face[2] / n) + out * 0.05
+			c.y = top + mech * 0.5
+			if fine:
+				_box("metal", Vector3(0.08, mech - 0.4, 0.2), c, Color("#5b6166"), _tw_yaw(face[1]))
+	_tw_roof(tw - 2.0, td - 2.0, tz, top + mech)
+	if blade:
+		var bx := tx + (tw * 0.5 - 0.6) * (1.0 if rng.randf() < 0.5 else -1.0)
+		_box("paint", Vector3(0.8, mech + 12.0, td * 0.8), Vector3(bx, top + (mech + 12.0) * 0.5 - 2.0, tz), Color("#d9dde0"))
+
+
 # ---------------------------------------------------------------- parts
 
 ## A box for the far version: four walls with their own metre UVs (along
@@ -401,7 +751,7 @@ func _tw_far_box(size: Vector3, center: Vector3, col: Color, windows: float) -> 
 	var y0 := center.y - h.y
 	var y1 := center.y + h.y
 	col.a = windows
-	for face in _tw_faces(size.x, size.z, center.z):
+	for face in _tw_faces(size.x, size.z, center.z, center.x):
 		var c: Vector3 = face[0]
 		var r: Vector3 = face[1] * face[2] * 0.5
 		var l: float = face[2]
@@ -416,12 +766,12 @@ func _tw_far_box(size: Vector3, center: Vector3, col: Color, windows: float) -> 
 
 ## The four faces of a box footprint: [centre at y 0, along (right as seen
 ## from outside), length, is it the street front or back].
-func _tw_faces(w: float, d: float, cz: float) -> Array:
+func _tw_faces(w: float, d: float, cz: float, cx := 0.0) -> Array:
 	return [
-		[Vector3(0, 0, cz - d * 0.5 - 0.03), Vector3(-1, 0, 0), w, true],
-		[Vector3(0, 0, cz + d * 0.5 + 0.03), Vector3(1, 0, 0), w, true],
-		[Vector3(-w * 0.5 - 0.03, 0, cz), Vector3(0, 0, 1), d, false],
-		[Vector3(w * 0.5 + 0.03, 0, cz), Vector3(0, 0, -1), d, false],
+		[Vector3(cx, 0, cz - d * 0.5 - 0.03), Vector3(-1, 0, 0), w, true],
+		[Vector3(cx, 0, cz + d * 0.5 + 0.03), Vector3(1, 0, 0), w, true],
+		[Vector3(cx - w * 0.5 - 0.03, 0, cz), Vector3(0, 0, 1), d, false],
+		[Vector3(cx + w * 0.5 + 0.03, 0, cz), Vector3(0, 0, -1), d, false],
 	]
 
 

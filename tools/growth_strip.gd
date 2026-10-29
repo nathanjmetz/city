@@ -12,6 +12,9 @@ const LADDERS := {
 	"office": [["office", 0, 7.0], ["office", 1, 7.0], ["office", 2, 7.0], ["office", 3, 12.0], ["office", 4, 16.0]],
 	"apartments": [["apartments", 0, 2.0], ["apartments", 1, 2.0], ["apartments", 2, 2.0], ["apartments", 3, 4.4], ["apartments", 4, 6.6]],
 	"main": [["shop", 0, 2.2], ["shop", 1, 2.2], ["mixed_use", 0, 3.0], ["mixed_use", 1, 5.0], ["mixed_use", 2, 5.0]],
+	# One 30-storey office in every form, on the same assembled site.
+	"forms": [["office", 4, 16.0, "chicago"], ["office", 4, 16.0, "deco"], ["office", 4, 16.0, "glass"], ["office", 4, 16.0, "pomo"], ["office", 4, 16.0, "podium"]],
+	"homeforms": [["apartments", 4, 6.6, "glass"], ["apartments", 4, 6.6, "podium"], ["apartments", 3, 4.4, "podium"], ["apartments", 3, 4.4, "glass"]],
 	"homes": [["house", 0, 0.9], ["house", 1, 0.9], ["row_home", 0, 1.2], ["row_home", 1, 1.2], ["apartments", 0, 2.0]],
 }
 const BASE_W := {"office": 30.0, "apartments": 30.0, "mixed_use": 20.0, "shop": 20.0, "house": 20.0, "row_home": 24.0}
@@ -22,7 +25,14 @@ var _frames := 0
 
 func _init() -> void:
 	var args := OS.get_cmdline_user_args()
-	var ladder: Array = LADDERS.get(args[1] if args.size() > 1 else "office", LADDERS.office)
+	var name := args[1] if args.size() > 1 else "office"
+	var ladder: Array = LADDERS.get(name, LADDERS.office)
+	# "form:pomo" (or "homeform:podium"): one form at 12, 16, 24 and 30 storeys.
+	if name.contains(":"):
+		var t := "apartments" if name.begins_with("home") else "office"
+		ladder = []
+		for lv in ([3, 3, 4, 4] if t == "apartments" else [3, 3, 4, 4]):
+			ladder.append([t, lv, 16.0 if lv == 4 else 12.0, name.get_slice(":", 1)])
 	var seed := int(args[2]) if args.size() > 2 else 1
 	var era := args[3] if args.size() > 3 else "postwar"
 	var world := Node3D.new()
@@ -52,7 +62,11 @@ func _init() -> void:
 		var w: float = widths[i]
 		var storeys := int(BuildingTypes.TYPES[st[0]].stages[st[1]].storeys)
 		var units := maxi(2, floori(w / float(BuildingTypes.TYPES.row_home.unit_w)))
-		var meshes := BuildingView.build_for(st[0], storeys, seed * 100 + i, 3.9, {"width": w, "depth": DEPTH, "era": era}, {}, units)
+		var meshes: Array
+		if st.size() > 3:
+			meshes = TowerBuilder.build_tower(seed * 100 + i, 3.9, {"width": w, "depth": DEPTH, "era": era}, storeys, {}, st[3], st[0] == "apartments")
+		else:
+			meshes = BuildingView.build_for(st[0], storeys, seed * 100 + i, 3.9, {"width": w, "depth": DEPTH, "era": era}, {}, units)
 		var at := Vector3(x - w * 0.5, 0, 0)
 		x -= w + 6.0
 		for m in meshes.slice(0, 2):
