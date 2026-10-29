@@ -110,12 +110,13 @@ const TYPES := {
 	# (a 10,000 sq ft shop to a 40,000-80,000 sq ft plant). "lot" is the
 	# land (m²) each stage needs. Jobs at about 500-700 sq ft of plant each
 	# (ULI/NAIOP employment densities for light manufacturing): ~1.5 acres
-	# for a 30-60 job plant, ~4 acres for 80-140 (Census County Business
+	# for a 30-60 job plant, ~3 acres for 70-110 (the most one 60 m deep
+	# industrial frontage holds, 200 m along the street) (Census County Business
 	# Patterns: most Indiana manufacturing plants have 20-99 workers).
 	"factory": {"zone": IND, "name": "Factory", "cover": 0.5, "stages": [
 		{"name": "Factory", "storeys": 1, "cap": [18, 36]},
 		{"name": "Factory with an addition", "storeys": 1, "cap": [32, 60], "lot": 6000.0},
-		{"name": "Plant", "storeys": 1, "cap": [80, 140], "lot": 16000.0},
+		{"name": "Plant", "storeys": 1, "cap": [70, 110], "lot": 12000.0},
 	]},
 }
 

@@ -19,7 +19,8 @@ const HUB_NAMES := {"rail": "Railroad", "bus": "Bus company", "family": "Family 
 ## Leader requests (asks of the town) by kind (LeaderAsks, Heritage).
 const ASK_NAMES := {"abatement": "Company", "pave": "Farm", "signal": "Business", "festival": "Main Street",
 	"district": "Historical society", "demolish": "Building owner", "incorporate": "Petition",
-	"city_vote": "Petition", "special_census": "Town hall", "second_class": "City hall", "consent": "City council"}
+	"city_vote": "Petition", "special_census": "Town hall", "second_class": "City hall", "consent": "City council",
+	"law": "Town council"}
 
 var sim: CitySim
 var view := PermitView.new()

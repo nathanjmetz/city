@@ -105,7 +105,8 @@ var _foot := []
 ## already fills are left as they are.
 func _expand(chain: String) -> void:
 	var halls: Array = _dr_halls + _foot
-	if halls.is_empty():
+	# A sawmill grows its log yard instead (_log_yard).
+	if halls.is_empty() or chain == "sawmill":
 		return
 	var area := 2.0 * half * depth
 	var built := 0.0
@@ -130,20 +131,37 @@ func _expand(chain: String) -> void:
 		for band in bands:
 			if band.size.x >= 20.0 and band.size.y >= 40.0 and band.get_area() > best.get_area():
 				best = band
+		# On a shallow lot (the 60 m industrial plat) there's no room for a
+		# truck court too: a production wing goes up beside the hall, flush
+		# with its front and joined by a link, its doors at grade.
+		var wing := false
+		if best.get_area() <= 0.0:
+			for band in bands.slice(0, 2):
+				if band.size.x >= 20.0 and band.size.y >= 26.0 and band.get_area() > best.get_area():
+					best = band
+					wing = true
 		if best.get_area() <= 0.0:
 			break
 		# The hall at the back of its band, a truck court in front of it.
-		var w := minf(best.size.x, 90.0)
-		var d := minf(best.size.y - 22.0, 70.0)
+		var court := 0.0 if wing else 22.0
+		var w := minf(best.size.x, 90.0 if not wing else 60.0)
+		var d := minf(best.size.y - (6.0 if wing else 22.0), 70.0)
 		var cx := best.position.x + w * 0.5 if best.position.x > box.end.x - 1.0 else best.end.x - w * 0.5
 		if best.position.y >= box.end.y:
 			cx = clampf(box.get_center().x, -half + 2.0 + w * 0.5, half - 2.0 - w * 0.5)
-		var z0 := best.position.y + 22.0
+		var z0 := best.position.y + court
 		var corners := [Vector3(cx - w * 0.5, 0, z0), Vector3(cx + w * 0.5, 0, z0), Vector3(cx - w * 0.5, 0, z0 + d),
 			Vector3(cx + w * 0.5, 0, z0 + d)]
 		if corners.any(func(c): return not _in_lot(c, 1.0)):
 			break
-		_plant_addition(chain, cx, z0, w, d, maxf(eave, 8.0) + rng.randf_range(0.5, 2.5), adds)
+		var h := maxf(eave, 8.0) + rng.randf_range(0.5, 2.5)
+		_plant_addition(chain, cx, z0, w, d, h, adds, not wing)
+		if wing:
+			# The link back to the hall: a low enclosed passage.
+			var right := cx > box.get_center().x
+			var lx0: float = box.end.x if right else cx + w * 0.5
+			var lx1: float = cx - w * 0.5 if right else box.position.x
+			_box("paint", Vector3(lx1 - lx0 + 0.6, 5.0, 9.0), Vector3((lx0 + lx1) * 0.5, 2.5, z0 + 9.0), CONCRETE.darkened(0.12))
 		var r := Rect2(cx - w * 0.5, z0, w, d)
 		box = box.merge(r)
 		built += w * d
@@ -159,7 +177,7 @@ func _expand(chain: String) -> void:
 ## One addition: a tilt-up concrete hall (the 1990s on) or a metal one,
 ## dock doors with seals across its front on a concrete truck court, some
 ## with a trailer backed in.
-func _plant_addition(chain: String, cx: float, z0: float, w: float, d: float, h: float, k: int) -> void:
+func _plant_addition(chain: String, cx: float, z0: float, w: float, d: float, h: float, k: int, docks_out := true) -> void:
 	var cz := z0 + d * 0.5
 	if chain == "mill" or (k + rng.randi()) % 2 == 0:
 		var panel := CONCRETE.darkened(rng.randf_range(0.0, 0.08))
@@ -174,8 +192,14 @@ func _plant_addition(chain: String, cx: float, z0: float, w: float, d: float, h:
 	else:
 		_hall(cx, cz, w, d, h, Color(_pick(METAL_WALL)))
 	# The truck court and the docks: a door every 4.3 m (12 ft centres).
-	_flat_rect("drive", cx - w * 0.5, cx + w * 0.5, z0 - 20.0, z0, 0.08)
-	var docks := clampi(int((w - 8.0) / 4.3), 2, 16)
+	# A wing has grade-level doors onto a short apron instead.
+	var docks := clampi(int((w - 8.0) / 4.3), 2, 16) if docks_out else 0
+	if docks_out:
+		_flat_rect("drive", cx - w * 0.5, cx + w * 0.5, z0 - 20.0, z0, 0.08)
+	else:
+		_flat_rect("drive", cx - w * 0.5, cx + w * 0.5, z0 - 7.0, z0, 0.08)
+		for i in 2:
+			_door(cx + (i - 0.5) * w * 0.45, z0)
 	for i in docks:
 		var x := cx - (docks - 1) * 2.15 + i * 4.3
 		# The door shows in the dark foam seal that stands out round it.
@@ -259,6 +283,8 @@ func _mill(to_curb: float) -> void:
 	_box("paint", Vector3((n - 1) * 6.6, sh - 0.3, 3.4), Vector3(sx0 + (n - 1) * 3.3, (sh - 0.3) * 0.5, sz), CONCRETE.darkened(0.04))
 	_box("paint", Vector3(6.0, 9.0, 6.0), Vector3(sx0 + (n - 1) * 6.6, sh + 4.55, sz), CONCRETE.darkened(0.02))
 	_box("metal", Vector3(6.4, 0.4, 6.4), Vector3(sx0 + (n - 1) * 6.6, sh + 9.3, sz), Color("#8e9aa3"))
+	# What stands on the ground, so later additions keep clear of it.
+	_foot.append([sx0 + (n - 1) * 3.3, sz - 4.0, (n - 1) * 6.6 + 2.0 * r, 2.0 * r + 8.0, 10.0])
 	# Steel bins behind, cone roofs.
 	var bins := rng.randi_range(1, 3)
 	for i in bins:
@@ -266,6 +292,7 @@ func _mill(to_curb: float) -> void:
 		if _in_lot(c, 7.0):
 			_cylinder("metal", c, 6.0, 11.0, STEEL_BIN, 24)
 			_cone_top(c + Vector3(0, 11.0, 0), 6.2, 3.2, STEEL_BIN.lightened(0.08))
+			_foot.append([c.x, c.z, 12.0, 12.0, 10.0])
 	# The mill building beside the silos, the dump shed in front of them.
 	var mw := rng.randf_range(16.0, 20.0)
 	_hall(sx0 - r - 3.0 - mw * 0.5, sz + 2.0, mw, 18.0, 10.0, Color(_pick(METAL_WALL)))
@@ -320,6 +347,49 @@ func _sawmill(to_curb: float) -> void:
 	_door(kx - 2.2, kz - 6.0, 4.0, 4.6)
 	_door(kx + 2.2, kz - 6.0, 4.0, 4.6)
 	_cone_top(Vector3(sx + sw * 0.5 + 6.0, 0.0, sz), 5.0, 4.0, SAWDUST, "paint", 14)
+	_log_yard(sx - sw * 0.5 - 4.0, zf + 4.0, back)
+
+
+## A grown sawmill's log yard: on a wide lot the logs bought ahead for the
+## winter (when the woods are too wet to log, mills stock months of logs)
+## lie in long decks across the yard, a loader's lane between rows, and
+## more stickered lumber air-drying by the shed. Hardwood mills in
+## southern Indiana keep 5-10 acre yards.
+func _log_yard(x1: float, z0: float, back: float) -> void:
+	var x0 := -half + 3.0
+	if x1 - x0 < 18.0:
+		return
+	var z := z0
+	var row := 0
+	while z + 7.5 <= back:
+		var x := x1 - 9.0
+		while x - 8.0 >= x0:
+			if (row + int(x)) % 7 != 0:
+				_log_deck(Vector3(x, 0, z + 3.75), rng.randi_range(2, 4))
+			x -= 18.0
+		z += 13.0
+		row += 1
+	# Lumber air-drying under tin, nearest the mill.
+	for k in 3:
+		var c := Vector3(x1 - 4.0 - k * 3.4, 0, back - 4.0)
+		if _in_lot(c, 3.0):
+			for layer in 5:
+				_box("paint", Vector3(2.4, 0.42, 4.8), c + Vector3(0, 0.25 + layer * 0.5, 0), LUMBER)
+				_box("paint", Vector3(2.5, 0.08, 4.9), c + Vector3(0, 0.5 + layer * 0.5, 0), LUMBER.darkened(0.35))
+			_box("metal", Vector3(2.9, 0.05, 5.2), c + Vector3(0, 2.85, 0), Color("#8a8f92"))
+
+
+## One deck of logs 7.5 m long, `high` layers, 16 m along the row: the pile
+## as one bark mass with log ends showing on its face.
+func _log_deck(c: Vector3, high: int) -> void:
+	var hgt := high * 0.8
+	_box("paint", Vector3(15.0, hgt, 7.4), c + Vector3(0, hgt * 0.5, 0), BARK)
+	for layer in high:
+		var y := 0.45 + layer * 0.8
+		var k := -7.0 + (layer % 2) * 0.5
+		while k < 7.0:
+			_box("paint", Vector3(0.72, 0.72, 0.05), c + Vector3(k, y, -3.75), LOG_END)
+			k += 1.6
 
 
 ## Plastics compounding plant.

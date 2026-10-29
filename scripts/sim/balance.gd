@@ -3093,3 +3093,34 @@ const CHARTER_VOTE_COVER := 0.2
 const CHARTER_VOTE_CARE := 0.1
 const CHARTER_VOTE_HAPPY := 0.1
 const CHARTER_VOTE_BOIL := 0.5
+
+# --- Town laws (TownLaws) -----------------------------------------------------
+# Brawn, 2026-10-29 (his pick from the borrowed features): the council passes
+# real ordinances, each with a trade-off. The game never shows statute numbers.
+
+## The council takes the same law up again at most this often, in months.
+const LAW_ASK_COOLDOWN := 12
+## Hours of the sim day the council counts trucks cutting through
+## neighborhood streets (daytime freight hours).
+const LAW_COUNT_HOURS := [9, 11, 13, 15]
+## Residents petition once a street has this many through trucks counted in
+## a month.
+const LAW_TRUCK_ASK_MIN := 4
+## Truck route signs: about twenty "No trucks" and "Truck route" signs at the
+## edges of the neighborhoods, about $300 each installed.
+const LAW_TRUCK_SIGNS := 6_000
+## How much longer a neighborhood street counts for a truck passing through
+## (only the middle of a trip: a truck delivering on the street still comes
+## in). Four times its drive keeps trucks off it unless it saves a long way
+## round, as with a real posted route and its detour.
+const LAW_TRUCK_STREET_MULT := 4.0
+## Impact fee per new home. Indiana park and road impact fees (IC 36-7-4-1300
+## on) run about $1,000 to $4,000 a home; $2,000 is a typical small-city park
+## plus road fee.
+const LAW_IMPACT_FEE := 2_000
+## Builders pass a fee on to buyers, so fewer homes start: studies of US
+## impact fees find a few percent fewer starts per $1,000 of fee.
+const LAW_IMPACT_PACE := 0.9
+## The plan commission asks for an impact fee after this many new homes in a
+## year.
+const LAW_IMPACT_ASK_HOMES := 40
