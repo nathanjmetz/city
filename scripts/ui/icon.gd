@@ -124,6 +124,23 @@ func _draw() -> void:
 			draw_arc(P.call(0.95, 0.95), s * 0.62, PI, PI * 1.5, 24, color, w, true)
 			draw_arc(P.call(0.95, 0.95), s * 0.32, PI, PI * 1.5, 24, color, w, true)
 			draw_arc(P.call(0.95, 0.95), s * 0.47, PI * 1.05, PI * 1.45, 12, Color(color, 0.6), w * 0.6, true)
+		"scurve":
+			# A road that bends one way then back: two S-shaped edges and a
+			# dashed centre line.
+			for k in [-0.13, 0.0, 0.13]:
+				var pts := PackedVector2Array()
+				for i in 17:
+					var t := i / 16.0
+					var u := 1.0 - t
+					# Cubic from bottom left up to top right, bending each way.
+					var q: Vector2 = Vector2(0.12, 0.9) * (u * u * u) + Vector2(0.95, 0.75) * (3.0 * u * u * t) \
+						+ Vector2(0.05, 0.25) * (3.0 * u * t * t) + Vector2(0.88, 0.1) * (t * t * t)
+					pts.append(P.call(q.x + k, q.y))
+				if k == 0.0:
+					for i in range(0, 16, 4):
+						draw_polyline(pts.slice(i, i + 3), Color(color, 0.6), w * 0.6, true)
+				else:
+					draw_polyline(pts, color, w, true)
 		"grid":
 			for i in 3:
 				var t := 0.18 + i * 0.32

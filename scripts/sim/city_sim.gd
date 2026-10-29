@@ -437,6 +437,15 @@ func _apply_cmd(cmd: Dictionary) -> bool:
 					economy.money -= shapes_cost(pieces, _road(cmd))
 					if cmd.get("join", false):
 						_join_crossings(pieces)
+		"build_roads":
+			# Roads drawn as one, like an S-curve's two halves: one command,
+			# so one undo and, online, all of them or none.
+			var curves := []
+			for r in cmd.get("roads", []):
+				if not (r is Array and r.size() == 3):
+					return false
+				curves.append([_v(r[0]), _v(r[1]), _v(r[2])])
+			ok = _build_roads(curves, _road(cmd), bool(cmd.get("over", false)), bool(cmd.get("join", false)))
 		"join_county":
 			# A road drawn onto a county road (hub roads too).
 			ok = _join_county(_v(cmd.at), int(cmd.get("way", 0)))
@@ -3857,6 +3866,52 @@ static func shapes_cost(curves: Array, type: int) -> int:
 ## upgrade, and only the rest is new road. True if anything changed. With
 ## `retype` false the old roads keep their type (a county road joined
 ## along a street the player drew onto its line stays that street).
+## Builds roads drawn as one (an S-curve's halves), all or none: every one
+## meets the road rules, raised ones climbing over what they cross, and the
+## town can pay for them all, before any goes in.
+func _build_roads(curves: Array, type: int, over: bool, join: bool) -> bool:
+	if curves.is_empty() or curves.size() > 8:
+		return false
+	var plans := []
+	var cost := 0
+	for c in curves:
+		var pieces := [c]
+		if over:
+			pieces = Overpass.plan(self, c, type).pieces
+		var why := pieces_problem(pieces, type)
+		if why != "" and not why.begins_with("Not enough money"):
+			return false
+		cost += shapes_cost(pieces, type)
+		plans.append(pieces)
+	if cost > economy.money:
+		return false
+	var roads := network.snapshot()
+	var money := economy.money
+	var built := []
+	network.begin_batch()
+	for i in curves.size():
+		var pieces: Array = plans[i]
+		var one := false
+		if pieces.size() == 1:
+			one = _build_over(curves[i], type)
+		else:
+			for q in pieces:
+				one = network.build_road(q[0], q[1], q[2], type) or one
+			if one:
+				economy.money -= shapes_cost(pieces, type)
+		if not one:
+			# Checked above, so this shouldn't happen; if it does, none of it stays.
+			network.restore(roads)
+			economy.money = money
+			network.end_batch()
+			return false
+		built.append_array(pieces)
+	network.end_batch()
+	if join:
+		_join_crossings(built)
+	return true
+
+
 func _build_over(c: Array, type: int, retype := true) -> bool:
 	var n := maxi(2, ceili(Vector2(c[2].x - c[0].x, c[2].z - c[0].z).length() / OVERLAY_STEP))
 	var along := []  # per sample: the segment it runs along, or -1

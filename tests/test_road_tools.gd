@@ -345,10 +345,104 @@ func _init() -> void:
 	_check(absf(RoadTool.steepest_grade(deck, flat).grade - 0.05) < 0.002, "a bridge climbing 5 m in 100 m reads 5%")
 	_check(RoadTool.steepest_grade([[Vector3.ZERO, Vector3(5, 0, 0), Vector3(10, 0, 0)]], ramp).grade > 0.05,
 		"a road shorter than a station still reads its grade")
+	_s_curve()
 	print("ALL TESTS PASSED" if not _failed else "TESTS FAILED")
 	quit(1 if _failed else 0)
 
 var _failed := false
+
+## The S-curve (CS2's complex curve; Nathan 2026-10-26: "i want all the
+## same street and road options as CS2"): start, two bends, end, built as
+## two curved roads that meet with no kink.
+func _s_curve() -> void:
+	var a := Vector3(0, 0, 0)
+	var b1 := Vector3(150, 0, 0)
+	var b2 := Vector3(50, 0, 200)
+	var e := Vector3(200, 0, 200)
+	var halves := RoadShapes.s_curve(a, b1, b2, e)
+	_check(halves.size() == 2 and halves[0][0] == a and halves[1][2] == e and halves[0][2] == halves[1][0],
+		"an S-curve is two roads from start to end that meet")
+	var t_in := RoadNetwork.bezier_tangent(halves[0][0], halves[0][1], halves[0][2], 1.0).normalized()
+	var t_out := RoadNetwork.bezier_tangent(halves[1][0], halves[1][1], halves[1][2], 0.0).normalized()
+	_check(t_in.dot(t_out) > 0.999, "the two halves meet with no kink (dot %.4f)" % t_in.dot(t_out))
+	var t0 := RoadNetwork.bezier_tangent(halves[0][0], halves[0][1], halves[0][2], 0.0).normalized()
+	var t3 := RoadNetwork.bezier_tangent(halves[1][0], halves[1][1], halves[1][2], 1.0).normalized()
+	_check(t0.dot((b1 - a).normalized()) > 0.999 and t3.dot((e - b2).normalized()) > 0.999,
+		"it leaves toward the first bend and arrives from the second")
+	# It bends one way, then back the other.
+	var c0: float = (halves[0][1] - halves[0][0]).cross(halves[0][2] - halves[0][1]).y
+	var c1: float = (halves[1][1] - halves[1][0]).cross(halves[1][2] - halves[1][1]).y
+	_check(signf(c0) != signf(c1), "an S-curve bends one way and then back")
+	var straight := RoadShapes.s_curve(a, Vector3(50, 0, 0), Vector3(150, 0, 0), Vector3(200, 0, 0))
+	_check(absf(straight[0][1].z) < 0.01 and absf(straight[1][1].z) < 0.01, "bends in a line give a straight road")
+
+	# Drawn with the tool: four points, then both halves built and joined.
+	# Off the county roads at the origin (a road joined to one can't be undone).
+	var o := Vector3(500, 0, 400)
+	a += o
+	b1 += o
+	b2 += o
+	e += o
+	var sim := CitySim.new()
+	sim.economy.money = 10_000_000
+	var t := RoadTool.new()
+	t.sim = sim
+	t.network = sim.network
+	t._px = 1.0
+	t.mode = RoadTool.Mode.SCURVE
+	t._points = [a]
+	_check(t._placing_bend(), "the first point after the start is a bend")
+	t._points = [a, b1]
+	_check(t._placing_bend() and t._pending_curves(e).size() == 1, "after one bend the preview is one curve")
+	t._points = [a, b1, b2]
+	_check(not t._placing_bend(), "the fourth point is the end, not a bend")
+	var drawn := t._pending_curves(e)
+	_check(drawn.size() == 2, "with both bends placed the preview is the S-curve")
+	# Money for one half but not both: nothing is built (second reader,
+	# 2026-10-26: half an S-curve got built and couldn't be undone).
+	var half := CitySim.shapes_cost([drawn[0]], RoadStyle.Type.STREET)
+	sim.economy.money = half + 10
+	_check(t._is_valid(drawn[0]) and not t._can_build(drawn), "money for one half only: the S-curve can't be built")
+	sim.economy.money = 10_000_000
+	_check(t._can_build(drawn), "with the money for both, it can")
+	var before := sim.network.segments.size()
+	for curve in drawn:
+		_check(t._is_valid(curve), "each half can be built")
+	# One S-curve is one change: one command, so one undo takes all of it
+	# (second reviewer 2026-10-29: each half was its own build and undo).
+	var sent := []
+	sim.send_command = func(cmd: Dictionary) -> void:
+		sent.append(cmd)
+		sim.apply_now(cmd)
+	_check(t._build_all(drawn), "the S-curve is built")
+	sim.send_command = Callable()
+	_check(sent.size() == 1 and sent[0].type == "build_roads" and sent[0].roads.size() == 2,
+		"it goes to the town as one command (%d sent)" % sent.size())
+	var built := sim.network.segments.size()
+	_check(built > before, "the S-curve is in")
+	_check(sim.apply_now({"type": "undo"}) and sim.network.segments.size() == before,
+		"one undo takes the whole S-curve out (%d roads left of %d)" % [sim.network.segments.size(), before])
+	# The town (online, the region server) builds all of it or none: with
+	# money for one half only, nothing goes in, whatever the screen said.
+	sim.economy.money = half + 10
+	_check(not sim.apply_now(sent[0]) and sim.network.segments.size() == before and sim.economy.money == half + 10,
+		"money for one half only: the town builds none of it")
+	var bad: Dictionary = sent[0].duplicate(true)
+	bad.roads[1] = [bad.roads[1][0], bad.roads[1][0], [bad.roads[1][0][0] + 1.0, bad.roads[1][0][1]]]
+	sim.economy.money = 10_000_000
+	_check(not sim.apply_now(bad) and sim.network.segments.size() == before and sim.economy.money == 10_000_000,
+		"a second half the town refuses (too short): the first half isn't built either")
+	_check(sim.apply_now(sent[0]) and sim.network.segments.size() == built, "built again in one go")
+	_check(sim.network.find_node_near(drawn[0][2], 0.5) != -1, "the halves share a junction in the middle")
+	sim.tick()
+	var start: Dictionary = sim.network.find_segment_near(a.lerp(drawn[0][1], 0.1), 1.0)
+	var finish: Dictionary = sim.network.find_segment_near(e.lerp(drawn[1][1], 0.1), 1.0)
+	_check(not start.is_empty() and not finish.is_empty(), "road at both ends")
+	var from := {"seg": start.seg, "at_frac": 0.5}
+	var to := {"seg": finish.seg, "at_frac": 0.5}
+	_check(sim.traffic._route(from, to).size() > 0, "cars can drive the whole S-curve")
+	t.free()
+
 
 func _check(ok: bool, what: String) -> void:
 	print(("PASS " if ok else "FAIL ") + what)

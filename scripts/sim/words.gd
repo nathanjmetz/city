@@ -48,7 +48,10 @@ static func wants_an(phrase: String) -> bool:
 	# Numbers by how they're said: "an 8", "an 11", "an 18,000", "a 110".
 	if c.is_valid_int():
 		return c == "8" or word.get_slice("-", 0).get_slice(",", 0).get_slice(".", 0) in ["11", "18"]
-	if _initials(word.get_slice("-", 0)):
+	var head := word.get_slice("-", 0)
+	# Initials, or one capital letter before a hyphen, are said by their
+	# letters: "an RV", "an S-curve", "a T-junction", "a U-turn".
+	if _initials(head) or (word.contains("-") and head.length() == 1 and head != head.to_lower()):
 		return VOWEL_LETTERS.contains(c)
 	var low := word.to_lower()
 	for s in SILENT_H:
