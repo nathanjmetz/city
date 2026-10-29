@@ -105,6 +105,7 @@ func _hospital(size: Vector2, to_curb: float, hub: Dictionary) -> void:
 	_bed(mx - 7.0, zf - 1.2, 5.0)
 	_bed(mx + 7.0, zf - 1.2, 5.0)
 	_flagpole(Vector3(mx - 9.0, 0, zf - 10.5))
+	_hospital_service(x0, x1, zf + d, h, eifs, zf - 10.0)
 	if hub.is_empty():
 		return
 	# Every building the administrator has added, on its own strip.
@@ -121,6 +122,51 @@ func _hospital(size: Vector2, to_curb: float, hub: Dictionary) -> void:
 		var z0 := front + float(r[2])
 		var z1 := front + float(r[3])
 		_piece(p.key, a.x, a.y, z0, z1, brick, eifs, trim, to_curb, front)
+
+## What every hospital has whatever it grows into: a mechanical penthouse
+## on the roof; and on the service side, the bulk liquid oxygen tank in its
+## fenced pad (NFPA 55: outdoors, clear of the building) with its finned
+## vaporizers, the standby generator in a sound enclosure on its fuel tank
+## (NFPA 99/110: a hospital's essential electrical system), and the
+## loading dock with a trash compactor.
+func _hospital_service(x0: float, x1: float, zb: float, h: float, eifs: Color, lot_z: float) -> void:
+	var mx := (x0 + x1) * 0.5
+	var pent := eifs.darkened(0.12)
+	_box("paint", Vector3(12.0, 3.4, 7.0), Vector3(mx + 4.0, h + 1.7, zb - 9.0), pent)
+	_box("paint", Vector3(12.4, 0.25, 7.4), Vector3(mx + 4.0, h + 3.5, zb - 9.0), pent.darkened(0.1))
+	for k in 5:
+		_box("paint", Vector3(1.6, 1.4, 0.05), Vector3(mx - 0.6 + k * 2.3, h + 1.8, zb - 12.53), pent.darkened(0.2))
+	# The oxygen tank: a white vertical vacuum-jacketed tank on legs.
+	var o := Vector3(x0 + 3.0, 0, zb + 2.0)
+	_box("paint", Vector3(5.6, 0.2, 3.4), o + Vector3(1.0, 0.1, 0), CONCRETE)
+	_cyl_y(o + Vector3(0, 4.7, 0), 1.05, 7.0, Color("#eceae4"))
+	for e in [-1.0, 1.0]:
+		_box("paint", Vector3(0.12, 1.3, 0.12), o + Vector3(e * 0.8, 0.65, 0.5), GALV)
+		_box("paint", Vector3(0.12, 1.3, 0.12), o + Vector3(e * 0.8, 0.65, -0.5), GALV)
+	for k in 2:
+		var v := o + Vector3(2.2 + k * 1.0, 0, 0)
+		_box("paint", Vector3(0.5, 3.2, 0.5), v + Vector3(0, 1.8, 0), Color("#c9cccc"))
+		for f in 4:
+			_box("paint", Vector3(0.04, 3.0, 0.9), v + Vector3(0, 1.8, 0), Color("#b9bcbc"), Basis(Vector3.UP, f * PI * 0.25))
+	_fence(Vector2(o.x - 2.0, o.z - 1.7), Vector2(o.x + 3.8, o.z + 1.7), 1.8)
+	# The generator: a long sound enclosure on its belly tank, exhaust up.
+	var g := Vector3(x0 + 13.0, 0, zb + 2.0)
+	_box("paint", Vector3(9.0, 0.25, 3.0), g + Vector3(0, 0.12, 0), CONCRETE)
+	_box("paint", Vector3(8.6, 0.8, 2.6), g + Vector3(0, 0.65, 0), Color("#3a3c3e"))
+	_box("paint", Vector3(8.4, 2.4, 2.4), g + Vector3(0, 2.25, 0), Color("#d6d2c4"))
+	for k in 6:
+		_box("paint", Vector3(1.0, 1.4, 0.04), g + Vector3(-3.4 + k * 1.35, 2.3, -1.22), Color("#a9a597"))
+	_box("paint", Vector3(0.35, 1.2, 0.35), g + Vector3(3.2, 4.05, 0.4), Color("#3a3c3e"))
+	# The loading dock: two dock doors, the compactor, and the service
+	# drive round the side from the front lot to its apron.
+	var dx := mx + 6.0
+	_flat_rect("drive", dx - 6.0, x1 + 3.8, zb, zb + 3.9, 0.08)
+	_flat_rect("asphalt", x1 + 0.3, x1 + 3.8, lot_z, zb, 0.075)
+	for e in [-1.0, 1.0]:
+		_box("paint", Vector3(2.8, 2.8, 0.06), Vector3(dx + e * 2.2, 1.6, zb + 0.04), Color("#9aa0a4"))
+		_box("paint", Vector3(3.2, 0.2, 0.3), Vector3(dx + e * 2.2, 3.15, zb + 0.15), Color("#2b2f33"))
+	_box("paint", Vector3(2.0, 1.8, 3.2), Vector3(dx - 6.6, 0.9, zb + 2.0), Color("#3d6a8a"))
+
 
 
 func _piece(key: String, x0: float, x1: float, z0: float, z1: float, brick: Color, eifs: Color, trim: Color,
