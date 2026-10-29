@@ -393,6 +393,8 @@ func _spawn(key: String, refill := false) -> void:
 	var labels: Array = drawn[3]
 	if refill:
 		var had: Dictionary = _recs[key]
+		if not masses.is_empty():
+			had.masses = masses.duplicate()
 		if _batches.has(had.sq):
 			_batches[had.sq].set_building(key, had.xf, solid, draped, footing, labels)
 			_merge_soon(had.sq)
@@ -420,6 +422,7 @@ func _spawn(key: String, refill := false) -> void:
 	if bulk.is_empty():
 		var box := MeshParts.aabb(solid)
 		bulk = [Rect2(box.position.x, box.position.z, box.size.x, box.size.z)]
+	rec.masses = bulk.duplicate()  # its footprints, for the yard props (StateView)
 	var pitched: bool = BuildingTypes.type_of(b) in ["house", "duplex", "row_home"]
 	var far := far_arrays(_far_surfaces(solid), bulk, int(b.zone) == ZoneMap.Zone.INDUSTRIAL,
 		_wall_colour(int(b.zone), rng), _roof_colour(pitched, rng), flat[0][1] if not flat.is_empty() else [])
@@ -985,6 +988,12 @@ func _near_parts(key: String) -> Array:
 	if batch.fade < 1.0 or not batch.merged.has(key) or not batch.near.has(key):
 		return []
 	return [rec.sq, batch.kind_parts(key, ["siding", "brick", "roof"])]
+
+
+## A building's footprints as drawn (Rect2s in its lot's frame: x across,
+## z back from the street edge), or [] before it is drawn.
+func masses_of(key: String) -> Array:
+	return _recs.get(key, {}).get("masses", [])
 
 
 ## True when nothing is waiting to be drawn, merged or grown (for tools and
