@@ -103,6 +103,8 @@ var land_plan := LandPlan.new()
 var buses := BusNet.new()
 ## Cab companies, which run themselves too.
 var taxis := TaxiCo.new()
+## Fire and police departments, which grow their stations (Stations).
+var stations := Stations.new()
 var builders := Builders.new()
 ## Where this city sits in the shared region (its own coordinates start at
 ## 0): the land under it is read there. 0 in solo play.
@@ -993,6 +995,7 @@ func _apply_cmd(cmd: Dictionary) -> bool:
 			land_plan = LandPlan.new()
 			buses = BusNet.new()
 			taxis = TaxiCo.new()
+			stations = Stations.new()
 			builders = Builders.new()
 			education = Education.new()
 			telecom = Telecom.new()
@@ -1576,6 +1579,9 @@ func tick() -> void:
 	t = Perf.now()
 	healthcare.tick(self)
 	Perf.add("sim.healthcare", t)
+	for id in stations.tick(self):
+		_clear_zones_under(services.footprint(id))
+		_lots_dirty = true
 	if not simulate_traffic:
 		Perf.add("sim.tick", t0)
 		return
@@ -4908,6 +4914,7 @@ func save_steps(postcard := false) -> Array:
 		["culture", func(): return culture.to_dict()],
 		["pollution", func(): return pollution.to_dict()],
 		["healthcare", func(): return healthcare.to_dict()],
+		["stations", func(): return stations.to_dict()],
 		["nicknames", func(): return nicknames.to_dict()],
 		["heritage", func(): return heritage.to_dict()],
 		["markers", func(): return markers.to_dict()],
@@ -5016,6 +5023,8 @@ func from_dict(d: Dictionary) -> void:
 	culture.from_dict(d.get("culture", {}))
 	pollution.from_dict(d.get("pollution", {}))
 	healthcare.from_dict(d.get("healthcare", {}))
+	stations = Stations.new()
+	stations.from_dict(self, d.get("stations", {}))
 	nicknames.from_dict(d.get("nicknames", {}))
 	heritage.from_dict(d.get("heritage", {}))
 	markers.from_dict(d.get("markers", {}))

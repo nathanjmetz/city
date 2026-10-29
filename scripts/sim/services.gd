@@ -142,6 +142,8 @@ var plants := []
 var offline := {}
 ## The town's Funding slider: a lean department costs less and covers less.
 var policies: Policies
+## Reach multipliers a station's pieces add (Stations): id -> multiplier.
+var boosts := {}
 var _next_id := 1
 ## Kept road distances and reach (see update) and what they were worked out for.
 var _dist_key := []
@@ -466,7 +468,7 @@ func update(network: RoadNetwork, lots: Dictionary, city_buildings: Dictionary) 
 	# services, their funding or the power plants do, so they are kept.
 	var effects := {}
 	for id in buildings:
-		effects[id] = funding(id, Balance.POLICY_EFFECT)
+		effects[id] = funding(id, Balance.POLICY_EFFECT) * float(boosts.get(id, 1.0))
 	var dist_key := [network.get_instance_id(), network.revision, buildings.keys(), effects.values(),
 		buildings.values().map(func(b): return [b.kind, b.pos, b.dir, b.get("size")]), plants.map(func(pl): return pl.front),
 		contracts]

@@ -371,7 +371,7 @@ func _dev(id: int) -> Array:
 		return sim.buses.depots[id].get("built", [])
 	if sim.taxis.companies.has(id):
 		return sim.taxis.companies[id].get("built", [])
-	return []
+	return sim.stations.built_of(id)
 
 
 func _spawn(id: int, b: Dictionary) -> Node3D:
