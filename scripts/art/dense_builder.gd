@@ -580,12 +580,64 @@ func _office(to_curb: float, width: float, storeys: int) -> void:
 		_box("metal", Vector3(2.2, 1.4, 1.6), Vector3(rng.randf_range(-w * 0.3, w * 0.3), deck + 0.7,
 			cz + rng.randf_range(-d * 0.2, d * 0.2)), Color("#b9bcbc"))
 	_office_roof(w, d, cz, deck, wall, mat, storeys)
+	if fine:
+		_office_front(w, zf, storeys, floor_h, band)
 	_office_lot(to_curb, w, zf, zf + d, width)
 	for s in [-1.0, 1.0]:
 		var pick := TreeField.pick(rng)
 		# The one on the drive side stands in the front lawn, off the drive.
 		var at := Vector3(-w * 0.5 - 1.5, 0, zf - 2.0) if s < 0.0 else Vector3(w * 0.5 - 2.5, 0, zf - 4.5)
 		trees.append([at, pick[0], pick[1], rng.randf_range(0.8, 1.0)])
+
+
+## The close-up front of a suburban office (1980s-2000s Indianapolis,
+## Fort Wayne and Carmel office buildings): a glass entry vestibule with
+## two pairs of aluminium doors under the canopy, downlights in the canopy
+## soffit, a drip reveal under each precast spandrel band, a dark stone
+## water table along the base, and clipped yews in a mulch bed along the
+## front. Desktop only, with its own random numbers so the builder's don't move.
+func _office_front(w: float, zf: float, storeys: int, floor_h: float, band: Color) -> void:
+	var r := RandomNumberGenerator.new()
+	r.seed = hash([rng.seed, 5113])
+	var frame := Color("#2b2a28") if r.randf() < 0.6 else Color("#a7aaac")
+	# Vestibule: 4.4 m wide, 1.8 m out, 2.9 m tall, glass all round.
+	var vw := 4.4
+	var vd := 1.8
+	var vh := 2.9
+	var vz := zf - 0.06 - vd * 0.5
+	_glass(Vector3(0, vh * 0.5 + 0.02, zf - 0.06 - vd), Vector3(-1, 0, 0), vw - 0.1, vh - 0.1, 0.0)
+	for s in [-1.0, 1.0]:
+		_glass(Vector3(s * vw * 0.5, vh * 0.5 + 0.02, vz), Vector3(0, 0, -s), vd - 0.1, vh - 0.1, 0.0)
+		for zz in [zf - 0.06 - vd, zf - 0.08]:
+			_box("metal", Vector3(0.1, vh, 0.1), Vector3(s * vw * 0.5, vh * 0.5, zz), frame)  # corner posts
+		# A pair of doors either side of the centre mullion, with pulls.
+		var dx: float = s * 0.95
+		_box("metal", Vector3(0.08, 2.2, 0.08), Vector3(dx + s * 0.9, 1.1, zf - 0.08 - vd), frame)
+		for p in [-0.08, 0.08]:
+			_box("metal", Vector3(0.05, 0.9, 0.05), Vector3(dx + p, 1.05, zf - 0.16 - vd), Color("#b7b9ba"))
+	_box("metal", Vector3(0.1, vh, 0.1), Vector3(0, vh * 0.5, zf - 0.06 - vd), frame)  # centre mullion
+	_box("metal", Vector3(vw, 0.1, 0.1), Vector3(0, 2.25, zf - 0.06 - vd), frame)  # door head / transom bar
+	_box("metal", Vector3(vw + 0.1, 0.18, vd + 0.04), Vector3(0, vh + 0.08, vz), frame)  # roof fascia
+	_box("concrete", Vector3(vw + 0.6, 0.06, vd + 0.6), Vector3(0, 0.03, vz - 0.2), FOUNDATION.lightened(0.05))  # landing
+	# Downlights in the canopy soffit (canopy underside at 3.45).
+	for x in [-2.0, 0.0, 2.0]:
+		for z in [zf - 0.6, zf - 1.8]:
+			_box("paint", Vector3(0.22, 0.03, 0.22), Vector3(x, 3.43, z), Color("#f2efe4"))
+	# Drip reveal under each spandrel band, and a dark stone water table.
+	for f in range(1, storeys):
+		_box("paint", Vector3(w + 0.1, 0.05, 0.1), Vector3(0, f * floor_h + 0.33, zf - 0.09), band.darkened(0.35))
+	_box("concrete", Vector3(w + 0.1, 0.55, 0.12), Vector3(0, 0.275, zf - 0.08), Color("#4a4744"))
+	# Mulch bed and clipped yews either side of the entry.
+	var keep := rng
+	rng = r
+	for s in [-1.0, 1.0]:
+		var x0: float = s * (vw * 0.5 + 1.9)
+		var x1: float = s * (w * 0.5 - 0.6)
+		_flat_rect("line", minf(x0, x1), maxf(x0, x1), zf - 1.6, zf - 0.15, 0.065, Color("#4a3426"))
+		var n := int(absf(x1 - x0) / 1.3)
+		for i in n:
+			_shrub(Vector3(lerpf(x0, x1, (i + 0.5) / n), 0.0, zf - 0.85), r.randf_range(0.42, 0.55), 2 if i % 3 == 1 else 0)
+	rng = keep
 
 
 ## An office's roof (aerials of suburban Indianapolis and Fort Wayne
