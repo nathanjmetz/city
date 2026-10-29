@@ -134,6 +134,23 @@ func _init() -> void:
 						ok = ok and absf(st[0].x) < w * 0.5 and st[0].y > 0.0 and st[0].y < 36.0
 					_check(ok, what + " parks inside it")
 					_check(absf(plan.door.x) < w * 0.5 and plan.door.y >= 0.0, what + " has its door on the lot")
+	# A corner store grown a storey of flats: on a prewar corner only, wall
+	# to wall across its lot.
+	var grown_stores := 0
+	for s in 40:
+		for w in [10.0, 14.0, 18.0]:
+			var lot := {"width": w, "depth": 36.0, "era": "prewar", "corner": true, "side": 1.0 if s % 2 == 0 else -1.0}
+			var out := CornerStore.build_grown(60 + s, 3.9, lot, 2)
+			if out.is_empty():
+				continue
+			grown_stores += 1
+			_check(_inside(HouseBuilder.last_masses, w * 0.5, 36.0), "a corner store with flats fits its %d m lot" % w)
+	_check(grown_stores > 40, "most prewar corner lots' stores with flats are grown corner stores (%d of 120)" % grown_stores)
+	_check(CornerStore.build_grown(61, 3.9, {"width": 14.0, "depth": 36.0, "era": "prewar"}, 2).is_empty(), "mid-block, a Main Street block instead")
+	_check(CornerStore.build_grown(61, 3.9, {"width": 14.0, "depth": 36.0, "era": "postwar", "corner": true, "side": 1.0}, 2).is_empty(),
+		"a postwar corner gets a Main Street block")
+	_check(CornerStore.build_grown(61, 3.9, {"width": 14.0, "depth": 36.0, "era": "prewar", "corner": true, "side": 1.0}, 3).is_empty(),
+		"three storeys is a Main Street block")
 	# Only the first stage, of the eras that built them, is ever one.
 	for s in 300:
 		for era in ["prewar", "postwar", "recent"]:
