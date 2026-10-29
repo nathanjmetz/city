@@ -146,6 +146,16 @@ const TYPES := {
 		# deck and a field of rows out front: about 4.5 acres in all.
 		{"name": "Corporate campus", "storeys": 6, "cap": [400, 500], "load": 16, "lot": 18000.0},
 	]},
+	# Only a rezoning makes one (Redevelopment): a hotel chain buys a run of
+	# lots on a busy road (Marion's Hampton Inn and Holiday Inn Express by
+	# I-69). A highway hotel of about 90 rooms, then, in a metro's market, a
+	# full-service hotel of about 220 with a ballroom (Muncie's, Kokomo's).
+	# AHLA staffing: about 0.25 jobs a room limited-service, 0.5-0.6 full.
+	# The roadside motel is Tourism's (a Parks site), not this.
+	"hotel": {"zone": COM, "name": "Hotel", "cover": 0.25, "stages": [
+		{"name": "Highway hotel", "storeys": 4, "cap": [20, 30], "load": 14, "rooms": 90, "lot": 4500.0},
+		{"name": "Full-service hotel", "storeys": 8, "cap": [110, 140], "load": 36, "rooms": 220, "lot": 14000.0},
+	]},
 	# A small plant that does well buys the empty parcel next door and adds
 	# a wing and more truck docks, the way Indiana's small-town plants grew
 	# (a 10,000 sq ft shop to a 40,000-80,000 sq ft plant). "lot" is the
@@ -581,6 +591,7 @@ static func _stage_ok(sim, b: Dictionary, type: String, level: int, c: Dictionar
 				return false
 			var more := int(TYPES.office.stages[level].cap[1]) - (int(b.cap) if type_of(b) == "office" else 0)
 			return c.graduates_free >= more
+		["hotel", _]: return c.avenue or c.density < Balance.DENSE_CORE  # on a busy road or out at the edge
 		["factory", _]:
 			# Hiring needs people to hire: the town's workers not yet in a
 			# job here or in Marion.

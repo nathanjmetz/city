@@ -162,7 +162,7 @@ func _mb_flats(to_curb: float, width: float, units: int, storeys: int) -> void:
 		_rear_wall(cx - bw * 0.5, cx + bw * 0.5, zf + d, base, floor_h, n, trim, porch)
 		if porch:
 			_mb_porch(cx, minf(bw - 0.4, 5.6), zf + d, base, floor_h, n, hash([rng.seed, "porch"]))
-		backs.append([cx, zf + d + (3.2 if porch else 2.8)])
+		backs.append([cx, zf + d + (3.2 if porch else 2.8), cx + bay_side * (bw * 0.5 + 0.5)])
 		_flat_rect("drive", dx - 0.6, dx + 0.6, -0.3, zf - 1.6 - 1.4, 0.06)
 		_flat_rect("drive", cx + bay_side * (bw * 0.5 + 0.1), cx + bay_side * (bw * 0.5 + 0.9), zf, zf + d, 0.06)  # the gangway walk
 		# A low iron fence along the front yard.
@@ -244,50 +244,14 @@ func _mb_porch(cx: float, w: float, zb: float, base: float, floor_h: float, floo
 			_shrub(Vector3(tx, y + 0.3, zb + 0.5), 0.3)
 
 
-## One stair flight from `a` (bottom) to `b` (top), running along x: open
-## treads on two stringers and a handrail on the outer side.
-func _mb_flight(a: Vector3, b: Vector3, sw: float, wood: Color, post: Color) -> void:
-	var rise := b.y - a.y
-	var run := b.x - a.x
-	var length := Vector2(run, rise).length()
-	var tilt := Basis(Vector3(0, 0, 1), atan2(rise, run))
-	var mid := (a + b) * 0.5
-	if not fine:
-		# The browser: the flight as one sloped run, stringers and all.
-		_box("paint", Vector3(length, 0.2, sw), mid + Vector3(0, -0.05, 0), wood, tilt)
-		_box("paint", Vector3(length, 0.05, 0.05), mid + Vector3(0, 0.9, sw * 0.5 - 0.02), wood, tilt)
-		return
-	var n := maxi(2, ceili(rise / 0.2))
-	for j in range(1, n):
-		var t := float(j) / n
-		_box("paint", Vector3(0.3, 0.04, sw), Vector3(lerpf(a.x, b.x, t), a.y + rise * t, a.z), wood)
-	for s in [-1.0, 1.0]:
-		_box("paint", Vector3(length, 0.24, 0.05), mid + Vector3(0, -0.1, s * (sw * 0.5 - 0.02)), post, tilt)
-	_box("paint", Vector3(length, 0.05, 0.05), mid + Vector3(0, 0.9, sw * 0.5 - 0.02), wood, tilt)
-
-
-## A porch guard from `a` to `b` (at rail height), on a deck at `floor_y`:
-## top rail, bottom rail and balusters about every 4 in, drawn every 30 cm
-## (desktop).
-func _mb_rail(a: Vector3, b: Vector3, floor_y: float, wood: Color) -> void:
-	var span := a.distance_to(b)
-	var along := (b - a) / span
-	var basis := Basis(along.cross(Vector3.UP), Vector3.UP, along)
-	var mid := (a + b) * 0.5
-	_box("paint", Vector3(0.12, 0.05, span), mid, wood, basis)
-	if fine:
-		_box("paint", Vector3(0.06, 0.05, span), Vector3(mid.x, floor_y + 0.1, mid.z), wood, basis)
-	# The browser keeps its triangle budget: a post every 1.2 m, no balusters.
-	var n := maxi(1, int(span / (0.3 if fine else 1.2)))
-	for k in n + 1:
-		var p := a.lerp(b, float(k) / n)
-		_box("paint", Vector3(0.04, a.y - floor_y - 0.1, 0.04), Vector3(p.x, (a.y + floor_y + 0.1) * 0.5, p.z), wood)
-
-
 ## The yards behind a row of flats: each fenced on its side lines and
 ## along the alley (4 ft chain-link mostly, some 6 ft wood), a gate and a
 ## walk out to the alley, and the trash and recycling carts by the gate.
-## `backs` holds each building's [middle x, where its yard starts].
+## `backs` holds each building's [middle x, where its yard starts] and,
+## for flats, where its gangway is. With no alley behind (`alley` false)
+## the back fence runs unbroken, the walk stops at a patio, and the carts
+## wait at the end of the gangway they're wheeled down to the curb, as on
+## the alley-less blocks of Indianapolis and Fort Wayne.
 func _mb_yards(width: float, uw: float, backs: Array, seed: int) -> void:
 	if backs.is_empty():
 		return
@@ -313,6 +277,19 @@ func _mb_yards(width: float, uw: float, backs: Array, seed: int) -> void:
 			continue
 		var a: float = lines[i][0]
 		var b: float = lines[i + 1][0]
+		if not alley:
+			_lot_fence(Vector2(a, zr), Vector2(b, zr), kind)
+			var pz := minf(z0 + 2.5, zr - 2.6)
+			_flat_rect("drive", cx - 0.45, cx + 0.45, z0 - 0.4, pz, 0.05)
+			_flat_rect("drive", cx - 1.5, cx + 1.5, pz, pz + 2.4, 0.05)
+			var gx: float = backs[i][2] if backs[i].size() > 2 else a + 0.7
+			if r.randf() < 0.85:
+				for k in 2:
+					var c := Vector3(clampf(gx, a + 0.45, b - 0.45), 0.0, z0 - 0.2 + k * 0.82)
+					var body := Color(["#2a2b2c", "#2f4f8a"][k])
+					_box("paint", Vector3(0.72, 1.0, 0.66), c + Vector3(0, 0.5, 0), body.darkened(0.08))
+					_box("paint", Vector3(0.8, 0.06, 0.72), c + Vector3(-0.02 * signf(gx - cx), 1.04, 0), body)
+			continue
 		# The alley fence with a 3 ft gate in the middle.
 		_lot_fence(Vector2(a, zr), Vector2(cx - 0.5, zr), kind)
 		_lot_fence(Vector2(cx + 0.5, zr), Vector2(b, zr), kind)
@@ -946,14 +923,15 @@ func _th_urban(to_curb: float, width: float, units: int, storeys: int) -> void:
 		_box("metal", Vector3(1.7, 0.1, 1.1), Vector3(door_x, base + 2.95, zf - 0.55), black)
 		# A tall window beside the door, a window pair on each floor above.
 		var wx := cx - side * uw * 0.12
-		_glass(Vector3(wx, base + 1.35, zf - 0.03), Vector3(-1, 0, 0), uw * 0.4, 2.1, r.randf_range(0.0, 0.4))
+		# The glass 1 cm proud of its black frame's face, so the two never fight.
+		_glass(Vector3(wx, base + 1.35, zf - 0.04), Vector3(-1, 0, 0), uw * 0.4, 2.1, r.randf_range(0.0, 0.4))
 		_box("metal", Vector3(uw * 0.4 + 0.1, 2.2, 0.04), Vector3(wx, base + 1.35, zf - 0.01), black)
 		for f in range(1, storeys):
 			var y := base + f * floor_h + 1.3
 			var gw := minf(uw - 1.6, 2.6)
 			_box("metal", Vector3(gw + 0.12, 2.15, 0.04), Vector3(cx, y, zf - 0.01), black)
 			for e in [-0.5, 0.5]:
-				_glass(Vector3(cx + e * gw * 0.5, y, zf - 0.03), Vector3(-1, 0, 0), gw * 0.5 - 0.06, 2.0, r.randf_range(0.0, 0.6))
+				_glass(Vector3(cx + e * gw * 0.5, y, zf - 0.04), Vector3(-1, 0, 0), gw * 0.5 - 0.06, 2.0, r.randf_range(0.0, 0.6))
 			if f == 1:
 				_box("metal", Vector3(gw + 0.2, 0.05, 0.05), Vector3(cx, y - 0.1, zf - 0.3), black)
 				for q in 7:

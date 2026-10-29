@@ -173,6 +173,9 @@ var rng: RandomNumberGenerator
 var shopfront := false
 ## Desktop: office windows (GLASS shader UV.x 4..5) go dark a floor at a time.
 var office_glass := false
+## Desktop: glass in front of a diner's booths and lunch counter: UV.x 6..7
+## (a roadside diner's high windows) or 7..8 (a Main Street cafe's low ones).
+var diner_room := 0.0
 
 
 ## `lot` (optional): width, depth, outline (local x/z points) and pad.
@@ -382,6 +385,10 @@ func _cottage(h: Dictionary, paint: Dictionary) -> void:
 		rng = was
 		return
 	_cottage_at = spot
+	# The house's back stays where it was: the yard (its fence, the walk out
+	# here) runs from the house, not from the back of the cottage.
+	var house_back := _back_z
+	var house_mass_back := _mass_back_z
 	var cx := spot.get_center().x
 	var cz := spot.get_center().y
 	var siding: Color = paint.siding
@@ -410,9 +417,12 @@ func _cottage(h: Dictionary, paint: Dictionary) -> void:
 	var mx := cx + (cw * 0.5 + 0.05) * (1.0 if cx < 0.0 else -1.0)
 	_box("paint", Vector3(0.1, 0.4, 0.3), Vector3(mx, 1.4, z1 - 1.0), Color("#8a8c8e"))
 	# A paver walk from its door up to the back of the house.
-	var zw := _back_z + 0.2
+	var zw := house_back + 0.2
 	if z0 - 1.4 > zw:
 		_flat_rect("drive", dx - 0.45, dx + 0.45, zw, z0 - 1.4, 0.07)
+		_cottage_at = _cottage_at.merge(Rect2(dx - 0.5, zw, 1.0, z0 - zw))  # keep the walk clear too
+	_back_z = house_back
+	_mass_back_z = house_mass_back
 	rng = was
 
 
@@ -2008,13 +2018,17 @@ func _yard(h: Dictionary, to_curb: float) -> void:
 
 
 ## Back wall: a patio door and windows on each floor.
-func _back(x0: float, x1: float, zb: float, floors: Array, sill: float) -> void:
+func _back(x0: float, x1: float, zb: float, floors: Array, sill: float, doors := []) -> void:
 	var w := x1 - x0
 	var n := 3 if w < 11.0 else 4
 	var slider := rng.randi_range(0, n - 1)
+	if not doors.is_empty():
+		slider = -1  # the caller's own back doors instead (still drawn above, so the dice stay)
 	for f in floors.size():
 		for i in n:
 			var x := lerpf(x0 + 1.4, x1 - 1.4, float(i) / (n - 1))
+			if f == 0 and doors.any(func(dx: float): return absf(dx - x) < 1.0):
+				continue
 			if f == 0 and i == slider:
 				_box("paint", Vector3(1.95, 2.25, 0.04), Vector3(x, sill + 1.1, zb), TRIM)
 				_glass(Vector3(x, sill + 1.05, zb + 0.03), Vector3(1, 0, 0), 1.8, 2.1, rng.randf_range(0.0, 0.3))
@@ -2205,7 +2219,7 @@ func _back_yard(h: Dictionary) -> void:
 		return
 	if h.has("keep_out") and (h.keep_out as Rect2).grow(2.5).has_point(Vector2(spot.x, spot.z)):
 		return
-	if _cottage_at.grow(2.5).has_point(Vector2(spot.x, spot.z)):
+	if _cottage_at.grow(1.0).intersects(Rect2(spot.x - 2.5, spot.z - 2.5, 5.0, 5.0)):
 		return
 	for tr in trees:
 		if Vector2(tr[0].x, tr[0].z).distance_to(Vector2(spot.x, spot.z)) < 3.5:
@@ -2449,8 +2463,8 @@ func _front_door(x: float, zf: float, sill: float, c: Color) -> void:
 ## back and utility building): pressed-steel frame, lever at 38 in, a
 ## surface closer at the head, a wall-pack light above and a concrete stoop.
 ## `c` is the door's centre on the wall face; `out_z` is the wall's outward
-## z direction (+1 or -1).
-func _steel_door(c: Vector3, out_z: float, col := Color("#5a5e60")) -> void:
+## z direction (+1 or -1). `stoop` false: it opens onto a landing instead.
+func _steel_door(c: Vector3, out_z: float, col := Color("#5a5e60"), stoop := true) -> void:
 	var o := out_z
 	var bottom := c.y - 1.05
 	var frame := col.darkened(0.25)
@@ -2462,7 +2476,7 @@ func _steel_door(c: Vector3, out_z: float, col := Color("#5a5e60")) -> void:
 	_box("metal", Vector3(0.3, 0.07, 0.07), Vector3(c.x - 0.22, bottom + 1.98, c.z + o * 0.07), Color("#8a8c8e"))
 	_box("metal", Vector3(0.26, 0.2, 0.14), Vector3(c.x, bottom + 2.55, c.z + o * 0.07), Color("#2a2b2c"))
 	_box("paint", Vector3(0.2, 0.06, 0.02), Vector3(c.x, bottom + 2.47, c.z + o * 0.145), Color("#e8e2c8"))
-	if bottom > 0.05:
+	if stoop and bottom > 0.05:
 		# 4 cm proud of any slab it meets so the two tops don't flicker.
 		_box("paint", Vector3(1.5, bottom + 0.04, 1.1), Vector3(c.x, (bottom + 0.04) * 0.5, c.z + o * 0.61), Color("#b9b5ab"))
 
@@ -2984,7 +2998,7 @@ func _glass(c: Vector3, right: Vector3, w: float, h: float, blinds: float) -> vo
 	if owner_care <= -2 and c.y < 3.6:
 		var out := right.cross(Vector3.UP).normalized()
 		_box("paint", Vector3(w + 0.12, h + 0.12, 0.05), c + out * 0.07, PLYWOOD, Basis(right.normalized(), Vector3.UP, out))
-	var o := 2.0 if shopfront else (4.0 if office_glass else 0.0)
+	var o := diner_room if diner_room > 0.0 else (2.0 if shopfront else (4.0 if office_glass else 0.0))
 	_quad("glass", c - r - u, c + r - u, c + r + u, c - r + u, Color(0.85, 0.82, 0.74, blinds),
 		[Vector2(o, 0), Vector2(o + 1, 0), Vector2(o + 1, 1), Vector2(o, 1)])
 

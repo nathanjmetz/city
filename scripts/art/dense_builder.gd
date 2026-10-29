@@ -75,6 +75,9 @@ static func office_plan(seed: int, lot: Dictionary, storeys: int) -> Dictionary:
 	if b.era == "prewar":
 		return b.site
 	b._dry = true
+	b._added = int(lot.get("added_from", 0))
+	if b._added >= storeys:
+		b._added = 0
 	b._postwar_office(3.9, b.half * 2.0, storeys)
 	return b.site
 
@@ -625,14 +628,18 @@ func _mixed(to_curb: float, width: float, storeys: int) -> void:
 		# Huntington): paneled bulkheads, tall display windows, a glass
 		# entry door in the middle bay and a band of transom lights above,
 		# under the sign board.
+		# A shop whose sign says it serves food shows its booths and counter.
+		var eats := fine and (sign_spec.is_empty() or k != fronts / 2) and int(_word_slot(fx) * 0.5) - 1 in EATERIES
 		for i in bays:
 			var x := fx - sw * 0.5 + (i + 0.5) * bw
 			if i == bays / 2 and bw > 1.5:
 				_shop_door(x, bw, zf, mull)
 			else:
 				shopfront = fine
+				diner_room = 7.0 if eats else 0.0
 				_glass(Vector3(x, 1.65, zf - 0.03), Vector3(-1, 0, 0), bw - 0.12, 1.9, rng.randf_range(0.0, 0.2))
 				shopfront = false
+				diner_room = 0.0
 				_box("paint", Vector3(bw - 0.02, 0.6, 0.16), Vector3(x, 0.4, zf - 0.08), trim)
 				if fine:
 					shop_wins.append(Vector2(x, bw))
@@ -808,9 +815,12 @@ func _alley_side(w: float, zb: float, fronts: int, fw: float, storeys: int, shop
 			_box("metal", Vector3(0.025, 0.9, 0.025), Vector3(wx - 0.3 + b * 0.3, 2.3, zb + 0.08), Color("#2a2b2c"))
 		_box("paint", Vector3(1.0, 0.08, 0.14), Vector3(wx, 1.81, zb + 0.07), FOUNDATION)
 	var n := maxi(2, int(w / 3.6))
+	var stair := _ma_stair_end(w, fronts, fw, storeys, shop_h, n) if fine else 0
 	for f in range(1, storeys):
 		var y := shop_h + (f - 1) * floor_h + 1.6
 		for i in n:
+			if f == 1 and stair != 0 and i == (0 if stair < 0 else n - 1):
+				continue  # the stair's door is here
 			var x := lerpf(-w * 0.5 + 1.8, w * 0.5 - 1.8, float(i) / (n - 1))
 			var wh := 1.7
 			_glass(Vector3(x, y, zb + 0.03), Vector3(1, 0, 0), 0.9, wh, rng.randf_range(0.0, 0.8))
@@ -818,6 +828,113 @@ func _alley_side(w: float, zb: float, fronts: int, fw: float, storeys: int, shop
 			_box("paint", Vector3(1.1, 0.08, 0.14), Vector3(x, y - wh * 0.5 - 0.04, zb + 0.07), FOUNDATION)
 	if fine:
 		_alley_services(w, zb, fronts, fw, storeys, shop_h, floor_h, n)
+	if stair != 0:
+		_ma_back_stair(w, zb, stair, shop_h)
+
+
+## Which end of a two-storey Main Street block's back wall gets the outside
+## stair up to the flats (-1 or 1; 0 for none): the second way out the
+## code wants from flats over a shop, which a 1880s block never had inside,
+## so owners added it out back (wood or galvanized steel, up the alley wall
+## to a landing at the upstairs door, as behind the blocks in Wabash,
+## Huntington or Marion). Taller blocks have the fire escape instead. The
+## flight runs along the wall toward the middle, so it takes the end where
+## no shop's back door sits under its low half. Its own random numbers.
+func _ma_stair_end(w: float, fronts: int, fw: float, storeys: int, shop_h: float, n: int) -> int:
+	if storeys != 2 or n < 2:
+		return 0
+	var r := RandomNumberGenerator.new()
+	r.seed = hash([rng.seed, "back stair"])
+	if r.randf() < 0.25:
+		return 0  # the flats go out through the front stair hall only (or are storage)
+	var first := -1 if r.randf() < 0.5 else 1
+	for e in [first, -first]:
+		var xd: float = e * (w * 0.5 - 1.8)
+		var run := (shop_h + 0.1) / 0.19 * 0.27
+		var top_x: float = xd - e * 0.8  # where the flight meets the landing
+		var ok := absf(top_x - e * run) < w * 0.5 - 0.3
+		for k in fronts:
+			var fx := -w * 0.5 + (k + 0.5) * fw
+			var dx := fx + fw * 0.2 * (-1.0 if k % 2 == 0 else 1.0)
+			# The underside clears a 2.1 m door this far along from the foot.
+			var along: float = run - absf(dx - top_x)
+			if along > -0.6 and along < run * 2.3 / (shop_h + 0.1) + 0.6:
+				ok = false
+		if ok:
+			return e
+	return 0
+
+
+## The outside stair at end `e` of a two-storey Main Street block's back
+## wall (see _ma_stair_end): a steel door upstairs onto a landing on posts,
+## and one straight flight down along the wall to the pavement, guarded on
+## its open side (IBC 1011: 7 3/4 in risers, 10 in treads, 42 in guards).
+## Its own random numbers.
+func _ma_back_stair(w: float, zb: float, e: int, shop_h: float) -> void:
+	var r := RandomNumberGenerator.new()
+	r.seed = hash([rng.seed, "back stair look"])
+	var steel := Color(["#8f9396", "#8f9396", "#2a2b2c", "#8d7b5f"][r.randi() % 4])
+	var post := steel.darkened(0.15)
+	var fy := shop_h + 0.1
+	var xd: float = e * (w * 0.5 - 1.8)
+	var lw := 1.6
+	var ld := 1.3
+	_steel_door(Vector3(xd, fy + 1.05, zb), 1.0, Color("#5a5e60"), false)
+	_box("paint", Vector3(lw, 0.08, ld), Vector3(xd, fy - 0.04, zb + ld * 0.5), steel)
+	for px in [xd - lw * 0.5 + 0.06, xd + lw * 0.5 - 0.06]:
+		_box("paint", Vector3(0.1, fy, 0.1), Vector3(px, fy * 0.5, zb + ld - 0.06), post)
+	var top_x: float = xd - e * lw * 0.5
+	var run := fy / 0.19 * 0.27
+	# A 1 m flight (36 in is the least), tight to the wall, so a dumpster
+	# by a back door (_service_yard) still clears it.
+	var zs := zb + 0.55
+	_mb_flight(Vector3(top_x - e * run, 0.0, zs), Vector3(top_x, fy, zs), 1.0, steel, post)
+	# The flight's foot post, and the landing's guard round its open sides.
+	_box("paint", Vector3(0.08, 1.0, 0.08), Vector3(top_x - e * run, 0.5, zs + 0.46), post)
+	var ry := fy + 1.07
+	var outer: float = xd + e * (lw * 0.5 - 0.05)
+	_mb_rail(Vector3(outer, ry, zb + 0.1), Vector3(outer, ry, zb + ld - 0.05), fy, steel)
+	_mb_rail(Vector3(xd - lw * 0.5, ry, zb + ld - 0.05), Vector3(xd + lw * 0.5, ry, zb + ld - 0.05), fy, steel)
+
+
+## One stair flight from `a` (bottom) to `b` (top), running along x: open
+## treads on two stringers and a handrail on the outer side.
+func _mb_flight(a: Vector3, b: Vector3, sw: float, wood: Color, post: Color) -> void:
+	var rise := b.y - a.y
+	var run := b.x - a.x
+	var length := Vector2(run, rise).length()
+	var tilt := Basis(Vector3(0, 0, 1), atan2(rise, run))
+	var mid := (a + b) * 0.5
+	if not fine:
+		# The browser: the flight as one sloped run, stringers and all.
+		_box("paint", Vector3(length, 0.2, sw), mid + Vector3(0, -0.05, 0), wood, tilt)
+		_box("paint", Vector3(length, 0.05, 0.05), mid + Vector3(0, 0.9, sw * 0.5 - 0.02), wood, tilt)
+		return
+	var n := maxi(2, ceili(rise / 0.2))
+	for j in range(1, n):
+		var t := float(j) / n
+		_box("paint", Vector3(0.3, 0.04, sw), Vector3(lerpf(a.x, b.x, t), a.y + rise * t, a.z), wood)
+	for s in [-1.0, 1.0]:
+		_box("paint", Vector3(length, 0.24, 0.05), mid + Vector3(0, -0.1, s * (sw * 0.5 - 0.02)), post, tilt)
+	_box("paint", Vector3(length, 0.05, 0.05), mid + Vector3(0, 0.9, sw * 0.5 - 0.02), wood, tilt)
+
+
+## A porch guard from `a` to `b` (at rail height), on a deck at `floor_y`:
+## top rail, bottom rail and balusters about every 4 in, drawn every 30 cm
+## (desktop).
+func _mb_rail(a: Vector3, b: Vector3, floor_y: float, wood: Color) -> void:
+	var span := a.distance_to(b)
+	var along := (b - a) / span
+	var basis := Basis(along.cross(Vector3.UP), Vector3.UP, along)
+	var mid := (a + b) * 0.5
+	_box("paint", Vector3(0.12, 0.05, span), mid, wood, basis)
+	if fine:
+		_box("paint", Vector3(0.06, 0.05, span), Vector3(mid.x, floor_y + 0.1, mid.z), wood, basis)
+	# The browser keeps its triangle budget: a post every 1.2 m, no balusters.
+	var n := maxi(1, int(span / (0.3 if fine else 1.2)))
+	for k in n + 1:
+		var p := a.lerp(b, float(k) / n)
+		_box("paint", Vector3(0.04, a.y - floor_y - 0.1, 0.04), Vector3(p.x, (a.y + floor_y + 0.1) * 0.5, p.z), wood)
 
 
 ## Desktop: signs of life in a Main Street block's windows. Downstairs, a
@@ -1289,9 +1406,9 @@ static func build_office(seed: int, to_curb: float, lot: Dictionary, storeys: in
 func _postwar_office(to_curb: float, width: float, storeys: int) -> void:
 	var r := RandomNumberGenerator.new()
 	r.seed = hash([rng.seed, "midrise office"])
-	# (A mirror-glass box shows no added floors: it was built whole. The pick
-	# stays the same either way, so SiteLayout's dry run finds the same lot.)
-	if storeys >= 4 and r.randf() < 0.55:
+	# A mirror-glass box was built whole: an owner who added floors kept the
+	# ribbon-window block they had (the draw is made either way).
+	if storeys >= 4 and r.randf() < 0.55 and _added == 0:
 		_office_mirror(to_curb, width, storeys)
 	else:
 		_office(to_curb, width, storeys)

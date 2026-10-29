@@ -2,7 +2,7 @@ extends SceneTree
 ## Run: godot --headless -s tests/test_ambient_people.gd
 ## AmbientLife's people on the street: the school's crossing guard on the
 ## corner by the doors, riders waiting at a bus stop, and porch sitters in
-## the seated pose.
+## the seated pose, and people standing about who shift their weight.
 
 var _failed := false
 
@@ -44,6 +44,22 @@ func _init() -> void:
 			seated += 1
 		_check((p[0] as Transform3D).origin.distance_to(Terrain.stand(st.pos)) < 8.0, "each by the stop")
 	_check(seated == 3, "three on the shelter's bench (%d)" % seated)
+	# Standing about they shift their weight; talking, they talk with their
+	# hands; sitting or walking, neither.
+	for p in waiting:
+		var bits := int((p[1] as Color).a)
+		_check(bool(bits & WalkerView.STANDING) != bool(bits & WalkerView.SEATED) and not bits & WalkerView.TALKING,
+			"a rider %s" % ("sits still" if bits & WalkerView.SEATED else "shifts their weight"))
+	# Most riders standing at the stop are on their phones.
+	var crowd := []
+	al._stop_scene(crowd, {"stop": st, "n": 6, "seed": 21, "shelter": false})
+	var phones := crowd.filter(func(p): return int((p[1] as Color).a) & WalkerView.PHONE).size()
+	_check(phones >= 2 and phones < 6, "most riders standing wait looking at their phones (%d of 6)" % phones)
+	var two := []
+	al._person(two, Vector3.ZERO, Vector3.FORWARD, 5, -1.0, 1.0, false, 0.0, WalkerView.TALKING)
+	al._person(two, Vector3(3, 0, 0), Vector3.FORWARD, 6, 2.5)
+	_check(int((two[0][1] as Color).a) & WalkerView.TALKING, "neighbours talking talk with their hands")
+	_check(not int((two[1][1] as Color).a) & (WalkerView.STANDING | WalkerView.TALKING), "someone walking neither")
 	al.free()
 	print("FAILED" if _failed else "ALL PASSED")
 	quit(1 if _failed else 0)
