@@ -739,6 +739,9 @@ func _recycling(h: Dictionary, to_curb: float) -> void:
 			_box("metal", Vector3(1.6, 0.6, a.distance_to(b)), mid, Color("#6f7476"),
 				Basis.looking_at(b - a, Vector3.UP))
 	_drop_off(Vector3(cell * 0.92, 0, 14.0))
+	if paved - 4.0 > 40.0:
+		_yard_waste(Vector3(-cell * 0.4, 0, 26.0), minf(20.0, paved - 30.0))
+		_hhw_shed(Vector3(cell * 0.3, 0, 40.0))
 	_recycling_yard(level, paved)
 	# Bales stacked in the yard and on the land it has grown into.
 	_bale_row(-cell * 1.2, 6.0, level)
@@ -939,6 +942,97 @@ func _drop_off(c: Vector3) -> void:
 			_box("paint", Vector3(0.08, 3.2, 0.08), Vector3(rx + sx, 1.6, rz + 3.9), GALV)
 		_box("paint", Vector3(2.0, 0.8, 0.05), Vector3(rx, 2.9, rz + 3.85), col.lightened(0.15))
 		_box("paint", Vector3(1.7, 0.18, 0.06), Vector3(rx, 2.95, rz + 3.82), Color("#f2f0ea"))
+
+
+## The yard waste site every Indiana drop-off keeps, since grass, leaves
+## and brush have been banned from the state's landfills since 1994 (IC
+## 13-20-9): concrete push walls of lock blocks round three bays, a tangle
+## of brush waiting for the tub grinder, a windrow of leaves and clippings
+## going to compost, and the ground mulch residents shovel for free. `c` is
+## the middle of the pad's front edge; `d` how deep it runs.
+func _yard_waste(c: Vector3, d: float) -> void:
+	var r := RandomNumberGenerator.new()
+	r.seed = hash([rng.seed, "yard_waste"])
+	var w := cell * 0.7
+	_flat_rect("gravel", c.x - w * 0.5, c.x + w * 0.5, c.z, c.z + d, 0.065, Color("#7d7468"))
+	var bay := w / 3.0
+	for i in 4:
+		_lego_wall(Vector3(c.x - w * 0.5 + i * bay, 0, c.z + d * 0.55), 0.6, d * 0.9)
+	_lego_wall(Vector3(c.x, 0, c.z + d - 0.4), w, 0.6)
+	# Brush: limbs and branches heaped every which way.
+	var b := Vector3(c.x - bay, 0, c.z + d * 0.6)
+	var heap := minf(bay * 0.42, d * 0.4)
+	_aggregate_pile(b, heap * 0.8, 1.4, Color("#5b4a3a"), 12)
+	for k in 70:
+		var a := r.randf() * TAU
+		var dist := sqrt(r.randf()) * heap
+		var q := b + Vector3(cos(a) * dist, 0, sin(a) * dist)
+		var y := 2.6 * (1.0 - dist / heap) + r.randf_range(0.1, 0.5)
+		var len := r.randf_range(1.5, 4.5)
+		var col := Color("#6b5640").lerp(Color("#8d8578"), r.randf())
+		_box("paint", Vector3(r.randf_range(0.06, 0.16), r.randf_range(0.06, 0.16), len), q + Vector3(0, y, 0), col,
+			Basis(Vector3.UP, r.randf() * TAU) * Basis(Vector3.RIGHT, r.randf_range(-0.6, 0.6)))
+		if k % 3 == 0:  # dead leaves still on the twigs
+			_box("paint", Vector3(0.6, 0.35, 0.8), q + Vector3(0, y + 0.1, 0), Color("#7a6a3a").lerp(Color("#5d6a34"), r.randf()),
+				Basis(Vector3.UP, r.randf() * TAU))
+	# Leaves and clippings in a long windrow.
+	var lz := c.z + d * 0.25
+	var x := c.x - bay * 0.5 + 1.5
+	while x < c.x + bay * 0.5 - 1.0:
+		_aggregate_pile(Vector3(x, 0, lz + r.randf_range(-0.5, 0.5) + d * 0.3), 2.4, 1.6,
+			Color("#6b5a38").lerp(Color("#56602f"), r.randf()), 10)
+		x += 2.0
+	# Ground mulch, dark and fresh, under a "FREE MULCH" sign.
+	var m := Vector3(c.x + bay, 0, c.z + d * 0.6)
+	_aggregate_pile(m, minf(bay * 0.45, d * 0.45), 3.2, Color("#4a3426"))
+	_aggregate_pile(m + Vector3(-bay * 0.2, 0, -d * 0.25), 2.6, 1.3, Color("#5a3e2c"), 12)
+	var sp := Vector3(c.x + bay * 1.3, 0, c.z + 1.0)
+	for sx in [-0.6, 0.6]:
+		_box("paint", Vector3(0.08, 2.0, 0.08), sp + Vector3(sx, 1.0, 0), GALV)
+	_box("paint", Vector3(1.8, 0.7, 0.05), sp + Vector3(0, 1.75, 0), Color("#3f6d3a"))
+	_box("paint", Vector3(1.4, 0.16, 0.06), sp + Vector3(0, 1.8, -0.02), Color("#f2f0ea"))
+
+
+## The household hazardous waste and electronics shed: an open-front pole
+## shed over a curbed slab, gaylord boxes of old TVs and computers on
+## pallets, drums of paint on a spill pallet, and the used-oil tank in its
+## containment, as at county solid waste district sites (Indiana's
+## E-Cycle law keeps TVs and monitors out of the trash since 2011).
+func _hhw_shed(p: Vector3) -> void:
+	var r := RandomNumberGenerator.new()
+	r.seed = hash([rng.seed, "hhw_shed"])
+	var w := 12.0
+	var d := 7.0
+	var h := 4.2
+	_box("paint", Vector3(w + 1.0, 0.25, d + 1.0), p + Vector3(0, 0.125, 0), CONCRETE)
+	_box("paint", Vector3(w + 0.6, 0.15, 0.2), p + Vector3(0, 0.32, -d * 0.5 - 0.3), Color("#e0b81e"))  # spill curb
+	var wall := Color("#8a9a8c")
+	_box("metal", Vector3(w, h, 0.12), p + Vector3(0, h * 0.5 + 0.25, d * 0.5), wall)
+	for s in [-1.0, 1.0]:
+		_box("metal", Vector3(0.12, h, d), p + Vector3(s * w * 0.5, h * 0.5 + 0.25, 0), wall)
+		_box("paint", Vector3(0.18, h, 0.18), p + Vector3(s * (w * 0.5 - 0.1), h * 0.5 + 0.25, -d * 0.5 + 0.1), GALV)
+	_box("paint", Vector3(w + 0.8, 0.18, d + 1.4), p + Vector3(0, h + 0.4, -0.3), Color("#8e9496"),
+		Basis(Vector3.RIGHT, 0.08))
+	_box("paint", Vector3(w * 0.9, 0.18, 0.12), p + Vector3(0, h + 0.05, -d * 0.5 + 0.05), Color("#efede6"))
+	# Gaylords on pallets: brown boxes, screens and towers piled in them.
+	for i in 4:
+		var q := p + Vector3(-w * 0.5 + 1.2 + i * 1.5, 0.25, d * 0.5 - 1.0)
+		_box("paint", Vector3(1.2, 0.14, 1.0), q + Vector3(0, 0.07, 0), Color("#a8865a").darkened(0.2))
+		_box("paint", Vector3(1.15, 1.0, 0.95), q + Vector3(0, 0.64, 0), Color("#b08c5e"))
+		for k in 2:
+			_box("paint", Vector3(r.randf_range(0.4, 0.7), r.randf_range(0.3, 0.5), r.randf_range(0.3, 0.5)),
+				q + Vector3(r.randf_range(-0.25, 0.25), 1.1 + k * 0.15, r.randf_range(-0.2, 0.2)),
+				[Color("#1f2022"), Color("#3a3c3e"), Color("#cfcbc0")][r.randi() % 3], Basis(Vector3.UP, r.randf_range(-0.4, 0.4)))
+	# Paint drums on a yellow spill pallet.
+	var sp := p + Vector3(w * 0.5 - 2.4, 0.25, d * 0.5 - 1.3)
+	_box("paint", Vector3(1.4, 0.3, 1.4), sp + Vector3(0, 0.15, 0), Color("#e0b81e"))
+	for e in [[-0.33, -0.33], [0.33, -0.33], [-0.33, 0.33], [0.33, 0.33]]:
+		_cylinder("paint", sp + Vector3(e[0], 0.3, e[1]), 0.29, 0.88, [Color("#2f5d8a"), Color("#77797a")][r.randi() % 2], 10)
+	# The used-oil tank in its steel containment box beside the shed.
+	var t := p + Vector3(w * 0.5 + 2.6, 0, -0.5)
+	_box("paint", Vector3(2.4, 0.6, 3.6), t + Vector3(0, 0.3, 0), Color("#4f5355"))
+	_tank_on_saddles(t + Vector3(0, 0.6, 0), 0.75, 2.8, Color("#c9cbc6"))
+	_box("paint", Vector3(0.9, 0.5, 0.05), t + Vector3(0, 1.2, -1.85), Color("#e0b81e"))
 
 
 ## The working yard behind the gate: baled material stacked in blocks,
