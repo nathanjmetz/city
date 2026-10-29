@@ -19,6 +19,12 @@ func _process(_delta: float) -> bool:
 	_frames += 1
 	if _frames == 2:
 		_demo_town()
+	if OS.get_environment("SHOT_NOTOUR") == "1" and _frames > 2:
+		# The guided first town glides the camera to each step: put it away.
+		for t in _main.find_children("*", "FirstTownTour", true, false):
+			if t.visible:
+				t.stop()
+				_aim_camera()
 	if _frames == (int(OS.get_environment("SHOT_FRAMES")) if OS.get_environment("SHOT_FRAMES") != "" else 40):
 		var args := OS.get_cmdline_user_args()
 		var out := args[0] if args.size() > 0 else "shot.png"
@@ -635,6 +641,16 @@ func _demo_markings(sim: CitySim) -> void:
 			for side in [-1, 1]:
 				if not sim.apply({"type": "zone_frontage", "seg": id, "side": side, "zone": ZoneMap.Zone.RESIDENTIAL}):
 					print("refused zoning ", id, " ", sim.network.curve_of(id)[0])
+	if OS.get_environment("MARKINGS_LANES") == "1":
+		# The player's turn rules where the avenue crosses Main Street: a
+		# left-only lane on the avenue, No Left Turn from the street.
+		var n := sim.network.find_node_near(Vector3(270, 0, -180), 2.0)
+		for seg in sim.network.segments_at(n):
+			if sim.network.segments[seg].type == 1:
+				sim.apply({"type": "set_lanes", "node": n, "seg": seg,
+					"lanes": [TrafficSim.ARROW_L, TrafficSim.ARROW_S | TrafficSim.ARROW_R]})
+			else:
+				sim.apply({"type": "set_lanes", "node": n, "seg": seg, "no_left": true, "lanes": []})
 	for i in 5:
 		sim.tick()
 	# Lots take a while to be platted out here; draw every new street as a
