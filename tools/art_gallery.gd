@@ -65,12 +65,8 @@ func _init() -> void:
 			k = ["house", "row", "apartments", "mixed", "office"][i]
 		if kind in ["care", "careshop"]:
 			HouseBuilder.owner_care = i - 2
-## careshop (the same for a shop), grown (a house up its growth path: family
-## home, two storeys, then three with an addition out back) and duplex (an
-## up-and-down, a double, a ranch and a two-storey duplex, and a fourplex).
-## "far:<kind>" draws the same
-## buildings as their far versions (BuildingView.far_version). GALLERY_HOUR
-## (0-24) sets the time of day.
+		var w: float = {"care": 24.0, "careshop": 26.0, "row": 22.0, "apartments": 36.0, "mixed": 22.0, "main": 16.0 + 4.0 * (i % 3), "mainold": 16.0 + 4.0 * (i % 3), "mainrestored": 16.0 + 4.0 * (i % 3), "office": 40.0, "towers": 44.0, "hometowers": 54.0, "towerfar": 44.0, "flats": 24.0, "courtyard": 48.0, "walkup": 26.0, "garage": 44.0, "growth": [40.0, 40.0, 44.0, 56.0, 64.0, 64.0, 72.0][i % 7], "oddlots": [26.0, 22.0, 20.0, 26.0, 18.0][i % 5],
+			"grown": 22.0, "duplex": [16.0, 20.0, 24.0, 24.0, 22.0][i]}.get(k, 20.0)
 		var sd := seed * 100 + i
 		match k:
 			"shop": meshes = CommercialBuilder.build_shop(sd, 3.9)
