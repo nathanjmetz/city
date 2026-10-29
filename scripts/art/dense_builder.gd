@@ -388,6 +388,93 @@ func _alley_side(w: float, zb: float, fronts: int, fw: float, storeys: int, shop
 			_glass(Vector3(x, y, zb + 0.03), Vector3(1, 0, 0), 0.9, wh, rng.randf_range(0.0, 0.8))
 			_box("brick", Vector3(1.25, 0.3, 0.1), Vector3(x, y + wh * 0.5 + 0.15, zb + 0.05), arch)
 			_box("paint", Vector3(1.1, 0.08, 0.14), Vector3(x, y - wh * 0.5 - 0.04, zb + 0.07), FOUNDATION)
+	if fine:
+		_alley_services(w, zb, fronts, fw, storeys, shop_h, floor_h, n)
+
+
+## What hangs on a real alley wall downtown (Marion, Wabash, Muncie): each
+## shop's electric meter with its conduit up to the weatherhead and a gas
+## meter on its riser by the back door; on blocks of three storeys or more a
+## black (or rusting) steel fire escape with landings under two upstairs
+## windows, switchback stairs and a drop ladder that stops 2.4 m off the
+## pavement; and a window air conditioner in some flats. Desktop only, with
+## its own random numbers so the builder's don't move.
+func _alley_services(w: float, zb: float, fronts: int, fw: float, storeys: int, shop_h: float, floor_h: float,
+		n: int) -> void:
+	var r := RandomNumberGenerator.new()
+	r.seed = hash([rng.seed, 7341])
+	var grey := Color("#8d9092")
+	var conduit := Color("#9a9c9e")
+	for k in fronts:
+		var fx := -w * 0.5 + (k + 0.5) * fw
+		var side := -1.0 if k % 2 == 0 else 1.0
+		var dx := fx + fw * 0.2 * side
+		# Electric meter on the far side of the door from the barred window.
+		var mx := dx + side * 0.95
+		_box("metal", Vector3(0.3, 0.45, 0.14), Vector3(mx, 1.6, zb + 0.09), grey)
+		_box("metal", Vector3(0.16, 0.16, 0.06), Vector3(mx, 1.66, zb + 0.18), Color("#c9cdcf"))  # the glass dome
+		_box("metal", Vector3(0.05, shop_h + 1.0 - 1.83, 0.05), Vector3(mx, (shop_h + 1.0 + 1.83) * 0.5, zb + 0.06), conduit)
+		_box("metal", Vector3(0.12, 0.1, 0.12), Vector3(mx, shop_h + 1.05, zb + 0.1), Color("#2a2b2c"))  # weatherhead
+		# Gas meter on its riser, low beside the meter.
+		if r.randf() < 0.7:
+			var gx := mx + side * 0.55
+			_box("metal", Vector3(0.05, 1.0, 0.05), Vector3(gx, 0.5, zb + 0.06), Color("#c9b23a"))
+			_box("metal", Vector3(0.32, 0.36, 0.24), Vector3(gx, 0.78, zb + 0.18), Color("#b4b6b3"))
+			_box("metal", Vector3(0.14, 0.1, 0.1), Vector3(gx, 1.08, zb + 0.14), Color("#5a5f63"))  # regulator
+	var esc_lo := -1
+	if storeys >= 3 and n >= 3:
+		esc_lo = 0 if r.randf() < 0.5 else n - 2
+		var steel := Color("#1d1e1f") if r.randf() < 0.7 else Color("#4a3226")
+		var xa := lerpf(-w * 0.5 + 1.8, w * 0.5 - 1.8, float(esc_lo) / (n - 1)) - 0.8
+		var xb := lerpf(-w * 0.5 + 1.8, w * 0.5 - 1.8, float(esc_lo + 1) / (n - 1)) + 0.8
+		var dep := 1.25
+		var zc := zb + 0.06 + dep * 0.5
+		var levels: Array[float] = []
+		for f in range(1, storeys):
+			levels.append(shop_h + (f - 1) * floor_h + 0.6)
+		for li in levels.size():
+			var ly: float = levels[li]
+			_box("metal", Vector3(xb - xa, 0.05, dep), Vector3((xa + xb) * 0.5, ly, zc), steel)  # grating
+			_box("metal", Vector3(xb - xa, 0.05, 0.05), Vector3((xa + xb) * 0.5, ly + 1.0, zb + 0.06 + dep), steel)  # top rail
+			_box("metal", Vector3(xb - xa, 0.03, 0.03), Vector3((xa + xb) * 0.5, ly + 0.5, zb + 0.06 + dep), steel)
+			for e in [xa, xb]:
+				_box("metal", Vector3(0.05, 1.0, dep), Vector3(e, ly + 0.5, zc), steel.lightened(0.02))  # end rail
+			var posts := int((xb - xa) / 1.2)
+			for p in posts + 1:
+				_box("metal", Vector3(0.04, 1.0, 0.04), Vector3(lerpf(xa, xb, float(p) / posts), ly + 0.5, zb + 0.06 + dep), steel)
+			for p in 2:
+				_box("metal", Vector3(0.06, 0.06, dep), Vector3(lerpf(xa + 0.3, xb - 0.3, p), ly - 0.12, zc), steel)  # bracket
+			# Switchback flight up to the next landing, on the outer half.
+			if li + 1 < levels.size():
+				var rise: float = levels[li + 1] - ly
+				var steps := ceili(rise / 0.2)
+				var run := 0.24
+				var dir := 1.0 if li % 2 == 0 else -1.0
+				var x0 := (xa + 0.35) if dir > 0 else (xb - 0.35)
+				var sz := zb + 0.06 + dep - 0.35
+				for s in steps:
+					_box("metal", Vector3(run, 0.04, 0.6), Vector3(x0 + dir * (s + 0.5) * run, ly + (s + 1) * rise / steps, sz), steel)
+				for s in steps:  # the stringer, as a stepped side plate
+					_box("metal", Vector3(run, rise / steps, 0.03), Vector3(x0 + dir * (s + 0.5) * run, ly + (s + 0.5) * rise / steps, sz + 0.32), steel)
+		# Drop ladder from the bottom landing, hung 2.4 m off the pavement.
+		var lx := xb - 0.5 if esc_lo == 0 else xa + 0.5
+		var lz := zb + 0.06 + dep - 0.2
+		var top: float = levels[0]
+		for s in [-0.22, 0.22]:
+			_box("metal", Vector3(0.04, top - 2.4, 0.04), Vector3(lx + s, (top + 2.4) * 0.5, lz), steel)
+		var rungs := int((top - 2.4) / 0.3)
+		for i in rungs:
+			_box("metal", Vector3(0.44, 0.025, 0.025), Vector3(lx, 2.55 + i * 0.3, lz), steel)
+	# Window air conditioners in some of the flats upstairs.
+	for f in range(1, storeys):
+		var y := shop_h + (f - 1) * floor_h + 1.6
+		for i in n:
+			if esc_lo >= 0 and (i == esc_lo or i == esc_lo + 1):
+				continue
+			if r.randf() < 0.22:
+				var x := lerpf(-w * 0.5 + 1.8, w * 0.5 - 1.8, float(i) / (n - 1))
+				_box("metal", Vector3(0.62, 0.4, 0.5), Vector3(x, y - 0.6, zb + 0.3), Color("#d2cdc2"))
+				_box("metal", Vector3(0.5, 0.26, 0.02), Vector3(x, y - 0.6, zb + 0.56), Color("#8f8b84"))  # back grille
 
 
 ## A downtown sidewalk: concrete from the shopfronts all the way to the curb
