@@ -330,6 +330,21 @@ func _init() -> void:
 			high += 1
 	_check(high == 2, "heights saved (got %d)" % high)
 	_check(RoadStyle.safe_speed_mph(46.0) >= 20 and RoadStyle.safe_speed_mph(46.0) <= 30, "a 150 ft loop ramp is a ~25 mph curve")
+	# Brawn (CS2): the road's slope shows while drawing, read over a 100 ft
+	# station on the ground it's draped on, amber past the AASHTO max grade.
+	var flat := func(_p: Vector3) -> float: return 0.0
+	var ramp := func(p: Vector3) -> float: return p.x * 0.06
+	var bump := func(p: Vector3) -> float: return clampf((p.x - 100.0) * 0.15, 0.0, 6.0)
+	var slope_road := [[Vector3(0, 0, 0), Vector3(100, 0, 0), Vector3(200, 0, 0)]]
+	_check(RoadTool.steepest_grade(slope_road, flat).grade < 0.001, "level ground has no grade")
+	_check(absf(RoadTool.steepest_grade(slope_road, ramp).grade - 0.06) < 0.002, "a steady 6% climb reads 6%")
+	var sg := RoadTool.steepest_grade(slope_road, bump)
+	_check(sg.grade > 0.14 and sg.grade < 0.16, "a 15%% pitch 40 m long reads 15%% over a 100 ft station (got %.3f)" % sg.grade)
+	_check(sg.at.x > 95.0 and sg.at.x < 145.0, "the readout sits on the steep stretch (x %.0f)" % sg.at.x)
+	var deck := [[Vector3(0, 0, 0), Vector3(50, 2.5, 0), Vector3(100, 5, 0)]]
+	_check(absf(RoadTool.steepest_grade(deck, flat).grade - 0.05) < 0.002, "a bridge climbing 5 m in 100 m reads 5%")
+	_check(RoadTool.steepest_grade([[Vector3.ZERO, Vector3(5, 0, 0), Vector3(10, 0, 0)]], ramp).grade > 0.05,
+		"a road shorter than a station still reads its grade")
 	print("ALL TESTS PASSED" if not _failed else "TESTS FAILED")
 	quit(1 if _failed else 0)
 
