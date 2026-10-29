@@ -3,7 +3,8 @@ extends "res://tools/screenshot.gd"
 ## nearest the farm demo (screenshot.gd "farms"), stopped where its engines
 ## and then its cars pass the camera, saved as OUT_DIR/<view>.png.
 ## Run: xvfb-run godot --resolution 1600x900 -s tools/train_shot.gd -- OUT_DIR 0 0 0 farms [view ...] --quality=ultra
-## Env: LOOK_MONTH (default 7), LOOK_HOUR (default 11), TRAIN_KIND (grain, tank, manifest or stone; any by default).
+## Env: LOOK_MONTH (default 7), LOOK_HOUR (default 11), TRAIN_KIND (grain, tank, manifest or stone; any by default),
+## TRAIN_OFF=1 (the same views with the trains hidden: a before shot), SHOT_PREFIX and SHOT_SUFFIX (around each file name).
 
 ## [name, metres behind the lead engine to aim at, yaw off the track, pitch, distance]
 const VIEWS := [
@@ -41,6 +42,8 @@ func _process(_delta: float) -> bool:
 				c.close_all()
 			if c is CanvasLayer or c is LotAlerts:
 				c.visible = false
+			if c is CountyTrainView and OS.get_environment("TRAIN_OFF") != "":
+				c.queue_free()
 		var args := OS.get_cmdline_user_args()
 		var only := Array(args.slice(5)).filter(func(a): return not a.begins_with("--"))
 		for v in VIEWS:
@@ -54,7 +57,7 @@ func _process(_delta: float) -> bool:
 		return false
 	_view_frames += 1
 	if _view_frames == 30:
-		var out: String = OS.get_cmdline_user_args()[0].path_join(_views[_view][0] + ".png")
+		var out: String = OS.get_cmdline_user_args()[0].path_join(OS.get_environment("SHOT_PREFIX") + _views[_view][0] + OS.get_environment("SHOT_SUFFIX") + ".png")
 		root.get_viewport().get_texture().get_image().save_png(out)
 		print("saved ", out)
 		_next()

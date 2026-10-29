@@ -4945,6 +4945,7 @@ func save_steps(postcard := false) -> Array:
 		["reserves", func(): return reserves.to_dict()],
 		["land_plan", func(): return land_plan.to_dict()],
 		["rail", func(): return rail.to_dict()],
+		["county_trains", func(): return county_trains.to_dict()],
 		["permits", func(): return permits.to_dict()],
 		["hubs", func(): return hubs.to_dict()],
 		["parks", func(): return parks.to_dict()],
@@ -5060,6 +5061,7 @@ func from_dict(d: Dictionary) -> void:
 	land_plan.from_list(d.get("land_plan", []))
 	plan_changed.emit()
 	rail.from_dict(d.get("rail", {}))
+	county_trains.from_dict(d.get("county_trains", {}))
 	permits.from_dict(d.get("permits", {}))
 	hubs.from_dict(d.get("hubs", {}))
 	parks.from_dict(d.get("parks", {}))
