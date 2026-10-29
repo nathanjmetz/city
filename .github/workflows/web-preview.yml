@@ -170,6 +170,7 @@ jobs:
           run_test tests/test_telemetry.gd
           run_test tests/test_pollution.gd
           run_test tests/test_placement_hints.gd
+          run_test tests/test_street_reach.gd
           run_test tests/test_cursor_cards.gd
           run_test tests/test_road_warning.gd
           run_test tests/test_resource_bands.gd

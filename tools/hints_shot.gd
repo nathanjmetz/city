@@ -1,6 +1,6 @@
 extends SceneTree
 ## Pictures of the placement hints (wind arrows, smoke plume, noise rings).
-## Run: godot -s tools/hints_shot.gd -- industry|homes|coal out.png
+## Run: godot -s tools/hints_shot.gd -- industry|homes|coal|reach out.png
 
 var _frames := 0
 var _mode := "industry"
@@ -54,6 +54,20 @@ func _process(_delta: float) -> bool:
 				_park = site[0]
 				cam.set_view(deg_to_rad(0.0), deg_to_rad(55.0), 500.0)
 				cam.look_at_point(_park)
+			"reach":
+				# One police station at the west end of a long road lined with
+				# homes: its reach, the homes past it red, and a second
+				# station's reach from the cursor.
+				sim.apply({"type": "build_road", "start": [-5600, 300], "ctrl": [-2650, 300], "end": [300, 300]})
+				for x in range(-5500, 300, 120):
+					sim.apply({"type": "paint_zone", "center": [x, 275], "radius": 12, "zone": ZoneMap.Zone.RESIDENTIAL})
+				var at := Vector3(-4800.0, 0, 300 - 32)
+				sim.apply({"type": "place_service", "kind": Services.Kind.POLICE, "pos": [at.x, at.z], "dir": [0, 1]})
+				for i in 5:
+					sim.tick()
+				cam.set_view(deg_to_rad(0.0), deg_to_rad(70.0), 4200.0)
+				cam.look_at_point(Vector3(-2600, 0, 300))
+				hud.service_tool.set_kind(Services.Kind.POLICE)
 			"police":
 				# Two stations on a long road, so their coverage shows its edge.
 				sim.apply({"type": "build_road", "start": [-5600, 300], "ctrl": [-2650, 300], "end": [300, 300]})
@@ -66,6 +80,9 @@ func _process(_delta: float) -> bool:
 				cam.set_view(deg_to_rad(0.0), deg_to_rad(70.0), 2900.0)
 				cam.look_at_point(Vector3(-1500, 0, 300))
 				hud.service_tool.set_kind(Services.Kind.POLICE)
+	if _frames == 60 and _mode == "reach":
+		var cam: CityCamera = main.get_children().filter(func(n): return n is CityCamera)[0]
+		cam.glide_to(Vector3(-2600, 0, 300), 4200.0)
 	if _frames == 60 and _mode == "police":
 		# After the guided tour's own camera glide.
 		var cam: CityCamera = main.get_children().filter(func(n): return n is CityCamera)[0]
