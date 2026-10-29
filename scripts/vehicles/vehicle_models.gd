@@ -29,6 +29,8 @@ const USPS_BLUE := Color(0.08, 0.17, 0.42, 0.4)
 const USPS_RED := Color(0.75, 0.08, 0.12, 0.4)
 const WHITE := Color(0.92, 0.92, 0.91, 0.4)
 const STEEL := Color(0.62, 0.63, 0.64, 0.2)
+## DOT-C2 conspicuity sheeting: alternating red and white reflective tape.
+const TAPE_RED := Color(0.72, 0.05, 0.04, 0.4)
 const DARK := Color(0.16, 0.16, 0.17, 0.4)
 const RIM := Color(0.72, 0.72, 0.73, 0.2)
 ## Loads: oak bark, freshly sawn log ends, iron ore, dunnage, ratchet straps.
@@ -81,7 +83,7 @@ const VARIANTS := {
 const AXLE := {
 	"sedan": 3.9, "hatchback": 3.4, "crossover": 3.6, "suv": 4.2, "pickup": 4.7, "work_pickup": 4.8,
 	"minivan": 4.0, "sports": 3.8, "motorcycle": 1.8, "van": 4.4, "delivery_van": 5.3,
-	"box_truck": 7.9, "dump_truck": 6.7, "tow_truck": 5.2, "police_charger": 3.95, "police_tahoe": 4.15, "fire_tender": 7.2, "garbage_side": 7.3, "pickup_old": 4.4, "suv_jeep": 3.9, "minivan_pacifica": 4.0, "crossover_compact": 3.5, "work_pickup_plow": 4.8, "dump_truck_plow": 6.7, "buggy": 4.9, "rv": 5.9, "motorhome": 7.1, "pickup_camper": 4.8, "bucket_truck": 5.6, "school_bus": 8.9, "city_bus": 9.2, "coach": 10.9,
+	"box_truck": 7.9, "dump_truck": 6.7, "tow_truck": 5.2, "police_charger": 3.95, "police_tahoe": 4.15, "fire_tender": 7.2, "garbage_side": 7.3, "pickup_old": 4.4, "suv_jeep": 3.9, "minivan_pacifica": 4.0, "crossover_compact": 3.5, "work_pickup_plow": 4.8, "dump_truck_plow": 6.7, "buggy": 4.9, "golf_cart": 2.2, "rv": 5.9, "motorhome": 7.1, "pickup_camper": 4.8, "bucket_truck": 5.6, "school_bus": 8.9, "city_bus": 9.2, "coach": 10.9,
 	"garbage_truck": 7.3, "fire_engine": 7.4, "police": 3.9, "taxi": 3.9, "taxi_old": 4.0, "ambulance": 5.1, "tractor": 4.2,
 	"combine": 7.0, "tractor_sleeper": 6.4, "mail_truck": 4.3, "concrete_mixer": 7.0, "sedan_compact": 3.6, "sedan_fullsize": 4.0,
 	"pickup_ext": 4.6, "pickup_mid": 4.4, "suv_mid": 3.9, "wagon": 3.7, "ev_crossover": 3.8, "hatch_box": 3.4, "van_low": 4.4,
@@ -1117,14 +1119,48 @@ func _dump_truck() -> void:  # tandem dump on a conventional chassis
 	var L := 9.0
 	_md_cab(2.5)
 	_box(Vector3(0, 0.75, 5.5), Vector3(1.0, 0.3, 6.5), TRIM)
-	_loft([
-		[3.3, 1.05, 2.9, 3.0, 1.15, 1.25, 1.25],
-		[L - 0.1, 1.05, 2.9, 3.0, 1.15, 1.25, 1.25],
-		[L, 1.25, 2.9, 3.0, 1.1, 1.25, 1.25],
-	], [_edges(PAINT, TRIM)], PAINT, PAINT)
-	_box(Vector3(0, 2.75, 6.2), Vector3(2.3, 0.004, 5.5), DARK)
+	if _hi:
+		_dump_bed(L)
+	else:
+		_loft([
+			[3.3, 1.05, 2.9, 3.0, 1.15, 1.25, 1.25],
+			[L - 0.1, 1.05, 2.9, 3.0, 1.15, 1.25, 1.25],
+			[L, 1.25, 2.9, 3.0, 1.1, 1.25, 1.25],
+		], [_edges(PAINT, TRIM)], PAINT, PAINT)
+		_box(Vector3(0, 2.75, 6.2), Vector3(2.3, 0.004, 5.5), DARK)
 	_wheels([1.2, 6.2, 7.6], 0.52, 1.25, 0.3)
 	_box(Vector3(1.1, 1.2, L + 0.01), Vector3(0.12, 0.2, 0.04), TAIL, true)
+
+
+## Ultra: a real open dump body (Ox, Rugby): steel sides 1.4 m tall with
+## upright stiffeners and a top rail, the headboard with its cab shield
+## reaching forward over the cab roof, a tailgate, and the worn floor
+## inside, on a long sill over the frame.
+func _dump_bed(L: float) -> void:
+	_loft([
+		[3.3, 1.05, 1.5, 1.6, 1.15, 1.25, 1.25],
+		[L - 0.1, 1.05, 1.5, 1.6, 1.15, 1.25, 1.25],
+		[L, 1.25, 1.5, 1.6, 1.1, 1.25, 1.25],
+	], [_edges(PAINT, TRIM)], PAINT, PAINT)
+	var mid := (3.38 + L - 0.08) * 0.5
+	var len := L - 0.08 - 3.38
+	for s in [-1.0, 1.0]:
+		_box(Vector3(s * 1.21, 2.3, mid), Vector3(0.08, 1.4, len), PAINT)
+		_box(Vector3(s * 1.22, 3.02, mid), Vector3(0.12, 0.06, len), PAINT)
+		var z := 3.9
+		while z < L - 0.4:
+			_box(Vector3(s * 1.265, 2.3, z), Vector3(0.03, 1.3, 0.08), PAINT)
+			z += 0.9
+	_box(Vector3(0, 2.3, 3.34), Vector3(2.5, 1.4, 0.08), PAINT)
+	_box(Vector3(0, 2.3, L - 0.04), Vector3(2.5, 1.4, 0.08), PAINT)
+	_box(Vector3(0, 2.98, 2.98), Vector3(2.0, 0.06, 0.72), PAINT)
+	# Inside, the paint is scraped back to dull steel by the loads.
+	var worn := Color(0.3, 0.28, 0.26, 0.4)
+	_box(Vector3(0, 1.62, mid), Vector3(2.34, 0.04, len), worn)
+	for s in [-1.0, 1.0]:
+		_box(Vector3(s * 1.166, 2.315, mid), Vector3(0.004, 1.35, len - 0.02), worn)
+	_box(Vector3(0, 2.315, 3.386), Vector3(2.32, 1.35, 0.004), worn)
+	_box(Vector3(0, 2.315, L - 0.086), Vector3(2.32, 1.35, 0.004), worn)
 
 
 ## A rear-discharge ready-mix truck (Kenworth T880 with a McNeilus drum):
@@ -1449,6 +1485,19 @@ func _trailer_base(L: float, wheels_at: Array) -> void:
 		_box(Vector3(0, 0.6, L - 0.3), Vector3(2.3, 0.12, 0.12), TRIM)
 		for s in [-1.0, 1.0]:
 			_box(Vector3(s * 0.9, 0.7, 4.0), Vector3(0.15, 0.7, 0.15), TRIM)
+	if _hi:
+		# Ultra: red and white tape across the underride guard (FMVSS 108
+		# asks for it on every trailer 80 in wide), and mud flaps behind
+		# the rear axle.
+		var x := -1.15
+		var k := 0
+		while x < 1.15:
+			var w := minf(0.3, 1.15 - x)
+			_box(Vector3(x + w * 0.5, 0.6, L - 0.237), Vector3(w, 0.06, 0.006), WHITE if k % 2 == 0 else TAPE_RED)
+			x += w
+			k += 1
+		for s in [-1.0, 1.0]:
+			_box(Vector3(s * 1.0, 0.45, float(wheels_at[wheels_at.size() - 1]) + 0.68), Vector3(0.6, 0.6, 0.015), TIRE)
 
 
 func _trailer_box() -> void:
@@ -1457,11 +1506,41 @@ func _trailer_box() -> void:
 		[0.0, 1.25, 4.0, 4.1, 1.3, 1.3, 1.28],
 		[L, 1.25, 4.0, 4.1, 1.3, 1.3, 1.28],
 	], [_edges(WHITE, STEEL)], WHITE, Color(0.85, 0.85, 0.85, 0.4))
-	if not _lo:
+	if _hi:
+		_trailer_box_tape(L)
+	elif not _lo:
 		for s in [-1.0, 1.0]:
 			_box(Vector3(s * 1.304, 1.3, L * 0.5), Vector3(0.006, 0.05, L), Color(0.85, 0.2, 0.05, 0.4))
+	if not _lo:
 		_box(Vector3(0, 2.6, L + 0.01), Vector3(0.03, 2.6, 0.01), STEEL)
 	_trailer_base(L, [13.9, 15.15])
+
+
+## Ultra: the conspicuity tape a dry van carries by law (DOT-C2, 7 in red
+## and 11 in white) along both sills and across the rear, white corner
+## marks up top, and the four lock rods on the swing doors.
+func _trailer_box_tape(L: float) -> void:
+	for s in [-1.0, 1.0]:
+		var z := 0.3
+		var k := 0
+		while z < L - 0.3:
+			var seg := 0.18 if k % 2 == 0 else 0.28
+			seg = minf(seg, L - 0.3 - z)
+			_box(Vector3(s * 1.304, 1.32, z + seg * 0.5), Vector3(0.006, 0.05, seg), TAPE_RED if k % 2 == 0 else WHITE)
+			z += seg
+			k += 1
+		# Upper rear corners: an inverted L of white.
+		_box(Vector3(s * 1.1, 3.93, L + 0.022), Vector3(0.3, 0.05, 0.006), WHITE)
+		_box(Vector3(s * 1.225, 3.75, L + 0.022), Vector3(0.05, 0.3, 0.006), WHITE)
+	var x := -1.2
+	var k2 := 0
+	while x < 1.2:
+		var w := minf(0.18 if k2 % 2 == 0 else 0.28, 1.2 - x)
+		_box(Vector3(x + w * 0.5, 1.36, L + 0.022), Vector3(w, 0.05, 0.006), TAPE_RED if k2 % 2 == 0 else WHITE)
+		x += w
+		k2 += 1
+	for rx in [-0.9, -0.35, 0.35, 0.9]:
+		_box(Vector3(rx, 2.68, L + 0.03), Vector3(0.03, 2.5, 0.03), STEEL)
 
 
 ## A 53 ft USPS contract trailer: white with the blue and red stripe.
@@ -1716,6 +1795,40 @@ func _motorcycle() -> void:  # cruiser (Harley-Davidson Street Glide) with rider
 	_box(Vector3(0, 1.55, 1.15), Vector3(0.24, 0.26, 0.26), Color(0.06, 0.06, 0.07, 0.2))
 	_box(Vector3(0, 0.95, 0.27), Vector3(0.16, 0.1, 0.06), HEAD, true)
 	_box(Vector3(0, 0.85, 2.15), Vector3(0.14, 0.06, 0.04), TAIL, true)
+
+
+## A street-legal four-seat golf cart (Club Car Onward / E-Z-GO Express
+## S4): low front cowl with headlights, a canopy roof on four posts, a fold
+## windshield, the driver on the front bench and a rear seat facing back.
+func _golf_cart() -> void:
+	var seat := Color(0.80, 0.74, 0.62, 0.4)
+	var canopy := Color(0.12, 0.12, 0.13, 0.4)
+	var shirt := Color(0.30, 0.42, 0.62, 0.4)
+	var skin := Color(0.80, 0.62, 0.50, 0.4)
+	_wheels([0.48, 2.2], 0.26, 0.62, 0.2)
+	# Front cowl and the body round the floor, rear bodywork over the motor.
+	_box(Vector3(0, 0.6, 0.36), Vector3(1.16, 0.52, 0.62), PAINT)
+	_box(Vector3(0, 0.36, 1.35), Vector3(1.18, 0.14, 1.5), TRIM)
+	_box(Vector3(0, 0.55, 2.25), Vector3(1.2, 0.4, 0.9), PAINT)
+	# Front bench and back, the rear seat facing back.
+	_box(Vector3(0, 0.74, 1.5), Vector3(1.08, 0.14, 0.5), seat)
+	_box(Vector3(0, 1.02, 1.78), Vector3(1.08, 0.46, 0.1), seat)
+	_box(Vector3(0, 0.82, 2.25), Vector3(1.08, 0.12, 0.46), seat)
+	_box(Vector3(0, 1.02, 1.95), Vector3(1.08, 0.36, 0.08), seat)
+	# Roof posts, canopy and windshield.
+	for s in [-1.0, 1.0]:
+		_beam(Vector3(s * 0.52, 0.8, 0.66), Vector3(s * 0.52, 1.86, 0.78), 0.05, TRIM)
+		_beam(Vector3(s * 0.52, 0.75, 2.6), Vector3(s * 0.52, 1.86, 2.6), 0.05, TRIM)
+	_box(Vector3(0, 1.9, 1.62), Vector3(1.24, 0.06, 2.12), canopy)
+	if not _lo:
+		_box(Vector3(0, 1.35, 0.72), Vector3(1.0, 0.9, 0.02), GLASS)
+		_beam(Vector3(0.26, 0.85, 1.0), Vector3(0.26, 1.08, 1.12), 0.04, TRIM)  # steering column
+		_box(Vector3(0.26, 1.1, 1.14), Vector3(0.34, 0.04, 0.12), TRIM)  # wheel
+		# The driver on the front bench.
+		_box(Vector3(0.26, 1.1, 1.52), Vector3(0.38, 0.5, 0.26), shirt)
+		_box(Vector3(0.26, 1.48, 1.5), Vector3(0.2, 0.22, 0.22), skin)
+		_box(Vector3(0.38, 0.62, 0.05), Vector3(0.14, 0.08, 0.04), HEAD, true)
+		_box(Vector3(0.48, 0.62, 2.71), Vector3(0.1, 0.08, 0.03), TAIL, true)
 
 
 ## An Amish black top buggy (Daviess County, Indiana) behind a bay

@@ -107,7 +107,7 @@ func _draw_end(e: Array) -> Node3D:
 		var mi := MeshInstance3D.new()
 		mi.mesh = parts[k].commit()
 		mi.material_override = _mats[k]
-		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if k in ["pole", "wire"] \
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if k == "pole" \
 			else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		root.add_child(mi)
 	return root

@@ -409,6 +409,9 @@ static func _farm(sim: CitySim, id: int, at := []) -> Dictionary:
 		rows.insert(1, ["Livestock", what])
 	if str(f.get("stock", {}).get("why", "")) != "":
 		rows.insert(2 if stock != "" else 1, ["Livestock plan", str(f.stock.why)])
+	if f.has("till"):
+		rows.insert(1, ["Tillage", "%s%s" % [str(Balance.TILLAGE[f.till].name),
+			(" · " + str(f.till_why)) if str(f.get("till_why", "")) != "" else ""]])
 	var problems := []
 	var status := "Growing: renting or buying land as its savings allow"
 	if str(f.get("why", "")).begins_with("It's saving"):

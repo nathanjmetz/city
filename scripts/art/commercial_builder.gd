@@ -186,6 +186,161 @@ func _retail(to_curb: float) -> void:
 	_box("paint", Vector3(0.6, 0.5, 0.6), Vector3(lx, 0.25, 0.8), FOUNDATION)
 	_box("paint", Vector3(0.16, 7.5, 0.16), Vector3(lx, 4.0, 0.8), Color("#3a3c3e"))
 	_box("paint", Vector3(0.5, 0.18, 0.9), Vector3(lx, 7.7, 0.8 + 0.3), Color("#3a3c3e"))
+	if not small_store:
+		_rt_grown(w, d, h, zf, site.door.x, sw)
+
+
+## A freestanding store grown into its second stage (BuildingTypes "shop"
+## level 1, "Retail store"): the same store with a stockroom built on the
+## back in painted split-face block, a little lower than the store, with
+## its own roll-up door, and the front walk dressed as a busy small-town
+## store's is (an ice chest, a propane exchange cage, pallets of bagged
+## salt or mulch), as Indiana's dollar and hardware stores add on and
+## spill out front once trade picks up. Its own dice, so the first stage
+## draws as it did.
+func _rt_grown(w: float, d: float, h: float, zf: float, door_x: float, sw: float) -> void:
+	var r := RandomNumberGenerator.new()
+	r.seed = hash([rng.seed, "retail grown"])
+	var back := zf + d
+	var ad := minf(r.randf_range(6.0, 9.0), depth - back - 5.0)
+	if ad >= 3.5:
+		var aw := w - r.randf_range(0.0, 2.0)
+		var ax := (w - aw) * 0.5 * (1.0 if r.randf() < 0.5 else -1.0)
+		var ah := h - r.randf_range(0.4, 0.9)
+		var block := Color(BLOCK[r.randi() % BLOCK.size()])
+		var cz := back + ad * 0.5
+		_box("paint", Vector3(aw + 0.1, 0.3, ad), Vector3(ax, 0.15, cz), FOUNDATION)
+		_box("paint", Vector3(aw, ah, ad), Vector3(ax, ah * 0.5, cz), block)
+		# Split-face courses read as fine bands up the block wall.
+		for k in int(ah / 0.6):
+			_box("paint", Vector3(aw + 0.04, 0.04, ad + 0.04), Vector3(ax, 0.6 * (k + 1), cz), block.darkened(0.08))
+		var y := ah + 0.02
+		_quad("membrane", Vector3(ax - aw * 0.5, y, back), Vector3(ax + aw * 0.5, y, back),
+			Vector3(ax + aw * 0.5, y, back + ad), Vector3(ax - aw * 0.5, y, back + ad), Color("#d9d8d2"), [], Vector3.UP)
+		_box("paint", Vector3(aw + 0.1, 0.3, 0.25), Vector3(ax, ah + 0.15, back + ad - 0.1), Color("#6e6a63"))
+		for s in [-1.0, 1.0]:
+			_box("paint", Vector3(0.25, 0.3, ad), Vector3(ax + s * (aw * 0.5 - 0.1), ah + 0.15, cz), Color("#6e6a63"))
+		# A roll-up door for deliveries and a man door beside it.
+		var rx := ax + r.randf_range(-aw * 0.2, aw * 0.2)
+		_box("metal", Vector3(3.0, 3.0, 0.08), Vector3(rx, 1.5, back + ad + 0.04), Color("#c9c9c4"))
+		for k in 10:
+			_box("paint", Vector3(3.0, 0.03, 0.1), Vector3(rx, 0.3 * (k + 0.5), back + ad + 0.06), Color("#a9a9a4"))
+		_box("paint", Vector3(3.3, 0.35, 0.3), Vector3(rx, 3.2, back + ad + 0.15), Color("#5a5e60"))
+		var mx := rx + (2.6 if rx < ax else -2.6)
+		if absf(mx - ax) < aw * 0.5 - 0.8:
+			_steel_door(Vector3(mx, 1.35, back + ad + 0.03), 1.0)
+		_flat_rect("asphalt", rx - 2.0, rx + 2.0, back + ad, minf(back + ad + 6.0, depth - 0.5), 0.07)
+	# Out front: an ice chest and a propane cage one side of the door,
+	# pallets of bags the other, on the walk against the glass.
+	var walk_z := zf - 0.75
+	var left := door_x - 1.8
+	var right := door_x + 1.8
+	var edge := sw * 0.5
+	if left - 1.6 > -edge:
+		_box("paint", Vector3(1.55, 1.25, 0.8), Vector3(left - 0.8, 0.63, walk_z), Color("#f2f4f5"))
+		_box("paint", Vector3(1.4, 0.35, 0.02), Vector3(left - 0.8, 0.9, walk_z - 0.41), Color("#2a6db5"))
+		if left - 3.2 > -edge:
+			var cx := left - 2.5
+			_box("paint", Vector3(1.2, 1.5, 0.7), Vector3(cx, 0.75, walk_z), Color("#c2c5c6"))
+			for k in 3:
+				_cylinder("metal", Vector3(cx - 0.38 + k * 0.38, 0.05, walk_z - 0.05), 0.15, 0.55, Color("#e9ecee"))
+				_cylinder("metal", Vector3(cx - 0.38 + k * 0.38, 0.75, walk_z - 0.05), 0.15, 0.55, Color("#e9ecee"))
+	if right + 1.4 < edge:
+		var bag := Color(["#7a5a3a", "#3b6e3a", "#d8d4c8"][r.randi() % 3])
+		for k in mini(2, int((edge - right) / 1.3)):
+			var px := right + 0.65 + k * 1.3
+			_box("paint", Vector3(1.1, 0.14, 1.1), Vector3(px, 0.07, walk_z), Color("#a88a5e"))
+			var bh := r.randf_range(0.5, 0.9)
+			_box("paint", Vector3(1.05, bh, 1.0), Vector3(px, 0.14 + bh * 0.5, walk_z), bag)
+
+
+## A one-storey wing on the back of a grown shop (the diner's party room,
+## the bank's loan offices): as wide as the building or a little less, set
+## to one side, windows down its sides, a flat roof behind a band in the
+## shop's own colour or a low hip roof. Its own dice.
+func _rt_wing(w: float, back: float, h: float, wall: Color, mat: String, band: Color, hip: bool) -> void:
+	var r := RandomNumberGenerator.new()
+	r.seed = hash([rng.seed, "shop wing"])
+	var ad := minf(r.randf_range(6.0, 9.0), depth - back - 4.0)
+	if ad < 3.5:
+		return
+	var aw := w - r.randf_range(0.0, 2.5)
+	var ax := (w - aw) * 0.5 * (1.0 if r.randf() < 0.5 else -1.0)
+	var cz := back + ad * 0.5
+	_box("paint", Vector3(aw + 0.1, 0.3, ad), Vector3(ax, 0.15, cz), FOUNDATION)
+	_box(mat, Vector3(aw, h, ad), Vector3(ax, h * 0.5, cz), wall)
+	if hip:
+		_hip_roof(ax, cz, h, aw, ad, minf(aw, ad) * 0.18, Color(ROOF[r.randi() % ROOF.size()]))
+		_box("paint", Vector3(aw + 0.2, 0.25, ad + 0.2), Vector3(ax, h - 0.1, cz), band)
+	else:
+		var y := h + 0.02
+		_quad("membrane", Vector3(ax - aw * 0.5, y, back), Vector3(ax + aw * 0.5, y, back),
+			Vector3(ax + aw * 0.5, y, back + ad), Vector3(ax - aw * 0.5, y, back + ad), Color("#d9d8d2"), [], Vector3.UP)
+		_box("paint", Vector3(aw + 0.1, 0.5, 0.14), Vector3(ax, h + 0.05, back + ad), band)
+		for sx in [-1.0, 1.0]:
+			_box("paint", Vector3(0.14, 0.5, ad), Vector3(ax + sx * aw * 0.5, h + 0.05, cz), band)
+	# Windows down both sides, and a door out the back.
+	var n := int((ad - 1.5) / 2.2)
+	for sx in [-1.0, 1.0]:
+		for k in n:
+			_window(Vector3(ax + sx * aw * 0.5, 1.8, back + 1.4 + k * 2.2), Vector3(0, 0, -sx), 1.1, 1.5, true, false, Color("#e9e6dc"))
+	_steel_door(Vector3(ax + aw * 0.25, 1.35, back + ad + 0.03), 1.0)
+	_box("concrete", Vector3(1.8, 0.15, 1.4), Vector3(ax + aw * 0.25, 0.08, back + ad + 0.7), FOUNDATION)
+
+
+## A gas station grown into its second stage: an in-bay automatic car
+## wash built on beside the store where the lot is wide enough (most
+## Indiana stations that add one do it there, entering from the
+## forecourt and leaving out the back), and an air and vacuum stand at
+## the lot's edge. Its own dice.
+func _rt_gas_grown(sw: float, sd: float, zf: float, cw: float, canopy_z: float, wall: Color, brand: Color) -> void:
+	var r := RandomNumberGenerator.new()
+	r.seed = hash([rng.seed, "gas grown"])
+	var side := 1.0 if r.randf() < 0.5 else -1.0
+	var bw := 6.0
+	var room := half - 0.8 - maxf(sw * 0.5, cw * 0.5)
+	if room >= bw + 0.6:
+		var bx := side * (maxf(sw * 0.5, cw * 0.5) + 0.6 + bw * 0.5)
+		var bd := minf(13.0, depth - 1.5 - (zf - 3.0))
+		var z0 := zf + sd - bd
+		var cz := z0 + bd * 0.5
+		var h := 4.6
+		_box("paint", Vector3(bw + 0.1, 0.3, bd + 0.1), Vector3(bx, 0.15, cz), FOUNDATION)
+		# Two block walls with the brand band along the top; open at both
+		# ends behind tall glass overhead doors.
+		for s in [-1.0, 1.0]:
+			_box("paint", Vector3(0.3, h, bd), Vector3(bx + s * (bw * 0.5 - 0.15), h * 0.5, cz), wall)
+		_box("paint", Vector3(bw, 0.6, bd), Vector3(bx, h - 0.3, cz), wall)
+		# Its walls are thin, so the bay's footprint is noted by hand.
+		_masses.append(Rect2(bx - bw * 0.5, z0, bw, bd))
+		_mass_back_z = maxf(_mass_back_z, z0 + bd)
+		_box("paint", Vector3(bw + 0.1, 0.6, bd + 0.1), Vector3(bx, h + 0.1, cz), brand)
+		var y := h + 0.42
+		_quad("membrane", Vector3(bx - bw * 0.5, y, z0), Vector3(bx + bw * 0.5, y, z0),
+			Vector3(bx + bw * 0.5, y, z0 + bd), Vector3(bx - bw * 0.5, y, z0 + bd), Color("#d9d8d2"), [], Vector3.UP)
+		for ez in [z0, z0 + bd]:
+			_glass(Vector3(bx, 2.0, ez - 0.03 if ez == z0 else ez + 0.03), Vector3(-1, 0, 0), bw - 0.8, 3.6, 0.1)
+			for k in 4:
+				_box("paint", Vector3(bw - 0.7, 0.06, 0.08), Vector3(bx, 0.4 + k * 0.95, ez), Color("#d8dadb"))
+		# The wash gantry and brushes seen through the glass.
+		_box("metal", Vector3(bw - 1.0, 0.3, 0.6), Vector3(bx, 3.6, cz), Color("#8d9093"))
+		for s in [-1.0, 1.0]:
+			_cylinder("paint", Vector3(bx + s * (bw * 0.5 - 1.0), 0.3, cz + 1.5), 0.45, 2.6, Color("#2a6db5"), 10)
+		_flat_rect("drive", bx - bw * 0.5, bx + bw * 0.5, z0 - 6.0, z0, 0.085)
+		_flat_rect("asphalt", bx - bw * 0.5, bx + bw * 0.5, z0 + bd, minf(z0 + bd + 4.0, depth - 0.5), 0.07)
+		# The pay station at the bay's entrance.
+		_box("paint", Vector3(0.6, 1.5, 0.5), Vector3(bx - side * (bw * 0.5 - 0.4), 0.95, z0 - 4.5), Color("#3a3c3e"))
+		_box("paint", Vector3(0.5, 0.3, 0.02), Vector3(bx - side * (bw * 0.5 - 0.4), 1.3, z0 - 4.76), brand)
+	# Air and vacuum: a post with a coiled hose and a vacuum can with its
+	# boom, at the edge of the forecourt opposite the wash.
+	var vx := -side * (half - 1.2)
+	var vz := clampf(canopy_z - 2.0, 3.0, zf - 1.0)
+	_box("concrete", Vector3(1.4, 0.15, 2.6), Vector3(vx, 0.08, vz), FOUNDATION)
+	_box("paint", Vector3(0.5, 1.3, 0.4), Vector3(vx, 0.8, vz - 0.7), Color("#c8102e"))
+	_box("paint", Vector3(0.45, 0.45, 0.02), Vector3(vx, 1.15, vz - 0.91), Color("#f2f4f5"))
+	_cylinder("metal", Vector3(vx, 0.15, vz + 0.6), 0.35, 1.2, Color("#d9dcdd"), 10)
+	_box("paint", Vector3(0.08, 2.4, 0.08), Vector3(vx, 1.35, vz + 0.6), Color("#5a5e60"))
+	_box("paint", Vector3(1.2, 0.06, 0.06), Vector3(vx + side * 0.6, 2.55, vz + 0.6), Color("#5a5e60"))
 
 
 func _main_street(to_curb: float) -> void:
@@ -704,21 +859,42 @@ func _community_center(to_curb: float) -> void:
 	var gw := 13.0  # garden center along its outer end
 	var hd := cr.randf_range(8.4, 9.4)
 	var sx0 := xd0 + gw
+	# The 2000s supercenter front (own random numbers): tan EIFS over a
+	# stone wainscot, a tower over each of its two entries (grocery at one,
+	# general merchandise at the other) and the name on the wall between.
+	var sp := RandomNumberGenerator.new()
+	sp.seed = hash([rng.seed, "supercenter"])
+	var sup := sp.randf() < (0.7 if era == "recent" else 0.25)
+	if sup:
+		wall = Color(["#d6c4a0", "#cdb894", "#e0d2b4"][sp.randi() % 3])
 	_cc_box("paint", sx0, xd1, zf, zf + dd, hd, hd + 0.9, wall)
 	_box("paint", Vector3(xd1 - sx0 + 0.1, 1.5, 0.3), Vector3((sx0 + xd1) * 0.5, hd - 0.4, zf - 0.12), wall.lightened(0.1))
 	_box("paint", Vector3(xd1 - sx0 + 0.12, 0.45, 0.34), Vector3((sx0 + xd1) * 0.5, hd - 1.35, zf - 0.13), band)
 	# Split-face block wainscot a shade darker, as the chains built them.
-	_box("paint", Vector3(xd1 - sx0 + 0.08, 1.3, 0.2), Vector3((sx0 + xd1) * 0.5, 0.65, zf - 0.08), wall.darkened(0.22))
+	_box("paint", Vector3(xd1 - sx0 + 0.08, 1.3, 0.2), Vector3((sx0 + xd1) * 0.5, 0.65, zf - 0.08),
+		Color("#8a7d6b") if sup else wall.darkened(0.22))
 	var ex := (sx0 + xd1) * 0.5
 	var ew := minf((xd1 - sx0) * 0.5, 22.0)
 	var eh := hd + 2.4
-	_box("paint", Vector3(ew, eh, 1.4), Vector3(ex, eh * 0.5, zf - 0.7), wall.lightened(0.06))
-	_box("paint", Vector3(ew + 0.4, 0.4, 1.7), Vector3(ex, eh + 0.2, zf - 0.7), band)
 	var spec := sign_spec
-	_sign(Vector3(ex, eh - 2.3, zf - 1.42), ew * 0.75, 1.7)
+	var vxs := [ex - ew * 0.3, ex + ew * 0.3]
+	if sup:
+		vxs = [ex - ew * 0.55, ex + ew * 0.55]
+		for vx in vxs:
+			var th := hd + 3.6
+			_box("paint", Vector3(10.0, th, 1.6), Vector3(vx, th * 0.5, zf - 0.8), wall.lightened(0.08))
+			_box("paint", Vector3(10.6, 0.5, 2.0), Vector3(vx, th + 0.1, zf - 0.8), band)  # cornice
+			_box("paint", Vector3(10.2, 0.9, 1.7), Vector3(vx, 0.45, zf - 0.8), Color("#8a7d6b"))  # stone base
+			sign_spec = {}
+			_sign(Vector3(vx, th - 2.4, zf - 1.62), 6.5, 1.0)  # "Grocery" / "Home & Pharmacy"
+		sign_spec = spec
+		_sign(Vector3(ex, hd - 2.6, zf - 0.33), minf(ew * 0.7, 16.0), 1.8)
+	else:
+		_box("paint", Vector3(ew, eh, 1.4), Vector3(ex, eh * 0.5, zf - 0.7), wall.lightened(0.06))
+		_box("paint", Vector3(ew + 0.4, 0.4, 1.7), Vector3(ex, eh + 0.2, zf - 0.7), band)
+		_sign(Vector3(ex, eh - 2.3, zf - 1.42), ew * 0.75, 1.7)
 	sign_spec = {}
-	for s in [-1.0, 1.0]:
-		var vx: float = ex + s * ew * 0.3
+	for vx: float in vxs:
 		_box("paint", Vector3(5.0, 3.4, 3.0), Vector3(vx, 1.7, zf - 2.9), wall.lightened(0.03))  # vestibule
 		_box("paint", Vector3(5.4, 0.3, 3.4), Vector3(vx, 3.5, zf - 2.9), band)
 		_glass(Vector3(vx, 1.35, zf - 4.42), Vector3(-1, 0, 0), 4.2, 2.5, 0.0)
@@ -769,7 +945,7 @@ func _community_center(to_curb: float) -> void:
 		px += bay
 	_grocery_anchor(xg0, w * 0.5, zf, zf + ds * 0.5, ds, wall, mull)
 	sign_spec = spec
-	site.door = Vector2(ex, zf - 4.5)
+	site.door = Vector2(vxs[0], zf - 4.5)
 	# The truck court: the discount store's docks and trailers at the back.
 	var dz := zf + dd
 	if depth - dz > 5.0:
@@ -1137,6 +1313,8 @@ func _shop_gas_station(to_curb: float) -> void:
 	_box("metal", Vector3(1.5, 1.6, 0.8), Vector3(sw * 0.5 - 3.4, 1.1, zf - 0.6), Color("#8d9093"))
 	# Cars pull up beside the pumps, one each side of an island, and the
 	# driver walks in to pay.
+	if not small_store:
+		_rt_gas_grown(sw, sd, zf, cw, ccz - cd * 0.5, wall, brand)
 	site.main_street = false
 	site.door = Vector2(-sw * 0.3 + 2.4, zf)
 	site.cut_x = -half * 0.55
@@ -1238,6 +1416,10 @@ func _shop_diner(to_curb: float) -> void:
 			_box("paint", Vector3(lw * 0.8, 0.1, 0.02), Vector3(px + r.randf_range(-0.2, 0.2), 5.6 - line * 0.3, 1.34), Color("#2a2622"))
 	_rooftop(w, d, cz, 4.0, 2)
 	_shop_parking(to_curb, w, zf, 0.0)
+	# Grown (shop level 1): a party room on the back, as family restaurants
+	# add one for Rotary lunches and rehearsal dinners.
+	if not small_store:
+		_rt_wing(w, zf + d, 3.6, wall, "paint", band, false)
 
 
 ## A small-town bank: brick, two storeys of tall windows, a stone portico
@@ -1299,6 +1481,11 @@ func _bank(to_curb: float) -> void:
 	_box("metal", Vector3(0.8, 1.4, 0.8), Vector3(lx - 1.2, 0.7, cz), Color("#b9bcbc"))
 	_flat_rect("asphalt", lx - 2.2, lx + 2.2, 0.0, depth - 1.0, 0.07)
 	_shop_parking(to_curb, w, zf - 3.2, -3.0)
+	# Grown (shop level 1): a one-storey wing on the back for the loan
+	# offices, under a hip roof of its own, as Indiana's town banks built on
+	# in the 1960s-80s.
+	if not small_store:
+		_rt_wing(w, zf + d, 3.8, brick, "brick", stone, true)
 
 
 ## A small brick church on the main street: a steep gable to the street,

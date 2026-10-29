@@ -18,6 +18,13 @@ const FLOOR_H := 3.4
 
 static func build(seed: int, to_curb: float, lot: Dictionary, storeys: int, spec := {}) -> Array:
 	var b := DenseBuilder._start(seed, lot, spec)
+	if b.era != "prewar" and storeys <= 4 and not HouseBuilder.restored:
+		# Built new across two lots on a postwar or recent street, it is a
+		# building of its own decade, never an 1880s block with a date
+		# panel: MainInfill's 1950s-60s or 2010s front, as wide as the lots.
+		MainInfill.draw(b, to_curb, storeys)
+		b._service_yard(false)
+		return b._done()
 	b._mixed(to_curb, b.half * 2.0, storeys)
 	b._service_yard(b.era == "prewar")
 	_crown(b, b.half * 2.0 - 0.4, storeys, hash([seed, "block"]))

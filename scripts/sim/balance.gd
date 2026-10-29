@@ -625,6 +625,12 @@ const CROP_ROTATION_YIELD := {
 	"soybeans": {"soybeans": 0.92},
 	"wheat": {"wheat": 0.85, "corn": 0.95},
 }
+## What a careful farmer counts against planting a row crop on the same
+## field two years running, dollars an acre: corn on corn needs rootworm
+## control (a Bt trait or soil insecticide, about $20-30 an acre) and
+## soybeans on soybeans build up cyst nematode and disease (Purdue
+## extension), on top of the yield lost.
+const CROP_REPEAT_RISK := 30.0
 ## Fertiliser saved, dollars an acre: the nitrogen credit to corn from last
 ## year's soybeans (about 40 lb N) or alfalfa (about 120 lb), at $0.60 a lb.
 const CROP_N_CREDIT := {"corn": {"soybeans": 25.0, "hay": 75.0}}
@@ -652,6 +658,33 @@ const CROP_EROSION_PER_ACRE := 3000.0
 ## roughly one Indiana farmer in six who does).
 const CROP_COVER_COST := 37.0
 const CROP_COVER_SOIL_VALUE := 45.0
+## Tillage, a farm's work mode (Brawn's pick #17): each January the leader
+## picks how the farm works its corn and soybean ground (CropPlan). Indiana
+## tillage transect: about 60% of soybeans and 35-40% of corn are no-tilled.
+## Purdue / Indiana custom rates: a chisel plow pass about $22 an acre and a
+## field cultivator pass about $17. A tilled farm chisels corn stalks in the
+## fall and runs the cultivator each spring; no-till skips them for a
+## burndown herbicide pass of about $15. So no-tilling into corn stalks
+## saves about $24 an acre; into bean stubble or wheat the one cultivator
+## pass it skips costs about what the burndown does (TILLAGE_SAVE, by last
+## year's crop). Purdue's long-term tillage plots on
+## dark, poorly drained ground like most of Grant County yield about 5% less
+## corn no-tilled and the same soybeans. Residue left on top cuts erosion
+## by most of it (NRCS: 60-90%) and builds organic matter. "crops" are the
+## crops it no-tills, "yield" a multiplier by crop, "wash" the share of
+## erosion left, "health" soil health gained a year.
+const TILLAGE := {
+	"chisel": {"name": "Chisel plow", "crops": [], "yield": {}, "wash": 1.0, "health": 0.0},
+	"beans_no_till": {"name": "No-till soybeans", "crops": ["soybeans"], "yield": {}, "wash": 0.6, "health": 0.01},
+	"no_till": {"name": "No-till", "crops": ["corn", "soybeans", "wheat"], "yield": {"corn": 0.95}, "wash": 0.25,
+		"health": 0.03},
+}
+const TILLAGE_SAVE := {"corn": 24.0}
+const TILLAGE_SAVE_OTHER := 0.0
+## Changing how a farm tills means fitting the planter (row cleaners, more
+## down-pressure: about $2,000 a row on a 16-row planter) and learning it:
+## about $8 an acre a year over ten years.
+const TILLAGE_SWITCH := 8.0
 ## An alfalfa stand is kept this many years, and keeping it saves the
 ## establishment cost (dollars an acre).
 const CROP_HAY_STAND_YEARS := 4
@@ -2188,6 +2221,9 @@ const STATION_LEVY_OF := {"school": 3.0}
 ## (dollars a square metre of lot, about a small Indiana town's improved
 ## residential land with the house on it).
 const STATION_LAND_PER_M2 := 70.0
+## What a park board pays for a home lot it buys next to its park (dollars
+## a square metre of lot, house included, as STATION_LAND_PER_M2).
+const PARK_HOME_PER_M2 := 70.0
 ## Each piece: `cost` dollars from the fund, `grow` metres the lot reaches
 ## further back from the street (0 builds on what it has), `needs` from the
 ## town (population; tall = buildings of 3+ storeys; city = a city charter),
@@ -2481,6 +2517,30 @@ const FAMILY_EXPAND_CHANCE := 0.25
 ## about $54,000 a year, near the median small-business owner's income (SBA).
 const FAMILY_PROFIT_SHARE := 0.3
 const FAMILY_PER_JOB := 450
+## Shop hours, a shop's work mode (Brawn's pick #17): a small-town Indiana
+## store keeps about 9 to 6, and each January its owner weighs staying open
+## until 9 for the people who work days. Restaurants, taverns and pizza
+## places are open for supper anyway; offices keep office hours. Per trade:
+## [sales a job a year, gross margin, share of sales after 6 pm when open]
+## (Census Annual Retail Trade Survey sales per employee and margins; the
+## evening share from retail traffic counts: groceries and drug stores do a
+## quarter or so of their business after work, specialty stores little).
+const SHOP_LATE := {
+	"grocery": [250_000.0, 0.28, 0.25], "pharmacy": [300_000.0, 0.25, 0.2], "hardware": [180_000.0, 0.36, 0.08],
+	"feed": [250_000.0, 0.2, 0.04], "auto": [120_000.0, 0.45, 0.05], "florist": [80_000.0, 0.5, 0.04],
+	"bakery": [70_000.0, 0.5, 0.04], "furniture": [200_000.0, 0.45, 0.1], "antiques": [60_000.0, 0.45, 0.06],
+	"clothing": [120_000.0, 0.45, 0.08], "gifts": [80_000.0, 0.5, 0.08], "appliance": [220_000.0, 0.3, 0.08],
+	"hair": [50_000.0, 0.6, 0.15], "barber": [50_000.0, 0.6, 0.08],
+}
+const SHOP_EVENING_TRADES := ["restaurant", "tavern", "pizza"]
+## The hour the day's shops close, and the hour a late one closes.
+const SHOP_CLOSE := 18
+const SHOP_LATE_CLOSE := 21
+## The evening crew: about a third of the day's staff for the three extra
+## hours at $14 an hour (Indiana retail median, BLS), 26 open days a month.
+const SHOP_LATE_STAFF := 0.33
+const SHOP_LATE_WAGE := 14.0
+const SHOP_LATE_DAYS := 26
 ## A new family's savings when it opens its first business.
 const FAMILY_START_CASH := 50_000
 ## Opening a business on an empty zoned lot: a small-town restaurant or
@@ -3392,3 +3452,22 @@ const PATROL_BUNCH_HOURS := 4
 const PATROL_TRIES := 4
 ## With cars switched off: the streets one car covers in a shift.
 const PATROL_STREETS_PER_SHIFT := 40
+
+# --- Golf carts on town streets (TownLaws golf_carts) ------------------------
+## Carts keep off roads faster than this (Indiana keeps them off state
+## highways; towns allow them on their own streets): a faster road counts
+## CART_FAST_MULT times its drive for a cart, so it only crosses one.
+const CART_MAX_MPH := 35
+const CART_FAST_MULT := 8.0
+## The longest hop an owner takes by cart, metres (about two miles).
+const CART_TRIP_MAX := 3200.0
+## Owners are mostly retirees: someone this old in the home.
+const CART_OWNER_AGE := 55
+## About one such home in eight buys one where a town allows them, a few a
+## month.
+const CART_SHARE := 0.12
+const CART_PER_MONTH := 6
+## Residents petition once the town has this many people, this many of them
+## old enough.
+const CART_ASK_POP := 400
+const CART_ASK_OLDER := 40

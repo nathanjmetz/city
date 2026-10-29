@@ -1006,8 +1006,22 @@ func _well(front: float, to_curb: float) -> void:
 	_box("paint", Vector3(2.4, 0.3, 5.0), t + Vector3(0, 0.15, 0), CONCRETE)
 	_tank_on_saddles(t + Vector3(0, 0.3, 0), 0.9, 4.2, Color("#d8dadb"))
 	_cyl_y(Vector3(-2.0, 0.5, front + 14.5), 0.3, 1.0, Color("#3a5a8a"))
+	# The chlorine room on the end (Ten States Standards: its own outside
+	# door with a view window, and an exhaust fan near the floor), and the
+	# roof hatch over the well a crane truck pulls the pump through.
+	var cl := c + Vector3(-4.65, 0, 0.5)
+	_box("paint", Vector3(3.3, 0.28, 3.6), cl + Vector3(-0.05, 0.14, 0), CONCRETE)
+	_box("paint", Vector3(3.2, 2.6, 3.4), cl + Vector3(0, 1.6, 0), Color("#cfc9bb"))
+	_box("paint", Vector3(3.5, 0.2, 3.7), cl + Vector3(0, 2.95, 0), Color("#7a7874"))
+	_steel_door(cl + Vector3(0.2, 1.35, -1.73), -1.0)
+	_glass(cl + Vector3(0.2, 1.9, -1.76), Vector3(-1, 0, 0), 0.3, 0.3, 0.0)
+	_box("metal", Vector3(0.06, 0.5, 0.5), cl + Vector3(-1.63, 0.6, 0.6), Color("#9a9d9f"))
+	_box("paint", Vector3(0.5, 0.4, 0.04), cl + Vector3(-0.8, 2.3, -1.73), Color("#d9a92a"))  # hazard placard
+	_box("metal", Vector3(1.4, 0.15, 1.4), c + Vector3(1.2, 3.75, 0.8), Color("#9a9d9f"))
+	# Flow meter vault lid in the drive.
+	_box("paint", Vector3(1.2, 0.05, 1.2), Vector3(2.0, 0.08, front + 4.0), Color("#5a5a58"))
 	_flat_rect("gravel", -5.0, 7.0, front - to_curb, front + 6.0, 0.06, Color("#8d877c"))
-	_fence(Vector2(-7.0, front + 2.0), Vector2(8.5, front + 17.0), 1.8)
+	_fence(Vector2(-9.0, front + 2.0), Vector2(8.5, front + 17.0), 1.8)
 
 
 func _power_feed() -> void:
@@ -1479,6 +1493,10 @@ func _fence_run(p: Vector3, q: Vector3, h: float, barbed := false) -> void:
 		_box("paint", Vector3(0.07, h, 0.07), p + dir * (len * k / n) + Vector3(0, h * 0.5, 0), GALV)
 	_box("paint", Vector3(0.05, 0.05, len), (p + q) * 0.5 + Vector3(0, h, 0), GALV, yaw)
 	_box("paint", Vector3(0.03, 0.03, len), (p + q) * 0.5 + Vector3(0, 0.1, 0), GALV, yaw)
+	# The fabric itself: galvanized diamond mesh, see-through (the chain
+	# material), hung just off the posts.
+	var off := Vector3(dir.z, 0, -dir.x) * 0.045
+	_box("chain", Vector3(0.006, h - 0.1, len), (p + q) * 0.5 + off + Vector3(0, h * 0.5 + 0.03, 0), GALV, yaw)
 	if barbed:
 		for k in 3:
 			_box("paint", Vector3(0.02, 0.02, len), (p + q) * 0.5 + Vector3(0, h + 0.15 + k * 0.15, 0), DARK, yaw)
