@@ -1493,6 +1493,10 @@ func _fence_run(p: Vector3, q: Vector3, h: float, barbed := false) -> void:
 		_box("paint", Vector3(0.07, h, 0.07), p + dir * (len * k / n) + Vector3(0, h * 0.5, 0), GALV)
 	_box("paint", Vector3(0.05, 0.05, len), (p + q) * 0.5 + Vector3(0, h, 0), GALV, yaw)
 	_box("paint", Vector3(0.03, 0.03, len), (p + q) * 0.5 + Vector3(0, 0.1, 0), GALV, yaw)
+	# The fabric itself: galvanized diamond mesh, see-through (the chain
+	# material), hung just off the posts.
+	var off := Vector3(dir.z, 0, -dir.x) * 0.045
+	_box("chain", Vector3(0.006, h - 0.1, len), (p + q) * 0.5 + off + Vector3(0, h * 0.5 + 0.03, 0), GALV, yaw)
 	if barbed:
 		for k in 3:
 			_box("paint", Vector3(0.02, 0.02, len), (p + q) * 0.5 + Vector3(0, h + 0.15 + k * 0.15, 0), DARK, yaw)
