@@ -1241,6 +1241,9 @@ const SCHOOL_AFTERNOON_RUN := 15 * 60 + 5
 ## within a mile of school), setting off in the sky's 45 minutes from 6:45.
 const SCHOOL_WALK_PCT := 35
 const SCHOOL_WALK_FROM := 6.75
+## Children this old and up walk to school on their own; younger ones go
+## with a grown-up from home (NHTS / Safe Routes to School).
+const SCHOOL_WALK_ALONE := 9
 # --- Wild trees and brush ----------------------------------------------------
 
 ## Cleared land left alone grows back the way an abandoned lot in southern

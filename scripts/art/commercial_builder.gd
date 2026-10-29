@@ -133,13 +133,17 @@ func _retail(to_curb: float) -> void:
 	var bays := int(sw / 1.6)
 	var door := rng.randi_range(0, bays - 1)
 	site.door = Vector2(-sw * 0.5 + (door + 0.5) * sw / bays, zf)
+	# A store whose sign says it serves food shows its booths and counter.
+	var eats := fine_parts and sign_spec.is_empty() and int(_word_slot(0.0) * 0.5) - 1 in EATERIES
 	for i in bays:
 		var x := -sw * 0.5 + (i + 0.5) * sw / bays
 		var y := 1.55 if i == door else 1.8
 		var gh := 2.6 if i == door else 2.1
 		shopfront = fine_parts and i != door
+		diner_room = 7.0 if eats and i != door else 0.0
 		_glass(Vector3(x, y, zf - 0.03), Vector3(-1, 0, 0), sw / bays - 0.08, gh, 0.0 if i == door else rng.randf_range(0.0, 0.15))
 		shopfront = false
+		diner_room = 0.0
 		_box("paint", Vector3(0.08, 2.7, 0.12), Vector3(x - sw / bays * 0.5, 1.6, zf - 0.06), mull)
 	_box("paint", Vector3(0.08, 2.7, 0.12), Vector3(sw * 0.5, 1.6, zf - 0.06), mull)
 	_box("paint", Vector3(sw, 0.1, 0.14), Vector3(0, 2.92, zf - 0.07), mull)
@@ -699,6 +703,8 @@ const TRADE_WORDS := [
 	"CELLULAR", "FITNESS", "SEWING",
 	# Big stores' departments, named by the builders, never drawn at random.
 	"GROCERY", "FOODS", "DISCOUNT", "PHARMACY", "SUPERCENTER", "OUTLET",
+	# What banks, plants and drive-through pads letter (also never at random).
+	"SAVINGS", "TRUST", "MFG", "MACHINE", "PLASTICS", "TOOLING", "BURGERS", "CHICKEN", "FOUNDRY",
 ]
 
 
@@ -730,8 +736,7 @@ func _channel_letters(c: Vector3, w: float, h: float, named := "") -> void:
 	_pick(SIGNS)  # the same one draw as _sign
 	if w < 1.0:
 		return  # no room for a name (a sliver of shops beside an anchor)
-	var r := RandomNumberGenerator.new()
-	r.seed = hash([rng.seed, 37, snappedf(c.x, 0.1)])
+	var r := _letters_rng(c.x)
 	var tints := [Color("#e0262e"), Color("#e0262e"), Color("#f4f1ea"), Color("#1f5fbf"), Color("#1f8a4a"), Color("#f2b632")]
 	var col: Color = tints[r.randi() % tints.size()]
 	col.a = 1.0
@@ -749,6 +754,22 @@ func _channel_letters(c: Vector3, w: float, h: float, named := "") -> void:
 	# The raceway the letters hang on, painted to match the fascia.
 	_box("paint", Vector3(span + px * 2.0, 0.12, 0.1), Vector3(c.x, y0 + lh * 0.45, c.z - 0.03), Color("#5b5d5f"))
 	_pixel_text(word, c.x, y0, z, px, 0.13, col, "sign")
+
+
+## The channel letters' own random numbers for a tenant at `x`.
+func _letters_rng(x: float) -> RandomNumberGenerator:
+	var r := RandomNumberGenerator.new()
+	r.seed = hash([rng.seed, 37, snappedf(x, 0.1)])
+	return r
+
+
+## Which trade a tenant at `x` spells in channel letters (as _channel_letters
+## draws it: a tint, a height, then the word).
+func _letters_word(x: float) -> int:
+	var r := _letters_rng(x)
+	r.randi()
+	r.randf()
+	return r.randi() % 50
 
 
 ## Block capitals from the 3x5 pixel font, centred on `cx`, facing the street
@@ -858,8 +879,10 @@ func _strip_center(to_curb: float, anchor := false) -> void:
 			continue
 		var sw := bay - 1.4
 		shopfront = fine_parts
+		diner_room = 7.0 if fine_parts and (i > 0 or sign_spec.is_empty()) and _letters_word(x) in EATERIES else 0.0
 		_glass(Vector3(x - 0.4, 1.7, zf - 0.03), Vector3(-1, 0, 0), sw - 1.4, 2.3, rng.randf_range(0.0, 0.2))
 		shopfront = false
+		diner_room = 0.0
 		_glass(Vector3(x + sw * 0.5 - 0.5, 1.45, zf - 0.03), Vector3(-1, 0, 0), 0.95, 2.4, 0.0)
 		_box("paint", Vector3(sw, 0.1, 0.12), Vector3(x, 2.9, zf - 0.06), mull)
 		_box("paint", Vector3(sw, 0.35, 0.12), Vector3(x, 0.47, zf - 0.06), mull)
@@ -1431,8 +1454,11 @@ func _cc_parking(to_curb: float, w: float, zw: float, xg0: float, cr: RandomNumb
 		Vector3(pc.x + 6.0, 4.22, pc.y + 5.5), Vector3(pc.x - 6.0, 4.22, pc.y + 5.5), Color("#9a9790"), [], Vector3.UP)
 	var accent := Color(AWNING[cr.randi() % AWNING.size()])
 	_box("paint", Vector3(12.3, 0.55, 9.3), Vector3(pc.x, 4.45, pc.y + 1.0), accent)
+	var food: int = [62, 63, 11, 8, 2][posmod(hash([rng.seed, 59]), 5)]  # BURGERS, CHICKEN, TACOS, SUBS, PIZZA
+	diner_room = 7.0 if fine_parts else 0.0  # its dining room's booths
 	_glass(Vector3(pc.x, 1.6, pc.y - 3.53), Vector3(-1, 0, 0), 8.0, 2.0, 0.1)
-	_sign(Vector3(pc.x, 3.0, pc.y - 3.6), 5.0, 0.8)
+	diner_room = 0.0
+	_sign(Vector3(pc.x, 3.0, pc.y - 3.6), 5.0, 0.8, food)
 	# The drive-through: a 3.5 m lane down the east side, cars heading for
 	# the road with the building on the driver's side; the pickup window
 	# under a slim canopy, and behind the building the menu board and
@@ -1953,7 +1979,7 @@ func _bank(to_curb: float) -> void:
 		_glass(Vector3(sx, 1.9, zf - 0.17), Vector3(-1, 0, 0), 0.7, 2.0, 0.0)
 	_glass(Vector3(0, 3.2, zf - 0.17), Vector3(-1, 0, 0), 1.7, 0.55, 0.0)
 	site.door = Vector2(0.0, zf - 3.0)
-	_sign(Vector3(0, 4.3, zf - 0.08), 4.0, 0.5)
+	_sign(Vector3(0, 4.3, zf - 0.08), 4.0, 0.5, [3, 3, 56, 57][posmod(hash([rng.seed, 47]), 4)])  # BANK, SAVINGS, TRUST
 	# Drive-up lane and canopy beside the building.
 	var lx := w * 0.5 + 3.0
 	_box("paint", Vector3(4.0, 0.6, 7.0), Vector3(lx, 4.3, cz), stone)
@@ -2213,7 +2239,7 @@ func _factory(to_curb: float) -> void:
 	for i in 2:
 		_glass(Vector3(ox - ow * 0.25 + i * ow * 0.5, 1.75, zf - od - 0.02), Vector3(-1, 0, 0), ow * 0.4, 1.5, 0.3)
 	_box("paint", Vector3(1.0, 2.2, 0.06), Vector3(ox + ow * 0.5 + 0.9, 1.4, zf - 0.03), Color("#5a5e60"))
-	_sign(Vector3(ox, 2.6, zf - od - 0.05), ow * 0.7, 0.55)
+	_sign(Vector3(ox, 2.6, zf - od - 0.05), ow * 0.7, 0.55, [58, 59, 60, 61, 64][posmod(hash([rng.seed, 53]), 5)])  # MFG, MACHINE...
 	# Silos or a stack out back.
 	var extra := rng.randf()
 	if extra < 0.35:
