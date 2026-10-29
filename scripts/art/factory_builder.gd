@@ -448,14 +448,50 @@ func _metal_works(to_curb: float) -> void:
 	# Gantry crane over the coil yard behind.
 	var yz := hz + hd * 0.5 + 9.0
 	if yz + 6.0 < depth:
-		for side in [-1.0, 1.0]:
-			_box("paint", Vector3(0.6, 9.0, 0.6), Vector3(hx + side * 12.0, 4.5, yz - 5.0), CRANE)
-			_box("paint", Vector3(0.6, 9.0, 0.6), Vector3(hx + side * 12.0, 4.5, yz + 5.0), CRANE)
-			_box("paint", Vector3(0.7, 0.9, 10.6), Vector3(hx + side * 12.0, 9.3, yz), CRANE)
-		_box("paint", Vector3(25.0, 1.2, 1.2), Vector3(hx, 10.2, yz), CRANE)
+		_gantry(Vector3(hx, 0, yz), 24.0, 9.6)
 		for i in 8:
 			for j in 2:
 				_cylinder("metal", Vector3(hx - 9.0 + i * 2.5, 0, yz - 2.0 + j * 4.0), 0.9, 1.5, COIL, 12)
+				# The coil's eye, stored eye-to-sky on its end.
+				_cylinder("paint", Vector3(hx - 9.0 + i * 2.5, 0, yz - 2.0 + j * 4.0), 0.3, 1.52, Color("#3a3c3e"), 8)
+
+
+## An outdoor single-girder gantry crane (a 10-15 ton yard crane, as at
+## steel service centres): an A-frame of two raked legs at each end on a
+## sill beam with wheel trucks running on rails, an I-beam girder across,
+## and the hoist trolley under it with its hook block. `c` is the middle
+## at ground level, `span` the leg spacing, `h` the girder's underside.
+func _gantry(c: Vector3, span: float, h: float) -> void:
+	var dark := Color("#2b2f33")
+	var r := RandomNumberGenerator.new()  # its own, so the builder's draws don't move
+	r.seed = hash([rng.seed, "gantry"])
+	for side in [-1.0, 1.0]:
+		var x: float = c.x + side * span * 0.5
+		# The rails it travels on, along the yard.
+		_box("paint", Vector3(0.12, 0.14, 16.0), Vector3(x, 0.07, c.z), Color("#6f7476"))
+		_box("paint", Vector3(0.7, 0.7, 11.0), Vector3(x, 0.75, c.z), CRANE)
+		for e in [-1.0, 1.0]:
+			_box("paint", Vector3(0.9, 0.9, 1.2), Vector3(x, 0.45, c.z + e * 5.2), dark)  # wheel truck
+			UpgradeKits._strut(self, Vector3(x, 1.1, c.z + e * 4.6), Vector3(x, h - 0.2, c.z + e * 0.5), 0.55, CRANE)
+		UpgradeKits._strut(self, Vector3(x, h * 0.45, c.z - 2.6), Vector3(x, h * 0.45, c.z + 2.6), 0.3, CRANE)
+		_box("paint", Vector3(1.2, 0.8, 1.6), Vector3(x, h - 0.1, c.z), CRANE)  # end truck
+	# The girder: a deep I-beam (flanges and web), bumpers at the ends.
+	var gl := span + 1.6
+	_box("paint", Vector3(gl, 0.08, 0.6), Vector3(c.x, h + 1.3, c.z), CRANE)
+	_box("paint", Vector3(gl, 1.2, 0.14), Vector3(c.x, h + 0.66, c.z), CRANE)
+	_box("paint", Vector3(gl, 0.08, 0.6), Vector3(c.x, h + 0.04, c.z), CRANE)
+	# The hoist trolley on the bottom flange, its ropes and hook block.
+	var tx: float = c.x + r.randf_range(-span * 0.3, span * 0.3)
+	_box("paint", Vector3(1.4, 0.9, 1.0), Vector3(tx, h - 0.45, c.z), Color("#3d5a7a"))
+	_box("paint", Vector3(0.5, 0.5, 0.9), Vector3(tx + 0.9, h - 0.4, c.z), dark)  # motor
+	var drop := r.randf_range(2.5, h - 3.0)
+	for e in [-1.0, 1.0]:
+		_box("paint", Vector3(0.03, drop, 0.03), Vector3(tx + e * 0.18, h - 0.9 - drop * 0.5, c.z), dark)
+	_box("paint", Vector3(0.6, 0.5, 0.35), Vector3(tx, h - 1.15 - drop, c.z), CRANE)
+	_box("paint", Vector3(0.12, 0.45, 0.12), Vector3(tx, h - 1.6 - drop, c.z), dark)  # hook
+	# A pendant control hanging to the ground for the operator.
+	_box("paint", Vector3(0.015, h - 1.6, 0.015), Vector3(tx - 0.6, h * 0.5 + 0.4, c.z), dark)
+	_box("paint", Vector3(0.12, 0.3, 0.1), Vector3(tx - 0.6, 1.4, c.z), Color("#d9a92a"))
 
 
 ## Tilt-up concrete plant: flat roof behind a parapet, panel joints, dock doors.
