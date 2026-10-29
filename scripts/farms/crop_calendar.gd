@@ -1083,6 +1083,18 @@ vec3 crop_look_bare(ivec2 slot, vec2 at, float across, float aw, float tilt, flo
 	// Standing stalk rows in the stubble, a little lighter than the soil.
 	float stalks = (1.0 - smoothstep(0.25 - w, 0.25 + w, d)) * (1.0 - fade);
 	ground *= 1.0 + t1.a * mix(0.05, stalks * 0.25, 1.0 - fade) * step(0.25, t2.b);
+	// Planter and combine passes: a 12-row planter or a 30 ft drill or
+	// header covers 9.1 m a pass, and each pass seeds and grows a shade
+	// apart (aerial photos of Indiana fields show the bands well past where
+	// single rows blur). Cut small grain lies in a pale straw windrow down
+	// the middle of each pass until it is baled.
+	float pass_at = across / 9.144;
+	float pass_tone = fract(sin(floor(pass_at) * 91.7 + float(slot.x) * 7.3) * 43758.5453);
+	plant *= 0.93 + 0.14 * pass_tone;
+	ground *= 0.955 + 0.09 * pass_tone;
+	float windrow = 1.0 - smoothstep(0.07, 0.12 + aw / 9.144, abs(fract(pass_at) - 0.5));
+	vec4 t3 = crop_texel(slot, 3);
+	ground = mix(ground, ground * 1.3 + vec3(0.025, 0.022, 0.012), windrow * step(0.5, t3.b) * (1.0 - rowed) * (1.0 - cover));
 	bare = 1.0 - share;
 	return mix(ground, plant, share);
 }
