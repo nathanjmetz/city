@@ -790,12 +790,24 @@ func _tw_plaza(width: float, zf: float, w: float) -> void:
 ## floor, I-beam mullions and floor lines in the steel, a louvred top.
 func _tw_glass_box(w: float, d: float, cz: float, ground_h: float, floor_h: float, storeys: int, top: float, mech: float) -> void:
 	_box("paint", Vector3(w, top - ground_h, d), Vector3(0, (ground_h + top) * 0.5, cz), Color("#1c1e20"))
+	# A tall tower's mid-height mechanical floor: air handlers serving the
+	# floors above and below, a louvred band in the curtain wall (towers of
+	# 24 storeys and up put one about every 20-30 floors). Own random
+	# numbers, so the builder's don't move.
+	var mr := RandomNumberGenerator.new()
+	mr.seed = hash([rng.seed, "mech floor"])
+	var mid := storeys / 2 if storeys >= 24 and mr.randf() < 0.7 else -1
 	for f in range(1, storeys):
 		var y := ground_h + floor_h * (f - 1) + floor_h * 0.5
 		for face in _tw_faces(w, d, cz):
 			var c: Vector3 = face[0]
 			c.y = y
-			_glass(c, face[1], face[2] - 0.2, floor_h - 0.25, rng.randf_range(0.1, 0.5))
+			var blinds := rng.randf_range(0.1, 0.5)
+			if f != mid:
+				_glass(c, face[1], face[2] - 0.2, floor_h - 0.25, blinds)
+		if f == mid:
+			_box("metal", Vector3(w + 0.08, floor_h, d + 0.08), Vector3(0, y, cz), Color("#3a3d40"))
+			_tw_louvres(w + 0.08, d + 0.08, cz, y - floor_h * 0.5, floor_h)
 	# The I-beam mullions, full height, about 1.6 m apart.
 	for face in _tw_faces(w, d, cz):
 		var n := maxi(4, roundi(face[2] / 1.6))
@@ -809,9 +821,23 @@ func _tw_glass_box(w: float, d: float, cz: float, ground_h: float, floor_h: floa
 		_box("metal", Vector3(w + 0.3, 0.12, d + 0.3), Vector3(0, ground_h + floor_h * (f - 1), cz), TW_STEEL)
 	# The louvred mechanical floor and a flat roof.
 	_box("metal", Vector3(w, mech, d), Vector3(0, top + mech * 0.5, cz), Color("#2b2d2f"))
+	_tw_louvres(w, d, cz, top, mech)
 	_tw_roof(w, d, cz, top + mech)
 	_tw_rooftop(w, d, cz, top + mech, 0.0, true)
 	_tw_name(Vector3(0, top + mech * 0.2, cz - d * 0.5), w * 0.7, mech * 0.6)
+
+
+## Desktop: a mechanical floor's louvre blades, horizontal fins about
+## 45 cm apart round a w by d band from `y`, `h` tall.
+func _tw_louvres(w: float, d: float, cz: float, y: float, h: float) -> void:
+	if not fine_parts:
+		return
+	for face in _tw_faces(w, d, cz):
+		var out: Vector3 = face[1].cross(Vector3.UP)
+		for i in int((h - 0.3) / 0.45):
+			var c: Vector3 = face[0] + out * 0.08
+			c.y = y + 0.35 + i * 0.45
+			_box("metal", Vector3(face[2], 0.06, 0.16), c, Color("#5d6164"), _tw_yaw(face[1]))
 
 
 ## The glass tower as a prism: corners cut by `chamfer`, and the top
