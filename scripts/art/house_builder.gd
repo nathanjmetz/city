@@ -1323,6 +1323,7 @@ func _draw_plan(key: Array, wide: float, room: float, storeys: int) -> Dictionar
 	if _deck.size.x > 0.0:
 		info.deck = _deck
 	info.kind = kind
+	DoorLog.take(self, info)
 	_raised = false
 	var arrays := {}
 	for mat in _st:
@@ -2490,6 +2491,7 @@ func _garage(gx: float, gz0: float, gw: float, h: float) -> void:
 	for dd in doors:
 		# Garage doors share the siding surface; alpha 0 asks for wide panels.
 		_box("siding", Vector3(dd[1], h, 0.08), Vector3(dd[0], 0.15 + h * 0.5, gz0 - 0.02), Color(TRIM, 0.0))
+		DoorLog.add(self, "garage", Vector3(dd[0], 0.15 + h * 0.5, gz0 - 0.06), Vector3(0, 0, -1), dd[1], h, TRIM)
 		_box("paint", Vector3(dd[1] + 0.3, 0.14, 0.1), Vector3(dd[0], 0.15 + h + 0.07, gz0 - 0.05), TRIM)
 	for s in [-1.0, 1.0]:
 		_box("paint", Vector3(0.18, 0.36, 0.12), Vector3(gx + s * (gw * 0.5 - 0.35), 2.2, gz0 - 0.07), Color("#1c1c1c"))

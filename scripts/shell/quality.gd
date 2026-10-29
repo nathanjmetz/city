@@ -132,6 +132,9 @@ const DETAIL_FLOOR := [
 ##   cars / people: the most cars or walkers drawn at once. Past that the
 ##     view pulls its reach in until the count fits (fit_reach()), so the
 ##     nearest stay drawn. people_m: how far walkers are drawn.
+##   doors_m / doors: how far garage doors open for the cars going in and
+##     out, and the most open or moving at once, nearest first (DoorView;
+##     desktop High and up, never the browser). Past it every door is shut.
 ## Values a tier already sets in TIERS (detail, shadow_reach, tree_shadows)
 ## aren't repeated here: knob() reads them as detail, shadow_m and
 ## tree_shadows. High is the look the game had before budgets, so a
@@ -139,19 +142,19 @@ const DETAIL_FLOOR := [
 const BUDGETS := [
 	{"grow_ms": 3.0, "woods": 0.6, "far_woods": 2000.0, "far_from": 0.6, "photo": false, "understory": false, "crops": false, "crop_m": 51.0, "crop_shadows": false,
 		"cars_m": 1400.0, "car_near_m": 160.0, "car_detail": false, "drive_cars": false, "cars": 600,
-		"people_m": 180.0, "people": 400},
+		"people_m": 180.0, "people": 400, "doors_m": 0.0, "doors": 0},
 	{"grow_ms": 3.0, "woods": 0.7, "far_woods": 2600.0, "far_from": 0.7, "photo": false, "understory": false, "crops": false, "crop_m": 51.0, "crop_shadows": false,
 		"cars_m": 1900.0, "car_near_m": 200.0, "car_detail": false, "drive_cars": true, "cars": 1200,
-		"people_m": 250.0, "people": 1000},
+		"people_m": 250.0, "people": 1000, "doors_m": 0.0, "doors": 0},
 	{"grow_ms": 4.0, "woods": 1.0, "far_woods": 3500.0, "far_from": 1.2, "photo": true, "understory": true, "crops": true, "crop_m": 60.0, "crop_shadows": false,
 		"cars_m": 2600.0, "car_near_m": 240.0, "car_detail": false, "drive_cars": true, "cars": 4000,
-		"people_m": 320.0, "people": 4000},
+		"people_m": 320.0, "people": 4000, "doors_m": 150.0, "doors": 32},
 	{"grow_ms": 4.0, "woods": 1.0, "far_woods": 4000.0, "far_from": 1.2, "photo": true, "understory": true, "crops": true, "crop_m": 77.0, "crop_shadows": false,
 		"cars_m": 2600.0, "car_near_m": 240.0, "car_detail": true, "drive_cars": true, "cars": 8000,
-		"people_m": 320.0, "people": 8000},
+		"people_m": 320.0, "people": 8000, "doors_m": 200.0, "doors": 48},
 	{"grow_ms": 4.0, "woods": 1.0, "far_woods": 4500.0, "far_from": 1.2, "photo": true, "understory": true, "crops": true, "crop_m": 81.0, "crop_shadows": true,
 		"cars_m": 2600.0, "car_near_m": 240.0, "car_detail": true, "drive_cars": true, "cars": 16000,
-		"people_m": 320.0, "people": 16000},
+		"people_m": 320.0, "people": 16000, "doors_m": 250.0, "doors": 64},
 ]
 ## Headless runs and tests (no Quality autoload, or not active): the views
 ## keep the look they had before tiers (detail 1.0), with no field plants,
@@ -160,7 +163,8 @@ const BUDGETS := [
 const NO_CAP := 1 << 30
 const INACTIVE := {"detail": 1.0, "shadow_m": 2000.0, "tree_shadows": true, "grow_ms": 4.0, "woods": 1.0, "far_woods": 3500.0,
 	"far_from": 1.0, "photo": false, "understory": false, "crops": false, "crop_m": 51.0, "crop_shadows": false, "cars_m": 2600.0,
-	"car_near_m": 240.0, "car_detail": false, "drive_cars": true, "cars": NO_CAP, "people_m": 320.0, "people": NO_CAP}
+	"car_near_m": 240.0, "car_detail": false, "drive_cars": true, "cars": NO_CAP, "people_m": 320.0, "people": NO_CAP,
+	"doors_m": 0.0, "doors": 0}
 ## The browser caps how long a frame may spend growing detail (its one
 ## thread also runs the town).
 const BROWSER_GROW_MS := 3.0
@@ -743,6 +747,8 @@ static func budget_for(t: int, on_browser := false) -> Dictionary:
 		b["crop_shadows"] = false
 		b["car_detail"] = false
 		b["drive_cars"] = false
+		b["doors_m"] = 0.0
+		b["doors"] = 0
 	return b
 
 

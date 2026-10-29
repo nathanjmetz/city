@@ -987,6 +987,13 @@ func _near_parts(key: String) -> Array:
 	return [rec.sq, batch.kind_parts(key, ["siding", "brick", "roof"])]
 
 
+## Where building `key` is drawn on the land (its lot's frame, seated on
+## the ground), or null before it is drawn (DoorView puts its doors there).
+func lot_xf(key: String) -> Variant:
+	var rec: Dictionary = _recs.get(key, {})
+	return rec.xf if not rec.is_empty() else null
+
+
 ## True when nothing is waiting to be drawn, merged or grown (for tools and
 ## tests that take pictures).
 func idle() -> bool:

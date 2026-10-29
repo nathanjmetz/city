@@ -25,6 +25,17 @@ const MAX_CARS := 400
 const DT := 0.1
 ## Ticks between drivers' decisions (see _drive).
 const THINK_EVERY := 3
+## A car leaving a home's garage never waits for its door: the door starts
+## up while its driver walks out to it, timed to be most of the way up
+## (DOOR_SHARE) as the driver gets in. door_t is the tick it starts up and
+## door_n the ticks it takes to go all the way: DOOR_TICKS (10 s of driving,
+## a real opener's 10 to 12 s), or less after a short walk (no less than
+## DOOR_MIN), so it is still up in time. Kept on the car's record (already
+## saved; an older save has none and its door simply stays shut).
+## DoorEvents reads them; the trip's timing never changes.
+const DOOR_TICKS := 100
+const DOOR_SHARE := 0.8
+const DOOR_MIN := 30
 ## From the end of a curb return to where cars stop: the crosswalk (0.3 to
 ## 2.7 m past the return, in line with the curb ramps), then 4 ft and the
 ## 2 ft stop bar (MUTCD 3B.16).
@@ -215,6 +226,7 @@ var _due := {}       # tick -> parked vehicles due to head off then (_due_at)
 var _outs := {}      # vehicle id -> [key, path out of its spot] while it waits to pull out
 var _due_done := -1  # the last tick _rest took its due vehicles for (-1: look through all)
 var _pend := {}      # vehicle id -> parked vehicle waiting for a gap to pull out
+var _doored := {}    # vehicle id -> parked vehicle whose garage door is going up (door_t)
 var _slow := {}      # ways whose _speed is below 1 (or has cars), kept up to date each tick
 var _slow_ok := -1   # the lane version _slow was gathered on
 var _groups := {}    # [home, where to] -> pace of who set off from there this step (_pace)
@@ -309,8 +321,9 @@ func _flows_on() -> bool:
 func _flow_start(car: Dictionary) -> void:
 	_release(car.at_place, car.spot, car.id)
 	_unpark(car)
-	for k in ["at_place", "spot", "pos", "face", "hidden", "pending"]:
+	for k in ["at_place", "spot", "pos", "face", "hidden", "pending", "door_t", "door_n"]:
 		car.erase(k)
+	_doored.erase(car.id)
 	var t := float(_tick)
 	var ins := []
 	var route: Array = car.route
@@ -1228,6 +1241,7 @@ func from_dict(d: Dictionary) -> void:
 	_due.clear()
 	_due_done = -1
 	_pend.clear()
+	_doored.clear()
 	_pseq.clear()
 	walkers.clear()
 	_wdone.clear()
@@ -2423,6 +2437,8 @@ func _reroute_all() -> void:
 			car.hidden = s.hidden
 			if car.get("pending", false):
 				car.from_spot = at  # it pulls out of the space it's in now
+			if car.has("door_t") and not _behind_door(pl, at):
+				_shut_door(car)  # no door in front of its new space
 			parked_version += 1
 	# Vehicles about to pull out plan again on the new roads.
 	for car in parked:
@@ -2494,6 +2510,7 @@ func _cancel(car: Dictionary) -> void:
 	_release(car.get("to_place", ""), car.get("to_spot", -1), car.id)
 	_report(car, failed)
 	car.erase("pending")
+	_shut_door(car)
 	_pend.erase(car.id)
 	for k in ["route", "leg", "d", "end_d", "goal", "dest", "park", "home", "to_place", "to_spot", "lane",
 			"to_stop", "after"]:
@@ -3323,6 +3340,8 @@ func _add_spot(pl: Dictionary, s: Dictionary, vid := -1) -> int:
 
 ## Files a vehicle just parked (or found parked on a load) for _claim_spots.
 func _file_parked(car: Dictionary) -> void:
+	if car.has("door_t"):
+		_doored[car.id] = car
 	var at: String = car.at_place
 	if not _parked_at.has(at):
 		_parked_at[at] = []
@@ -3565,6 +3584,7 @@ func _index_parked() -> void:
 	_due.clear()
 	_due_done = -1
 	_pend.clear()
+	_doored.clear()
 	_pseq.clear()
 	_next_pseq = 0
 	for car in parked:
@@ -3590,8 +3610,36 @@ func _unpark(car: Dictionary) -> void:
 		_parked_at.erase(car.get("at_place", ""))
 	_parked_to.erase(car.id)
 	_pend.erase(car.id)
+	_doored.erase(car.id)
 	_pseq.erase(car.id)
 	parked_version += 1
+
+
+## True for a spot behind a garage door that opens: a home's garage with
+## a door the art logged in front of it (not a parking deck or a factory's
+## bay, whose doors come later).
+static func _behind_door(pl: Dictionary, spot: int) -> bool:
+	return spot >= 0 and spot < pl.get("spots", []).size() and pl.spots[spot].kind == "garage" \
+		and int(pl.get("zone", -1)) == ZoneMap.Zone.RESIDENTIAL and DoorEvents.door_for(pl, spot) >= 0
+
+
+## A car whose driver sets out on a `walk` ticks long to it: its garage
+## door starts up so it is DOOR_SHARE of the way up as they get there.
+func _open_door(car: Dictionary, walk: int) -> void:
+	_shut_door(car)
+	if not car.has("at_place") or not _behind_door(place(car.at_place), int(car.get("spot", -1))):
+		return
+	var lead := int(DOOR_TICKS * DOOR_SHARE)
+	car.door_t = _tick + maxi(walk - lead, 0)
+	car.door_n = clampi(roundi(float(_tick + walk - int(car.door_t)) / DOOR_SHARE), DOOR_MIN, DOOR_TICKS)
+	_doored[car.id] = car
+
+
+## Forgets a car's garage door (it closes, as far as DoorEvents knows).
+func _shut_door(car: Dictionary) -> void:
+	car.erase("door_t")
+	car.erase("door_n")
+	_doored.erase(car.id)
 
 
 ## Puts a vehicle at rest in a spot.
@@ -3608,7 +3656,8 @@ func _park(car: Dictionary, pl: Dictionary, spot: int) -> void:
 	car.conn = null
 	car.pj = null
 	for k in ["route", "leg", "d", "end_d", "goal", "dest", "park", "home", "to_place", "to_spot", "lane",
-			"commit", "arrive", "stuck", "lc_from", "lc_t", "lc_cool", "held", "jd", "at", "facing", "pulled_over"]:
+			"commit", "arrive", "stuck", "lc_from", "lc_t", "lc_cool", "held", "jd", "at", "facing", "pulled_over",
+			"door_t", "door_n"]:
 		car.erase(k)
 	if not car.has("until"):
 		car.until = -1
@@ -3718,6 +3767,7 @@ func _try_launch(car: Dictionary, lanes := {}) -> bool:
 	_unpark(car)
 	for k in ["at_place", "spot", "pos", "face", "hidden", "pending"]:
 		car.erase(k)
+	_doored.erase(car.id)  # (door_t rides on while it backs out: DoorEvents)
 	return true
 
 
@@ -4248,7 +4298,7 @@ func go(pid: int, to_ref: String, purpose: String, stay: int, on_foot := false) 
 		if path.is_empty() or walkers.size() >= max_walkers:
 			return false
 		car.driver = pid
-		_walk(pid, path, {"drive": car.id, "to": to_ref, "purpose": purpose, "stay": stay})
+		_open_door(car, _walk(pid, path, {"drive": car.id, "to": to_ref, "purpose": purpose, "stay": stay}))
 	else:
 		var path := _walk_between(from_pl, to_pl)
 		if path.is_empty() or walkers.size() >= max_walkers:
@@ -4310,7 +4360,8 @@ func arrive_now(sim: CitySim, pid: int, to_ref: String, stay: int, batch := {}) 
 	return true
 
 
-func _walk(pid: int, pts: PackedVector3Array, then: Dictionary) -> void:
+## Returns the ticks the walk takes.
+func _walk(pid: int, pts: PackedVector3Array, then: Dictionary) -> int:
 	var cum := PackedFloat32Array([0.0])
 	for i in range(1, pts.size()):
 		cum.append(cum[i - 1] + pts[i].distance_to(pts[i - 1]))
@@ -4345,8 +4396,9 @@ func _walk(pid: int, pts: PackedVector3Array, then: Dictionary) -> void:
 		w.xings = xings
 		_note_xings(w)
 	walkers.append(w)
-	_file_walker(w)
+	var ticks := _file_walker(w)
 	_next_walker += 1
+	return ticks
 
 
 ## A walker's pace in whole cm/s: their own, slower when young or old,
@@ -4376,7 +4428,8 @@ func _pace(pid: int, pts: PackedVector3Array) -> float:
 
 ## Files a walker under the step they arrive: the first whole step count t
 ## with t * v * DT >= len.
-func _file_walker(w: Dictionary) -> void:
+## Files a walker under the step it gets there; returns how many steps on.
+func _file_walker(w: Dictionary) -> int:
 	var t := maxi(ceili(w.len / (w.v * DT)), 1)
 	while t > 1 and (t - 1) * w.v * DT >= w.len:
 		t -= 1
@@ -4388,6 +4441,7 @@ func _file_walker(w: Dictionary) -> void:
 	if not _wdone.has(at):
 		_wdone[at] = []
 	_wdone[at].append(w)
+	return t
 
 
 ## Metres a walker has gone (worked out from the steps, not stored).
@@ -4508,6 +4562,7 @@ func _walked(w: Dictionary) -> void:
 			# Can't get there: back inside.
 			if not car.is_empty():
 				car.driver = -1
+				_shut_door(car)
 			p.at = "" if car.is_empty() or car.at_place == "lot:" + p.home else car.at_place
 			_sim.people.set_until(p, _tick + 30 if p.at != "" else -1)
 			return
