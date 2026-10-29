@@ -308,7 +308,7 @@ func build(sim, a: Dictionary) -> bool:
 	sim.buildings[site] = b
 	sim.care.forget(site)
 	var lot: Dictionary = sim.lots[site]
-	sim.construction.start("lot:" + site, CitySim.PROFILE_OF_ZONE[zone], sim.tick_count, lot.front, -lot.normal, lot.to_curb)
+	sim.construction.start("lot:" + site, CitySim.profile_of(b), sim.tick_count, lot.front, -lot.normal, lot.to_curb)
 	sim.note_lots([site])
 	sim.lots_changed.emit()
 	sim.buildings_changed.emit()
