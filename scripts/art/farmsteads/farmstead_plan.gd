@@ -126,6 +126,10 @@ static func grow(at: Vector2, farm: bool, facing: float, seed: int) -> Dictionar
 	_drive(p, rng)
 	_shade_trees(p, rng)
 	_windbreak(p, rng)
+	# None out in a pond or the river: a windbreak row reaches 30 m past the
+	# yard, and on a bank it ran on into the water. Left out after every
+	# roll, so the rest of the plan is the same.
+	p.trees = p.trees.filter(func(t): return not under_water(to_region(p, t[0])))
 	# The farmstead's grounds: the yard and the grass out to its windbreak.
 	var g: Rect2 = p.extent
 	for t in p.trees:
@@ -688,6 +692,12 @@ static func wet(p: Dictionary) -> bool:
 		if Terrain.water(r.x, r.y) > 0.3:
 			return true
 	return false
+
+
+## True where region point `r` lies under a pond's or the river's level
+## (TerrainView draws its water sheet there).
+static func under_water(r: Vector2) -> bool:
+	return Terrain.water(r.x, r.y) > 0.02 and Terrain.height(r.x, r.y) < Terrain.water_level(r.x, r.y) + 0.15
 
 
 ## A local point (x along the road, z back from it) in region metres.

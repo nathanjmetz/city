@@ -25,6 +25,7 @@ const CORNICE := ["#3a3d3a", "#6b5a44", "#d9d3c3", "#4a2f2a", "#2a3a4a"]  # pain
 const BUFF := ["#d6c6a1", "#c9b48c", "#e0d3b4", "#b9a382"]
 const TERRA := ["#b9b09f", "#9c6a4e", "#a89f8c"]  # terra cotta or stone caps
 const SIDING := ["#e8e4d8", "#d8d0bc", "#c9cfc9", "#efe9da"]
+const FLAT_H := 3.3
 
 
 ## How often a shop's first stage is a corner store, by era: the corner
@@ -43,19 +44,24 @@ static func wanted(b: CommercialBuilder) -> bool:
 
 ## `side`: which way (local x, +1 or -1) the lot's side street lies when it
 ## is a corner lot, 0 when it is not (or not known).
-static func draw(b: CommercialBuilder, to_curb: float, side: float) -> void:
+## `flats`: storeys of flats over the store (a prewar corner store grown
+## into a store with flats, BuildingTypes "mixed_use", keeps its ground
+## floor and goes up).
+static func draw(b: CommercialBuilder, to_curb: float, side: float, flats := 0) -> void:
 	var r := RandomNumberGenerator.new()
 	r.seed = hash([b.rng.seed, "corner store art"])
 	if b.era == "prewar":
-		_cs_grocery(b, r, to_curb, side)
+		_cs_grocery(b, r, to_curb, side, flats)
 	else:
 		_cs_market(b, r, to_curb, side)
 
 
 ## The prewar brick grocery at the sidewalk.
-static func _cs_grocery(b: CommercialBuilder, r: RandomNumberGenerator, to_curb: float, side: float) -> void:
+static func _cs_grocery(b: CommercialBuilder, r: RandomNumberGenerator, to_curb: float, side: float, flats := 0) -> void:
 	var lw := b.half * 2.0
 	var bw := clampf(lw - 2.4, 7.0, 10.5)  # 24-34 ft fronts
+	if flats > 0:
+		bw = lw - 0.4  # the corner building of a Main Street row: wall to wall
 	var bd := clampf(b.depth - 11.0, 12.0, 18.0)
 	var e := side if side != 0.0 else (1.0 if r.randf() < 0.5 else -1.0)
 	# Built to the side street's lot line (or one side lot line mid-block),
@@ -64,6 +70,9 @@ static func _cs_grocery(b: CommercialBuilder, r: RandomNumberGenerator, to_curb:
 	var zf := 0.4
 	var deck := r.randf_range(4.2, 4.6)  # a 13-14 ft storey
 	var top := deck + r.randf_range(1.0, 1.4)
+	# Flats upstairs: a 10-11 ft storey each, the parapet and cornice on top.
+	var lift := FLAT_H * flats
+	var roof_y := deck + lift
 	var wall := Color(CommercialBuilder.FACADE_BRICK[r.randi() % CommercialBuilder.FACADE_BRICK.size()])
 	var cornice := Color(CORNICE[r.randi() % CORNICE.size()])
 	var trim := cornice if r.randf() < 0.5 else Color("#d9d3c3")
@@ -89,7 +98,7 @@ static func _cs_grocery(b: CommercialBuilder, r: RandomNumberGenerator, to_curb:
 	else:
 		b._box("brick", Vector3(bw, deck, bd), Vector3(cx, deck * 0.5, zf + bd * 0.5), wall)
 	# The front: plate glass between the corner and a door, under the transom.
-	var f0 := xo + e * 0.5
+	var f0 := xo + e * (0.5 if flats == 0 else 1.9)  # the flats' own door at the far end
 	var f1 := xe - e * (clip + 0.4 if clip > 0.0 else 0.5)
 	var door_x := 0.0
 	if clip == 0.0:
@@ -102,7 +111,10 @@ static func _cs_grocery(b: CommercialBuilder, r: RandomNumberGenerator, to_curb:
 	# The sign frieze over the transom and the cornice.
 	var sign_w := bw * 0.72
 	b._sign(Vector3(cx - e * clip * 0.3, gh + 0.12, zf - 0.08), sign_w, minf(deck - gh - 0.25, 0.75))
-	b._box("brick", Vector3(bw, top - deck + 0.02, 0.3), Vector3(cx, deck + (top - deck) * 0.5, zf + 0.15), wall)
+	if flats > 0:
+		_cs_flats(b, cx, bw, bd, zf, deck, lift, xe, xo, e, clip, wall, trim, bulk)
+	top += lift
+	b._box("brick", Vector3(bw, top - roof_y + 0.02, 0.3), Vector3(cx, roof_y + (top - roof_y) * 0.5, zf + 0.15), wall)
 	b._box("paint", Vector3(bw + 0.2, 0.34, 0.5), Vector3(cx, top - 0.12, zf - 0.08), cornice)
 	b._box("paint", Vector3(bw + 0.05, 0.14, 0.3), Vector3(cx, top - 0.4, zf - 0.02), cornice.darkened(0.15))
 	if clip > 0.0:
@@ -115,22 +127,22 @@ static func _cs_grocery(b: CommercialBuilder, r: RandomNumberGenerator, to_curb:
 			var x := cx - bw * 0.5 + 0.15 + k * (bw - 0.3) / n
 			b._box("paint", Vector3(0.16, 0.42, 0.34), Vector3(x, top - 0.5, zf - 0.04), cornice)
 	# The flat roof, falling to the back behind the parapets.
-	var y := deck + 0.02
+	var y := roof_y + 0.02
 	var cz := zf + bd * 0.5
 	b._quad("membrane", Vector3(cx - bw * 0.5, y, zf), Vector3(cx + bw * 0.5, y, zf),
 		Vector3(cx + bw * 0.5, y, zf + bd), Vector3(cx - bw * 0.5, y, zf + bd), b._low_slope(bw, bd, cz, true), [], Vector3.UP)
 	b._roof_bits(cx, bw, bd, cz, y, true)
 	# Side parapets stepping down in three, a terra cotta cap on each step.
-	var low := deck + 0.5
+	var low := roof_y + 0.5
 	for s in [-1.0, 1.0]:
 		var x: float = cx + s * (bw * 0.5 - 0.12)
 		for k in 3:
 			var z0 := zf + 0.3 + k * (bd - 0.3) / 3.0
 			var z1 := zf + 0.3 + (k + 1) * (bd - 0.3) / 3.0
 			var t := lerpf(top - 0.3, low, k / 2.0)
-			b._box("brick", Vector3(0.24, t - deck, z1 - z0), Vector3(x, deck + (t - deck) * 0.5, (z0 + z1) * 0.5), wall)
+			b._box("brick", Vector3(0.24, t - roof_y, z1 - z0), Vector3(x, roof_y + (t - roof_y) * 0.5, (z0 + z1) * 0.5), wall)
 			b._box("paint", Vector3(0.36, 0.1, z1 - z0 + 0.04), Vector3(x, t + 0.05, (z0 + z1) * 0.5), cap)
-	b._box("brick", Vector3(bw, low - deck, 0.24), Vector3(cx, deck + (low - deck) * 0.5, zf + bd - 0.12), wall)
+	b._box("brick", Vector3(bw, low - roof_y, 0.24), Vector3(cx, roof_y + (low - roof_y) * 0.5, zf + bd - 0.12), wall)
 	b._box("paint", Vector3(bw + 0.1, 0.1, 0.36), Vector3(cx, low + 0.05, zf + bd - 0.12), cap)
 	# Down the side street: display windows near the front, high windows
 	# for the stockroom, and the store's name painted on the brick.
@@ -141,16 +153,18 @@ static func _cs_grocery(b: CommercialBuilder, r: RandomNumberGenerator, to_curb:
 			b._glass(Vector3(xs, 1.85, z), Vector3(0, 0, -e), 1.6, 2.2, 0.1)
 			b._box("paint", Vector3(0.1, 0.62, 1.74), Vector3(xs + e * 0.03, 0.31, z), bulk)
 			b._box("paint", Vector3(0.12, 0.1, 1.74), Vector3(xs + e * 0.04, 2.98, z), trim)
+		# High windows up to where the painted sign starts.
+		var pw := minf(bd - clip - 3.0, 7.0)
+		var pz := zf + bd - 1.0 - pw * 0.5
+		var hz_end := pz - pw * 0.5 - 0.8 if pw > 3.0 else zf + bd - 1.0
 		var hz := zf + clip + 5.2
-		while hz < zf + bd - 1.0:
+		while hz < hz_end:
 			b._glass(Vector3(xs, 3.0, hz), Vector3(0, 0, -e), 0.9, 0.9, 0.3)
 			b._box("paint", Vector3(0.14, 0.08, 1.05), Vector3(xs + e * 0.05, 2.5, hz), cap)
 			hz += 2.6
-		var pw := minf(bd - clip - 3.0, 7.0)
 		if pw > 3.0:
 			var faded := Color(["#e8e0c8", "#d9c9a0", "#c8d0c0"][r.randi() % 3])
 			faded.a = 0.5 + pw / 60.0  # painted letters (unlit)
-			var pz := zf + bd - 1.0 - pw * 0.5
 			var py := deck - 0.15
 			var o := Vector3(xs + e * 0.03, 0, pz)
 			# The uv's x runs from the reader's right, as _sign's does.
@@ -197,6 +211,70 @@ static func _cs_grocery(b: CommercialBuilder, r: RandomNumberGenerator, to_curb:
 		b.site.door = Vector2(xe - e * clip * 0.5, zf + clip * 0.5)
 	else:
 		b.site.door = Vector2(door_x, zf)
+
+
+## The flats over a grown corner store: the brick walls carried up a
+## storey (square over the clipped corner, on its column), a belt course
+## at the floor line, tall one-over-one windows under stone lintels to the
+## front and the side street, a bay window over the corner, and the flats'
+## own street door at the far end of the front with a transom over it.
+static func _cs_flats(b: CommercialBuilder, cx: float, bw: float, bd: float, zf: float, deck: float, lift: float,
+		xe: float, xo: float, e: float, clip: float, wall: Color, trim: Color, bulk: Color) -> void:
+	var stone := Color("#cfc6b2")
+	b._box("brick", Vector3(bw, lift, bd), Vector3(cx, deck + lift * 0.5, zf + bd * 0.5), wall)
+	b._box("paint", Vector3(bw + 0.08, 0.2, 0.2), Vector3(cx, deck + 0.1, zf - 0.08), stone)
+	var floors := roundi(lift / FLAT_H)
+	for f in floors:
+		var wy := deck + f * FLAT_H + 1.75
+		# Front windows, kept off the corner's bay.
+		var x0 := xo + e * 1.0
+		var x1 := xe - e * (2.4 if clip > 0.0 else 1.0)
+		var n := maxi(2, roundi(absf(x1 - x0) / 1.8) + 1)
+		for k in n:
+			var x := lerpf(x0, x1, float(k) / (n - 1))
+			b._glass(Vector3(x, wy, zf - 0.02), Vector3(-1, 0, 0), 0.9, 1.7, 0.3)
+			b._box("paint", Vector3(1.2, 0.24, 0.12), Vector3(x, wy + 0.97, zf - 0.05), stone)
+			b._box("paint", Vector3(1.1, 0.1, 0.16), Vector3(x, wy - 0.9, zf - 0.07), stone)
+		if clip > 0.0:
+			# Down the side street.
+			var zs := zf + 3.0
+			while zs < zf + bd - 1.2:
+				b._glass(Vector3(xe + e * 0.02, wy, zs), Vector3(0, 0, -e), 0.9, 1.7, 0.3)
+				b._box("paint", Vector3(0.12, 0.24, 1.2), Vector3(xe + e * 0.05, wy + 0.97, zs), stone)
+				b._box("paint", Vector3(0.16, 0.1, 1.1), Vector3(xe + e * 0.07, wy - 0.9, zs), stone)
+				zs += 2.4
+			# A three-sided bay window hung over the clipped corner.
+			var out := Vector3(e, 0, -1).normalized()
+			var right := Vector3(-1, 0, -e).normalized()
+			var c := Vector3(xe - e * 0.55, wy, zf + 0.55) + out * 0.25
+			var basis := Basis(right, Vector3.UP, out)
+			b._box("paint", Vector3(1.9, 2.2, 0.7), c, trim, basis)
+			b._glass(c + out * 0.36, right, 1.0, 1.6, 0.25)
+			b._box("paint", Vector3(2.1, 0.16, 0.9), c + Vector3(0, 1.18, 0), trim.darkened(0.2), basis)
+			b._box("paint", Vector3(2.0, 0.3, 0.8), c - Vector3(0, 1.25, 0), trim.darkened(0.1), basis)
+	# The flats' door, beside the store front.
+	var dx := xo + e * 1.1
+	b._box("paint", Vector3(0.95, 2.2, 0.07), Vector3(dx, 1.1, zf - 0.05), bulk)
+	b._box("paint", Vector3(1.2, 0.1, 0.14), Vector3(dx, 2.28, zf - 0.07), trim)
+	b._quad("glass", Vector3(dx + 0.5, 2.36, zf - 0.08), Vector3(dx - 0.5, 2.36, zf - 0.08),
+		Vector3(dx - 0.5, 3.0, zf - 0.08), Vector3(dx + 0.5, 3.0, zf - 0.08), PRISM, [], Vector3.FORWARD)
+	b._box("concrete", Vector3(1.2, 0.12, 0.45), Vector3(dx, 0.06, zf - 0.28), Color("#b9b5ab"))
+
+
+## A prewar corner store grown into a store with flats (BuildingTypes
+## "mixed_use" stage 0, one storey of flats) on a corner lot: the same
+## store, a storey taller, the corner building of its Main Street row.
+## Empty when this lot's store isn't one (mid-block, or not a prewar
+## corner store), for DenseBuilder.build_mixed to draw instead.
+static func build_grown(seed: int, to_curb: float, lot: Dictionary, storeys: int, spec := {}) -> Array:
+	if storeys != 2 or float(lot.get("side", 0.0)) == 0.0:
+		return []
+	var b := DenseBuilder._start(seed, lot, spec)
+	if b.era != "prewar" or not wanted(b):
+		return []
+	draw(b, to_curb, float(lot.side), 1)
+	b._service_yard(true)
+	return b._done()
 
 
 ## Plate glass from x `a` to `b` along the front at `zf`: a painted wood

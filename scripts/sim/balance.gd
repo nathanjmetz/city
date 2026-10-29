@@ -1424,6 +1424,12 @@ const TRADE_PRICE := {
 	"steel": 19_000.0,
 	"rv": 44_000.0,
 	"co2": 1_200.0,
+	# Raw loads a town ships (TradeHaul): a 1,000 bu hopper of soft red
+	# winter wheat at $5.50; a 20 ton tandem of crushed stone at the quarry's
+	# $16 a ton (USGS 2023); a 180 barrel crude tanker at $70.
+	"wheat": 5_500.0,
+	"ore": 320.0,
+	"crude oil": 12_600.0,
 }
 ## Price for a good with no entry above.
 const TRADE_PRICE_DEFAULT := 100.0
@@ -1766,6 +1772,28 @@ const AMENITIES := {
 	"trailhead": {"cost": 350_000, "upkeep": 2_500, "size": Vector2(50, 36),
 		"value": 0.01, "value_reach": 300.0, "happy": 0.03, "happy_reach": 1500.0},
 }
+# --- Saturday farmers' market (FarmersMarket) -------------------------------
+# Brawn's pick #19 (Farthest Frontier, Anno). Indiana's outdoor markets run
+# Saturday mornings from May through October, most on the courthouse square
+# or under a park's shelter. A small-town market has about 10 to 25 vendors
+# (USDA AMS National Farmers Market Managers Survey, 2019).
+
+## Calendar months it runs (May to October) and its day (6 = Saturday).
+const FARMERS_MARKET_MONTHS := [5, 6, 7, 8, 9, 10]
+const FARMERS_MARKET_DAY := 6
+## Most stalls on one market day.
+const FARMERS_MARKET_MAX_VENDORS := 24
+## Share of the town's farms that sell there, percent. Only about 6% of US
+## farms sell straight to people (2017 Census of Agriculture), more near
+## towns; a town's farms here are its whole farm economy, so more of them
+## come with a truck of sweet corn, tomatoes, eggs or beef.
+const FARMERS_MARKET_SHARE := 40
+## What one stall sells on a market day, dollars (a few hundred is typical
+## for a small-town market vendor; USDA AMS survey).
+const FARMERS_MARKET_SALES := 450
+## How far a farm will drive to sell there, metres (about 30 miles).
+const FARMERS_MARKET_REACH := 50_000.0
+
 # --- Tourism and events --------------------------------------------------------
 # Brawn green-lit (2026-10-22): a fairgrounds hub whose fair board grows it
 # and runs a county fair each summer, and the football field as a stadium
@@ -2109,6 +2137,82 @@ const BIG_FACTORY_CONTRACT_SHARE := 0.85
 # seats, saves, and buys the free land next to it for new buildings, never
 # a second site. Graduates who stay make the town better educated, and
 # office and tech jobs open only for the graduates the town has.
+
+## Fire and police stations and clinics grow with their town (Stations). The chief
+## pays from the department's cumulative fund, a separate levy Indiana
+## towns may charge (cumulative fire fund, IC 36-8-14, and cumulative
+## capital development fund, IC 36-9-14.5, each up to about 3.3 cents per
+## $100 of assessed value): about $16 a resident a year at a typical
+## $120,000 home, here dollars a resident a month.
+const STATION_LEVY_PER_PERSON := 1.3
+## A piece is built once this share of its cost is in the fund; the rest is
+## a bond the levy pays back (Indiana towns bond fire stations and their
+## additions over 10-20 years).
+const STATION_BOND_DOWN := 0.25
+## Each piece: `cost` dollars from the fund, `grow` metres the lot reaches
+## further back from the street (0 builds on what it has), `needs` from the
+## town (population; tall = buildings of 3+ storeys; city = a city charter),
+## `requires` pieces first, effects reach* (a longer reach by road: quicker
+## turnout and dispatch). Real references:
+##   - Drill tower: ISO's Fire Suppression Rating Schedule credits a
+##     department's own training facility; a 4-storey steel tower runs
+##     about $300-400k. Small Indiana departments add one around 2-5,000.
+##   - Ladder company: ISO expects a ladder truck where 5 or more buildings
+##     are 3 storeys (35 ft) or taller; stations build a taller drive-through
+##     bay on for it.
+##   - Living quarters: towns past about 5,000 move from volunteers to paid
+##     crews on 24-hour shifts; a staffed station turns out in about a
+##     minute against 4-6 for volunteers (NFPA 1710 vs 1720).
+##   - Clinic: a rural health clinic grows as Indiana's do: a pharmacy with
+##     a drive-through (one per ~1,500-3,000 people), urgent care with X-ray
+##     (towns of 3,000+ get one), dental and eye offices, then a 12-chair
+##     dialysis center (US: about 1 dialysis patient in 600, a center
+##     serves 50-70 of them, so towns of about 10,000 and up).
+##   - Standby generator: NFPA 1221 and FEMA's critical facility guidance
+##     put backup power at every station; a 100 kW diesel set ~$100-150k.
+##   - Emergency operations center: a city's EOC, often at the main station.
+##   - Sally port: a secure garage to bring prisoners in, standard once a
+##     department holds anyone (about 2,000 people and up).
+##   - Evidence and impound garage: a property room and a fenced impound
+##     lot, a mid-size department's need.
+##   - K-9 unit: one dog team for a department of about 10+ officers.
+##   - 911 dispatch center: a town's own public safety answering point with
+##     its radio tower (Indiana consolidated many into county centers; a
+##     city keeps its own).
+const STATION_TREES := {
+	"fire": [
+		{"id": "drill_tower", "name": "Drill tower", "cost": 350_000, "grow": 14.0,
+			"needs": {"population": 2000}, "effects": {"reach*": 0.05}, "note": "crews train at home"},
+		{"id": "ladder", "name": "Ladder truck bay", "cost": 1_400_000, "grow": 16.0,
+			"needs": {"tall": 5}, "effects": {"reach*": 0.05}, "note": "a taller bay for an aerial ladder"},
+		{"id": "generator", "name": "Standby generator", "cost": 120_000, "grow": 0.0,
+			"needs": {"population": 3000}, "effects": {"reach*": 0.02}, "note": "the station keeps running in a storm"},
+		{"id": "quarters", "name": "Crew quarters", "cost": 900_000, "grow": 12.0,
+			"needs": {"population": 5000}, "effects": {"reach*": 0.15}, "note": "a paid crew sleeps at the station"},
+		{"id": "eoc", "name": "Emergency operations center", "cost": 1_800_000, "grow": 16.0, "requires": ["quarters"],
+			"needs": {"population": 10_000, "city": 1}, "effects": {"reach*": 0.05}, "note": "the city's command room"},
+	],
+	"clinic": [
+		{"id": "pharmacy", "name": "Pharmacy with a drive-through", "cost": 450_000, "grow": 12.0,
+			"needs": {"population": 1500}, "effects": {"reach*": 0.05}, "note": "prescriptions filled on the way out"},
+		{"id": "urgent_care", "name": "Urgent care and X-ray", "cost": 1_300_000, "grow": 14.0,
+			"needs": {"population": 3000}, "effects": {"reach*": 0.15}, "note": "open evenings and weekends"},
+		{"id": "dental", "name": "Dental and eye offices", "cost": 900_000, "grow": 12.0,
+			"needs": {"population": 4000}, "effects": {"reach*": 0.05}, "note": "a dentist and an optometrist move in"},
+		{"id": "dialysis", "name": "Dialysis center", "cost": 1_600_000, "grow": 14.0, "requires": ["urgent_care"],
+			"needs": {"population": 10_000}, "effects": {"reach*": 0.05}, "note": "no more drives to Marion three times a week"},
+	],
+	"police": [
+		{"id": "sally_port", "name": "Sally port", "cost": 300_000, "grow": 10.0,
+			"needs": {"population": 2000}, "effects": {"reach*": 0.03}, "note": "a secure garage to bring people in"},
+		{"id": "k9", "name": "K-9 kennel", "cost": 90_000, "grow": 0.0,
+			"needs": {"population": 4000}, "effects": {"reach*": 0.03}, "note": "a dog team for searches"},
+		{"id": "evidence", "name": "Evidence and impound garage", "cost": 450_000, "grow": 14.0, "requires": ["sally_port"],
+			"needs": {"population": 3500}, "effects": {"reach*": 0.04}, "note": "a property room and impound lot"},
+		{"id": "dispatch", "name": "911 dispatch center", "cost": 1_200_000, "grow": 0.0,
+			"needs": {"population": 6000, "city": 1}, "effects": {"reach*": 0.1}, "note": "calls answered in town, a radio tower out back"},
+	],
+}
 
 ## Each kind of campus. `cost` is what the player pays for the first
 ## building; `funding` is the city's standard monthly contribution (the
@@ -2856,6 +2960,9 @@ const POLICY_UPKEEP := [0.7, 0.85, 1.0, 1.2, 1.4]
 ## ...and how far they reach, how much they serve and how many trucks they
 ## run. A lean department stretches thin; a generous one has slack.
 const POLICY_EFFECT := [0.8, 0.9, 1.0, 1.1, 1.2]
+## Police cruisers on the road per station per shift, by Funding step
+## (times PATROL_CARS): Lean keeps one car out, Generous three.
+const POLICY_CARS := [0.5, 0.75, 1.0, 1.25, 1.5]
 ## Homes, shops and factories: what the town spends on each building a month
 ## for street care, trees and inspections (negative: it saves that much)...
 const POLICY_CARE_PER_BUILDING := [-12, -6, 0, 15, 30]
@@ -3141,3 +3248,23 @@ const LAW_IMPACT_PACE := 0.9
 ## The plan commission asks for an impact fee after this many new homes in a
 ## year.
 const LAW_IMPACT_ASK_HOMES := 40
+
+# --- Police patrols (Patrols) ---------------------------------------------------
+# A small-town department keeps one or two cars on the road a shift, round
+# the clock, over three 8-hour shifts (BJS Local Police Departments: towns of
+# 2,500-10,000 average about 2 sworn officers per 1,000 residents).
+const PATROL_CARS := 2
+const PATROL_SHIFT_HOURS := 8
+## The day shift starts at 6 AM; then 2 PM and 10 PM.
+const PATROL_FIRST_SHIFT := 6
+## A street counts as patrolled for a week after a cruiser drove it: a game
+## day goes by far faster than the cars drive (a tick is a game minute but
+## a tenth of a second on the road), so a real day's beat takes a week here.
+const PATROL_FRESH_TICKS := 7 * 24 * 60
+## Streets driven within this many hours of each other count as equally
+## stale, so a car works through the stale ones near it.
+const PATROL_BUNCH_HOURS := 4
+## Streets a car tries for its next leg before giving up and heading in.
+const PATROL_TRIES := 4
+## With cars switched off: the streets one car covers in a shift.
+const PATROL_STREETS_PER_SHIFT := 40
