@@ -10,7 +10,7 @@ extends RefCounted
 ##
 ## A label is {pos, normal (facing out), text, height (letters at most this
 ## tall), width (and no wider), color, style}, in the frame of the node it
-## goes on.
+## goes on; and optionally range (metres it reads from, DRAW_RANGE if not given).
 
 ## Metres from the camera within which sign lettering is drawn, and over
 ## how many metres it fades out past that.
@@ -71,7 +71,7 @@ static func make(l: Dictionary) -> Label3D:
 	label.pixel_size = minf(by_height, by_width)
 	label.position = l.pos
 	label.basis = Basis.looking_at(-l.normal, Vector3.UP)
-	label.visibility_range_end = DRAW_RANGE
+	label.visibility_range_end = float(l.get("range", DRAW_RANGE))
 	label.visibility_range_end_margin = FADE
 	label.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
 	label.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
