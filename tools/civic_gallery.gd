@@ -114,7 +114,7 @@ func _init() -> void:
 		if built.size() > 2:
 			for t in built[2]:
 				planted.append([Transform3D(Basis.IDENTITY.scaled(Vector3.ONE * t[3]), at + t[0]), t[1], t[2]])
-		trees.set_trees(name, planted)
+		trees.set_trees(str(_items.size()), planted)
 		var dist: float = view[2] if view[2] > 0.0 else maxf(size.x, size.y) * 1.35 + 25.0
 		var look := at + Vector3(0, 0, size.y * 0.5 if lot_front else 0.0)
 		var shot := str(w).get_slice("@", 0).replace("#", "-")
@@ -125,6 +125,7 @@ func _init() -> void:
 	_cam = Camera3D.new()
 	_cam.fov = 50.0
 	_cam.far = 4000.0
+	_cam.near = 1.0  # like the game camera; 5 cm loses yards under the lawn far off
 	world.add_child(_cam)
 	_aim(0)
 

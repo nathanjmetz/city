@@ -1262,10 +1262,104 @@ func _fairgrounds(size: Vector2, to_curb: float, name: String, built: Array, on:
 			_box("paint", Vector3(6.0, 2.8, 2.6), p + Vector3(0, 1.6, 0), WHITE)
 			_box("paint", Vector3(6.4, 0.1, 1.6), p + Vector3(0, 2.7, -1.9), [Color("#c23a3a"), Color("#e8c23a"),
 				Color("#2f7ac0")][i % 3], Basis(Vector3.RIGHT, 0.25))
+	_fair_life(hx, hz, built)
+
+
+## What every Indiana 4-H fairground has beyond the big buildings: gravel
+## lanes lit by floodlights on wood poles, a covered show arena with a
+## pipe-rail ring, an enclosed poultry and rabbit barn, the 4-H food stand,
+## a block restroom house, and old shade trees along the lanes.
+func _fair_life(hx: float, hz: float, built: Array) -> void:
+	var gravel := Color("#aaa292")
+	var lanes := [[Vector3(0, 0, -55.0), Vector3(0, 0, -38.0)], [Vector3(-54.0, 0, -38.0), Vector3(64.0, 0, -38.0)],
+		[Vector3(14.0, 0, -38.0), Vector3(14.0, 0, 50.0)]]
+	for l in lanes:
+		_strip(l[0], l[1], 6.0, "gravel", gravel, 0.048)
+	# Floodlights on wood poles along the lanes, 30 m apart.
+	for l in lanes:
+		var a: Vector3 = l[0]
+		var b: Vector3 = l[1]
+		var len := a.distance_to(b)
+		var dir := (b - a) / len
+		var side := Vector3(dir.z, 0, -dir.x) * 4.2
+		var n := int(len / 30.0)
+		for k in n + 1:
+			var p := a + dir * (len * (k + 0.5) / (n + 1)) + side
+			_cyl_y(p + Vector3(0, 4.5, 0), 0.13, 9.0, POLE)
+			_box("paint", Vector3(0.12, 0.12, 1.4), p + Vector3(0, 8.6, 0), POLE, Basis(Vector3.UP, atan2(dir.x, dir.z) + PI * 0.5))
+			_box("paint", Vector3(0.5, 0.3, 0.4), p - side.normalized() * 0.5 + Vector3(0, 8.4, 0), Color("#4a4e52"))
+	# The show arena: an open steel roof on posts over a dirt ring.
+	var sa := Vector3(92.0, 0, -25.0)
+	var aw := 26.0
+	var ad := 40.0
+	_flat_rect("gravel", sa.x - aw * 0.5, sa.x + aw * 0.5, sa.z - ad * 0.5, sa.z + ad * 0.5, 0.052, DIRT)
+	for i in 7:
+		for sx in [-1.0, 1.0]:
+			_box("paint", Vector3(0.25, 4.2, 0.25), sa + Vector3(sx * aw * 0.5, 2.1, -ad * 0.5 + i * ad / 6.0), GALV)
+	_gable_roof(sa.x, sa.z, 4.2, aw, 2.6, ad, false, Color("#9a9fa2"), Color("#c9ccc8"))
+	var rx := aw * 0.5 - 4.0
+	var rz := ad * 0.5 - 4.0
+	for e in [[Vector3(-rx, 0, -rz), Vector3(rx, 0, -rz)], [Vector3(rx, 0, -rz), Vector3(rx, 0, rz)],
+			[Vector3(rx, 0, rz), Vector3(-rx, 0, rz)], [Vector3(-rx, 0, rz), Vector3(-rx, 0, -rz)]]:
+		_pipe_rail(sa + e[0], sa + e[1])
+	# A few rows of seats along one long side, inside the roof.
+	for r in 3:
+		_box("paint", Vector3(0.3, 0.06, ad - 10.0), sa + Vector3(-aw * 0.5 + 1.0 + r * 0.7, 0.45 + r * 0.4, 0), ALUMINUM)
+	# Poultry and rabbit barn: enclosed, white steel, a row of windows.
+	var pb := Vector3(90.0, 0, -66.0)
+	_box("metal", Vector3(30.0, 3.4, 11.0), pb + Vector3(0, 1.7, 0), Color("#e2e2dc"))
+	_gable_roof(pb.x, pb.z, 3.4, 11.0, 1.6, 30.0, true, Color("#2f5a3a"), Color("#e2e2dc"))
 	for i in 6:
-		var p := Vector3(rng.randf_range(-hx + 10.0, hx - 10.0), 0, rng.randf_range(hz - 20.0, hz - 6.0))
+		_glass(Vector3(pb.x - 12.5 + i * 5.0, 2.2, pb.z + 5.53), Vector3(1, 0, 0), 1.6, 0.8, 0.0)
+	_overhead_door(pb.x - 15.0 + 0.0, pb.z - 5.5, 3.0, 2.6, Color("#e8e6df"))
+	# The 4-H food stand: block walls, a serving window, a lean-to awning.
+	var fs := Vector3(30.0, 0, -28.0)
+	_box("paint", Vector3(10.0, 3.0, 6.0), fs + Vector3(0, 1.5, 0), Color("#d9d3c4"))
+	_box("paint", Vector3(10.6, 0.25, 6.6), fs + Vector3(0, 3.12, 0), Color("#5a5e60"))
+	_glass(Vector3(fs.x, 1.6, fs.z - 3.03), Vector3(-1, 0, 0), 6.0, 1.0, 0.0)
+	_box("paint", Vector3(6.4, 0.08, 0.5), fs + Vector3(0, 1.02, -3.25), Color("#b0b4b6"))
+	_box("paint", Vector3(10.4, 0.1, 2.6), fs + Vector3(0, 2.55, -4.2), Color("#2f5a3a"), Basis(Vector3.RIGHT, 0.2))
+	labels.append({"pos": fs + Vector3(0, 2.75, -3.04), "normal": Vector3(0, 0, -1), "text": "4-H FOOD STAND",
+		"height": 0.35, "color": Color("#2f5a3a")})
+	for i in 4:
+		_table(fs + Vector3(-6.0 + i * 4.0, 0, -11.0))
+	# The restroom house: tan block under a hip roof.
+	var rr := Vector3(-30.0, 0, -28.0)
+	_box("paint", Vector3(8.0, 2.8, 5.0), rr + Vector3(0, 1.4, 0), Color("#cbb994"))
+	_hip_roof(rr.x, rr.z, 2.8, 8.0, 5.0, 1.4, Color("#5a3a2e"))
+	for sx in [-1.0, 1.0]:
+		_box("paint", Vector3(1.0, 2.1, 0.06), rr + Vector3(sx * 2.0, 1.05, -2.53), Color("#6a7a84"))
+	_box("paint", Vector3(5.0, 0.12, 2.0), rr + Vector3(0, 0.06, -3.5), CONCRETE)
+	# Old maples and oaks along the back fence and the east side.
+	var x := -hx + 8.0
+	while x < hx - 8.0:
+		var p := Vector3(x + rng.randf_range(-2.0, 2.0), 0, hz - 6.0 + rng.randf_range(-1.5, 1.5))
+		if not ("expo_hall" in built and x > -64.0 and x < 4.0):
+			var pick := TreeField.pick(rng)
+			trees.append([p, pick[0], pick[1], rng.randf_range(0.9, 1.25)])
+		x += rng.randf_range(11.0, 16.0)
+	var z := 8.0
+	while z < hz - 14.0:
 		var pick := TreeField.pick(rng)
-		trees.append([p, pick[0], pick[1], rng.randf_range(0.9, 1.2)])
+		trees.append([Vector3(hx - 7.0, 0, z), pick[0], pick[1], rng.randf_range(0.9, 1.2)])
+		z += 14.0
+	for i in 4:
+		var pick := TreeField.pick(rng)
+		trees.append([Vector3(9.0, 0, -20.0 + i * 18.0), pick[0], pick[1], rng.randf_range(0.85, 1.1)])
+
+
+## A livestock pipe-rail fence: galvanised posts and two round rails.
+func _pipe_rail(a: Vector3, b: Vector3) -> void:
+	var len := a.distance_to(b)
+	if len < 0.5:
+		return
+	var dir := (b - a) / len
+	var yaw := Basis(Vector3.UP, atan2(dir.x, dir.z))
+	var n := maxi(1, int(len / 3.0))
+	for k in n + 1:
+		_box("paint", Vector3(0.09, 1.35, 0.09), a + dir * (len * k / n) + Vector3(0, 0.675, 0), GALV.darkened(0.1))
+	for y in [0.6, 1.25]:
+		_box("paint", Vector3(0.06, 0.06, len), (a + b) * 0.5 + Vector3(0, y, 0) + Vector3(dir.z, 0, -dir.x) * 0.07, GALV, yaw)
 
 
 ## A long open-sided livestock barn: posts, a gable roof, pens of gates.
@@ -1276,6 +1370,22 @@ func _barn_shed(c: Vector3, length: float, depth: float) -> void:
 			_box("paint", Vector3(0.25, 3.2, 0.25), c + Vector3(-length * 0.5 + i * length / n, 1.6, sz * depth * 0.5), WOOD)
 	_gable_roof(c.x, c.z, 3.2, depth, 1.8, length, true, Color("#9a9fa2"), Color("#c9c4b4"))
 	_flat_rect("gravel", c.x - length * 0.5, c.x + length * 0.5, c.z - depth * 0.5, c.z + depth * 0.5, 0.055, Color("#a08a64"))
+	# Two rows of pipe-gate pens either side of a centre aisle, bedded in
+	# straw, with square bales stacked at one end.
+	var x0 := c.x - length * 0.5 + 3.0
+	var x1 := c.x + length * 0.5 - 3.0
+	for sz in [-1.0, 1.0]:
+		var zi: float = c.z + sz * 1.6
+		var zo: float = c.z + sz * (depth * 0.5 - 0.6)
+		_pipe_rail(Vector3(x0, 0, zi), Vector3(x1, 0, zi))
+		var x := x0
+		while x < x1 + 0.1:
+			_pipe_rail(Vector3(x, 0, zi + sz * 0.15), Vector3(x, 0, zo))
+			x += 3.0
+		_flat_rect("gravel", x0, x1, minf(zi, zo), maxf(zi, zo), 0.065, Color("#c9b06a"))
+	for i in 6:
+		_box("paint", Vector3(0.9, 0.4, 0.46), Vector3(x1 + 1.3, 0.2 + (i / 3) * 0.4, c.z - 1.0 + (i % 3) * 0.48),
+			Color("#c4ab68").darkened(rng.randf_range(0.0, 0.12)))
 
 
 ## A flat ring (an oval track or rail) of `width`.
