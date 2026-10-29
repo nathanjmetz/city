@@ -110,10 +110,41 @@ func _init() -> void:
 		sim.traffic._find_xings()
 		_check(not sim.traffic._xings.is_empty(), "traffic stops at the county line's gates")
 
+	_horns(cs)
 	_interchange(seed)
 	_town_interchange(cs)
 	print("ALL TESTS PASSED" if not _failed else "TESTS FAILED")
 	quit(1 if _failed else 0)
+
+
+## Through freights blow long, long, short, long for every grade crossing
+## on the line, out in the country too.
+func _horns(cs: Array) -> void:
+	var sim := CitySim.new()
+	sim.county_rail = true
+	var rs := RailSounds.new()
+	rs.sim = sim
+	var xs := rs._xings_on(0)
+	_check(xs.size() >= 10, "the line crosses the county's roads at grade (%d crossings on %.0f km)" % [xs.size(), cs[0].length / 1000.0])
+	# Stand by a crossing and wait for a train.
+	var x0: float = xs[xs.size() / 2]
+	var p := CountyTrains._at(cs[0], x0)
+	var ear := Vector3(p.x - Terrain.view_origin.x, 0.0, p.y - Terrain.view_origin.y)
+	var blew := -1.0
+	for tick in range(0, 300_000, 10):
+		sim.tick_count = tick
+		rs._watch_county(ear)
+		for key in rs._blow:
+			var b: Dictionary = rs._blow[key]
+			if float(b.reached) > 0.0:
+				blew = float(b.reached)
+		if blew > 0.0:
+			break
+	_check(blew > 0.0, "a passing train blows its horn for crossings near you")
+	_check(blew <= RailSounds.HORN_LEAD + 0.5 and blew >= RailSounds.HORN_LEAD - 1.5,
+		"starting about %d s before the engine is on the crossing (%.1f s)" % [int(RailSounds.HORN_LEAD), blew])
+	_check(rs._county.size() >= 1, "and its diesels can be heard")
+	rs.free()
 
 
 ## A town's cars left beside the line ride out on the next through freight.
