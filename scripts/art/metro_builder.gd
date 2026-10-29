@@ -361,6 +361,7 @@ func _mb_five_over_one(to_curb: float, width: float, storeys: int) -> void:
 	# The wood floors: bays of panel, every other one stepped out.
 	var bays := maxi(3, roundi(w / 7.5))
 	var bw := w / bays
+	_bay_tops = []
 	for i in bays:
 		var x := -w * 0.5 + (i + 0.5) * bw
 		var is_corner := (corner > 0.0 and i == bays - 1) or (corner < 0.0 and i == 0)
@@ -371,6 +372,15 @@ func _mb_five_over_one(to_curb: float, width: float, storeys: int) -> void:
 		var bt := top + (2.0 if is_corner else (0.6 if i % 2 == 1 else 0.0))
 		_box("brick" if is_corner else "siding", Vector3(bw, bt - ground_h, d + out * 2.0), Vector3(x, (ground_h + bt) * 0.5, cz), col)
 		_box("paint", Vector3(bw + 0.05, 0.25, d + out * 2.0 + 0.1), Vector3(x, bt + 0.12, cz), col.darkened(0.2))  # parapet cap
+		_bay_tops.append(bt + 0.25)
+		if bt > top:
+			# The raised bay's own roof inside its parapet cap.
+			var rc := MB_ROOF
+			rc.a = 0.5
+			var hx := bw * 0.5 - 0.3
+			var hz := d * 0.5 + out - 0.3
+			_quad("membrane", Vector3(x - hx, bt + 0.26, cz - hz), Vector3(x + hx, bt + 0.26, cz - hz),
+				Vector3(x + hx, bt + 0.26, cz + hz), Vector3(x - hx, bt + 0.26, cz + hz), rc, [], Vector3.UP)
 		var face_z := zf - out
 		for f in range(1, storeys):
 			var y := ground_h + floor_h * (f - 1) + 1.55
@@ -402,8 +412,44 @@ func _mb_five_over_one(to_curb: float, width: float, storeys: int) -> void:
 	_mb_roof(0.0, w, cz, d, top)
 	for i in rng.randi_range(4, 8):
 		_box("metal", Vector3(1.0, 0.9, 1.0), Vector3(rng.randf_range(-w * 0.4, w * 0.4), top + 0.45, cz + rng.randf_range(-d * 0.3, d * 0.3)), Color("#c4c6c4"))
+	if fine_parts:
+		_mb_condensers(w, d, cz, top, storeys - 1)
 	if depth - (zf + d) > 12.0:
 		_parking(-width * 0.5 + 0.6, width * 0.5 - 0.6, zf + d + 2.0, depth - 1.0, width)
+
+
+## A wood-frame apartment block's roof as seen from above: every home has
+## its own split-system condenser, so the roof carries rows of them, one a
+## home (about one per 85 m² of each floor), set on rails either side of a
+## walkway pad down the middle over the corridor (any 2010s five-over-one).
+var _bay_tops := []
+
+
+func _mb_condensers(w: float, d: float, cz: float, top: float, floors: int) -> void:
+	var r := RandomNumberGenerator.new()
+	r.seed = hash([rng.seed, "condensers"])
+	var n := clampi(roundi(w * d / 85.0) * floors, 8, 90)
+	var per_row := maxi(4, int((w - 4.0) / 1.3))
+	var rows := mini(ceili(float(n) / per_row), maxi(2, int((d - 4.0) / 2.6)))
+	var unit := Color("#c9cbc8")
+	_box("paint", Vector3(w - 3.0, 0.06, 1.0), Vector3(0, top + 0.06, cz), Color("#9a978f"))  # walkway pad (under raised bays)
+	var left := n
+	for row in rows:
+		var side := -1.0 if row % 2 == 0 else 1.0
+		var z := cz + side * (1.4 + floori(row / 2.0) * 2.6)
+		var k := mini(per_row, left)
+		left -= k
+		for i in k:
+			var x := -(k - 1) * 0.65 + i * 1.3 + r.randf_range(-0.08, 0.08)
+			# On whatever the bay under it tops out at (a raised bay's roof).
+			var y := top
+			if not _bay_tops.is_empty():
+				y = maxf(top, float(_bay_tops[clampi(int((x + w * 0.5) / w * _bay_tops.size()), 0, _bay_tops.size() - 1)]))
+			_box("metal", Vector3(0.85, 0.8, 0.85), Vector3(x, y + 0.45, z), unit.darkened(r.randf_range(0.0, 0.12)))
+			_box("paint", Vector3(0.6, 0.02, 0.6), Vector3(x, y + 0.86, z), Color("#2e3032"))  # fan grille
+			_box("metal", Vector3(1.3, 0.12, 0.12), Vector3(x, y + 0.06, z), Color("#6f7275"))  # rail
+		if left <= 0:
+			break
 
 
 # ---------------------------------------------------------------- parking garages
