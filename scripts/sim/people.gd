@@ -255,13 +255,27 @@ func _shop_for(sim: CitySim, p: Dictionary, rng: RandomNumberGenerator) -> Strin
 	var at: Vector3 = home.pos
 	var best := -1
 	var best_score := INF
-	var hour := int(sim.sky_hour())
+	var scores := PackedFloat32Array()
+	scores.resize(_shops_pos.size())
 	for i in _shops_pos.size():
-		var d: float = at.distance_to(_shops_pos[i])
-		var score := d * (0.5 + rng.randf())
-		# After six, only the shops open late (and supper places).
-		if score < best_score and (hour < Balance.SHOP_CLOSE or sim.families.open_at("lot:" + shops[i], hour)):
-			best_score = score
+		scores[i] = at.distance_to(_shops_pos[i]) * (0.5 + rng.randf())
+		if scores[i] < best_score:
+			best_score = scores[i]
+			best = i
+	var hour := int(sim.sky_hour())
+	if best == -1 or hour < Balance.SHOP_CLOSE or sim.families.open_at("lot:" + shops[best], hour):
+		return "" if best == -1 else "lot:" + shops[best]
+	# After six, with the shop they'd use shut, people go to one of its trade
+	# open late, or stay home: the late ones sell to their own trade's
+	# evening customers (Families._set_hours), not the whole town's errands.
+	var what := str(sim.families.owned.get("lot:" + shops[best], {}).get("what", ""))
+	best = -1
+	best_score = INF
+	for i in _shops_pos.size():
+		var ref: String = "lot:" + shops[i]
+		if scores[i] < best_score and str(sim.families.owned.get(ref, {}).get("what", "")) == what \
+				and sim.families.open_at(ref, hour):
+			best_score = scores[i]
 			best = i
 	return "" if best == -1 else "lot:" + shops[best]
 
