@@ -2,6 +2,7 @@ extends SceneTree
 ## Lines up every vehicle model in the game's own lighting, for checking
 ## them against real photos.
 ## Run: godot -s tools/vehicle_shot.gd -- out.png yaw pitch dist [lod] [x z] [filter]
+## SHOT_PARKED=1 parks every other one; SHOT_MONTH=1 shows January's look.
 
 var _main: Node
 var _frames := 0
@@ -40,6 +41,10 @@ func _lineup() -> void:
 		DayNight.cycle_on = true
 		DayNight.seasons_on = false
 		sim.set_calendar(Seasons.tick_at(SkyClock.at(7, float(OS.get_environment("SHOT_HOUR")))))
+	if OS.get_environment("SHOT_MONTH") != "":
+		# A month's look (snow in January), at late morning.
+		DayNight.seasons_on = true
+		sim.set_calendar(Seasons.tick_at(SkyClock.at(int(OS.get_environment("SHOT_MONTH")), 11.0)))
 	var x := 0.0
 	var row := 0
 	var i := 0
