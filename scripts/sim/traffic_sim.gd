@@ -571,9 +571,11 @@ func set_green(node: int, phase: int, seconds: float) -> bool:
 
 ## The player's turn rules at a junction approach, like TM:PE's lane arrows
 ## and junction restrictions: "node:seg" (the road arriving there) ->
-## {no_left: a No Left Turn sign (MUTCD R3-2), lanes: lane-use arrows for
-## each lane, left to right, as ARROW_* bits (MUTCD 3B.20), or [] for the
-## game's own}. Kept in a table of their own, apart from `overrides`.
+## {no_left: a No Left Turn sign (MUTCD R3-2), no_right: a No Right Turn
+## sign (R3-1), lanes: lane-use arrows for each lane, left to right, as
+## ARROW_* bits (MUTCD 3B.20), or [] for the game's own}. Kept in a table of
+## their own, apart from `overrides`. Saves from before No Right load
+## without it.
 var lane_rules := {}
 const ARROW_L := 1
 const ARROW_S := 2
@@ -588,10 +590,10 @@ func lane_rule(node: int, seg: int) -> Dictionary:
 	return lane_rules.get(lane_key(node, seg), {})
 
 
-## Sets the turn rules for road `seg` arriving at junction `node`: a No Left
-## Turn sign, and lane arrows (one ARROW_* mask per lane, left to right, or
-## [] for the game's own). Both off clears the approach.
-func set_lane_rule(node: int, seg: int, no_left: bool, lanes: Array) -> bool:
+## Sets the turn rules for road `seg` arriving at junction `node`: No Left
+## and No Right Turn signs, and lane arrows (one ARROW_* mask per lane, left
+## to right, or [] for the game's own). All off clears the approach.
+func set_lane_rule(node: int, seg: int, no_left: bool, lanes: Array, no_right := false) -> bool:
 	if not network.nodes.has(node) or network.segments_at(node).size() < 3 \
 			or not network.segments_at(node).has(seg):
 		return false
@@ -599,8 +601,8 @@ func set_lane_rule(node: int, seg: int, no_left: bool, lanes: Array) -> bool:
 	for m in lanes:
 		masks.append(clampi(int(m), 1, ARROW_L | ARROW_S | ARROW_R))
 	var key := lane_key(node, seg)
-	var rule := {"no_left": no_left, "lanes": masks}
-	if not no_left and masks.is_empty():
+	var rule := {"no_left": no_left, "no_right": no_right, "lanes": masks}
+	if not no_left and not no_right and masks.is_empty():
 		if not lane_rules.has(key):
 			return false
 		lane_rules.erase(key)
@@ -610,6 +612,19 @@ func set_lane_rule(node: int, seg: int, no_left: bool, lanes: Array) -> bool:
 		lane_rules[key] = rule
 	_rebuild()
 	return true
+
+
+## Drops turn rules at junctions that are gone, or lost the road they were
+## for, at once rather than at the next rebuild. UndoLog calls it after
+## putting roads back: undo hands out junction and road ids again, and a new
+## junction mustn't start with an undone one's signs (second reader on the
+## turn-ban branch, 2026-10-26).
+func prune_lane_rules() -> void:
+	for k in lane_rules.keys():
+		var n := int(k.get_slice(":", 0))
+		if not network.nodes.has(n) or network.segments_at(n).size() < 3 \
+				or not network.segments_at(n).has(int(k.get_slice(":", 1))):
+			lane_rules.erase(k)
 
 
 ## The arrows each lane of a way into a junction shows now, left to right
@@ -635,7 +650,8 @@ func lane_rules_to_dict() -> Dictionary:
 	var keys := lane_rules.keys()
 	keys.sort()
 	for k in keys:
-		out[k] = {"no_left": lane_rules[k].no_left, "lanes": lane_rules[k].lanes.duplicate()}
+		out[k] = {"no_left": lane_rules[k].no_left, "no_right": lane_rules[k].no_right,
+			"lanes": lane_rules[k].lanes.duplicate()}
 	return out
 
 
@@ -645,7 +661,8 @@ func lane_rules_from_dict(d: Dictionary) -> void:
 		var lanes := []
 		for m in d[k].get("lanes", []):
 			lanes.append(int(m))
-		lane_rules[str(k)] = {"no_left": bool(d[k].get("no_left", false)), "lanes": lanes}
+		lane_rules[str(k)] = {"no_left": bool(d[k].get("no_left", false)),
+			"no_right": bool(d[k].get("no_right", false)), "lanes": lanes}
 	_dirty = true
 
 
@@ -1454,10 +1471,16 @@ func _build_turns(n: int) -> void:
 				kind = Turn.LEFT
 			kinds.append(kind)
 		var rule: Dictionary = lane_rules.get(lane_key(n, w.seg), {})
-		if rule.get("no_left", false) and (kinds.has(Turn.STRAIGHT) or kinds.has(Turn.RIGHT)):
-			# A No Left Turn sign: lefts go, unless left is the only way on.
+		var banned := []
+		if rule.get("no_left", false):
+			banned.append(Turn.LEFT)
+		if rule.get("no_right", false):
+			banned.append(Turn.RIGHT)
+		if not banned.is_empty() and kinds.any(func(k): return not k in banned):
+			# No Left and No Right Turn signs: those turns go, unless they
+			# are the only ways on.
 			for j in range(outs.size() - 1, -1, -1):
-				if kinds[j] == Turn.LEFT:
+				if kinds[j] in banned:
 					outs.remove_at(j)
 					kinds.remove_at(j)
 		var m := outs.size()

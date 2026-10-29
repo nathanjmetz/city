@@ -112,6 +112,7 @@ func undo(sim: CitySim) -> bool:
 	entries.pop_back()
 	if e.has("roads"):
 		sim.network.restore(e.roads)
+		sim.traffic.prune_lane_rules()
 		put_back(sim, e.took)
 		sim.put_back_closures({"closed": e.get("closed", {}), "plazas": e.get("plazas", [])})
 		# The road built before this one is current again if no road change
