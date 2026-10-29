@@ -4,7 +4,7 @@ extends SceneTree
 ## man's or a woman's figure, sitting or standing.
 ## Run (in a window): godot -s tools/ambient_lab_shot.gd -- out.png
 ## KINDS=porch,lemonade,... (default a mix); MONTH=1-12; PARK=picnic,bench...;
-## LOOK=park to look at the park scenes instead; DIST camera distance.
+## LOOK=park to look at the park scenes instead (LOOK=street the sidewalk); DIST camera distance.
 var _frames := 0
 var _al: AmbientLife
 
@@ -53,7 +53,7 @@ func _init() -> void:
 	cam.fov = 50
 	root.add_child(cam)
 	var at := Terrain.stand(Vector3(0, 0, 4))
-	var look := Vector3(0, 0, -28) if OS.get_environment("LOOK") == "park" else Vector3(0, 0, 6)
+	var look: Vector3 = {"park": Vector3(0, 0, -28), "street": Vector3(0, 0, 0)}.get(OS.get_environment("LOOK"), Vector3(0, 0, 6))
 	at = Terrain.stand(look)
 	var dist := float(OS.get_environment("DIST")) if OS.get_environment("DIST") != "" else 16.0
 	cam.look_at_from_position(at + Vector3(0, dist * 0.45, -dist), at + Vector3(0, 0.8, 0), Vector3.UP)

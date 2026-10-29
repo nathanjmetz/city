@@ -152,6 +152,27 @@ void vertex() {
 		}
 		VERTEX.y -= HIP - KNEE;
 	}
+	// Standing about: a slow sway side to side over the feet, and, talking,
+	// one arm up in front now and then while it's their turn to speak.
+	if ((o & 16384) != 0) {
+		vec2 at = (MODEL_MATRIX * vec4(0.0, 0.0, 0.0, 1.0)).xz;
+		float who = fract(sin(dot(floor(at * 4.0), vec2(12.9898, 78.233))) * 43758.5453);
+		float t = TIME + who * 60.0;
+		if ((o & 32768) != 0 && UV.x > 0.0 && UV.y > 1.2) {
+			float turn = step(0.0, sin(t * 0.21 + who * 6.28) * (who > 0.5 ? 1.0 : -1.0));
+			float g = turn * 0.7 * smoothstep(0.2, 0.9, sin(t * 1.3 + who * 3.0));
+			// The forearm comes up at the elbow (1.12 m) as the arm lifts.
+			if (part > 0.15 && part < 0.35) {
+				float e = g * 1.3;
+				float ey = VERTEX.y - 1.12;
+				VERTEX.yz = vec2(1.12 + ey * cos(e) - VERTEX.z * sin(e), ey * sin(e) + VERTEX.z * cos(e));
+			}
+			float ay = VERTEX.y - UV.y;
+			VERTEX.yz = vec2(UV.y + ay * cos(g) - VERTEX.z * sin(g), ay * sin(g) + VERTEX.z * cos(g));
+		}
+		float sway = 0.022 * sin(t * 0.55) + 0.012 * sin(t * 1.7 + 2.0);
+		VERTEX.xy = vec2(VERTEX.x * cos(sway) - VERTEX.y * sin(sway), VERTEX.x * sin(sway) + VERTEX.y * cos(sway));
+	}
 }
 void fragment() { ALBEDO = tint; ROUGHNESS = 0.9; }
 """
@@ -488,6 +509,12 @@ const SEATED := 4096
 ## Outfit bit for a school backpack: children 5 to 11 out walking are on the
 ## way to or from school (BusNet._school_walks), the only walks they make.
 const BACKPACK := 8192
+## Outfit bits for someone standing about (AmbientLife): STANDING shifts
+## their weight now and then, as people standing still sway a degree or two
+## and change feet every half minute or so; TALKING also has them talk with
+## their hands, taking turns with whoever they're talking to.
+const STANDING := 16384
+const TALKING := 32768
 
 ## Median heights by age, 0 to 17, in cm (CDC 2000 growth charts).
 const BOY_CM := [50, 76, 87, 96, 103, 110, 116, 122, 128, 133, 138, 143, 149, 156, 164, 170, 173, 175]
