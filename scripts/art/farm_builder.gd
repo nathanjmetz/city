@@ -419,7 +419,7 @@ static func county(p: Dictionary) -> FarmBuilder:
 
 
 func steps() -> int:
-	return 2 + (_county.parts as Array).size()
+	return 3 + (_county.parts as Array).size()
 
 
 ## The ground under a local point, as a lift above the farmstead's base.
@@ -446,6 +446,7 @@ func step(i: int) -> void:
 	match i:
 		0: _county_house(p.house)
 		1: _county_ground(p)
+		_ when i - 2 >= (p.parts as Array).size(): _county_yard_things(p)
 		_:
 			var part: Dictionary = p.parts[i - 2]
 			match part.kind:
@@ -525,6 +526,48 @@ func _county_house(h: Dictionary) -> void:
 	_box("concrete", Vector3(float(info.x1) - float(info.x0), 1.2, 0.3), Vector3(h.x, -0.45, 0.1), FOUNDATION)
 	_xf_on = false
 	owner_care = 0
+
+
+## The small things about the house: the propane tank that heats it
+## (nearly every Indiana farmhouse past the gas mains has one), on two
+## concrete blocks off the side of the house away from the drive, 10 ft or
+## more from the wall (NFPA 58); 1,000 gal on a farm, 500 at a country
+## home. A grain farm with a dryer has a bigger one by the dryer.
+func _county_yard_things(p: Dictionary) -> void:
+	var h: Dictionary = p.house
+	var s: float = p.side
+	if not h.vacant:
+		var c := Vector2(h.x - s * (h.w * 0.5 + 4.2), h.d * 0.55)
+		_lp_tank(c, 1000 if p.kind != "home" else 500)
+	for part in p.parts:
+		if part.kind == "dryer":
+			var at: Vector2 = part.dryer_at
+			_lp_tank(at + Vector2(-s * 7.0, 6.0), 2000)
+
+
+## A white propane tank lying along z at `c`: 500 gal is 37 in by 10 ft,
+## 1,000 gal 41 in by 16 ft, 2,000 gal 46 in by 20 ft, with rounded heads,
+## the dome over the valves on top, on two concrete piers.
+func _lp_tank(c: Vector2, gal: int) -> void:
+	var dims := {500: Vector2(0.94, 3.05), 1000: Vector2(1.04, 4.9), 2000: Vector2(1.17, 6.1)}
+	var d: Vector2 = dims[gal]
+	var r := d.x * 0.5
+	var l := d.y - d.x  # the barrel between the heads
+	_stand(c, Vector2(r, d.y * 0.5))
+	var lift := part_xf.origin.y
+	var y := 0.35 + r
+	for k in [-1.0, 1.0]:
+		_box("concrete", Vector3(0.6, 0.4, 0.4), Vector3(c.x, 0.2, c.y + k * l * 0.3), FOUNDATION)
+	var white := Color("#eeeeea")
+	part_xf = Transform3D(Basis(Vector3.RIGHT, PI * 0.5), Vector3(c.x, lift + y, c.y - l * 0.5))
+	_cylinder("paint", Vector3.ZERO, r, l, white, 14)
+	_cone(Vector3(0, l, 0), r, r * 0.55, white, 14, "paint")
+	part_xf = Transform3D(Basis(Vector3.RIGHT, -PI * 0.5), Vector3(c.x, lift + y, c.y - l * 0.5))
+	_cone(Vector3.ZERO, r, r * 0.55, white, 14, "paint")
+	part_xf = Transform3D(Basis.IDENTITY, Vector3(0, lift, 0))
+	_cylinder("paint", Vector3(c.x, y + r - 0.05, c.y), 0.22, 0.22, white.darkened(0.04), 10)
+	_box("paint", Vector3(0.12, 0.12, 0.25), Vector3(c.x + r * 0.6, y + 0.1, c.y), Color("#8a8d8f"))  # regulator
+	_xf_on = false
 
 
 ## The gravel yard, lane and drive, draped over the land; the mailbox at
