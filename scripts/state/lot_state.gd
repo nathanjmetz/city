@@ -183,8 +183,8 @@ static func yard_of(sim, key: String, masses := [], plan := {}) -> Dictionary:
 		# the shop's builder, the costly part of a yard plan).
 		var lay: Dictionary = {}
 		var ref := "lot:" + key
-		var pl: Dictionary = sim.traffic._places.get(ref, {}) if sim.traffic != null else {}
-		if pl.has("lay") and int(pl.get("seed", 0)) == sim.traffic._place_seed(ref):
+		var pl: Dictionary = sim.traffic.cached_place(ref) if sim.traffic != null else {}
+		if pl.has("lay"):
 			lay = pl.lay
 		else:
 			lay = SiteLayout.for_building(int(b.zone), int(b.seed), lot, storeys, type, int(b.get("level", 0)),

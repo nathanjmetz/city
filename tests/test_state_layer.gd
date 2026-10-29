@@ -17,6 +17,11 @@ var sim: CitySim
 var view: BuildingView
 var state: StateView
 var _frames := 0
+var _phase := 0
+var _at := 0
+var _key := ""
+var _saved := {}
+var _counts := [0, 0]
 
 
 func _initialize() -> void:
@@ -129,6 +134,8 @@ func _process(_d: float) -> bool:
 	_frames += 1
 	if _frames < 30 or ((not view.idle() or not state.idle()) and _frames < 3000):
 		return false
+	if _phase > 0:
+		return _refiling()
 	var counts := state.counts()
 	var total := 0
 	for k in counts:
@@ -199,9 +206,46 @@ func _process(_d: float) -> bool:
 	for what in hits:
 		_check(hits[what] == 0, "no prop's footprint on the %s (%d)" % [what, hits[what]])
 	_check(state.place_ms_max() < 8.0, "placing takes a few ms at most in any frame (%.1f ms, headless)" % state.place_ms_max())
-	print("FAILED" if _failed else "ALL PASSED")
-	quit(1 if _failed else 0)
+	# Re-filing: a building torn down and one put up are filed one lot at a
+	# time; a change that adds or removes none files nothing.
+	for k in state._filed:
+		_key = k
+		break
+	_saved = sim.buildings[_key].duplicate()
+	_counts = [state.filed_count, state.dropped_count]
+	sim.buildings_changed.emit()
+	_phase = 1
+	_at = _frames
+	return false
 	return true
+
+
+## The re-filing phases, once the town is drawn and still again.
+func _refiling() -> bool:
+	if _frames - _at < 5:
+		return false
+	match _phase:
+		1:
+			_check(state.filed_count == _counts[0] and state.dropped_count == _counts[1],
+				"a change that adds or removes no building files nothing (%d filed, %d dropped)"
+				% [state.filed_count - _counts[0], state.dropped_count - _counts[1]])
+			sim.buildings.erase(_key)
+			sim.buildings_changed.emit()
+		2:
+			_check(state.dropped_count == _counts[1] + 1 and state.filed_count == _counts[0] and not state._filed.has(_key),
+				"a building torn down drops only its lot (%d dropped, %d filed)"
+				% [state.dropped_count - _counts[1], state.filed_count - _counts[0]])
+			sim.buildings[_key] = _saved
+			sim.buildings_changed.emit()
+		3:
+			_check(state.filed_count == _counts[0] + 1 and state._filed.has(_key),
+				"a new building files only its own lot (%d filed)" % (state.filed_count - _counts[0]))
+			print("FAILED" if _failed else "ALL PASSED")
+			quit(1 if _failed else 0)
+			return true
+	_phase += 1
+	_at = _frames
+	return false
 
 
 ## Items over what must stay clear, from the builders' own plans and the
