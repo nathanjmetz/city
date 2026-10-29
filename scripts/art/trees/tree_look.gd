@@ -60,6 +60,11 @@ float tree_hash(vec3 origin, float salt) {
 // a tree's spot casts it, not the light grown tree ([b3, b1)). Without a
 // near band (the browser) each version casts its own, as it draws.
 vec2 band_keep(vec3 origin, bool grows, bool shadow) {
+	// A tier with only the nearest trees' shadows (grown_zone.w, their
+	// reach: GrownTrees.shadow_reach) casts none past it.
+	if (shadow && grown_zone.w > 0.0 && grown_cam.w > 0.5 && distance(origin, grown_cam.xyz) > grown_zone.w) {
+		return vec2(0.0);
+	}
 	float b1 = 1.0;
 	float b2 = 1.0;
 	if (grows && grown_cam.w > 0.5) {
@@ -132,6 +137,107 @@ float dither(vec2 p) {
 ## (in KEEP_GLSL too).
 const LIGHT_BAND := 40.0
 
+## Sun through a crown, in the sun's shadow map. A real summer maple's
+## shadow is dappled: flecks of sun come through the gaps between leaf
+## clusters, a few in the middle and many round the rim, so it reads a
+## little lighter than a house's shadow, never as a solid black hole (look
+## round 1, 2026-10-29: the street trees' shadows were solid ovals, 22,29,45
+## on a road lit at 111,103,101). Every card of a crown, near side or far,
+## shares the same gaps along each ray of sun (a pattern on the plane square
+## to the sun, fixed to the ground), so the gaps go right through the crown;
+## a pattern of each card's own would leave none, dozens of cards deep.
+## OPEN_CORE and OPEN_RIM: the share of the sun let through a crown's middle
+## (its inner leaves) and its rim (its outer ones). SHADOW_FADE: how far
+## before a tier's near tree shadows end (GrownTrees.shadow_reach) they
+## start thinning out, so they end with no ring. The browser keeps its
+## solid shadows. All three are in FLECK_GLSL too.
+const OPEN_CORE := 0.18
+const OPEN_RIM := 0.5
+const SHADOW_FADE := 12.0
+const FLECK_GLSL := """
+const float OPEN_CORE = 0.18;
+const float OPEN_RIM = 0.5;
+const float SHADOW_FADE = 12.0;
+float fleck_hash(vec2 p) {
+	vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+	p3 += dot(p3, p3.yzx + 33.33);
+	return fract((p3.x + p3.y) * p3.z);
+}
+float fleck_noise(vec2 p) {
+	vec2 i = floor(p);
+	vec2 f = fract(p);
+	f = f * f * (3.0 - 2.0 * f);
+	// Kept to small numbers, so the hash is as sharp far from the middle
+	// of the map (the pattern repeats every few hundred metres).
+	vec2 j = mod(i + 1.0, 1024.0);
+	i = mod(i, 1024.0);
+	return mix(mix(fleck_hash(i), fleck_hash(vec2(j.x, i.y)), f.x),
+		mix(fleck_hash(vec2(i.x, j.y)), fleck_hash(j), f.x), f.y);
+}
+// 1 where the sun comes through this leaf pixel of the shadow map, else 0.
+// pos: the pixel in the shadow camera's space; inn: how far out in the
+// crown its leaves are (0 deep inside, 1 the rim); fade: 1 past a tier's
+// near tree shadows.
+float sun_through(vec3 pos, mat4 inv_view, float inn, bool evergreen, float fade) {
+#if CURRENT_RENDERER == RENDERER_COMPATIBILITY
+	return 1.0;
+#else
+	// Where the ray of sun through the pixel crosses the plane square to
+	// the sun, in metres (every split of the shadow map is turned the same
+	// way, so they agree).
+	vec3 w = (inv_view * vec4(pos, 1.0)).xyz;
+	vec2 p = vec2(dot(w, inv_view[0].xyz), dot(w, inv_view[1].xyz));
+	// Gaps between leaf clusters (about 0.4 m) and between leaves (0.17 m).
+	float n = fleck_noise(p * 2.5) * 0.6 + fleck_noise(p * 6.0 + 17.0) * 0.4;
+	float lit = mix(OPEN_CORE, OPEN_RIM, smoothstep(0.55, 1.0, inn));
+	// A spruce or cedar is denser.
+	if (evergreen) {
+		lit *= 0.5;
+	}
+	lit = max(lit, fade);
+	if (lit > 0.995) {
+		return 0.0;
+	}
+	// The noise's value above which this share of the plane lies (fitted
+	// to the noise's spread: TreeLook.fleck_cut).
+	float o = 0.5 - lit;
+	return step(0.5 + o * (0.42 + 0.55 * o * o), n);
+#endif
+}
+"""
+
+
+## sun_through's cut: the noise's value above which a share `open` of the
+## plane lies (the same fit as in FLECK_GLSL, for tests).
+static func fleck_cut(open: float) -> float:
+	var o := 0.5 - open
+	return 0.5 + o * (0.42 + 0.55 * o * o)
+
+
+## sun_through's noise at a point of the plane square to the sun (as
+## FLECK_GLSL works it out, for tests).
+static func fleck_value(p: Vector2) -> float:
+	return _fleck_noise(p * 2.5) * 0.6 + _fleck_noise(p * 6.0 + Vector2(17.0, 17.0)) * 0.4
+
+
+static func _fleck_hash(p: Vector2) -> float:
+	var p3 := Vector3(p.x, p.y, p.x) * 0.1031
+	p3 = Vector3(p3.x - floorf(p3.x), p3.y - floorf(p3.y), p3.z - floorf(p3.z))
+	p3 += Vector3.ONE * p3.dot(Vector3(p3.y, p3.z, p3.x) + Vector3.ONE * 33.33)
+	var v := (p3.x + p3.y) * p3.z
+	return v - floorf(v)
+
+
+static func _fleck_noise(p: Vector2) -> float:
+	var i := p.floor()
+	var f := p - i
+	f = f * f * (Vector2(3.0, 3.0) - 2.0 * f)
+	var j := Vector2(fposmod(i.x + 1.0, 1024.0), fposmod(i.y + 1.0, 1024.0))
+	i = Vector2(fposmod(i.x, 1024.0), fposmod(i.y, 1024.0))
+	var a := lerpf(_fleck_hash(i), _fleck_hash(Vector2(j.x, i.y)), f.x)
+	var b := lerpf(_fleck_hash(Vector2(i.x, j.y)), _fleck_hash(j), f.x)
+	return lerpf(a, b, f.y)
+
 ## Leaf textures are this many pixels across, and a full-size card is
 ## TreeMesher.CARD[0] metres across, which sets how big a leaf is drawn.
 const TEX := 256
@@ -187,6 +293,7 @@ varying vec3 leaf_pos;
 varying float species;
 varying float tree_rand;
 varying float far_card;
+varying float fleck_fade;
 varying vec2 keep;
 // The Compatibility renderer (the browser) hands INSTANCE_CUSTOM's rgb
 // over as if it were an sRGB colour, already turned linear (alpha comes
@@ -200,7 +307,7 @@ vec4 custom_data(vec4 c) {
 vec3 lin(vec3 c) {
 	return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(0.04045, c));
 }
-""" + KEEP_GLSL + """
+""" + KEEP_GLSL + FLECK_GLSL + """
 void vertex() {
 	vec4 custom = custom_data(INSTANCE_CUSTOM);
 	vec3 origin = (MODEL_MATRIX * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
@@ -233,6 +340,13 @@ void vertex() {
 #endif
 	// Nothing to draw here: no triangles.
 	VERTEX *= step(0.0001, keep.y - keep.x);
+	// Toward the reach of a tier's near tree shadows (grown_zone.w; 0: no
+	// reach) the shadows thin out to nothing (see sun_through).
+	fleck_fade = 0.0;
+	if (PROJECTION_MATRIX[3][3] > 0.5 && grown_zone.w > 0.0) {
+		fleck_fade = smoothstep(grown_zone.w - SHADOW_FADE, grown_zone.w, distance(origin, grown_cam.xyz));
+		VERTEX *= step(fleck_fade, 0.999);
+	}
 	leaf_pos = VERTEX;
 	tree_rand = tree_hash(origin, 31.0);
 	far_card = step(COLOR.a, 0.75);  // a far tree's few big cards (see _card)
@@ -374,6 +488,13 @@ void fragment() {
 	// own flat face (from screen derivatives), not the crown normal.
 	vec3 face = normalize(cross(dFdx(VERTEX), dFdy(VERTEX)));
 	alpha *= smoothstep(0.1, 0.35, abs(dot(face, normalize(-VERTEX))));
+#ifndef FAR_WOODS
+	// The sun's shadow map (square-on): the sun comes through the crown's
+	// gaps (sun_through), so its shadow is dappled, not a solid hole.
+	if (PROJECTION_MATRIX[3][3] > 0.5) {
+		alpha *= sun_through(VERTEX, INV_VIEW_MATRIX, inn, evergreen, fleck_fade);
+	}
+#endif
 	ALPHA = alpha;
 	ALPHA_SCISSOR_THRESHOLD = 0.45;
 	// With MSAA, leaf edges become partial coverage instead of popping on
@@ -463,6 +584,11 @@ void vertex() {
 		// The light tree casts the full one's shadow (band_keep).
 		if (PROJECTION_MATRIX[3][3] > 0.5 && zone_mode == 2 && grown_zone.x > 0.0) {
 			keep = vec2(t_mid, 1.0);
+		}
+		// A tier's near tree shadows thin out toward their reach (the
+		// leaves' sun_through); the trunk's ends halfway through.
+		if (PROJECTION_MATRIX[3][3] > 0.5 && grown_zone.w > 0.0 && d > grown_zone.w - 6.0) {
+			keep = vec2(0.0);
 		}
 	}
 	VERTEX *= step(0.0001, keep.y - keep.x);
@@ -588,10 +714,11 @@ static func browser() -> bool:
 
 
 ## Every frame, from the grown trees: where the camera is and how far each
-## band reaches (radius 0 turns the grown trees off).
-static func set_zone(cam: Vector3, near_r: float, mid_r: float, on: bool) -> void:
+## band reaches (radius 0 turns the grown trees off), and how far their
+## shadows reach on a tier with only the nearest trees' (0: no limit).
+static func set_zone(cam: Vector3, near_r: float, mid_r: float, on: bool, shadow_r := 0.0) -> void:
 	_cam = Vector4(cam.x, cam.y, cam.z, 1.0 if on else 0.0)
-	_zone = Vector4(near_r, mid_r, BAND, 0.0)
+	_zone = Vector4(near_r, mid_r, BAND, shadow_r)
 	for m in _all_mats():
 		m.set_shader_parameter("grown_cam", _cam)
 		m.set_shader_parameter("grown_zone", _zone)

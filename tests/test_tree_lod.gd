@@ -17,6 +17,7 @@ func _init() -> void:
 	_far_matches_cards()
 	_grown_matches_cards()
 	_lit_alike()
+	_dappled_shadows()
 	_no_swelling()
 	_shares()
 	_jitter()
@@ -147,6 +148,50 @@ func _lit_alike() -> void:
 		worst, worst_kind])
 	_check("LEAF_INNER" in TreeLook.LEAF_SHADER and not "* mix(0.85, 1.2, tp) * 2.0" in TreeLook.LEAF_SHADER,
 		"the leaf shader shades the crown's inside and underside, not a glow from within")
+
+
+## A tree's shadow is dappled, not a solid hole: in the sun's shadow map
+## every leaf lets the sun through the crown's gaps, a share OPEN_CORE of
+## it through the middle and OPEN_RIM round the rim (the look critic,
+## 2026-10-29: "tree shadows are near-black holes", 22,29,45 on a road lit at
+## 111,103,101). The gaps' cut lets through the share it says, and the
+## shader's numbers are the ones checked here.
+func _dappled_shadows() -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 11
+	var worst := 0.0
+	var n := 20000
+	var vals := PackedFloat32Array()
+	for i in n:
+		vals.append(TreeLook.fleck_value(Vector2(rng.randf_range(-3000.0, 3000.0), rng.randf_range(-3000.0, 3000.0))))
+	for open in [0.09, TreeLook.OPEN_CORE, 0.3, TreeLook.OPEN_RIM, 0.7]:
+		var cut := TreeLook.fleck_cut(open)
+		var through := 0
+		for v in vals:
+			if v >= cut:
+				through += 1
+		worst = maxf(worst, absf(float(through) / n - open))
+	_check(worst < 0.03, "the shadow's gaps let through the share of sun they say (worst %.3f off)" % worst)
+	var code := TreeLook.LEAF_SHADER
+	_check(("OPEN_CORE = %s;" % TreeLook.OPEN_CORE) in code and ("OPEN_RIM = %s;" % TreeLook.OPEN_RIM) in code
+		and ("SHADOW_FADE = %s;" % TreeLook.SHADOW_FADE) in code and "alpha *= sun_through(" in code
+		and "fleck_noise(p * 2.5) * 0.6 + fleck_noise(p * 6.0 + 17.0) * 0.4" in code,
+		"the leaf shader lets the sun through in the shadow map, with the numbers checked here")
+	# Gaps a few tenths of a metre across: flecks the size real ones are,
+	# big enough for the shadow map to show near the camera.
+	var flips := 0
+	var steps := 0
+	for i in 400:
+		var p := Vector2(rng.randf_range(-500.0, 500.0), rng.randf_range(-500.0, 500.0))
+		var was := TreeLook.fleck_value(p) >= TreeLook.fleck_cut(TreeLook.OPEN_RIM)
+		for k in 20:
+			p.x += 0.05
+			var now := TreeLook.fleck_value(p) >= TreeLook.fleck_cut(TreeLook.OPEN_RIM)
+			flips += 1 if now != was else 0
+			was = now
+			steps += 1
+	var run := 0.05 * steps / maxf(flips, 1.0)
+	_check(run > 0.1 and run < 0.6, "the gaps and leaf clusters run about %.2f m across" % run)
 
 
 static func _mean_colour(cols: PackedColorArray) -> Color:

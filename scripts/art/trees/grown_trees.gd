@@ -85,6 +85,7 @@ var _scan_pos := Vector3.ZERO
 var _scan_r := Vector2.ZERO
 var _scan_version := -1
 var _scan_shadows := false  # the lookup in hand files the full trees' shadows
+var _scan_shadow_r := 0.0  # and out to how far (shadow_reach)
 var _scanning := false
 var _scan_began := 0  # when the lookup in hand began (Time msec)
 var _scan_secs := 0.0  # how long the last lookup took
@@ -208,7 +209,7 @@ func _process(delta: float) -> void:
 		_vel = Vector3.ZERO
 	_last_cp = cp
 	if not _scanning and (cp.distance_to(_centre) > RESCAN or TreeField.version != _version or r != _scan_r
-			or GraphicsQuality.tree_shadows != _scan_shadows):
+			or GraphicsQuality.tree_shadows != _scan_shadows or shadow_reach() != _scan_shadow_r):
 		_start_scan(scan_point(cp, _vel, _scan_secs), r)
 	var budgets := budgets_for(TreeLook.browser())
 	if _scanning:
@@ -223,7 +224,7 @@ func _process(delta: float) -> void:
 	if _centre.x == INF:
 		TreeLook.set_zone(cp, 0.0, 0.0, false)
 	else:
-		TreeLook.set_zone(zone_point(cp, _centre), _scan_r.x, _scan_r.y, true)
+		TreeLook.set_zone(zone_point(cp, _centre), _scan_r.x, _scan_r.y, true, _scan_shadow_r if _scan_shadow_r < INF else 0.0)
 	_build_some(budgets.x)
 	Perf.add("frame.trees.grown", t)
 	Perf.counts["trees.grown"] = _shown
@@ -271,6 +272,7 @@ func _start_scan(cp: Vector3, r: Vector2) -> void:
 	_scan_r = r
 	_scan_version = TreeField.version
 	_scan_shadows = GraphicsQuality.tree_shadows
+	_scan_shadow_r = shadow_reach()
 	_scan = []
 	_scan_field = null
 	_scan_n = 0
@@ -295,6 +297,9 @@ func _scan_some(ms: float) -> void:
 	var near_hi := _scan_r.x + MARGIN
 	var near_lo := _scan_r.x - MARGIN - TreeLook.BAND
 	var reach := _scan_r.y + MARGIN
+	# Shadows are filed with the lookup's slack too; the leaves' shader
+	# thins them out to nothing by the reach itself (TreeLook).
+	var shadow_r := _scan_shadow_r + MARGIN if _scan_shadow_r > 0.0 else 0.0
 	while true:
 		if _scan_field == null or not is_instance_valid(_scan_field) or _scan_i >= _scan_n:
 			_scan_field = null
@@ -327,9 +332,11 @@ func _scan_some(ms: float) -> void:
 					_file(rec, xf, d, TreeMesher.Lod.FULL)
 					# Its shadow: by itself right by the camera (the
 					# sun through its leaves), past that by its light tree
-					# (SHADOW_BIT).
-					if _scan_shadows:
-						_file(rec, xf, d, TreeMesher.Lod.FULL if d < FULL_SHADOW else TreeMesher.Lod.LIGHT, true)
+					# (SHADOW_BIT). A tier without tree shadows still has
+					# the nearest trees' light ones (shadow_reach).
+					if d < shadow_r:
+						var full := _scan_shadows and d < FULL_SHADOW
+						_file(rec, xf, d, TreeMesher.Lod.FULL if full else TreeMesher.Lod.LIGHT, true)
 				if d > near_lo:
 					_file(rec, xf, d, TreeMesher.Lod.LIGHT)
 		if Perf.now() - start > budget:
@@ -453,6 +460,17 @@ func _cast_for(group: int) -> GeometryInstance3D.ShadowCastingSetting:
 const FULL_SHADOW := 60.0
 const SHADOW_BIT := 1 << 12
 const SHADOW_CARDS := 64
+
+
+## How far round the camera the grown trees cast shadows: every one on a
+## tier with tree shadows; on one without (Medium), only the nearest, by
+## their light trees, out to the tier's tree_shadow_m (0: none). A street
+## tree with no shadow looks pasted on the ground, and the light trees of
+## a street's worth of them cost little (tools/trees/tree_shadow_cost.gd).
+static func shadow_reach() -> float:
+	if GraphicsQuality.tree_shadows:
+		return INF
+	return float(GraphicsQuality.knob("tree_shadow_m", 0.0))
 
 
 static func shadow_group(group: int) -> int:

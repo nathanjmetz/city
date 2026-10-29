@@ -649,10 +649,53 @@ func _budget() -> void:
 ## they were 17 of 26 million triangles from the street on Cinematic). No
 ## group that draws a grown tree casts a shadow; shadow-only groups do: a
 ## full tree's own mesh right by the camera, its light tree's past that,
-## and none in the light band (the cards cast those).
+## and none in the light band (the cards cast those). A tier without tree
+## shadows (Medium) still has the nearest trees', by their light trees
+## (2026-10-29: street trees with none looked pasted on).
 func _shadows() -> void:
 	var was: bool = GraphicsQuality.tree_shadows
+	var was_budget: Dictionary = GraphicsQuality.budget
 	var sp := TreeField.Species.MAPLE
+	for near in [false, true]:
+		GraphicsQuality.tree_shadows = false
+		GraphicsQuality.budget = GraphicsQuality.INACTIVE.duplicate()
+		GraphicsQuality.budget["tree_shadow_m"] = 45.0 if near else 0.0
+		var field := TreeField.new()
+		root.add_child(field)
+		var trees := []
+		for d in [20.0, 70.0, 100.0]:
+			trees.append([Transform3D(Basis(), Vector3(d, 0, 0)), sp, Color.GREEN, {"age": 20.0}])
+		field.set_trees("near shadows", trees)
+		var g := GrownTrees.new()
+		root.add_child(g)
+		g._threads = false
+		g._start_scan(Vector3.ZERO, Vector2(150.0, 400.0))
+		var steps := 0
+		while g._scanning and steps < 1000:
+			g._scan_some(5.0)
+			steps += 1
+		var c: Dictionary = g._counts
+		var shadows := {}
+		for key in c:
+			if GrownTrees.is_shadow_group(key):
+				shadows[key] = c[key]
+		var light := GrownTrees.shadow_group(GrownTrees.card_group(sp, TreeMesher.Lod.LIGHT))
+		if near:
+			# 20 m and 70 m are filed (45 m and the lookup's slack); the
+			# shader thins them out by 45 m.
+			_check(shadows.size() == 1 and shadows.get(light, 0) == 2 and g._scan_shadow_r == 45.0,
+				"Medium: only the nearest trees cast, by their light trees (%s)" % [shadows])
+		else:
+			_check(shadows.is_empty() and g._scan_shadow_r == 0.0, "Low: no tree casts a shadow (%s)" % [shadows])
+		root.remove_child(g)
+		g.free()
+		root.remove_child(field)
+		field.free()
+	GraphicsQuality.budget = was_budget
+	_check(GraphicsQuality.budget_for(GraphicsQuality.MEDIUM).tree_shadow_m > 0.0
+		and GraphicsQuality.budget_for(GraphicsQuality.LOW).tree_shadow_m == 0.0
+		and GraphicsQuality.budget_for(GraphicsQuality.MEDIUM, true).tree_shadow_m == 0.0,
+		"Medium casts its nearest trees' shadows, Low and the browser none")
 	for on in [true, false]:
 		GraphicsQuality.tree_shadows = on
 		var field := TreeField.new()
