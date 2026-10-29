@@ -795,9 +795,10 @@ func _building(st: SurfaceTool, f: Transform3D, size: Vector3, wall: Color, roof
 func _draw_gates() -> void:
 	var blink := int(Time.get_ticks_msec() / 500) % 2
 	var sig := ""
-	for c in sim.rail.crossings:
+	var xs := sim.all_crossings()
+	for c in xs:
 		sig += "1" if c.closed else "0"
-	sig += str(blink) + str(sim.rail.crossings.size()) + _sig.substr(0, 40)
+	sig += str(blink) + str(xs.size()) + str(sim.county_trains.version) + _sig.substr(0, 40)
 	if sig == _gate_sig:
 		return
 	_gate_sig = sig
@@ -807,7 +808,7 @@ func _draw_gates() -> void:
 	lit.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var any := false
 	var any_lit := false
-	for c in sim.rail.crossings:
+	for c in xs:
 		if not sim.network.segments.has(c.seg):
 			continue
 		any = true

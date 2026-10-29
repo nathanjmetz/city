@@ -410,15 +410,16 @@ func _step_flows() -> void:
 ## Where the railroad crosses each way, refreshed when track or roads change.
 func _find_xings() -> void:
 	var rail: Rail = _sim.rail
-	if rail.crossings.is_empty():
+	var county: Array = _sim.county_trains.crossings if _sim.county_rail else []
+	if rail.crossings.is_empty() and county.is_empty():
 		_xings = {}
 		return
-	var key := [rail.version, version, rail.crossings.size()]
+	var key := [rail.version, version, rail.crossings.size(), _sim.county_trains.version, county.size()]
 	if key == _xing_key:
 		return
 	_xing_key = key
 	_xings = {}
-	for c in rail.crossings:
+	for c in rail.crossings + county:
 		for wid in [int(c.seg) * 2, int(c.seg) * 2 + 1]:
 			if not ways.has(wid):
 				continue
