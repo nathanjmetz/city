@@ -143,7 +143,7 @@ func _expand(chain: String) -> void:
 			Vector3(cx + w * 0.5, 0, z0 + d)]
 		if corners.any(func(c): return not _in_lot(c, 1.0)):
 			break
-		_addition(chain, cx, z0, w, d, maxf(eave, 8.0) + rng.randf_range(0.5, 2.5), adds)
+		_plant_addition(chain, cx, z0, w, d, maxf(eave, 8.0) + rng.randf_range(0.5, 2.5), adds)
 		var r := Rect2(cx - w * 0.5, z0, w, d)
 		box = box.merge(r)
 		built += w * d
@@ -159,7 +159,7 @@ func _expand(chain: String) -> void:
 ## One addition: a tilt-up concrete hall (the 1990s on) or a metal one,
 ## dock doors with seals across its front on a concrete truck court, some
 ## with a trailer backed in.
-func _addition(chain: String, cx: float, z0: float, w: float, d: float, h: float, k: int) -> void:
+func _plant_addition(chain: String, cx: float, z0: float, w: float, d: float, h: float, k: int) -> void:
 	var cz := z0 + d * 0.5
 	if chain == "mill" or (k + rng.randi()) % 2 == 0:
 		var panel := CONCRETE.darkened(rng.randf_range(0.0, 0.08))
