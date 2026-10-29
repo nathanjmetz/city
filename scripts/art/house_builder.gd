@@ -150,6 +150,8 @@ var _flat := SurfaceTool.new()
 var _reach := 0.0
 ## Ground an improvement took, so trees keep off it.
 var _improved := Rect2()
+## A backyard cottage (_cottage), once built: yard things keep off it.
+var _cottage_at := Rect2()
 ## Trees this lot plants: [local position, TreeField species, tint, scale].
 var trees := []
 ## Where the home's curbside mailbox stands across the lot (local x), or INF.
@@ -229,6 +231,8 @@ func _house(to_curb: float, storeys := 0) -> Array:
 		_board_up(body.arrays.get("glass", []))
 	if grown >= 1:
 		_addition(info, body.paint)
+	if grown >= 2:
+		_cottage(info, body.paint)
 	_yard(info, to_curb)
 	if owner_care >= 1:
 		_improve()
@@ -239,6 +243,73 @@ func _house(to_curb: float, storeys := 0) -> Array:
 	_front_yard(info)
 	_drive_hoop(info)
 	return [_commit_house(), _commit_flat(), trees]
+
+
+## Home with backyard cottage (HouseBuilder.grown 2): a one-storey cottage
+## at the back of the lot, on the side away from the drive and any garage
+## out back, its door and a little porch facing the house, a paver walk up
+## to the back of the house. About 20 by 22 ft (400-500 sq ft, within the
+## 800 sq ft or half-the-house caps ADU codes set), 5 ft from the rear and
+## side lot lines, in the house's own paint. Its own random numbers.
+func _cottage(h: Dictionary, paint: Dictionary) -> void:
+	if outline.size() >= 3 or pad > 0.0:
+		return
+	var own := RandomNumberGenerator.new()
+	own.seed = hash([rng.seed, "cottage"])
+	var was := rng
+	rng = own
+	var cw := own.randf_range(5.6, 6.8)
+	var cd := own.randf_range(6.0, 7.2)
+	var z1 := depth - 1.5
+	var z0 := z1 - cd
+	if z0 < _back_z + 3.0 or half * 2.0 < cw + 3.0:
+		rng = was
+		return
+	var first := -1.0 if float(h.drive_x) > 0.0 else 1.0
+	var spot := Rect2()
+	for side in [first, -first]:
+		var cx: float = side * (half - 1.5 - cw * 0.5)
+		var r := Rect2(cx - cw * 0.5, z0, cw, cd)
+		if h.has("keep_out") and (h.keep_out as Rect2).grow(1.2).intersects(r):
+			continue
+		spot = r
+		break
+	if not spot.has_area():
+		rng = was
+		return
+	_cottage_at = spot
+	var cx := spot.get_center().x
+	var cz := spot.get_center().y
+	var siding: Color = paint.siding
+	var roof: Color = paint.roof
+	var sill := 0.4
+	var top := sill + 2.6
+	_box("concrete", Vector3(cw + 0.1, sill, cd + 0.1), Vector3(cx, sill * 0.5, cz), FOUNDATION)
+	_box("siding", Vector3(cw, top - sill, cd), Vector3(cx, (sill + top) * 0.5, cz), siding)
+	_corners(cx - cw * 0.5, cx + cw * 0.5, z0, z1, sill, top)
+	# Its gable to the house, like a little house of its own.
+	_gable_roof(cx, cz, top, cw, cw * 0.5 * own.randf_range(0.55, 0.75), cd, false, roof, siding)
+	# The door under a small shed roof on brackets, a window either side.
+	var dx := cx + own.randf_range(-0.6, 0.6)
+	_stoop(dx, z0, 1.8, 1.4, sill)
+	_front_door(dx, z0, sill, paint.get("door", Color("#3a3a3a")))
+	_box("roof", Vector3(2.0, 0.08, 1.2), Vector3(dx, sill + 2.55, z0 - 0.55), roof)
+	for s in [-1.0, 1.0]:
+		_box("paint", Vector3(0.08, 0.5, 0.08), Vector3(dx + s * 0.9, sill + 2.3, z0 - 0.5), TRIM)
+	for s in [-1.0, 1.0]:
+		var wx: float = cx + s * cw * 0.32
+		if absf(wx - dx) > 1.3:
+			_window(Vector3(wx, sill + 1.45, z0), Vector3(-1, 0, 0), 0.8, 1.2, true, false, TRIM)
+		_window(Vector3(cx + s * cw * 0.5, sill + 1.45, cz), Vector3(0, 0, -s), 0.8, 1.2, true, false, TRIM)
+	_window(Vector3(cx, sill + 1.6, z1), Vector3(1, 0, 0), 0.9, 0.9, true, false, TRIM)
+	# Its own meter and a little AC condenser at the side.
+	var mx := cx + (cw * 0.5 + 0.05) * (1.0 if cx < 0.0 else -1.0)
+	_box("paint", Vector3(0.1, 0.4, 0.3), Vector3(mx, 1.4, z1 - 1.0), Color("#8a8c8e"))
+	# A paver walk from its door up to the back of the house.
+	var zw := _back_z + 0.2
+	if z0 - 1.4 > zw:
+		_flat_rect("drive", dx - 0.45, dx + 0.45, zw, z0 - 1.4, 0.07)
+	rng = was
 
 
 ## Home with addition (HouseBuilder.grown): the owner has built on out back
@@ -994,6 +1065,8 @@ func _improve() -> void:
 		shed_roof = Color(SHED_METAL[hash([rng.seed, "shed metal"]) % SHED_METAL.size()])
 	_gable_roof(sx, sz, 2.22, 2.4, 0.75, 3.0, true, shed_roof, shed_col, false, "metal" if metal else "roof")
 	_box("paint", Vector3(1.2, 1.85, 0.05), Vector3(sx, 1.05, sz - 1.22), TRIM)
+	if _cottage_at.grow(1.0).intersects(Rect2(sx - 1.8, sz - 1.5, 3.6, 3.0)):
+		return
 	_improved = Rect2(sx - 1.8, sz - 1.5, 3.6, 3.0)
 	if owner_care < 2:
 		return
@@ -1005,6 +1078,8 @@ func _improve() -> void:
 	var pw := minf(9.8, half * 2.0 - 7.5)
 	if zend - zb < 9.0 or pw < 6.0:
 		return
+	if _cottage_at.has_area():
+		return  # the cottage has the back yard
 	var pz := zb + 1.4 + 2.45
 	var px := -side * (half * 2.0 - pw) * 0.25
 	_flat_rect("drive", px - pw * 0.5 - 1.2, px + pw * 0.5 + 1.2, pz - 3.65, pz + 3.65, 0.09)
@@ -1623,6 +1698,8 @@ func _yard_trees(h: Dictionary, _to_curb: float) -> void:
 			continue
 		if _improved.has_area() and _improved.grow(1.5).has_point(Vector2(p.x, p.z)):
 			continue
+		if _cottage_at.grow(2.5).has_point(Vector2(p.x, p.z)):
+			continue
 		var pick := TreeField.pick(rng, s[1])
 		var size := rng.randf_range(0.75, 1.15)
 		# A shade tree goes in clear of the house, as arborists plant them
@@ -1777,6 +1854,8 @@ func _back_yard(h: Dictionary) -> void:
 	if not _in_lot(spot, 2.5):
 		return
 	if h.has("keep_out") and (h.keep_out as Rect2).grow(2.5).has_point(Vector2(spot.x, spot.z)):
+		return
+	if _cottage_at.grow(2.5).has_point(Vector2(spot.x, spot.z)):
 		return
 	for tr in trees:
 		if Vector2(tr[0].x, tr[0].z).distance_to(Vector2(spot.x, spot.z)) < 3.5:

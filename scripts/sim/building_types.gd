@@ -44,6 +44,11 @@ const TYPES := {
 		# two-storey rear wing (NAHB: additions are about a third of
 		# remodeling jobs on Midwestern homes over 30 years old).
 		{"name": "Home with addition", "storeys": 2, "cap": [5, 6]},
+		# A backyard cottage for a grown child, a parent or a renter: the
+		# accessory dwelling unit Indianapolis (2023), Fort Wayne and
+		# Bloomington now allow on any single-family lot, a one-storey
+		# cottage of 400-800 sq ft behind the house.
+		{"name": "Home with backyard cottage", "storeys": 2, "cap": [6, 8]},
 	]},
 	# A two-family house: a postwar side-by-side ranch duplex, a recent
 	# two-storey one, or on prewar streets an up-and-down two-family
@@ -506,6 +511,7 @@ static func _stage_ok(sim, b: Dictionary, type: String, level: int, c: Dictionar
 	match [type, level]:
 		["house", 1]: return true
 		["house", 2]: return c.wealth >= Balance.ADDITION_WEALTH
+		["house", 3]: return c.density >= Balance.DUPLEX_DENSITY and c.wealth >= Balance.ADDITION_WEALTH
 		["duplex", 0]: return c.density >= Balance.DUPLEX_DENSITY and c.wealth < 0.75
 		["duplex", 1]: return c.density >= Balance.ROW_HOME_DENSITY
 		["row_home", 0]: return c.density >= Balance.ROW_HOME_DENSITY * 2 and c.wealth < 0.7
