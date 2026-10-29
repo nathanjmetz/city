@@ -180,6 +180,8 @@ bool shop_room(vec2 uv, vec3 vw, bool diner, float sill, out vec3 col, out float
 	float t = min(min(tx, ty), tz);
 	vec3 h = vec3(px, world_pos.y, 0.0) + rd * t;
 	float sid = hash(vec2(floor(xl * 2.0), floor(dot(world_pos, inw) * 2.0) + floor(yb)));
+	// One pick per restaurant (its front's plane and floor), not per pane.
+	float fid = hash(vec2(floor(dot(world_pos, inw) * 2.0), floor(yb) + 0.5));
 	vec3 wallc = mix(vec3(0.56, 0.52, 0.46), vec3(0.46, 0.50, 0.53), hash(vec2(sid, 1.0)));
 	glow = 0.0;
 	float hy = h.y - yf;
@@ -209,7 +211,7 @@ bool shop_room(vec2 uv, vec3 vw, bool diner, float sill, out vec3 col, out float
 			// edge, the pie case on it; a menu board on the wall above.
 			// Side walls get a wood wainscot.
 			vec3 fronts[3] = vec3[3](vec3(0.45, 0.06, 0.07), vec3(0.08, 0.36, 0.36), vec3(0.72, 0.66, 0.52));
-			vec3 front = fronts[clamp(int(hash(vec2(sid, 8.0)) * 3.0), 0, 2)];
+			vec3 front = fronts[clamp(int(hash(vec2(fid, 8.0)) * 3.0), 0, 2)];
 			if (t == tz) {
 				col = mix(col, front, step(hy, 1.0));
 				col = mix(col, vec3(0.8, 0.81, 0.82), step(abs(hy - 1.03), 0.03));
@@ -255,7 +257,7 @@ bool shop_room(vec2 uv, vec3 vw, bool diner, float sill, out vec3 col, out float
 		// 1.9 m (the classic 24 in bench, 30 in table), walked along the
 		// ray's way across the room.
 		vec3 vinyls[4] = vec3[4](vec3(0.42, 0.05, 0.06), vec3(0.05, 0.28, 0.28), vec3(0.28, 0.15, 0.09), vec3(0.3, 0.04, 0.1));
-		vec3 vinyl = vinyls[clamp(int(hash(vec2(sid, 9.0)) * 4.0), 0, 3)];
+		vec3 vinyl = vinyls[clamp(int(hash(vec2(fid, 9.0)) * 4.0), 0, 3)];
 		float c0 = floor(px / 1.9);
 		float dir = rd.x >= 0.0 ? 1.0 : -1.0;
 		for (int k = 0; k < 5; k++) {
