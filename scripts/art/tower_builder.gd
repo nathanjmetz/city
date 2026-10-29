@@ -1142,8 +1142,7 @@ func _tw_balcony(to_curb: float, width: float, storeys: int) -> void:
 	_box("paint", Vector3(w + 0.2, 1.0, d + 0.2), Vector3(0, top + 0.5, cz), edge)
 	_tw_roof(w, d, cz, top + 1.0)
 	_tw_rooftop(w, d, cz, top + 1.0, 0.0, false, true)
-	_box("membrane", Vector3(w * 0.55, mech, d * 0.55), Vector3(0, top + 1.0 + mech * 0.5, cz), Color("#33373b"))
-	_tw_roof(w * 0.55, d * 0.55, cz, top + 1.0 + mech)
+	_tw_roof_deck(w, d, cz, top + 1.0, mech, edge, guard)
 	# The porte-cochere over a drop-off loop, and the walk to the curb.
 	_box("paint", Vector3(10.0, 0.6, 7.0), Vector3(0, ground_h - 0.3, zf - 3.5), edge)
 	for sx in [-1.0, 1.0]:
@@ -1165,6 +1164,57 @@ func _tw_balcony(to_curb: float, width: float, storeys: int) -> void:
 	for s2 in [-1.0, 1.0]:
 		var pick := TreeField.pick(rng)
 		trees.append([Vector3(s2 * (width * 0.5 - 3.5), 0, zf * 0.5), pick[0], pick[1], rng.randf_range(0.8, 1.0)])
+
+
+## A 2000s-10s apartment tower's roof: the mechanical penthouse clad in
+## metal panels a shade off the slab edges, with a louvred band and the
+## elevator overrun standing above it, at the back of the roof; in front of
+## it, on most, the residents' roof deck (grills, a pergola, planters and
+## loungers behind a glass guard), as the rental and condo towers of
+## Indianapolis and Chicago's River North have. Its own random numbers.
+func _tw_roof_deck(w: float, d: float, cz: float, y: float, mech: float, edge: Color, guard: Color) -> void:
+	var r := RandomNumberGenerator.new()
+	r.seed = hash([rng.seed, "roof deck"])
+	var pw := w * 0.55
+	var pd := d * 0.45
+	var pz := cz + d * 0.5 - pd * 0.5 - 1.5
+	var clad := edge.darkened(r.randf_range(0.25, 0.45))
+	_box("membrane", Vector3(pw, mech, pd), Vector3(0, y + mech * 0.5, pz), clad)
+	_tw_roof(pw, pd, pz, y + mech)
+	_tw_louvres(pw, pd, pz, y + mech * 0.3, mech * 0.5)
+	# The elevator overrun, a little taller, over the core.
+	var ox := r.randf_range(-pw * 0.2, pw * 0.2)
+	_box("membrane", Vector3(4.0, 1.8, 3.4), Vector3(ox, y + mech + 0.9, pz), clad.darkened(0.1))
+	_tw_roof(4.0, 3.4, pz, y + mech + 1.8, ox)
+	if r.randf() >= 0.7:
+		return
+	# The deck: pavers, a glass guard set in from the parapet, a pergola.
+	var z0 := cz - d * 0.5 + 1.2
+	var z1 := pz - pd * 0.5 - 0.3
+	if z1 - z0 < 5.0:
+		return
+	var dw := w - 2.4
+	_box("paint", Vector3(dw, 0.12, z1 - z0), Vector3(0, y + 0.06, (z0 + z1) * 0.5), Color("#b9b1a3"))
+	_glass(Vector3(0, y + 0.65, z0 - 0.02), Vector3(-1, 0, 0), dw, 1.1, 0.0)
+	for s in [-1.0, 1.0]:
+		_glass(Vector3(s * dw * 0.5, y + 0.65, (z0 + z1) * 0.5), Vector3(0, 0, s), z1 - z0, 1.1, 0.0)
+	var gx := r.randf_range(-dw * 0.2, dw * 0.2)
+	var gw := minf(dw * 0.4, 9.0)
+	var wood := Color("#6b4a32")
+	for cx in [gx - gw * 0.5, gx + gw * 0.5]:
+		for zz in [z0 + 1.5, z1 - 0.8]:
+			_box("paint", Vector3(0.25, 2.7, 0.25), Vector3(cx, y + 1.35, zz), Color("#2f3133"))
+	if fine_parts:
+		var n := int(gw / 0.6)
+		for i in n + 1:
+			_box("paint", Vector3(0.08, 0.2, z1 - z0 - 1.6), Vector3(gx - gw * 0.5 + i * gw / n, y + 2.75, (z0 + z1) * 0.5 + 0.35), wood)
+		for i in 4:  # loungers along the guard
+			_box("paint", Vector3(0.7, 0.35, 1.9), Vector3(-dw * 0.5 + 2.0 + i * 1.4, y + 0.3, z0 + 1.6), Color("#e8e4da"))
+		_box("metal", Vector3(1.6, 0.9, 0.7), Vector3(dw * 0.5 - 2.0, y + 0.45, z1 - 0.8), Color("#8d9194"))  # grills
+	for k in 3:  # planters with small trees and grasses
+		var px := lerpf(-dw * 0.5 + 1.5, dw * 0.5 - 1.5, k / 2.0)
+		_box("concrete", Vector3(1.6, 0.8, 1.6), Vector3(px, y + 0.4, (z0 + z1) * 0.5), Color("#8f8b84"))
+		_shrub(Vector3(px, y + 0.8, (z0 + z1) * 0.5), 0.7)
 
 
 # ---------------------------------------------------------------- postmodern
