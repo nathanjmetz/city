@@ -133,7 +133,7 @@ uniform float lawn_on = 0.0;
 uniform sampler2D lawn_pages : filter_nearest, hint_default_black;
 uniform sampler2DArray lawn_a : filter_linear_mipmap, repeat_disable;
 uniform sampler2DArray lawn_b : filter_linear_mipmap, repeat_disable;
-#endif
+""" + LawnLook.STRIPE_GLSL + """#endif
 // CUSTOM0: (height, normal x, normal z) on the next coarser level, and w the
 // reach of this chunk's level (0 for the coarsest): vertices slide to the
 // coarser level between MORPH_START and MORPH_END of that reach.
@@ -338,7 +338,7 @@ void fragment() {
 		pr = mix(pr, ph_soil(p), l_bare * 0.8);
 		ps = mix(ps, ph_soil_s(p) * 0.5, l_bare * 0.8);
 	}
-	// Mower stripes, 0.9 m passes back and forth: grass laid away from the
+	// Mower stripes, 0.9 m passes back and forth (LawnLook.STRIPE_FADE): grass laid away from the
 	// eye reads lighter, toward it darker, so which rows are light flips
 	// with the view. Gone where a pass is under a few pixels (no moire), in
 	// dormant grass and under snow.
@@ -350,7 +350,7 @@ void fragment() {
 	float s_sq = smoothstep(0.25 - s_fw, 0.25 + s_fw + 0.001, abs(fract(s_across) - 0.5)) * 2.0 - 1.0;
 	vec3 l_eye = (INV_VIEW_MATRIX * vec4(VIEW, 0.0)).xyz;
 	float s_face = dot(normalize(l_eye.xz + vec2(0.0001)), s_dir);
-	float s_k = lb.r * min(length(s2), 1.0) * (1.0 - smoothstep(0.1, 0.22, foot / 1.8))
+	float s_k = lb.r * min(length(s2), 1.0) * (1.0 - smoothstep(LAWN_STRIPE_FADE.x, LAWN_STRIPE_FADE.y, foot / 1.8))
 		* (1.0 - season_look.w * 0.8) * (1.0 - smoothstep(0.1, 0.4, snow));
 	col *= 1.0 + s_sq * mix(s_face, 1.0, 0.2) * 0.11 * s_k;
 #endif
@@ -361,8 +361,7 @@ void fragment() {
 	// 2026-10-26).
 	col = mix(col, col * vec3(0.92, 1.12, 0.78), season_look.z);
 	float brown = clamp(season_look.w * 1.1 - (1.0 - dryness) * 0.3, 0.0, 0.85);
-	float lawn_brown = clamp(season_look.w * 0.45 * lawn_resp - (1.0 - dryness) * 0.1, 0.0, min(0.4 * max(lawn_resp, 1.0), 0.75));
-	vec3 gone_off = mix(dormant.rgb, lawn_dormant.rgb, mowed);
+""" + LawnLook.BROWN_GLSL + """	vec3 gone_off = mix(dormant.rgb, lawn_dormant.rgb, mowed);
 	col = mix(col, gone_off * (0.85 + big * 0.3) * mix(1.0, 0.92 + 0.16 * clump, mowed), mix(brown, lawn_brown, mowed));
 
 	// Crop fields (CropCalendar): the county's 40, 80 and 160 acre fields,

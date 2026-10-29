@@ -10,8 +10,13 @@ var _failed := false
 
 func _init() -> void:
 	_looks()
-	_painted()
+	_seasons()
 	_browser()
+	# The tree field reads its place in the scene, there after a frame.
+	var field := TreeField.new()
+	root.add_child(field)
+	await process_frame
+	_painted(field)
 	print("FAILED" if _failed else "All lawn tests passed")
 	quit(1 if _failed else 0)
 
@@ -62,10 +67,49 @@ func _looks() -> void:
 	_check(yard_things == 0, "a shop's lawn has no paths, dog runs or swing sets")
 
 
-func _painted() -> void:
+func _seasons() -> void:
+	# An unwatered lawn browns harder only in the late-summer dry spell; from
+	# November to April every lawn browns as before, never past 0.4 (the
+	# critic, 2026-10-26: the town read as desert all winter).
+	var tired := LawnLook.resp_of(0.0)
+	var fed := LawnLook.resp_of(1.0)
+	_check(is_equal_approx(LawnLook.resp_of(0.5), 1.0) and tired > 2.0 and fed < 0.5, "how hard lawns brown by watering")
+	var winter_ok := true
+	var capped := true
+	for i in 48:
+		var m := i * 0.25
+		var look := Seasons.look(m)
+		for d in [0.0, 0.5, 1.0]:
+			var old := clampf(float(look.dry) * 0.45 - (1.0 - d) * 0.1, 0.0, 0.4)
+			for r in [tired, 1.0, fed]:
+				var b := LawnLook.brown_of(look, r, d)
+				capped = capped and b <= 0.4 + 0.000001
+				if m >= 10.5 or m < 3.5:
+					winter_ok = winter_ok and b <= old + 0.000001
+	_check(winter_ok, "November to April an unwatered lawn browns no more than before")
+	_check(capped, "and no lawn browns past 0.4 in any month")
+	var aug := Seasons.look(7.6)
+	_check(LawnLook.brown_of(aug, tired, 0.5) > LawnLook.brown_of(aug, fed, 0.5) + 0.1,
+		"in the August dry spell the unwatered lawn goes tan, the watered one stays green")
+	_check(TerrainView.SHADER.contains(LawnLook.BROWN_GLSL), "the ground shader browns lawns the same way")
+	# Mower stripes never get fine enough to alias: a pass pair still spans
+	# several pixels where they are gone.
+	_check(1.0 / LawnLook.STRIPE_FADE.y >= 6.0, "stripes are gone while a pass pair spans %.1f pixels" % (1.0 / LawnLook.STRIPE_FADE.y))
+	_check(TerrainView.SHADER.contains(LawnLook.STRIPE_GLSL), "and the shader fades them there")
+
+
+func _painted(field: TreeField) -> void:
 	var sim := _town(31)
 	_check(sim.buildings.size() >= 10, "the test town grew (%d buildings)" % sim.buildings.size())
+	# A grown maple near the edge between two tiles (x = 0): its shade
+	# reaches both.
+	field.set_trees("test", [[Transform3D(Basis(), Vector3(-1.5, 0.0, -20.0)), TreeField.Species.MAPLE, Color.WHITE, {"age": 60.0}]])
 	var map := _paint(sim)
+	var west := map.texel(Vector2(-4.0, -20.0))
+	var east := map.texel(Vector2(2.0, -20.0))
+	_check(not west.is_empty() and not east.is_empty() and west[1].a > 0.3 and east[1].a > 0.3,
+		"a crown across a tile's edge shades both tiles (%.2f, %.2f)" % [west[1].a if west else -1.0, east[1].a if east else -1.0])
+	field.queue_free()
 	_check(map.tile_count() > 0, "the yards are painted (%d tiles)" % map.tile_count())
 	_check(map.is_drawn(), "and done")
 	# Each built lot's middle holds its own lawn.
@@ -121,6 +165,18 @@ func _painted() -> void:
 	HouseBuilder.owner_care = 0
 	var kept := _ground_tris(HouseBuilder.build(4242, 6.0, lot, 1)[1])
 	_check(blobs > soft + 100 and soft == kept, "no flat weed blobs where the ground draws the weeds (%d, %d, kept %d)" % [blobs, soft, kept])
+	# A building torn down while a scan is under way (it runs over several
+	# frames) is skipped, and its lawn goes.
+	var gone: String = keys[keys.size() / 2]
+	var gp: Vector3 = sim.lots[gone].pos
+	map._scan = [keys.duplicate(), 0, {}]
+	sim.buildings.erase(gone)
+	while not map._scan.is_empty():
+		map._scan_some()
+	for i in 50:
+		map._process(0.016)
+	var after := map.texel(Vector2(gp.x, gp.z))
+	_check(after.is_empty() or _near(after[0], LawnLook.NEUTRAL_A), "a lot torn down mid-scan loses its lawn, with no error")
 	map.free()
 	again.free()
 

@@ -31,6 +31,40 @@ const TILE_PX := 128
 const NEUTRAL_A := Color(0.5, 0.0, 0.5, 0.0)
 const NEUTRAL_B := Color(0.0, 0.5, 0.5, 0.0)
 
+## Mower stripes fade out between these shares of a pass pair (1.8 m) per
+## pixel: gone by 0.25 m a pixel, where a pair still spans 7 pixels, far
+## above the 2 a pattern needs not to alias, so they can never turn into a
+## fine "lined pattern" on the grass (Nathan once saw one): they show from
+## the street to about 40-60 m up and are gone well before they get fine.
+## `foot` in the shader is |dx| + |dy| of the ground a pixel covers, which
+## over- rather than under-states it.
+const STRIPE_FADE := Vector2(0.06, 0.14)
+const STRIPE_PAIR := 1.8
+const STRIPE_GLSL := "const vec2 LAWN_STRIPE_FADE = vec2(0.06, 0.14);\n"
+
+## How hard a lawn browns with the season (TerrainView): an unwatered lawn
+## (lawn_resp above 1) browns harder only in the late-summer dry spell (no
+## leaves turning, none down), not in the autumn and winter dormancy, when every town lawn goes the same
+## muted olive, capped at 0.4 (the critic, 2026-10-26: browner lawns made the
+## town read as desert from November to April). Kept in step with
+## brown_of(), which the tests check.
+const BROWN_GLSL := """	float lawn_brown = clamp(season_look.w * 0.45 * mix(1.0, lawn_resp, (1.0 - smoothstep(0.0, 0.02, season_look.y)) * (1.0 - smoothstep(0.0, 0.05, season_look.x))) - (1.0 - dryness) * 0.1, 0.0, 0.4);
+"""
+
+
+## brown_of(): BROWN_GLSL in GDScript, for the tests. `look` is
+## Seasons.look(), `resp` the lawn's lawn_resp, `dryness` the ground's.
+static func brown_of(look: Dictionary, resp: float, dryness: float) -> float:
+	var k := (1.0 - smoothstep(0.0, 0.02, float(look.bare))) * (1.0 - smoothstep(0.0, 0.05, float(look.autumn)))
+	return clampf(float(look.dry) * 0.45 * lerpf(1.0, resp, k) - (1.0 - dryness) * 0.1, 0.0, 0.4)
+
+
+## The shader's lawn_resp for a lushness (texel a.r): 2.6 for a lawn never
+## watered, 1 as before, 0.3 for one watered and fed.
+static func resp_of(lush: float) -> float:
+	return lerpf(2.6, 1.0, lush * 2.0) if lush < 0.5 else lerpf(1.0, 0.3, lush * 2.0 - 1.0)
+
+
 ## By upkeep tier (-2..2): the share of owners who water in a dry spell, how
 ## green the lawn runs, how weedy, who stripes it, and how often a path
 ## wears to the back door, along the fence or under a swing set, and the

@@ -138,9 +138,14 @@ func _scan_some() -> void:
 		var lot = sim.lots.get(key)
 		if lot == null:
 			continue
-		seen[key] = true
 		var tier := sim.care.tier_of(key)
-		var zone := int(sim.buildings[key].get("zone", ZoneMap.Zone.RESIDENTIAL))
+		# The scan runs over several frames: a building torn down meanwhile
+		# (PropertyCare orders unsafe ones down) is gone from the list.
+		var building = sim.buildings.get(key)
+		if building == null:
+			continue
+		var zone := int(building.get("zone", ZoneMap.Zone.RESIDENTIAL))
+		seen[key] = true
 		var had: Array = _lots.get(key, [])
 		if not had.is_empty() and is_same(had[0], lot) and had[4] == tier and had[5] == zone and not _replat:
 			continue
@@ -234,10 +239,21 @@ static func _fields() -> Array:
 	return out
 
 
+## The tree field chunks whose crowns can reach tile `c`: its own and the
+## eight round it (a crown near a tile's edge shades the next tile too).
+static func _near_chunks(c: Vector2i) -> Array:
+	var out := []
+	for dz in [-1, 0, 1]:
+		for dx in [-1, 0, 1]:
+			out.append(c + Vector2i(dx, dz))
+	return out
+
+
 func _tree_arrays(c: Vector2i) -> Array:
 	var out := []
 	for f in _fields():
-		out.append(f.chunk_trees(c))
+		for n in _near_chunks(c):
+			out.append(f.chunk_trees(n))
 	return out
 
 
@@ -260,19 +276,10 @@ func _paint(c: Vector2i) -> void:
 	bytes = b.get_data()
 	var recs := []
 	for f in _fields():
-		var trees: Array = f.chunk_trees(c)
-		recs.append(trees)
-		for i in trees.size():
-			var t: Array = f.chunk_record(c, i)
-			if t.is_empty() or not t[5]:
-				continue
-			var xf: Transform3D = t[0]
-			var r: float = TreeField.SPREAD.get(t[1], 5.0) * xf.basis.get_scale().y
-			# Saplings shade too little to thin the grass; a grown maple's
-			# crown, 10 to 15 m across, does.
-			var k := clampf((r - 2.5) / 4.0, 0.0, 0.85)
-			if k > 0.0:
-				LawnLook.add_shade(bytes, origin, Vector2(xf.origin.x, xf.origin.z), r * 0.9, k)
+		for n in _near_chunks(c):
+			var trees: Array = f.chunk_trees(n)
+			recs.append(trees)
+			_shade_chunk(bytes, origin, f, n, trees.size())
 	_tree_records[c] = recs
 	b.set_data(LawnLook.TILE_PX, LawnLook.TILE_PX, false, Image.FORMAT_RGBA8, bytes)
 	a.generate_mipmaps()
@@ -287,6 +294,23 @@ func _paint(c: Vector2i) -> void:
 		_arr_a.update_layer(a, layer)
 		_arr_b.update_layer(b, layer)
 	_pages.set_pixel(c.x + PAGES / 2, c.y + PAGES / 2, Color8(layer + 1, 0, 0))
+
+
+## The grown trees of one tree chunk, as shade over a tile's `b` bytes
+## (add_shade keeps to the tile, so a crown across its edge is cut there,
+## and the next tile paints its other part).
+func _shade_chunk(bytes: PackedByteArray, origin: Vector2, f: TreeField, n: Vector2i, count: int) -> void:
+	for i in count:
+		var t: Array = f.chunk_record(n, i)
+		if t.is_empty() or not t[5]:
+			continue
+		var xf: Transform3D = t[0]
+		var r: float = TreeField.SPREAD.get(t[1], 5.0) * xf.basis.get_scale().y
+		# Saplings shade too little to thin the grass; a grown maple's
+		# crown, 10 to 15 m across, does.
+		var k := clampf((r - 2.5) / 4.0, 0.0, 0.85)
+		if k > 0.0:
+			LawnLook.add_shade(bytes, origin, Vector2(xf.origin.x, xf.origin.z), r * 0.9, k)
 
 
 func _free_tile(c: Vector2i) -> void:
