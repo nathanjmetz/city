@@ -31,6 +31,8 @@ const ADVANCE := 150.0
 ## The lights change over twice a second (45 to 65 flashes a minute each
 ## per MUTCD 8C.02, so each lamp is lit about half a second).
 const FLASH_MS := 550
+## Every crossing shut, as if a train were coming (for pictures).
+static var shut := false
 
 const POST := Color("#a9aba8")    # galvanized steel
 const SIGN_BACK := Color("#9a9c9a")  # bare aluminium
@@ -200,7 +202,7 @@ func _set_states(now: int) -> void:
 		var d: Dictionary = _drawn[i]
 		if not d.has("up"):
 			continue
-		var down := _closed(all[i], trains)
+		var down := shut or _closed(all[i], trains)
 		d.up.visible = not down
 		d.down.visible = down
 		d.lamps[0].visible = down and blink == 0
