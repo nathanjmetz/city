@@ -138,6 +138,9 @@ const GLASS := """
 // bulkhead to a ceiling above the head, 6 m deep. Shelves of stock or racks
 // of clothes on the walls, tile floor, lay-in ceiling with light panels;
 // after dark most stay lit, as Main Street windows do.
+const vec3 CLOTH[12] = vec3[](vec3(0.06, 0.08, 0.16), vec3(0.03, 0.03, 0.035), vec3(0.16, 0.16, 0.17),
+	vec3(0.42, 0.42, 0.42), vec3(0.12, 0.2, 0.34), vec3(0.45, 0.38, 0.25), vec3(0.75, 0.74, 0.7),
+	vec3(0.2, 0.24, 0.14), vec3(0.3, 0.06, 0.08), vec3(0.06, 0.08, 0.16), vec3(0.55, 0.08, 0.08), vec3(0.75, 0.6, 0.15));
 bool shop_room(vec2 uv, vec3 vw, out vec3 col, out float glow) {
 	vec3 n = normalize(world_normal);
 	vec3 inw = dot(vw, n) > 0.0 ? n : -n;
@@ -186,8 +189,9 @@ bool shop_room(vec2 uv, vec3 vw, out vec3 col, out float glow) {
 			if (hy > 0.75 && hy < 1.75) {
 				float g = floor(u / 0.09);
 				float c = hash(vec2(g, sid));
-				vec3 cloth = vec3(c, hash(vec2(g, 5.0)), hash(vec2(g, 7.0)));
-				cloth = cloth * cloth * 0.7;
+				// What a real rack holds: mostly navy, black, greys, denim,
+				// khaki and white, with the odd bright piece.
+				vec3 cloth = CLOTH[clamp(int(hash(vec2(g, 5.0 + sid)) * 12.0), 0, 11)];
 				float len = 0.75 + 0.5 * hash(vec2(g, 11.0));
 				col = mix(col, cloth, step(1.75 - len, hy) * step(0.12, c));
 			}
@@ -201,6 +205,31 @@ bool shop_room(vec2 uv, vec3 vw, out vec3 col, out float glow) {
 			vec3 c = mix(wallc * 0.8, stock, step(0.18, p) * step(fy, 0.1 + 0.75 * hash(vec2(g, row + 9.0))));
 			col = mix(c, vec3(0.30, 0.27, 0.24), step(fy, 0.07));
 		}
+	}
+	// A display table in the middle of the floor (or a low gondola), stock
+	// on its top: the slab test of the ray against its box.
+	vec3 o = vec3(px, world_pos.y, 0.0);
+	vec3 bmin = vec3((xl + xr) * 0.5 - 0.8, yf, 2.0);
+	vec3 bmax = vec3((xl + xr) * 0.5 + 0.8, yf + mix(0.8, 1.4, step(0.5, hash(vec2(sid, 4.0)))), 3.4);
+	vec3 inv = 1.0 / rd;
+	vec3 t0 = (bmin - o) * inv;
+	vec3 t1 = (bmax - o) * inv;
+	vec3 tn = min(t0, t1);
+	vec3 tf = max(t0, t1);
+	float tin = max(max(tn.x, tn.y), tn.z);
+	float tout = min(min(tf.x, tf.y), tf.z);
+	if (tin > 0.0 && tin < tout && tin < t) {
+		vec3 b = o + rd * tin;
+		vec3 fix = mix(vec3(0.42, 0.30, 0.20), vec3(0.85, 0.84, 0.8), step(0.5, hash(vec2(sid, 6.0))));
+		if (tin == tn.y) {
+			// The top: folded stock in rows.
+			float g = floor(b.x / 0.3) + floor(b.z / 0.35) * 7.0;
+			col = mix(fix, CLOTH[clamp(int(hash(vec2(g, sid)) * 12.0), 0, 11)] + 0.08, step(0.3, hash(vec2(g, 2.0 + sid))));
+		} else {
+			col = fix * 0.7;
+		}
+		t = tin;
+		glow = 0.0;
 	}
 	// Further in, a little dimmer; and the corners darker.
 	col *= mix(1.0, 0.72, clamp(t * rd.z / 6.0, 0.0, 1.0));
@@ -403,6 +432,105 @@ void fragment() {
 	ALBEDO = mix(c, vec3(0.86, 0.88, 0.92), cover);
 	ROUGHNESS = 0.8;
 	SPECULAR = 0.4;
+}
+"""
+
+## A farm's crushed-limestone yard, lane and drive (the #53 stone county
+## farmsteads are graveled with). UV is metres inside the gravelled piece,
+## UV2 the piece's size, so the shader knows its edges and which way a lane
+## runs: grass creeps in raggedly at the edges; a lane (anything under
+## 8 m across) has the two wheel tracks pressed dark and smooth with a
+## crown of grass tufts between them; a yard has darker worn patches where
+## trucks turn and park. Loose stones up close (on the desktop at High and
+## up, the gravel photo, art/pbr gravel_floor_02); from afar the average
+## matches the far farmstead's flat gravel.
+const GRAVEL := """
+uniform vec4 lawn : source_color = vec4(0.31, 0.42, 0.18, 1.0);
+uniform sampler2D gph : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
+uniform float gph_on = 0.0;
+void fragment() {
+	vec2 p = world_pos.xz;
+	vec2 at = UV;
+	vec2 size = UV2;
+	float close = clamp(1.0 - length(VERTEX) / 120.0, 0.0, 1.0);
+	float fine = texture(noise_grain, p / 0.18).r;
+	float pebble = texture(noise_grain, p / 0.7).r;
+	float patch = texture(noise_soft, p / 7.0).r;
+	float broad = texture(noise_soft, p / 31.0 + 0.17).r;
+	vec3 stone = vcol(COLOR.rgb) * (0.84 + patch * 0.2) * (0.9 + broad * 0.16) * (1.0 + (pebble - 0.5) * 0.22);
+	stone *= 1.0 + (fine - 0.5) * 0.35 * close;
+	if (gph_on > 0.5) {
+		vec3 ph = texture(gph, p / 2.0).rgb;
+		vec3 avg = textureLod(gph, vec2(0.5), 12.0).rgb;
+		stone *= mix(vec3(1.0), ph / max(avg, vec3(0.05)), 0.8 * clamp(1.0 - length(VERTEX) / 90.0, 0.0, 1.0));
+	}
+	float worn = 0.0;
+	float tuft = 0.0;
+	if (size.x < 8.0 || size.y < 8.0) {
+		// A lane: across it, its wheel tracks and the crown between.
+		float across = (size.x < size.y ? at.x - size.x * 0.5 : at.y - size.y * 0.5);
+		float along = (size.x < size.y ? at.y : at.x);
+		float wob = (texture(noise_soft, vec2(along / 25.0, 0.3)).r - 0.5) * 0.5;
+		float c = abs(across + wob);
+		worn = 1.0 - smoothstep(0.18, 0.34, abs(c - 0.85));
+		tuft = (1.0 - smoothstep(0.2, 0.4, c)) * smoothstep(0.5, 0.7, texture(noise_grain, p / 0.9).r);
+	} else {
+		worn = smoothstep(0.35, 0.85, texture(noise_soft, p / 22.0 + 0.4).r) * 0.6;
+	}
+	// Packed by the wheels: darker (the fines and a film of dirt), smoother.
+	stone = mix(stone, vcol(COLOR.rgb) * vec3(0.66, 0.65, 0.62) * (0.95 + patch * 0.1), worn * 0.75);
+	// Grass in from the edges, ragged.
+	float edge = min(min(at.x, size.x - at.x), min(at.y, size.y - at.y));
+	float rag = texture(noise_grain, p / 1.3).r * 1.2 + texture(noise_soft, p / 6.0).r * 0.8;
+	float grass = 1.0 - smoothstep(0.0, 0.35, edge - rag * 0.9 + 0.2);
+	grass = max(grass, tuft * 0.85);
+	vec3 g = lawn.rgb * (0.85 + texture(noise_grain, p / 0.4).r * 0.3);
+	float cover = snow_cover(0.8, 0.95);
+	ALBEDO = mix(mix(stone, g, grass), vec3(0.86, 0.88, 0.92), cover);
+	ROUGHNESS = mix(0.95, 0.85, worn);
+	SPECULAR = 0.25;
+}
+"""
+
+## A corrugated steel grain bin (GSI, Sukup and Brock bins on Indiana
+## farms), UV in metres: x around, y up the wall (or up the roof's slope
+## from the eave). The wall is rolled 2.66 in corrugations running round
+## the bin in rings of 44 in sheets, bolted at each ring's lap, with a
+## vertical stiffener every sheet length (9 ft 4 in) round it; the roof
+## is ribbed panels running up to the peak. Galvanized: a soft sheen, a
+## spangle of brighter and duller grains, weathering dull and streaked
+## down from the eave, darker at the foot where rain splashes. From afar
+## the fine lines blend into the average, never shimmer.
+const BIN := """
+void fragment() {
+	float roof = step(0.35, world_normal.y);
+	float h = UV.y;
+	float around = UV.x;
+	// Corrugations: a light and a dark band each 2.66 in, fading out as they
+	// shrink below a pixel.
+	float c = h / 0.0676;
+	float corr = sin(c * 6.2832) * (1.0 - smoothstep(0.25, 0.6, fwidth(c)));
+	// Ring laps every 44 in, and stiffeners round the wall.
+	float ring = abs(fract(h / 1.118) - 0.5) * 2.0;
+	float lap = (1.0 - smoothstep(0.0, 0.03 + fwidth(h / 1.118) * 2.0, 1.0 - ring)) * clamp(0.02 / max(fwidth(h / 1.118), 0.0001), 0.0, 1.0);
+	float st = abs(fract(around / 2.845) - 0.5) * 2.0;
+	float stiff = (1.0 - smoothstep(0.0, 0.04 + fwidth(around / 2.845) * 2.0, 1.0 - st)) * clamp(0.03 / max(fwidth(around / 2.845), 0.0001), 0.0, 1.0);
+	// Roof ribs every 0.6 m round the eave, closing in toward the peak.
+	float r = around / 0.6;
+	float rib = abs(fract(r) - 0.5) * 2.0;
+	float ribs = (1.0 - smoothstep(0.75, 0.95, rib)) * clamp(0.25 / max(fwidth(r), 0.0001), 0.0, 1.0);
+	float spangle = texture(noise_grain, world_pos.xy * 1.7 + world_pos.zy * 1.3).r;
+	float streak = texture(noise_soft, vec2(around / 9.0, h / 40.0)).r;
+	float grime = 1.0 - 0.14 * (1.0 - smoothstep(0.0, 1.4, h)) * (1.0 - roof);
+	float wall_s = (1.0 + corr * 0.07) * (1.0 - lap * 0.22) * (1.0 + stiff * 0.12) * (0.94 + spangle * 0.1)
+		* (1.0 - smoothstep(0.55, 0.85, streak) * 0.12) * grime;
+	float roof_s = (1.0 - ribs * 0.16) * (0.95 + spangle * 0.08);
+	float s = mix(wall_s, roof_s, roof);
+	float cover = snow_cover(0.6, 0.85);
+	ALBEDO = mix(vcol(COLOR.rgb) * 0.82 * s, vec3(0.86, 0.88, 0.92), cover);
+	METALLIC = mix(0.55, 0.0, cover);
+	ROUGHNESS = mix(0.42 + streak * 0.12, 0.7, cover);
+	SPECULAR = 0.5;
 }
 """
 
@@ -625,6 +753,8 @@ static func get_mat(key: String) -> Material:
 		"far": mat = _shader(FAR)
 		"membrane": mat = _shader(MEMBRANE)
 		"slipform": mat = _shader(SLIPFORM)
+		"bin": mat = _shader(BIN)
+		"farm_gravel": mat = _gravel()
 		"pool": mat = _pool()
 		"foliage": mat = _plain(1.0)
 		_: mat = _plain(0.55)  # paint, shutters, trim
@@ -660,6 +790,15 @@ static func _yard() -> ShaderMaterial:
 	var mat := _shader(turn + Surfaces.photo_code("lotph") + Surfaces.photo_code("walkph") + YARD)
 	Surfaces.with_photo(mat, "asphalt", "lotph")
 	return Surfaces.with_photo(mat, "concrete", "walkph")
+
+
+static func _gravel() -> ShaderMaterial:
+	var mat := _shader(GRAVEL)
+	# The photo on the desktop at High and up (PhotoGround's own textures).
+	if PhotoGround.wanted() and ResourceLoader.exists(PhotoGround.DIR + "gravel_floor_02/albedo.jpg"):
+		mat.set_shader_parameter("gph", load(PhotoGround.DIR + "gravel_floor_02/albedo.jpg"))
+		mat.set_shader_parameter("gph_on", 1.0)
+	return mat
 
 
 ## Light thrown by a lot's own lamps after dark (parking-lot LEDs, sign
