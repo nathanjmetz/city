@@ -148,7 +148,7 @@ func _plan_highrise(sim, faces: Dictionary) -> Dictionary:
 				if area >= need or j < 0 or j >= face.size():
 					continue
 				var k: String = face[j]
-				if not _for_sale(sim, k, ["house", "row_home", ""]):
+				if not _for_sale(sim, k, ["house", "duplex", "row_home", ""]):
 					continue
 				if width + float(sim.lots[k].width) > cap[0] or area + float(sim.lots[k].area) > cap[1]:
 					continue

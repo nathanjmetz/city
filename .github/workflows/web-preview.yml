@@ -142,6 +142,7 @@ jobs:
           run_test tests/test_lots.gd
           run_test tests/test_lot_sync.gd
           run_test tests/test_building_types.gd
+          run_test tests/test_growth_homes.gd
           run_test tests/test_market.gd
           run_test tests/test_hubs.gd
           run_test tests/test_boxed_hubs.gd

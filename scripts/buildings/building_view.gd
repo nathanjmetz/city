@@ -314,7 +314,12 @@ func _draw(key: String, lot: Dictionary, b: Dictionary, fit: Dictionary, s: int)
 static func build_for(type: String, storeys: int, s: int, to_curb: float, fit: Dictionary, spec := {}, units := 2, chain := "general", level := 0) -> Array:
 	var built := []
 	match type:
-		"house": built = HouseBuilder.build(s, to_curb, fit, storeys)
+		"house":
+			# Its third stage has built on out back (Home with addition).
+			HouseBuilder.grown = maxi(0, level - 1)
+			built = HouseBuilder.build(s, to_curb, fit, storeys)
+			HouseBuilder.grown = 0
+		"duplex": built = DuplexBuilder.build(s, to_curb, fit, level)
 		"row_home": built = MetroBuilder.build_row(s, to_curb, fit, units, storeys)
 		"apartments":
 			# A high-rise is a tower like the offices (860-880 Lake Shore
@@ -399,7 +404,7 @@ func _spawn(key: String, refill := false) -> void:
 	if bulk.is_empty():
 		var box := MeshParts.aabb(solid)
 		bulk = [Rect2(box.position.x, box.position.z, box.size.x, box.size.z)]
-	var pitched: bool = BuildingTypes.type_of(b) in ["house", "row_home"]
+	var pitched: bool = BuildingTypes.type_of(b) in ["house", "duplex", "row_home"]
 	var far := far_arrays(_far_surfaces(solid), bulk, int(b.zone) == ZoneMap.Zone.INDUSTRIAL,
 		_wall_colour(int(b.zone), rng), _roof_colour(pitched, rng), flat[0][1] if not flat.is_empty() else [])
 	var parts := [solid, draped, footing, far, drawn[2], labels]

@@ -20,12 +20,13 @@ static var _mat: ShaderMaterial
 static func material() -> ShaderMaterial:
 	if _mat == null:
 		var sh := Shader.new()
-		sh.code = Surfaces.FIELD_COMMON + CropCalendar.GLSL + SHADER
+		sh.code = Surfaces.FIELD_COMMON + CropCalendar.GLSL + PhotoGround.glsl() + SHADER
 		_mat = ShaderMaterial.new()
 		_mat.shader = sh
 		_mat.set_shader_parameter("noise_soft", Ground.noise(512, 0.012, 4, 41))
 		_mat.set_shader_parameter("noise_grain", Ground.noise(256, 0.09, 2, 57))
 		_mat.set_shader_parameter("crop_table", CropCalendar.texture())
+		PhotoGround.apply(_mat)
 	return _mat
 
 
@@ -43,7 +44,8 @@ void fragment() {
 	float grain = texture(noise_grain, p / 1.7).r;
 	vec3 to_eye = (INV_VIEW_MATRIX * vec4(VIEW, 0.0)).xyz;
 	float tilt = length(to_eye.xz) / max(abs(to_eye.y), 0.05);
-	vec3 crop = crop_look(slot, p, m.x, fwidth(m.x), tilt, patch);
+	float bare;
+	vec3 crop = crop_look_bare(slot, p, m.x, fwidth(m.x), tilt, patch, bare);
 	crop *= 0.9 + patch * 0.2 + (mid - 0.5) * 0.12;
 	// A faint sprayer tramline every 36 m.
 	float t = abs(mod(m.x, 36.0) - 18.0);
@@ -62,6 +64,15 @@ void fragment() {
 	verge = mix(verge, vec3(0.30, 0.26, 0.16), clamp(season_look.w, 0.0, 1.0) * 0.8);
 	verge *= 0.85 + grain * 0.3;
 	vec3 col = mix(verge, crop, vc.a);
+	// The desktop's photographed ground (PhotoGround): worked soil between
+	// the rows, leaves over it, rough grass on the verge.
+	float pk = ph_on(length(VERTEX));
+	if (pk > 0.0) {
+		vec3 pr = mix(ph_grass(p), mix(ph_grass(p * 1.6), ph_soil(p), bare), vc.a);
+		vec2 ps = mix(ph_grass_s(p), mix(ph_grass_s(p * 1.6) * 0.7, ph_soil_s(p) * 0.35, bare), vc.a);
+		col *= mix(vec3(1.0), pr, pk);
+		NORMAL = normalize((VIEW_MATRIX * vec4(ph_lean((INV_VIEW_MATRIX * vec4(NORMAL, 0.0)).xyz, ps, pk * 0.9), 0.0)).xyz);
+	}
 	// Snow, with the stalks and clods of the stubble poking through.
 	float lies = smoothstep(0.05, 0.45, snow * (1.15 - (mid - 0.5) * 0.5 - (patch - 0.5) * 0.3));
 	vec3 snowy = vec3(0.80, 0.83, 0.88) * (0.94 + patch * 0.08);

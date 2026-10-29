@@ -1047,7 +1047,9 @@ vec3 crop_lin(vec3 c) {
 // it the plants are drawn for real, so the stripe under them is the shaded
 // ground between their leaves, not painted leaves.
 uniform vec4 plants_near = vec4(0.0);
-vec3 crop_look(ivec2 slot, vec2 at, float across, float aw, float tilt, float noise) {
+// `bare`: the share of the pixel that is soil, not plant (for the desktop's
+// real soil texture under TerrainView's photo detail).
+vec3 crop_look_bare(ivec2 slot, vec2 at, float across, float aw, float tilt, float noise, out float bare) {
 	vec4 t0 = crop_texel(slot, 0);
 	vec4 t1 = crop_texel(slot, 1);
 	vec4 t2 = crop_texel(slot, 2);
@@ -1081,6 +1083,12 @@ vec3 crop_look(ivec2 slot, vec2 at, float across, float aw, float tilt, float no
 	// Standing stalk rows in the stubble, a little lighter than the soil.
 	float stalks = (1.0 - smoothstep(0.25 - w, 0.25 + w, d)) * (1.0 - fade);
 	ground *= 1.0 + t1.a * mix(0.05, stalks * 0.25, 1.0 - fade) * step(0.25, t2.b);
+	bare = 1.0 - share;
 	return mix(ground, plant, share);
+}
+
+vec3 crop_look(ivec2 slot, vec2 at, float across, float aw, float tilt, float noise) {
+	float bare;
+	return crop_look_bare(slot, at, across, aw, tilt, noise, bare);
 }
 """

@@ -2551,7 +2551,7 @@ func _lot_place(ref: String) -> Dictionary:
 	var lot: Dictionary = _sim.lots[ref.substr(4)]
 	var b = _sim.buildings.get(ref.substr(4))
 	var lay := SiteLayout.empty_lot() if b == null else SiteLayout.for_building(int(b.zone), int(b.seed), lot,
-		BuildingTypes.storeys(b), BuildingTypes.type_of(b))
+		BuildingTypes.storeys(b), BuildingTypes.type_of(b), int(b.get("level", 0)))
 	var spots := []
 	for s in lay.spots:
 		spots.append({"pos": SiteLayout.world(lot, s.pos), "face": SiteLayout.world_dir(lot, s.face),
@@ -2908,7 +2908,7 @@ func parking_need(at: Vector3) -> Dictionary:
 				var need := ceili(float(b.get("cap", 0)) * rate)
 				var own := int(float(lot.get("width", 0.0)) / CURB_SPACE)
 				for sp in SiteLayout.for_building(int(b.zone), int(b.seed), lot, BuildingTypes.storeys(b),
-						BuildingTypes.type_of(b)).spots:
+						BuildingTypes.type_of(b), int(b.get("level", 0))).spots:
 					if sp.kind == "stall":
 						own += 1
 				if need > own:
