@@ -2224,6 +2224,13 @@ const STATION_LAND_PER_M2 := 70.0
 ## What a park board pays for a home lot it buys next to its park (dollars
 ## a square metre of lot, house included, as STATION_LAND_PER_M2).
 const PARK_HOME_PER_M2 := 70.0
+## Streets a park board can ask the town to close (vacate) and join across:
+## plain local streets and alleys only, never an avenue, county road or
+## main street, and no longer than a long block (Indiana towns vacate a
+## block of a quiet street to a park that owns both sides, IC 36-7-3-12).
+const PARK_CLOSABLE_STREETS := [RoadStyle.Type.STREET, RoadStyle.Type.STREET_NARROW, RoadStyle.Type.STREET_BIKE,
+	RoadStyle.Type.STREET_ONEWAY, RoadStyle.Type.ALLEY, RoadStyle.Type.GRAVEL]
+const PARK_CLOSE_MAX_M := 200.0
 ## Each piece: `cost` dollars from the fund, `grow` metres the lot reaches
 ## further back from the street (0 builds on what it has), `needs` from the
 ## town (population; tall = buildings of 3+ storeys; city = a city charter),
