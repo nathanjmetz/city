@@ -113,8 +113,10 @@ static func house(art_seed: int, fit := {"half": LOT_HALF, "depth": 32.0}, store
 	if bays > 1 and gz - 3.2 >= 2.6:
 		spots.append({"pos": Vector2(drive_x + (bays - 1) * 0.5 * bay, gz - 3.2), "face": Vector2(0, 1),
 			"kind": "drive"})
+	# The garage doors the art drew (DoorLog), so the traffic can open the
+	# one a car drives in or out of (DoorEvents).
 	return {"spots": spots, "door": Vector2(h.door_x, h.front_z), "cut_x": drive_x, "aisle_z": 0.0,
-		"walk_z": h.walk_z, "main_street": false}
+		"walk_z": h.walk_z, "main_street": false, "doors": DoorLog.placed(h)}
 
 
 ## The shop DenseBuilder.build_retail draws for the lot (a store, diner,
