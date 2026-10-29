@@ -14,12 +14,24 @@ const GLASS := Color("#20292e")
 const STEEL := Color("#8d9396")
 const GAUGE := 1.435
 
+## Liveries for the county's through freights (CountyTrains): a road
+## railroad's black and white diesels, and the town line's own green.
+const LIVERY := {"road": {"paint": Color("#1c1d1f"), "stripe": Color("#e8e6df")}}
+
 var _st := SurfaceTool.new()
+var _paint := PAINT
+var _stripe := YELLOW
 
 
+## A model by kind; "<kind>_road" builds it in the road railroad's livery.
 static func build(kind: String) -> ArrayMesh:
 	var b := RailModels.new()
 	b._st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var parts := kind.split("_", true, 1)
+	if parts.size() == 2 and LIVERY.has(parts[1]):
+		kind = parts[0]
+		b._paint = LIVERY[parts[1]].paint
+		b._stripe = LIVERY[parts[1]].stripe
 	if b.has_method("_" + kind):
 		b.call("_" + kind)
 	b._st.generate_normals()
@@ -37,17 +49,17 @@ func _hood_unit(L: float, hood_h: float, cab_from: float, trucks_at: float, axle
 	var cab_len := 3.4
 	var cab_z := -h + cab_from + cab_len * 0.5
 	# Short hood ahead of the cab, long hood behind it.
-	_box(Vector3(0, 2.25, (-h + 0.6 + cab_z - cab_len * 0.5) * 0.5), Vector3(2.4, 1.65, cab_z - cab_len * 0.5 + h - 0.6), PAINT)
+	_box(Vector3(0, 2.25, (-h + 0.6 + cab_z - cab_len * 0.5) * 0.5), Vector3(2.4, 1.65, cab_z - cab_len * 0.5 + h - 0.6), _paint)
 	_box(Vector3(0, 1.42 + hood_h * 0.5, (cab_z + cab_len * 0.5 + h - 0.4) * 0.5),
-		Vector3(2.5, hood_h, h - 0.4 - cab_z - cab_len * 0.5), PAINT)
-	_box(Vector3(0, 2.9, cab_z), Vector3(3.0, 2.95, cab_len), PAINT)                    # cab
-	_box(Vector3(0, 4.45, cab_z), Vector3(3.1, 0.15, cab_len + 0.2), PAINT)             # cab roof
+		Vector3(2.5, hood_h, h - 0.4 - cab_z - cab_len * 0.5), _paint)
+	_box(Vector3(0, 2.9, cab_z), Vector3(3.0, 2.95, cab_len), _paint)                    # cab
+	_box(Vector3(0, 4.45, cab_z), Vector3(3.1, 0.15, cab_len + 0.2), _paint)             # cab roof
 	_box(Vector3(0, 3.6, cab_z - cab_len * 0.5 - 0.01), Vector3(2.6, 0.9, 0.04), GLASS)  # windshield
 	for side: float in [-1.0, 1.0]:
 		_box(Vector3(side * 1.51, 3.55, cab_z), Vector3(0.04, 0.8, 2.2), GLASS)
 	# Yellow nose and a stripe down the side, like real safety striping.
-	_box(Vector3(0, 2.25, -h + 0.55), Vector3(2.42, 1.0, 0.06), YELLOW)
-	_box(Vector3(0, 1.48, 0), Vector3(3.12, 0.12, L - 0.2), YELLOW)
+	_box(Vector3(0, 2.25, -h + 0.55), Vector3(2.42, 1.0, 0.06), _stripe)
+	_box(Vector3(0, 1.48, 0), Vector3(3.12, 0.12, L - 0.2), _stripe)
 	# Exhaust stack and radiator fans on the long hood.
 	_box(Vector3(0, 1.42 + hood_h + 0.2, cab_z + cab_len * 0.5 + 3.5), Vector3(0.5, 0.4, 0.9), TRUCK)
 	for k in 3:
@@ -58,6 +70,10 @@ func _hood_unit(L: float, hood_h: float, cab_from: float, trucks_at: float, axle
 
 func _gp38() -> void:  # EMD GP38-2: 59 ft 2 in, four axles
 	_hood_unit(18.0, 2.25, 2.4, 4.5, 2)
+
+
+func _sd40() -> void:  # EMD SD40-2: 68 ft 10 in, six axles, the classic road freight unit
+	_hood_unit(21.0, 2.4, 2.3, 5.2, 3)
 
 
 func _sd70() -> void:  # EMD SD70: 72 ft 4 in, six axles, wide-nose cab
@@ -143,6 +159,27 @@ func _covered() -> void:  # 4,750 cu ft covered grain hopper, 59 ft
 		_box(Vector3(0, 3.0, (k - 3) * 2.3), Vector3(3.24, 2.6, 0.12), gray.darkened(0.08))  # side posts
 
 
+func _boxcar() -> void:  # 50 ft high-cube boxcar, 55 ft over the couplers
+	var L := 16.8
+	var red := Color("#6b2b22")
+	_trucks(L, 2.0, 2, 0.0)
+	_box(Vector3(0, 1.05, 0), Vector3(1.0, 0.4, L - 0.6), TRUCK)
+	_box(Vector3(0, 3.0, 0), Vector3(3.2, 3.5, L - 0.8), red)
+	_box(Vector3(0, 4.82, 0), Vector3(3.24, 0.14, L - 0.7), red.darkened(0.15))      # roof
+	for side: float in [-1.0, 1.0]:
+		# A plug door and its tracks, and the side's ribs.
+		_box(Vector3(side * 1.62, 2.9, 0.6), Vector3(0.06, 3.1, 3.6), red.darkened(0.1))
+		_box(Vector3(side * 1.64, 4.5, 0.6), Vector3(0.05, 0.1, 7.6), STEEL.darkened(0.3))
+		_box(Vector3(side * 1.64, 1.35, 0.6), Vector3(0.05, 0.1, 7.6), STEEL.darkened(0.3))
+		for k in 8:
+			var z := -L * 0.5 + 1.0 + k * (L - 2.0) / 7.0
+			if absf(z - 0.6) > 2.0:
+				_box(Vector3(side * 1.62, 3.0, z), Vector3(0.04, 3.4, 0.1), red.darkened(0.2))
+		_box(Vector3(side * 1.63, 4.0, -L * 0.3), Vector3(0.03, 0.35, 2.4), Color("#d8d4c8"))  # reporting marks
+	for e: float in [-1.0, 1.0]:
+		_box(Vector3(0, 3.0, e * (L * 0.5 - 0.35)), Vector3(3.0, 3.4, 0.08), red.darkened(0.25))  # ends
+
+
 func _bilevel() -> void:  # bilevel coach (Bombardier/Pullman style), 85 ft
 	var L := 25.9
 	var body := Color("#c9ccce")
@@ -174,7 +211,7 @@ func _trucks(L: float, inset: float, axles: int, pilot: float) -> void:
 				_cylinder_x(Vector3(side * (GAUGE * 0.5 + 0.04), 0.46, z), 0.46, 0.13, Color("#3a3634"))
 		_box(Vector3(0, 0.95, e * (h - 0.05)), Vector3(0.35, 0.3, 0.6), TRUCK)  # coupler
 		if pilot > 0.0:
-			_box(Vector3(0, 0.75, e * (h - 0.15)), Vector3(3.0, 0.7, 0.12), YELLOW if e < 0.0 else TRUCK)
+			_box(Vector3(0, 0.75, e * (h - 0.15)), Vector3(3.0, 0.7, 0.12), _stripe if e < 0.0 else TRUCK)
 
 
 func _box(c: Vector3, size: Vector3, col: Color) -> void:

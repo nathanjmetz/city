@@ -54,6 +54,8 @@ func _process(_delta: float) -> bool:
 		var month := float(OS.get_environment("SHOT_MONTH")) if OS.get_environment("SHOT_MONTH") != "" else 7.0
 		var hour := float(OS.get_environment("SHOT_HOUR")) if OS.get_environment("SHOT_HOUR") != "" else 11.0
 		_main.sim.set_calendar(Seasons.tick_at(SkyClock.at(int(month), hour)))
+		# The clock jumped: the hour's workers at work, cars in the lots.
+		_main.sim.people.settle(_main.sim, _main.sim.traffic)
 		for c in _main.find_children("*", "CanvasLayer", true, false):
 			c.visible = false
 		for c in _main.get_children():

@@ -109,6 +109,29 @@ func setup(net: RoadNetwork, s: CitySim = null) -> void:
 	rebuild()
 
 
+## The other roads that could pass under a road's points: its bridge is
+## drawn again when they change.
+func _roads_by(pts: PackedVector3Array) -> Array:
+	var ix := RoadIndex.of(network)
+	if ix == null or pts.is_empty():
+		return []
+	var box := Rect2(Vector2(pts[0].x, pts[0].z), Vector2.ZERO)
+	for q in pts:
+		box = box.expand(Vector2(q.x, q.z))
+	var ids := ix.near(box.grow(10.0))
+	ids.sort()
+	return ids
+
+
+## True where a road on the ground runs at a point (a bridge's piers keep
+## off it, with a metre and a half of shoulder: AASHTO lateral offset).
+func _under_road(p: Vector3, own: int) -> bool:
+	var near := RoadIndex.segment_near(network, Vector3(p.x, 0.0, p.z), 25.0, 2.0)
+	if near.is_empty() or near.seg == own:
+		return false
+	return float(near.dist) < RoadStyle.right_of_way_half(network.segments[near.seg].type) + 1.5
+
+
 ## Weathered galvanized steel: guardrail and its posts.
 static func _galvanized() -> StandardMaterial3D:
 	var m := StandardMaterial3D.new()
@@ -520,7 +543,7 @@ func _rebuild_all(gen: int) -> void:
 			if spec.get("trees", false):
 				median_trees.append_array(_median_trees(id, pts, type))
 			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-			var bkey := [pts, type, Terrain.shift, RoadMesh.raised_curbs]
+			var bkey := [pts, type, Terrain.shift, RoadMesh.raised_curbs, _roads_by(pts)]
 			var span: Array = _bridge_cache.get(id, [])
 			if span.is_empty() or span[0] != bkey:
 				var bparts := {}
@@ -530,7 +553,7 @@ func _rebuild_all(gen: int) -> void:
 				# Desktop detail (High and up, as with raised curbs): girders,
 				# round columns and approach guardrail.
 				var any := BridgeMesh.build(Terrain.lift_all(pts), RoadStyle.right_of_way_half(type), bparts,
-					Terrain.ground_y, RoadMesh.raised_curbs)
+					Terrain.ground_y, RoadMesh.raised_curbs, _under_road.bind(id))
 				var meshes := {}
 				if any:
 					for k in bparts:

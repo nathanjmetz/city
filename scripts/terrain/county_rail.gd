@@ -395,5 +395,9 @@ static func settle(b: Vector2i) -> void:
 						var top := maxf(bed_a[i], bed_b[j])
 						bed_a[i] = top
 						bed_b[j] = top
+						# One ballast between them: the view fills the gap.
+						if not pa.has("pair"):
+							pa.pair = {}
+						pa.pair[i] = at_b[j]
 			pa.bed = bed_a
 			pb.bed = bed_b

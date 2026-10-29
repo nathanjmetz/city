@@ -579,7 +579,7 @@ void fragment() {
 		n = ph_lean(n, ph_gravel_s(wp.xz), pk * 0.8);
 	} else {
 		// Damp low spots go dark and shiny; the high ground dries pale.
-		float wet = smoothstep(0.62, 0.85, big);
+		float wet = smoothstep(0.7, 0.9, big);
 		base *= mix(0.9 + 0.2 * fine, 0.58, wet);
 		rough = mix(0.95, 0.7, wet);
 		float rut = sg_ruts(dr, 26.0);
@@ -604,7 +604,7 @@ func _props_look(stage: String) -> void:
 	if _props != null:
 		_props.queue_free()
 		_props = null
-	if stage == "landscape":
+	if stage == "landscape" and (_paving or _profile != "house" or _core.position.z - _box.position.z < 4.6):
 		return
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
@@ -625,8 +625,21 @@ func _props_look(stage: String) -> void:
 		return
 	var k := absi(hash([snappedf(_bldg.size.x, 0.1), snappedf(_bldg.size.z, 0.1), snappedf(_height, 0.1), "site"]))
 	var fine := not OS.has_feature("web")
+	if stage == "landscape":
+		# Sod by the pallet, and the skid steer that brought it up.
+		for n in 3:
+			_cs_sod(st, Vector3(left + 1.0 + n * 1.45, 0.0, front + 1.5), k + n, fine)
+		SiteMachines.skid_steer(st, Transform3D(Basis(Vector3.UP, -PI * 0.5), Vector3(left + 7.6, 0.0, front + 1.7)),
+			SiteMachines.paint(k + 1), fine)
+		_props = MeshInstance3D.new()
+		_props.mesh = st.commit()
+		_props.material_override = _prop_mat()
+		add_child(_props)
+		return
 	# A porta-john by the front corner, its door to the lot.
 	_cs_john(st, Vector3(left + 0.6, 0.0, front + 1.4), k, fine)
+	if stage != "clear":
+		_cs_power_pole(st, Vector3(left + 1.6, 0.0, front + 1.7), fine)
 	if stage in ["clear", "foundation", "frame"]:
 		# Silt fence: black fabric on stakes down the sides and across the back.
 		var corners := [Vector3(b.position.x, 0, front + 2.0), Vector3(b.position.x, 0, b.end.z),
@@ -838,10 +851,47 @@ func _cs_machines(st: SurfaceTool, stage: String, k: int, fine: bool) -> void:
 					var tz := maxf(_core.position.z + 2.2, b.position.z + 13.2)
 					if tz + 4.4 < b.end.z:
 						SiteMachines.telehandler(st, Transform3D(Basis.IDENTITY, Vector3(x, 0.0, tz)), tcol, fine)
+	if _frame_kind == "tilt_up" and stage == "frame" and minf(_core.size.x, _core.size.z) > 36.0:
+		# Standing the panels from the slab, boom toward the wall going up.
+		var cc := _core.get_center()
+		SiteMachines.crawler_crane(st, Transform3D(Basis(Vector3.UP, PI * (0.15 + 0.1 * (k % 5))), Vector3(cc.x, 0.0, cc.z)),
+			Color("#b8322a") if k % 2 == 0 else Color("#e0a81a"), fine)
 	if _profile != "house" and stage in ["frame", "dry_in", "exterior"] and _core.position.z - b.position.z > 4.6:
 		var at := Vector3(_core.get_center().x - _core.size.x * 0.2, 0.0, _core.position.z - 2.0)
 		SiteMachines.boom_lift(st, Transform3D(Basis(Vector3.UP, PI * 0.5), at),
 			Color("#d9661f") if k % 3 == 0 else Color("#3d6fb0"), fine)
+
+
+## The temporary electric service the electrician sets before the pour
+## and the utility feeds until the house's own meter goes live: a treated
+## 6x6 post, the meter base, a small breaker panel with weatherproof
+## outlets and the trades' cords, and the ground rod at its foot.
+func _cs_power_pole(st: SurfaceTool, at: Vector3, fine: bool) -> void:
+	_prop(st, Vector3(0.14, 3.4, 0.14), at + Vector3(0, 1.7, 0), Color("#8a7a5c"))
+	_prop(st, Vector3(0.4, 0.06, 0.14), at + Vector3(0, 3.0, 0), Color("#8a7a5c"))  # crossarm brace
+	_prop(st, Vector3(0.3, 0.42, 0.12), at + Vector3(0, 1.75, -0.13), Color("#9ea3a6"))  # meter base
+	_prop(st, Vector3(0.36, 0.5, 0.14), at + Vector3(0, 1.1, -0.14), Color("#6f757a"))  # panel
+	_prop(st, Vector3(0.05, 1.2, 0.05), at + Vector3(0, 2.6, -0.1), Color("#3a3a3a"))  # riser
+	if fine:
+		_prop(st, Vector3(0.14, 0.14, 0.06), at + Vector3(0, 1.8, -0.2), Color("#c9d3d6"))  # meter glass
+		_prop(st, Vector3(0.26, 0.08, 0.05), at + Vector3(0, 0.95, -0.22), Color("#2a2a2a"))  # outlets
+		_prop(st, Vector3(0.025, 0.25, 0.025), at + Vector3(0.12, 0.12, -0.12), Color("#b4743c"))  # ground rod
+		# A yellow cord off to the work, lying on the dirt.
+		_prop(st, Vector3(0.025, 0.025, 4.0), at + Vector3(0.1, 0.03, 2.2), Color("#e3b51e"))
+		_prop(st, Vector3(0.025, 0.9, 0.025), at + Vector3(0.1, 0.47, 0.2), Color("#e3b51e"))
+
+
+## A pallet of Kentucky bluegrass sod, the rolls stacked on the slats.
+func _cs_sod(st: SurfaceTool, at: Vector3, k: int, fine: bool) -> void:
+	_prop(st, Vector3(1.2, 0.13, 1.2), at + Vector3(0, 0.065, 0), Color("#9c8562"))
+	var h := 0.55 + 0.2 * float(k % 3) / 2.0
+	_prop(st, Vector3(1.14, h, 1.14), at + Vector3(0, 0.13 + h * 0.5, 0), Color("#4e3b28"))  # soil side
+	_prop(st, Vector3(1.15, 0.05, 1.15), at + Vector3(0, 0.13 + h, 0), Color("#4f7a31"))
+	if fine:
+		var y := 0.13 + 0.09
+		while y < 0.13 + h:
+			_prop(st, Vector3(1.16, 0.035, 1.16), at + Vector3(0, y, 0), Color("#5b7d36"))  # grass at the roll ends
+			y += 0.11
 
 
 ## A molded-plastic portable toilet (about 44 x 44 in, 7.5 ft tall): skid
