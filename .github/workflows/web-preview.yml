@@ -114,6 +114,7 @@ jobs:
           run_alone tests/test_home_screen.gd
           run_test tests/test_roads.gd
           run_test tests/test_junction_marks.gd
+          run_test tests/test_junction_looks.gd
           run_test tests/test_curbs.gd
           run_test tests/test_country_roads.gd
           run_test tests/test_county_rail.gd

@@ -21,10 +21,39 @@ extends RefCounted
 ##
 ## Ramps, one-ways, roundabouts, alleys and gravel or dirt roads keep a
 ## plain join.
+##
+## No two corners need look alike (Nathan, 2026-10-29: "every intersection
+## is exactly the same shape"). Each junction has its own look (look()),
+## picked from a hash of where it is, never a random draw, so every
+## computer, every reload and every undo draws it the same: the era of its
+## block (the same quarter-mile blocks HouseBuilder picks its houses' era
+## by, so old houses stand on old, tight corners), the roads that meet, and
+## its own roll in each range. An old plat has tight 10-15 ft corners, often
+## one diagonal ramp at the corner and cast-iron warning plates; a postwar
+## street 15-25 ft; a new subdivision sweeps round 25-30 ft corners with two
+## ramps and yellow or red plates.
 
-## Curb return radius by the larger road at the corner, in metres
+## Curb return radius by the larger road at the corner, in metres: the
+## middle of the postwar range, which traffic plans its stop lines round
+## before a junction is shaped (TrafficSim._stop_back).
 ## (Green Book: 15-25 ft on local streets, 25-40 ft where trucks turn).
 const RETURN_RADIUS := {RoadStyle.Type.STREET: 6.0, RoadStyle.Type.AVENUE: 9.0, RoadStyle.Type.BOULEVARD: 12.0}
+## Curb return radius by era and the larger road at the corner, [least,
+## most] metres; each junction takes its own place in the range (look().pick).
+## Old town plats: 10-15 ft (AASHTO Green Book ch. 9 on existing urban
+## corners); postwar 15-25 ft; new subdivisions 25-30 ft (ITE residential
+## street guidelines), more where buses and trucks turn.
+const ERA_RADIUS := {
+	"prewar": {RoadStyle.Type.STREET: [3.0, 4.5], RoadStyle.Type.AVENUE: [4.5, 6.0], RoadStyle.Type.BOULEVARD: [6.0, 7.5]},
+	"postwar": {RoadStyle.Type.STREET: [4.5, 7.5], RoadStyle.Type.AVENUE: [7.5, 9.0],
+		RoadStyle.Type.BOULEVARD: [9.0, 12.0]},
+	"recent": {RoadStyle.Type.STREET: [7.5, 9.0], RoadStyle.Type.AVENUE: [9.0, 10.5],
+		RoadStyle.Type.BOULEVARD: [12.0, 13.5]},
+}
+## A corner this tight can carry one diagonal ramp at its middle (ADA 2010
+## 406.6 allows it; PROWAG R304 prefers two). Its crosswalks are then left
+## unmarked (JunctionMarks.style), as the ramp lands outside any markings.
+const DIAGONAL_MAX := 4.6
 ## Country corners: wider, for farm trucks and 55 mph roads (AASHTO Green
 ## Book rural intersections; INDOT Design Manual ch. 46: 30 ft at county
 ## roads, 40-50 ft where a state highway is met).
@@ -46,7 +75,10 @@ const MAX_SHARE := 0.45
 const RAMP_WIDTH := 2.4
 const RAMP_GAP := 0.3
 const DOMES_DEPTH := 0.6
+## Warning plates: brick red, federal yellow, or bare cast iron (old
+## downtowns); each contrasts with the concrete, as ADA 705.1 asks.
 const DOMES_COLOR := Color(0.55, 0.22, 0.16)
+const DOMES_YELLOW := Color(0.80, 0.62, 0.14)
 
 
 ## Every shaped junction: node id -> {"trim": {seg id: metres}, "arms",
@@ -80,6 +112,7 @@ static func plan_node(net: RoadNetwork, node: int, rural: Dictionary = {}, urban
 	if segs.size() < 2 or center.y < -1.0:
 		return {}
 	var country := false
+	var types := []
 	for id in segs:
 		var sg: Dictionary = net.segments[id]
 		var type: int = sg.type
@@ -89,24 +122,26 @@ static func plan_node(net: RoadNetwork, node: int, rural: Dictionary = {}, urban
 			return {}
 		if _is_country(spec, id, rural, urban):
 			country = true
+		types.append(type)
 	var arms := arms_at(net, node, rural, urban)
 	for arm in arms:
 		if arm.pts[arm.pts.size() / 2].y < -1.0:
 			return {}
+	var lk := look(center, types)
 	if country:
-		return _country(center, arms)
+		return _country(center, arms, lk)
 	# Each corner: arm i and the next arm round (counter-clockwise).
-	var corners := _corners(arms, false)
+	var corners := _corners(arms, false, lk)
 	if not corners.any(func(c): return c.fillet):
 		if arms.size() == 2 and corners.any(func(c): return c.theta > PI + 0.01):
 			# A road bending at a node: the plain disc fills the pavement,
 			# the outside of the bend gets its curb and sidewalk.
-			return {"center": center, "arms": arms, "corners": corners, "trim": {}, "bend": true}
+			return {"center": center, "arms": arms, "corners": corners, "trim": {}, "bend": true, "look": lk}
 		return {}
 	var trims := {}
 	for arm in arms:
 		trims[arm.seg] = arm.d
-	var j := {"center": center, "arms": arms, "corners": corners, "trim": trims}
+	var j := {"center": center, "arms": arms, "corners": corners, "trim": trims, "look": lk}
 	if arms.any(func(a): return urban.has(a.seg)):
 		# A town street meeting the highway through town: curbs, but traffic
 		# stops at its edge, so it is marked like a country junction.
@@ -173,18 +208,74 @@ static func _is_country(spec: Dictionary, id: int, rural: Dictionary, urban: Dic
 
 
 ## The radius of the corner between two roads: a curb return in town, a
-## wider radius in the country.
-static func corner_radius(t1: int, t2: int, country := false) -> float:
+## wider radius in the country. With a junction's look, the radius its era
+## and its own roll give; without, the middle of the range.
+static func corner_radius(t1: int, t2: int, country := false, lk := {}) -> float:
 	var g := maxi(RoadStyle.group(t1), RoadStyle.group(t2))
+	var pick: float = lk.get("pick", 0.5)
 	if country:
-		return COUNTRY_RADIUS.get(g, 9.0)
-	return RETURN_RADIUS.get(g, 6.0)
+		# INDOT: 30 ft at county roads, 40-50 ft at the state highway; an
+		# old county corner a little tighter, a rebuilt one a little wider.
+		return COUNTRY_RADIUS.get(g, 9.0) * (0.85 + 0.3 * pick) if not lk.is_empty() else COUNTRY_RADIUS.get(g, 9.0)
+	if lk.is_empty():
+		return RETURN_RADIUS.get(g, 6.0)
+	var span: Array = ERA_RADIUS[lk.era].get(g, ERA_RADIUS[lk.era][RoadStyle.Type.STREET])
+	return lerpf(span[0], span[1], pick)
+
+
+## A junction's own look, from where it is and the roads that meet there:
+## {"era": "prewar", "postwar" or "recent"; "pick": 0..1, where its corner
+## radius falls in the era's range; "ramps": "pair" (one ramp in line with
+## each crosswalk) or "diagonal" (one at the middle of a tight corner);
+## "domes": "red", "yellow" or "iron"}. Nothing is saved: it is worked out
+## again the same from the same place.
+static func look(center: Vector3, types: Array) -> Dictionary:
+	var era := era_at(center)
+	if RoadStyle.Type.MAIN_STREET in types:
+		era = "prewar"  # a courthouse-square main street is the old town
+	# One diagonal ramp on an old residential corner (not downtown or on an
+	# avenue, where crosswalks are marked: ADA 406.6 wants a diagonal ramp's
+	# landing inside the markings, which a corner's middle is not).
+	var ramps := "pair"
+	var diag: float = {"prewar": 0.6, "postwar": 0.3}.get(era, 0.0)
+	var quiet := types.all(func(t): return RoadStyle.group(t) == RoadStyle.Type.STREET and t != RoadStyle.Type.MAIN_STREET)
+	if quiet and roll(center, "ramps") < diag:
+		ramps = "diagonal"
+	var r := roll(center, "domes")
+	var domes := "yellow"
+	match era:
+		"prewar": domes = "iron" if r < 0.35 else ("red" if r < 0.75 else "yellow")
+		"postwar": domes = "iron" if r < 0.1 else ("red" if r < 0.55 else "yellow")
+		_: domes = "red" if r < 0.4 else "yellow"
+	return {"era": era, "pick": roll(center, "radius"), "ramps": ramps, "domes": domes}
+
+
+## The era a place was built in, by its quarter-mile block: the same blocks
+## and odds as HouseBuilder._fit (one prewar block in five, two postwar,
+## two recent).
+static func era_at(p: Vector3) -> String:
+	var cell := Vector2i(floori(p.x / 400.0), floori(p.z / 400.0))
+	return ["prewar", "postwar", "postwar", "recent", "recent"][posmod(hash(cell), 5)]
+
+
+## A junction's own number for `what`, 0..1: a hash of its place to the
+## metre and the name, the same on every computer.
+static func roll(center: Vector3, what: String) -> float:
+	return posmod(hash([roundi(center.x), roundi(center.z), what]), 10007) / 10007.0
+
+
+## The look of the junction at a node (for things standing at its corners).
+static func node_look(net: RoadNetwork, node: int) -> Dictionary:
+	var types := []
+	for id in net.segments_at(node):
+		types.append(net.segments[id].type)
+	return look(net.nodes[node], types)
 
 
 ## Each corner between an arm and the next one round, its radius fitted
 ## where it is tight enough for one; each arm's d is set to where its
 ## corners start.
-static func _corners(arms: Array, country: bool) -> Array:
+static func _corners(arms: Array, country: bool, lk := {}) -> Array:
 	var corners := []
 	for i in arms.size():
 		var a: Dictionary = arms[i]
@@ -192,7 +283,7 @@ static func _corners(arms: Array, country: bool) -> Array:
 		var theta := fposmod(b.u.angle() - a.u.angle(), TAU)
 		var c := {"a": i, "b": (i + 1) % arms.size(), "theta": theta, "fillet": false}
 		if theta < STRAIGHT and theta > 0.01:
-			_fillet(c, a, b, theta, country)
+			_fillet(c, a, b, theta, country, lk)
 		corners.append(c)
 	for c in corners:
 		if c.fillet:
@@ -203,8 +294,8 @@ static func _corners(arms: Array, country: bool) -> Array:
 
 ## A country junction's plan, or {} when no corner is tight enough for a
 ## radius (a road running nearly straight on through a node).
-static func _country(center: Vector3, arms: Array) -> Dictionary:
-	var corners := _corners(arms, true)
+static func _country(center: Vector3, arms: Array, lk := {}) -> Dictionary:
+	var corners := _corners(arms, true, lk)
 	if not corners.any(func(c): return c.fillet):
 		return {}
 	# A corner too open for a radius (the obtuse side of a skewed or Y
@@ -243,7 +334,7 @@ static func _country(center: Vector3, arms: Array) -> Dictionary:
 	for arm in arms:
 		trims[arm.seg] = arm.d
 	var j := {"center": center, "arms": arms, "corners": corners, "trim": trims, "country": true,
-		"through": through, "breaks": breaks}
+		"through": through, "breaks": breaks, "look": lk}
 	var polys := []
 	if through.is_empty():
 		polys.append(_outline(j))
@@ -354,8 +445,8 @@ static func _clean(poly: PackedVector2Array) -> PackedVector2Array:
 ## A curb return between arm a's left edge and arm b's right edge: the
 ## circle of radius R touching both curb lines, shrunk if the roads are too
 ## short to fit it.
-static func _fillet(c: Dictionary, a: Dictionary, b: Dictionary, theta: float, country := false) -> void:
-	var r := corner_radius(a.type, b.type, country)
+static func _fillet(c: Dictionary, a: Dictionary, b: Dictionary, theta: float, country := false, lk := {}) -> void:
+	var r := corner_radius(a.type, b.type, country, lk)
 	while true:
 		# The centre sits hw + r off both centre lines, inside the corner.
 		var p1: Vector2 = a.n * (a.hw + r)
@@ -380,13 +471,52 @@ static func _fillet(c: Dictionary, a: Dictionary, b: Dictionary, theta: float, c
 
 ## Points around a corner's curb return at radius `rad` from its centre,
 ## from arm a's side to arm b's (relative to the node).
-static func _arc(c: Dictionary, a: Dictionary, b: Dictionary, rad: float, steps := 10) -> PackedVector2Array:
+## `f0`..`f1`: just that share of the way round.
+static func _arc(c: Dictionary, a: Dictionary, b: Dictionary, rad: float, steps := 10, f0 := 0.0,
+		f1 := 1.0) -> PackedVector2Array:
 	var a0: float = (-a.n as Vector2).angle()
 	var a1: float = (b.n as Vector2).angle()
 	var sweep := wrapf(a1 - a0, -PI, PI)
 	var out := PackedVector2Array()
 	for k in steps + 1:
-		out.append(c.ctr + Vector2.from_angle(a0 + sweep * k / steps) * rad)
+		out.append(c.ctr + Vector2.from_angle(a0 + sweep * lerpf(f0, f1, float(k) / steps)) * rad)
+	return out
+
+
+## How far either side of a corner's middle its diagonal ramp reaches, as a
+## share of the way round: a ramp 1.2 times the usual width along the curb,
+## kept off the straight curbs either side.
+static func _diagonal_half(c: Dictionary, a: Dictionary, b: Dictionary) -> float:
+	var sweep := absf(wrapf((b.n as Vector2).angle() - (-a.n as Vector2).angle(), -PI, PI))
+	if sweep < 0.01:
+		return 0.0
+	return minf(RAMP_WIDTH * 0.6 / maxf(c.r, 0.5) / sweep, 0.45)
+
+
+## One ramp at the middle of a tight corner, aimed at the middle of the
+## junction: concrete from the sidewalk across the grass strip to the curb,
+## its warning plate along the curb.
+static func _diagonal_ramp(walk: SurfaceTool, domes: SurfaceTool, center: Vector3, c: Dictionary, a: Dictionary,
+		b: Dictionary) -> void:
+	var h := _diagonal_half(c, a, b)
+	if h <= 0.0:
+		return
+	var back := RoadStyle.CURB_WIDTH + RoadStyle.PARKWAY_WIDTH
+	_ring(walk, center, c, a, b, c.r - back, c.r, RoadStyle.Y_SIDEWALK + 0.035, 0.5 - h, 0.5 + h)
+	_ring(domes, center, c, a, b, c.r - DOMES_DEPTH, c.r, RoadStyle.Y_CURB + 0.01, 0.5 - h, 0.5 + h)
+
+
+## A raised curb's height round a corner with a diagonal ramp: full, but
+## dropped flush across the ramp at the middle, eased as along a street
+## (RoadMesh._ramp_rise).
+static func _diagonal_rises(c: Dictionary, a: Dictionary, b: Dictionary, steps: int) -> PackedFloat32Array:
+	var h := _diagonal_half(c, a, b)
+	var sweep := absf(wrapf((b.n as Vector2).angle() - (-a.n as Vector2).angle(), -PI, PI))
+	var ease := RoadMesh.RAMP_EASE / maxf(c.r * sweep, 0.01)
+	var out := PackedFloat32Array()
+	for k in steps + 1:
+		var off := absf(float(k) / steps - 0.5)
+		out.append(lerpf(RoadMesh.CURB_RISE, -0.03, clampf((h + ease - off) / ease, 0.0, 1.0)))
 	return out
 
 
@@ -394,14 +524,49 @@ static func _arc(c: Dictionary, a: Dictionary, b: Dictionary, rad: float, steps 
 ## sidewalks and curb ramps into `walk`, warning pads into `domes`.
 ## A country junction draws into `extra` too: "shoulder" (gravel round its
 ## radii), "white" and "yellow" (lines that follow a corner round, and side
-## roads' centre lines on to their stop lines).
+## roads' centre lines on to their stop lines). A town junction's warning
+## plates go into extra's "domes yellow" or "iron" when its look has them.
 static func draw(plans: Dictionary, asphalt: SurfaceTool, curb: SurfaceTool, walk: SurfaceTool,
 		domes: SurfaceTool, extra := {}) -> void:
 	for node in plans:
 		if plans[node].get("country", false):
 			_draw_country(plans[node], asphalt, extra, curb, walk)
 		else:
-			_draw_node(plans[node], asphalt, curb, walk, domes)
+			var kind: String = plans[node].get("look", {}).get("domes", "red")
+			var plates: SurfaceTool = {"yellow": extra.get("domes yellow"), "iron": extra.get("iron")}.get(kind)
+			_draw_node(plans[node], asphalt, curb, walk, plates if plates != null else domes)
+
+
+## The curb ramps at a town junction, where its sidewalks meet the street:
+## [corner index, "pair" or "diagonal"] for each curb return. Diagonal ramps
+## only where every corner is tight (DIAGONAL_MAX); otherwise each corner
+## gets a ramp in line with the crosswalk on each road.
+static func ramps(j: Dictionary) -> Array:
+	var out := []
+	if j.get("country", false) or j.has("bend"):
+		return out
+	var kind: String = j.get("look", {}).get("ramps", "pair")
+	for c in j.corners:
+		if c.fillet and c.r > DIAGONAL_MAX:
+			kind = "pair"
+	for i in j.corners.size():
+		if j.corners[i].fillet:
+			out.append([i, kind])
+	return out
+
+
+## True when the road `seg` meets its corners at `node` with ramps in line
+## with its crosswalk (the street's own curb drops flush there); false where
+## a diagonal ramp at the corner's middle takes their place.
+static func pair_ramps(plans: Dictionary, node: int, seg: int) -> bool:
+	var j: Dictionary = plans.get(node, {})
+	if j.is_empty():
+		return true
+	for r in ramps(j):
+		var c: Dictionary = j.corners[r[0]]
+		if j.arms[c.a].seg == seg or j.arms[c.b].seg == seg:
+			return r[1] == "pair"
+	return true
 
 
 ## Country pavement sits just under the roads' own (their edges overlap it).
@@ -560,20 +725,33 @@ static func _draw_node(j: Dictionary, asphalt: SurfaceTool, curb: SurfaceTool, w
 	var walk_w := RoadStyle.SIDEWALK_WIDTH
 	for k in range(0, tris.size(), 3):
 		_tri(asphalt, center, [poly[tris[k]], poly[tris[k + 1]], poly[tris[k + 2]]], RoadStyle.Y_ASPHALT)
-	for c in j.corners:
+	var kinds := {}
+	for r in ramps(j):
+		kinds[r[0]] = r[1]
+	for i in j.corners.size():
+		var c: Dictionary = j.corners[i]
 		var a: Dictionary = arms[c.a]
 		var b: Dictionary = arms[c.b]
 		if c.fillet:
+			var diagonal: bool = kinds.get(i, "pair") == "diagonal"
 			# Curb and sidewalk wrap the return, then run straight on to where each road starts.
 			if RoadMesh.raised_curbs:
-				_curb_arc(curb, center, _arc(c, a, b, maxf(c.r, 0.0)), _arc(c, a, b, maxf(c.r - cw, 0.0)))
+				var steps := 24 if diagonal else 10
+				_curb_arc(curb, center, _arc(c, a, b, maxf(c.r, 0.0), steps), _arc(c, a, b, maxf(c.r - cw, 0.0), steps),
+					_diagonal_rises(c, a, b, steps) if diagonal else PackedFloat32Array())
 			else:
 				_ring(curb, center, c, a, b, c.r - cw, c.r, RoadStyle.Y_CURB)
+			# The concrete gutter pan carries on round the return, as along
+			# the streets (INDOT E 605 curb and gutter).
+			_ring(curb, center, c, a, b, c.r, c.r + RoadStyle.GUTTER_WIDTH, RoadStyle.Y_ASPHALT + 0.004)
 			_ring(walk, center, c, a, b, c.r - back - walk_w, c.r - back, RoadStyle.Y_SIDEWALK)
 			_side(curb, walk, center, a, 1.0, c.ta, a.d)
 			_side(curb, walk, center, b, -1.0, c.tb, b.d)
-			_ramp(walk, domes, center, a, 1.0)
-			_ramp(walk, domes, center, b, -1.0)
+			if diagonal:
+				_diagonal_ramp(walk, domes, center, c, a, b)
+			else:
+				_ramp(walk, domes, center, a, 1.0)
+				_ramp(walk, domes, center, b, -1.0)
 		else:
 			_side(curb, walk, center, a, 1.0, 0.0, a.d)
 			_side(curb, walk, center, b, -1.0, 0.0, b.d)
@@ -584,11 +762,12 @@ static func _draw_node(j: Dictionary, asphalt: SurfaceTool, curb: SurfaceTool, w
 				_bend(walk, center, a, b, a.hw + back, a.hw + back + walk_w, RoadStyle.Y_SIDEWALK)
 
 
-## A band of the curb return between two radii from its centre.
+## A band of the curb return between two radii from its centre (`f0`..`f1`
+## of the way round).
 static func _ring(st: SurfaceTool, center: Vector3, c: Dictionary, a: Dictionary, b: Dictionary,
-		r0: float, r1: float, y: float) -> void:
-	var inner := _arc(c, a, b, maxf(r0, 0.0))
-	var outer := _arc(c, a, b, maxf(r1, 0.0))
+		r0: float, r1: float, y: float, f0 := 0.0, f1 := 1.0) -> void:
+	var inner := _arc(c, a, b, maxf(r0, 0.0), 10, f0, f1)
+	var outer := _arc(c, a, b, maxf(r1, 0.0), 10, f0, f1)
 	for k in inner.size() - 1:
 		_tri(st, center, [inner[k], outer[k], outer[k + 1]], y)
 		_tri(st, center, [inner[k], outer[k + 1], inner[k + 1]], y)
@@ -622,13 +801,14 @@ static func _side(curb: SurfaceTool, walk: SurfaceTool, center: Vector3, arm: Di
 
 ## A raised curb (RoadMesh.add_curb) along lines of points about the node:
 ## the street's edge and the curb's back.
-static func _curb_arc(st: SurfaceTool, center: Vector3, edge: PackedVector2Array, back: PackedVector2Array) -> void:
+static func _curb_arc(st: SurfaceTool, center: Vector3, edge: PackedVector2Array, back: PackedVector2Array,
+		rises := PackedFloat32Array()) -> void:
 	var inner := PackedVector3Array()
 	var outer := PackedVector3Array()
 	for k in mini(edge.size(), back.size()):
 		inner.append(center + Vector3(edge[k].x, 0.0, edge[k].y))
 		outer.append(center + Vector3(back[k].x, 0.0, back[k].y))
-	RoadMesh.add_curb(st, inner, outer)
+	RoadMesh.add_curb(st, inner, outer, rises)
 
 
 ## The outside of a bend at radius `r`: a line about the node from arm a's
