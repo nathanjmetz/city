@@ -38,9 +38,6 @@ const TW_TANK := Color("#6b4f36")
 
 var _far := false  # only the massing, for far away (build_far)
 var _homes := false  # an apartment tower: balconies, no business sign
-## Storeys the building had before floors were added on top (BuildingTypes
-## added_from), or 0 when it was built as it stands.
-var _added := 0
 
 
 ## The era follows the street's (prewar streets get masonry towers; a tall

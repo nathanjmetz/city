@@ -262,6 +262,10 @@ func rows(sim, ref: String) -> Array:
 		out.append(["The family also owns", ", ".join(also)])
 	if int(fam.redone) > 0:
 		out.append(["New look", "Redid its signs in %d" % since_year(sim, int(fam.redone))])
+	if str(b.what) in Balance.SHOP_EVENING_TRADES:
+		out.append(["Hours", "Open for supper"])
+	elif b.has("late"):
+		out.append(["Hours", "%s · %s" % ["9 am to 9 pm" if b.late else "9 am to 6 pm", str(b.get("hours_why", ""))]])
 	var plan: Dictionary = fam.get("plan", {})
 	if not plan.is_empty():
 		out.append(["The family's plans", str(plan.title)])
@@ -324,6 +328,13 @@ func month(sim) -> void:
 		if _carry_out(sim, fam):
 			any = true
 		_maybe_expand(sim, fam, int(counts[id]), year)
+	# Each January (and when a shop first opens) its owner sets its hours.
+	var january := Seasons.pace_month(sim.tick_count) == 1
+	var refs := owned.keys()
+	refs.sort()
+	for ref in refs:
+		if Balance.SHOP_LATE.has(str(owned[ref].what)) and (january or not owned[ref].has("late")):
+			_set_hours(sim, ref)
 	if any:
 		changed.emit()
 
@@ -336,8 +347,56 @@ func _draw(sim, ref: String) -> int:
 		"site": return roundi(maxf(sim.industry.yearly_profit(int(parts[1])), 0.0) / 12.0 * Balance.FAMILY_PROFIT_SHARE)
 		"lot":
 			if sim.utilities_ok(parts[1]):
-				return int(sim.buildings[parts[1]].cap) * Balance.FAMILY_PER_JOB
+				var late := maxf(float(owned.get(ref, {}).get("late_net", 0.0)), 0.0) * Balance.FAMILY_PROFIT_SHARE
+				return int(sim.buildings[parts[1]].cap) * Balance.FAMILY_PER_JOB + roundi(late)
 	return 0
+
+
+## Whether a business is open at this hour of the day: shops close at 6
+## unless their owner keeps them open late, supper places stay open, and
+## offices keep office hours.
+func open_at(ref: String, hour: int) -> bool:
+	if hour < Balance.SHOP_CLOSE:
+		return true
+	var b: Dictionary = owned.get(ref, {})
+	if b.is_empty():
+		return true
+	if str(b.what) in Balance.SHOP_EVENING_TRADES:
+		return true
+	return bool(b.get("late", false)) and hour < Balance.SHOP_LATE_CLOSE
+
+
+## A shop owner's hours for the year (Agency.choose): staying open until 9
+## brings in what the town's day workers buy after work, less what other
+## shops of the trade open late already take, and costs an evening crew.
+func _set_hours(sim, ref: String) -> void:
+	var b: Dictionary = owned[ref]
+	var key := ref.substr(4)
+	if not sim.buildings.has(key):
+		return
+	var t: Array = Balance.SHOP_LATE[str(b.what)]
+	var cap := float(sim.buildings[key].cap)
+	var workers := float(int(sim.stats.employed) + int(sim.stats.commuting))
+	var demand := clampf(2.0 * workers / maxf(float(sim.stats.population), 1.0), 0.0, 1.0)
+	var rivals := 0
+	for other in owned:
+		if other != ref and str(owned[other].what) == str(b.what) and bool(owned[other].get("late", false)):
+			rivals += 1
+	var gain := float(t[0]) * cap / 12.0 * float(t[1]) * float(t[2]) * demand / (1.0 + rivals)
+	var crew := cap * Balance.SHOP_LATE_STAFF * float(Balance.SHOP_LATE_CLOSE - Balance.SHOP_CLOSE) \
+		* Balance.SHOP_LATE_WAGE * Balance.SHOP_LATE_DAYS
+	var fam: Dictionary = families.get(int(b.family), {})
+	var lead := {"edu": 0.5, "caution": float(fam.get("caution", 0.5)), "ambition": float(fam.get("ambition", 0.5))}
+	var pick := Agency.choose(lead, [
+		{"id": "day", "name": "Closing at 6", "factors": {"money": [0.0, "saves paying an evening crew"],
+			"risk": [0.0, "needs no evening crew to manage"]}},
+		{"id": "late", "name": "Staying open until 9", "factors": {
+			"money": [gain - crew, "sells to people after work" if rivals == 0 else "sells to people after work, with another one open late"],
+			"risk": [-0.25 * crew, "pays an evening crew"],
+			"growth": [0.1 * gain, "brings people downtown in the evening"]}}])
+	b.late = pick.id == "late"
+	b.late_net = roundi(gain - crew) if b.late else 0
+	b.hours_why = str(pick.why)
 
 
 ## True once every business of the family has been going a while and pays.
