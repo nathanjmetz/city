@@ -696,7 +696,14 @@ func _find_spot(id: int, type: String, size: Vector2):
 		"court": Vector2(0.8, 0.5), "ball_diamond": Vector2(0.0, 1.0), "flower_beds": Vector2(0.0, -1.0),
 		"fountain": Vector2(0.0, 0.0), "splash_pad": Vector2(-0.8, -0.3), "all_abilities": Vector2(-0.7, 0.2),
 		"youth_complex": Vector2(0.0, 1.0), "tournament": Vector2(1.0, -1.0), "bandstand": Vector2(0.3, 0.2),
-		"pond": Vector2(-1.0, 1.0), "pool": Vector2(1.0, -0.6), "aquatic_center": Vector2(1.0, 0.4)}.get(type, Vector2.ZERO)
+		"pond": Vector2(-1.0, 1.0), "pool": Vector2(1.0, -0.6), "aquatic_center": Vector2(1.0, 0.4),
+		# Courts in a block toward the back, the dog park and the garden off
+		# in a far corner, the memorial and the skaters near the street (seen,
+		# so watched), the amphitheatre's lawn at the back.
+		"pickleball": Vector2(0.8, 0.2), "tennis": Vector2(0.9, 0.8), "volleyball": Vector2(-0.3, 0.6),
+		"dog_park": Vector2(-0.9, 0.8), "skate_park": Vector2(0.6, -0.6), "shelter_house": Vector2(0.2, -0.3),
+		"amphitheater": Vector2(0.0, 0.9), "veterans_memorial": Vector2(0.0, -0.9),
+		"community_garden": Vector2(-0.8, 1.0)}.get(type, Vector2.ZERO)
 	var best = null
 	var best_d := INF
 	var u := -hu

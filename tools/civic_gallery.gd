@@ -88,6 +88,16 @@ func _init() -> void:
 					{"type": "dog_park", "pos": Vector3(48, 0, -30), "size": Vector2(40, 30)},
 					{"type": "skate_park", "pos": Vector3(14, 0, 4), "size": Vector2(30, 24)},
 					{"type": "walking_loop", "pos": Vector3.ZERO, "size": Vector2.ZERO}]
+				if OS.get_environment("STAGE") == "2":
+					site.features = [{"type": "paths", "pos": Vector3.ZERO, "size": Vector2.ZERO},
+						{"type": "playground", "pos": Vector3(-55, 0, -38), "size": Vector2(18, 14)},
+						{"type": "pavilion", "pos": Vector3(-30, 0, -40), "size": Vector2(14, 11)},
+						{"type": "shelter_house", "pos": Vector3(20, 0, -36), "size": Vector2(26, 16)},
+						{"type": "amphitheater", "pos": Vector3(-2, 0, 30), "size": Vector2(52, 44)},
+						{"type": "veterans_memorial", "pos": Vector3(52, 0, -38), "size": Vector2(20, 20)},
+						{"type": "community_garden", "pos": Vector3(-52, 0, 34), "size": Vector2(26, 20)},
+						{"type": "walking_loop", "pos": Vector3.ZERO, "size": Vector2.ZERO},
+						{"type": "disc_golf", "pos": Vector3.ZERO, "size": Vector2.ZERO}]
 			elif k == "park":
 				site.name = "Lincoln Park"
 				site.features = [{"type": "paths", "pos": Vector3.ZERO, "size": Vector2.ZERO},
