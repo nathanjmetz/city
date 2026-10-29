@@ -23,6 +23,8 @@ const GRAVEL := Color("#8d877c")
 const LINE := Color("#e8e6df")
 ## Set by the art gallery to draw one kind of shop.
 static var force_shop := ""
+## Small parts only the desktop draws; the browser keeps its triangle budget.
+static var fine_parts := not OS.has_feature("web")
 
 ## The business's sign, from Families.sign_of ({text, style, panel, letter,
 ## since}); empty paints generic lettering. Every sign band then carries it.
@@ -465,32 +467,80 @@ func _shop_gas_station(to_curb: float) -> void:
 	for i in 4:
 		_glass(Vector3(-sw * 0.3 + i * 1.6, 1.7, zf - 0.03), Vector3(-1, 0, 0), 1.5, 2.3, 0.0)
 	_box("paint", Vector3(6.6, 0.1, 0.12), Vector3(-sw * 0.3 + 2.4, 2.9, zf - 0.06), MULLION[1])
-	# Canopy: a deep flat roof on columns, its fascia in the brand colour.
+	# Canopy: a deep flat roof on columns. Its fascia is in the brand colour,
+	# or white with a brand stripe (Speedway, Marathon and Casey's canopies on
+	# Indiana highways), with recessed lights in the white soffit.
+	var r := RandomNumberGenerator.new()
+	r.seed = hash([rng.seed, 21])
 	var cw := minf(sw + 2.0, half * 2.0 - 2.0)
 	var cd := 10.0
 	var ccz := zf - 4.0 - cd * 0.5
-	_box("paint", Vector3(cw, 0.9, cd), Vector3(0, 5.25, ccz), brand)
+	var white_fascia := r.randf() < 0.55
+	_box("paint", Vector3(cw, 0.9, cd), Vector3(0, 5.25, ccz), Color("#f1efe8") if white_fascia else brand)
+	if white_fascia:
+		_box("paint", Vector3(cw + 0.04, 0.3, cd + 0.04), Vector3(0, 5.2, ccz), brand)
 	_quad("paint", Vector3(-cw * 0.5, 4.79, ccz - cd * 0.5), Vector3(cw * 0.5, 4.79, ccz - cd * 0.5),
 		Vector3(cw * 0.5, 4.79, ccz + cd * 0.5), Vector3(-cw * 0.5, 4.79, ccz + cd * 0.5), Color("#e8e6df"), [], Vector3.DOWN)
+	if fine_parts:
+		var lx := -cw * 0.5 + 1.5
+		while lx < cw * 0.5 - 1.0:
+			for lz in [-cd * 0.3, 0.0, cd * 0.3]:
+				_box("paint", Vector3(0.6, 0.04, 0.6), Vector3(lx, 4.77, ccz + lz), Color("#fbf8ee"))
+			lx += 3.0
 	var islands := 2 if cw < 16.0 else 3
 	for i in islands:
 		var x := (i - (islands - 1) * 0.5) * cw / islands
 		_box("concrete", Vector3(1.2, 0.2, 5.5), Vector3(x, 0.1, ccz), FOUNDATION)
 		_box("paint", Vector3(0.4, 4.6, 0.4), Vector3(x, 2.5, ccz), Color("#d8d6cf"))
 		for s in [-1.0, 1.0]:
-			_box("paint", Vector3(0.8, 1.6, 0.55), Vector3(x, 1.0, ccz + s * 1.5), Color("#e8e6df"))
-			_box("paint", Vector3(0.82, 0.3, 0.57), Vector3(x, 1.65, ccz + s * 1.5), brand)
-	# Price sign on a pole near the street.
+			_dispenser(Vector3(x, 0.2, ccz + s * 1.5), brand)
+			# Concrete-filled steel bollards guard each end of the island.
+			_box("paint", Vector3(0.16, 1.1, 0.16), Vector3(x, 0.75, ccz + s * 2.9), Color("#f2c200"))
+		if fine_parts:
+			# A trash can and squeegee bucket by the column.
+			_box("paint", Vector3(0.5, 0.9, 0.5), Vector3(x + 0.4, 0.65, ccz), Color("#2d3f2e"))
+	# Price sign on a pole near the street: the brand panel on top, then a
+	# black LED board with a row for each grade (red digits, Indiana law
+	# posts the per-gallon price to the tenth of a cent).
 	var px := -half + 1.5
 	_box("paint", Vector3(0.3, 6.0, 0.3), Vector3(px, 3.0, 1.0), Color("#5a5e60"))
 	_box("paint", Vector3(2.2, 1.4, 0.3), Vector3(px, 6.3, 1.0), brand)
 	_box("paint", Vector3(2.0, 1.6, 0.32), Vector3(px, 4.7, 1.0), Color("#1d1d1d"))
+	var reg := 0
+	for row in 3:
+		var ry := 5.25 - row * 0.5
+		# Seen from the street (-z), +x is on the reader's left: digits there.
+		_box("paint", Vector3(0.7, 0.28, 0.34), Vector3(px - 0.55, ry, 1.0), Color("#f1efe8"))
+		if fine_parts:
+			_box("paint", Vector3(0.5, 0.07, 0.02), Vector3(px - 0.55, ry, 1.0 - 0.18), Color("#1d2a44"))  # the grade's name
+		var digit := Color("#ff3b1f") if row < 2 else Color("#38d04a")
+		# $3.xx9: a price in the range Indiana pumps showed in 2024-25.
+		# Regular, then mid-grade about 40 cents more, then diesel (green).
+		if row == 0:
+			reg = r.randi_range(0, 4)
+		var dimes := reg if row == 0 else (mini(reg + 4, 9) if row == 1 else r.randi_range(5, 9))
+		var price := [3, dimes, r.randi_range(0, 9), 9]
+		for k in 4:
+			var dx := px + 0.71 - k * 0.22
+			if fine_parts:
+				# The tenth of a cent is a small raised 9, after a decimal point.
+				var small := k == 3
+				_seven_seg(price[k], Vector3(dx + (0.03 if small else 0.0), ry + (0.05 if small else 0.0), 1.0 - 0.17), digit,
+					0.55 if small else 1.0)
+				if k == 0:
+					_box("paint", Vector3(0.035, 0.035, 0.02), Vector3(dx - 0.11, ry - 0.13, 1.0 - 0.17), digit)
+			else:
+				_box("paint", Vector3(0.17, 0.3, 0.34), Vector3(dx, ry, 1.0), digit)
 	# Concrete under the canopy, asphalt round it, two curb cuts.
 	_flat_rect("drive", -cw * 0.5 - 1.0, cw * 0.5 + 1.0, ccz - cd * 0.5 - 1.0, ccz + cd * 0.5 + 1.0, 0.09)
 	_flat_rect("asphalt", -half + 0.6, half - 0.6, 0.0, zf, 0.06)
 	for x in [-half * 0.55, half * 0.55]:
 		_flat_rect("asphalt", x - 3.6, x + 3.6, -to_curb, 0.0, 0.1)
 	_steel_door(Vector3(sw * 0.3, 1.35, zf + sd + 0.03), 1.0)
+	# By the front door: the ice chest and the propane exchange cage.
+	_box("paint", Vector3(1.8, 1.7, 0.8), Vector3(sw * 0.5 - 1.4, 1.15, zf - 0.6), Color("#eef2f4"))
+	_box("paint", Vector3(1.82, 0.35, 0.82), Vector3(sw * 0.5 - 1.4, 1.75, zf - 0.6), Color("#1e5aa8"))
+	_box("metal", Vector3(1.5, 1.6, 0.8), Vector3(sw * 0.5 - 3.4, 1.1, zf - 0.6), Color("#8d9093"))
 	# Cars pull up beside the pumps, one each side of an island, and the
 	# driver walks in to pay.
 	site.main_street = false
@@ -501,6 +551,38 @@ func _shop_gas_station(to_curb: float) -> void:
 		var x := (i - (islands - 1) * 0.5) * cw / islands
 		for s in [-1.0, 1.0]:
 			site.stalls.append([Vector2(x + s * 2.0, ccz), Vector2(0, 1)])
+
+
+## One LED digit on a price board, as seven segments in a 0.15 x 0.28 m cell,
+## drawn on the face toward the street (-z).
+const SEGS := [0x3F, 0x06, 0x5B, 0x4F, 0x66, 0x6D, 0x7D, 0x07, 0x7F, 0x6F]
+func _seven_seg(n: int, c: Vector3, col: Color, scale := 1.0) -> void:
+	var m: int = SEGS[n]
+	var w := 0.13 * scale
+	var h := 0.13 * scale
+	var t := 0.03 * scale
+	# a top, b top right, c bottom right, d bottom, e bottom left, f top left, g middle
+	var bars := [[0, h, true], [w * 0.5, h * 0.5, false], [w * 0.5, -h * 0.5, false], [0, -h, true],
+		[-w * 0.5, -h * 0.5, false], [-w * 0.5, h * 0.5, false], [0, 0, true]]
+	for i in 7:
+		if m & (1 << i):
+			var b: Array = bars[i]
+			var size := Vector3(w, t, 0.02) if b[2] else Vector3(t, h, 0.02)
+			_box("paint", size, c + Vector3(-b[0], b[1], 0), col)  # mirrored: read from -z
+
+
+## A fuel dispenser (Gilbarco Encore / Wayne Ovation shape): a plinth, a
+## pale body with a dark screen and nozzle bay on each face, and a valance
+## in the brand colour on top.
+func _dispenser(at: Vector3, brand: Color) -> void:
+	_box("paint", Vector3(0.9, 0.2, 0.6), at + Vector3(0, 0.1, 0), Color("#6f6a62"))
+	_box("paint", Vector3(0.8, 1.45, 0.5), at + Vector3(0, 0.92, 0), Color("#e8e6df"))
+	_box("paint", Vector3(0.82, 0.32, 0.52), at + Vector3(0, 1.8, 0), brand)
+	for f in [-1.0, 1.0]:
+		_box("paint", Vector3(0.6, 0.32, 0.03), at + Vector3(0, 1.3, f * 0.26), Color("#1b1e22"))
+		if fine_parts:
+			_box("paint", Vector3(0.18, 0.35, 0.06), at + Vector3(-0.22, 0.8, f * 0.27), Color("#2b2b2b"))
+			_box("paint", Vector3(0.18, 0.35, 0.06), at + Vector3(0.22, 0.8, f * 0.27), Color("#2b2b2b"))
 
 
 ## A diner or family restaurant: one storey, a long band of windows with a
