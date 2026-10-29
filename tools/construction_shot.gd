@@ -8,13 +8,18 @@ var _frames := 0
 
 
 func _init() -> void:
+	# After the Quality autoload has read --quality, so tier-gated looks
+	# (the photographed ground) come out as the game draws them.
+	_build.call_deferred()
+
+
+func _build() -> void:
 	var args := OS.get_cmdline_user_args()
 	var kind := args[1] if args.size() > 1 else "house"
 	var seed := int(args[2]) if args.size() > 2 else 1
 	var t := float(args[3]) if args.size() > 3 else 0.6
 	var only := int(args[7]) if args.size() > 7 else -1
 	var world := Node3D.new()
-	root.add_child(world)
 	world.add_child(SkyLight.new())
 	world.add_child(Ground.new())
 	var gap := 20.0 if kind == "house" or kind == "shop" else (30.0 if kind == "paving" else (75.0 if kind == "tower" else 60.0))
@@ -66,6 +71,8 @@ func _init() -> void:
 	var target := Vector3(0, 3, 8)
 	cam.position = target + Vector3(sin(yaw) * cos(pitch), sin(pitch), -cos(yaw) * cos(pitch)) * dist
 	cam.basis = Basis.looking_at(target - cam.position)
+	# Into the tree last: the sites stay flat (no Terrain to drape on here).
+	root.add_child(world)
 	cam.current = true
 
 
