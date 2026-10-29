@@ -265,7 +265,7 @@ func _init() -> void:
 	_check(grocers > 10 and kept_stores == grocers, "a grown corner store is the store it was (%d of %d)" % [kept_stores, grocers])
 	# Every stage keeps the walls of the stage before it (a duplex grown to a
 	# fourplex is rebuilt, so it isn't here).
-	var levels := {"house": 4, "row_home": 2, "apartments": 2, "mixed_use": 3, "commercial_block": 2, "shop": 2}
+	var levels := {"house": 5, "row_home": 2, "apartments": 2, "mixed_use": 3, "commercial_block": 2, "shop": 2}
 	var lot_w := {"house": 20.0, "row_home": 24.0, "apartments": 30.0, "mixed_use": 20.0, "commercial_block": 28.0, "shop": 20.0}
 	for t in levels:
 		for era in ["prewar", "postwar", "recent"]:
@@ -283,6 +283,16 @@ func _init() -> void:
 							break
 					prev = m
 			_check(moved == 0, "a %s %s keeps its walls at every stage (%d moved)" % [era, t, moved])
+	# A house cut into flats shows it: an outside stair or a side door,
+	# mailboxes and meters, on most lots.
+	var cut := 0
+	for s in 30:
+		var lot := {"width": [16.0, 20.0, 24.0][s % 3], "depth": 40.0, "era": ["prewar", "postwar", "recent"][s % 3]}
+		var a := BuildingView.build_for("house", 2, 600 + s, 3.9, lot, {}, 2, "general", 3)
+		var b := BuildingView.build_for("house", 2, 600 + s, 3.9, lot, {}, 2, "general", 4)
+		if _verts(b) > _verts(a) + 100:
+			cut += 1
+	_check(cut >= 20, "a house cut into flats shows its new doors (%d of 30)" % cut)
 	# Two- and three-flats with a yard behind get back porches and a
 	# fenced yard, all inside their lot; on a shallow lot, the stoop.
 	MetroBuilder.force_row = "flats"

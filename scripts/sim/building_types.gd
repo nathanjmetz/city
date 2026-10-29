@@ -49,6 +49,10 @@ const TYPES := {
 		# Bloomington now allow on any single-family lot, a one-storey
 		# cottage of 400-800 sq ft behind the house.
 		{"name": "Home with backyard cottage", "storeys": 2, "cap": [6, 8]},
+		# A landlord cuts the house into an up and a down flat (or three),
+		# the outside stair to the upstairs door, as countless older homes
+		# in Marion, Muncie and Indianapolis were from the 1940s on.
+		{"name": "House cut into flats", "storeys": 2, "cap": [7, 10]},
 	]},
 	# A two-family house: a postwar side-by-side ranch duplex, a recent
 	# two-storey one, or on prewar streets an up-and-down two-family
@@ -552,6 +556,8 @@ static func _stage_ok(sim, b: Dictionary, type: String, level: int, c: Dictionar
 		["house", 1]: return true
 		["house", 2]: return c.wealth >= Balance.ADDITION_WEALTH
 		["house", 3]: return c.density >= Balance.DUPLEX_DENSITY and c.wealth >= Balance.ADDITION_WEALTH
+		# Conversions come where owners move out and landlords buy in.
+		["house", 4]: return c.density >= Balance.DUPLEX_DENSITY and c.wealth < 0.6
 		["duplex", 0]: return c.density >= Balance.DUPLEX_DENSITY and c.wealth < 0.75
 		["duplex", 1]: return c.density >= Balance.ROW_HOME_DENSITY
 		["row_home", 0]: return c.density >= Balance.ROW_HOME_DENSITY * 2 and c.wealth < 0.7
