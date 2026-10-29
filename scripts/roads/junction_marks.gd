@@ -165,6 +165,35 @@ static func control_of(tj: Dictionary) -> String:
 	return "none"
 
 
+## Each leg's line at a junction, from its traffic control: seg -> "stop",
+## "yield" or "" (traffic goes on through), as paint() takes them.
+static func leg_rules(traffic: TrafficSim, node: int) -> Dictionary:
+	var out := {}
+	var j: Dictionary = traffic.junctions.get(node, {})
+	for wid in traffic.ways_into(node):
+		var rule := ""
+		if j.is_empty() or j.control == TrafficSim.Rule.NONE:
+			pass
+		elif j.control == TrafficSim.Rule.PRIORITY and j.major.has(wid):
+			pass
+		elif j.control == TrafficSim.Rule.PRIORITY and j.sign == "yield":
+			rule = "yield"
+		else:
+			rule = "stop"
+		out[traffic.ways[wid].seg] = rule
+	return out
+
+
+## A junction's car-free legs (closed to cars): seg -> true. No paint
+## across them.
+static func car_free_legs(traffic: TrafficSim, j: Dictionary) -> Dictionary:
+	var out := {}
+	for arm in j.get("arms", []):
+		if traffic.closed.has(arm.seg):
+			out[arm.seg] = true
+	return out
+
+
 ## The crosswalk across one leg: "continental", "lines" or "none" (see the
 ## top). `rule` is the leg's ("stop", "yield", or "" where traffic goes on
 ## through); `closed`: segments closed to cars. With no control given (""),

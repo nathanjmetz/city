@@ -99,6 +99,40 @@ func _init() -> void:
 	_check(bad_diagonal.is_empty(), "diagonal ramps only on tight corners %s" % [bad_diagonal])
 	_check(unramped_paint.is_empty(), "every marked crosswalk has ramps in line with it %s" % [unramped_paint])
 
+	# Lights put up at an old corner with one diagonal ramp: two ramps at each
+	# corner instead, and every leg marked.
+	var lit_ok := 0
+	var lit_bad := []
+	for n in plans:
+		if not Junction.ramps(plans[n]).any(func(r): return r[1] == "diagonal"):
+			continue
+		var lit: Dictionary = Junction.plan_node(sim.network, n, {}, {}, {n: true})
+		if Junction.ramps(lit).all(func(r): return r[1] == "pair") \
+				and lit.arms.all(func(a): return JunctionMarks.style(lit, a, "stop", "signal") != "none"):
+			lit_ok += 1
+		else:
+			lit_bad.append(lit.center)
+	_check(lit_ok > 0 and lit_bad.is_empty(), "lights at an old corner: two ramps a corner, every leg marked (%d) %s"
+		% [lit_ok, lit_bad])
+
+	# A sweeping corner's sidewalk rounds no wider than a plain corner's,
+	# the grass strip widening between it and the curb.
+	var wide_walk := []
+	for j in town:
+		for c in j.corners:
+			if not c.fillet:
+				continue
+			var g := maxi(RoadStyle.group(j.arms[c.a].type), RoadStyle.group(j.arms[c.b].type))
+			if c.walk.r > Junction.RETURN_RADIUS.get(g, 6.0) + 0.01 or c.walk.ta > c.ta + 0.01 or c.walk.tb > c.tb + 0.01:
+				wide_walk.append("%.1f m" % c.walk.r)
+	_check(wide_walk.is_empty(), "no corner sidewalk rounds wider than a plain corner's %s" % [wide_walk])
+
+	# Country corners: never wider than 15 m, even at the state highway.
+	var widest := Junction.corner_radius(RoadStyle.Type.STATE_HWY, RoadStyle.Type.DIVIDED_HWY, true,
+		{"era": "recent", "pick": 1.0})
+	_check(widest <= Junction.COUNTRY_MAX and Junction.COUNTRY_MAX <= 15.0,
+		"the widest country corner is %.1f m, within INDOT's 40-50 ft" % widest)
+
 	# No paint across a car-free street, at any control.
 	var crossed := []
 	var painted_shut := 0
@@ -166,8 +200,58 @@ func _init() -> void:
 	_check(sim.apply({"type": "undo"}), "and is undone")
 	_check(looks == _looks(Junction.plan(sim.network)), "after the undo, every junction looks as before")
 
+	_lots_clear()
 	print("ALL TESTS PASSED" if not failed else "TESTS FAILED")
 	quit(1 if failed else 0)
+
+
+## In a built, lived-in town (PerfTown small: old, postwar and new corners),
+## no corner's sidewalk runs over a corner lot's front door, drive, garage
+## or parking stalls (SiteLayout, where the art puts them).
+func _lots_clear() -> void:
+	var sim := CitySim.new()
+	PerfTown.build(sim, "small")
+	var plans := Junction.plan(sim.network)
+	var back := RoadStyle.CURB_WIDTH + RoadStyle.PARKWAY_WIDTH
+	var walk := RoadStyle.SIDEWALK_WIDTH
+	var eras := {}
+	var checked := 0
+	var hits := []
+	for n in plans:
+		var j: Dictionary = plans[n]
+		if j.get("country", false) or j.has("bend"):
+			continue
+		eras[j.look.era] = true
+		var c3: Vector3 = j.center
+		for c in j.corners:
+			if not c.fillet:
+				continue
+			var w: Dictionary = c.walk
+			var ctr: Vector2 = Vector2(c3.x, c3.z) + w.ctr
+			var arc := Junction._arc(w, j.arms[c.a], j.arms[c.b], 1.0)
+			var wc: Vector2 = w.ctr
+			var a0: float = (arc[0] - wc).angle()
+			var sweep: float = wrapf((arc[arc.size() - 1] - wc).angle() - a0, -PI, PI)
+			for key in sim.buildings:
+				var lot: Dictionary = sim.lots.get(key, {})
+				if lot.is_empty() or Vector2(lot.front.x, lot.front.z).distance_to(ctr) > 45.0:
+					continue
+				var b: Dictionary = sim.buildings[key]
+				var lay := SiteLayout.for_building(int(b.zone), int(b.seed), lot, BuildingTypes.storeys(b),
+					BuildingTypes.type_of(b), int(b.get("level", 0)), sim.network, int(b.get("added_from", 0)))
+				var pts := [["door", lay.door]]
+				for s in lay.spots:
+					pts.append([s.kind, s.pos])
+				for p in pts:
+					var q3 := SiteLayout.world(lot, p[1])
+					var q := Vector2(q3.x, q3.z)
+					checked += 1
+					var f := wrapf((q - ctr).angle() - a0, -PI, PI) / sweep
+					var d := q.distance_to(ctr)
+					if f > 0.0 and f < 1.0 and d > w.r - back - walk - 0.3 and d < w.r + 1.0:
+						hits.append("%s %s (%s corner, %.1f m)" % [key, p[0], j.look.era, c.r])
+	_check(eras.size() >= 2 and checked > 500, "a built town with corners of %d eras (%d places checked)" % [eras.size(), checked])
+	_check(hits.is_empty(), "no corner sidewalk over a door, drive or parking space %s" % [hits])
 
 
 ## A grid of streets 140 m apart over several quarter-mile era blocks, a

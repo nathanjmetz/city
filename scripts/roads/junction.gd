@@ -33,10 +33,14 @@ extends RefCounted
 ## street 15-25 ft; a new subdivision sweeps round 25-30 ft corners with two
 ## ramps and yellow or red plates.
 
-## Curb return radius by the larger road at the corner, in metres: the
-## middle of the postwar range, which traffic plans its stop lines round
-## before a junction is shaped (TrafficSim._stop_back).
+## Curb return radius by the larger road at the corner, in metres
 ## (Green Book: 15-25 ft on local streets, 25-40 ft where trucks turn).
+## A shaped junction's own radius comes from its look (ERA_RADIUS), and
+## traffic stops at each leg's own stop line round it (TrafficSim reads
+## plan_node and JunctionMarks.stop_back). These are only: the setback
+## traffic uses at a junction it can't shape, and its test of whether to
+## look for a shaped one (TrafficSim._stop_back); the most a corner's
+## sidewalk rounds (walk_corner); and a radius asked for with no look.
 const RETURN_RADIUS := {RoadStyle.Type.STREET: 6.0, RoadStyle.Type.AVENUE: 9.0, RoadStyle.Type.BOULEVARD: 12.0}
 ## Curb return radius by era and the larger road at the corner, [least,
 ## most] metres; each junction takes its own place in the range (look().pick).
@@ -59,6 +63,9 @@ const DIAGONAL_MAX := 4.6
 ## roads, 40-50 ft where a state highway is met).
 const COUNTRY_RADIUS := {RoadStyle.Type.STREET: 9.0, RoadStyle.Type.AVENUE: 10.5, RoadStyle.Type.BOULEVARD: 12.0,
 	RoadStyle.Type.HIGHWAY: 12.0}
+## No country corner rounds wider than this, even at the state highway
+## (INDOT's 40-50 ft).
+const COUNTRY_MAX := 15.0
 ## Gravel shoulder width on a country road, out from the pavement edge.
 ## (Drawn a little wider than the 6 ft of stone, which the shader frays
 ## into the grass along its outer edge.)
@@ -86,12 +93,15 @@ const DOMES_YELLOW := Color(0.80, 0.62, 0.14)
 ## draws the rest. Nodes not in here keep the plain disc.
 ## `urban`: country highways drawn as town streets (RoadView), whose
 ## junctions get curbs but no crosswalks.
-static func plan(net: RoadNetwork, rural: Dictionary = {}, urban: Dictionary = {}) -> Dictionary:
+## `signals`: nodes with traffic lights (the player's; the town never lights
+## a junction of plain streets itself), whose corners get two ramps each
+## so their crosswalks can be marked.
+static func plan(net: RoadNetwork, rural: Dictionary = {}, urban: Dictionary = {}, signals: Dictionary = {}) -> Dictionary:
 	var out := {}
 	var ids := net.nodes.keys()
 	ids.sort()
 	for node in ids:
-		var j := plan_node(net, node, rural, urban)
+		var j := plan_node(net, node, rural, urban, signals)
 		if not j.is_empty():
 			out[node] = j
 	return out
@@ -106,7 +116,8 @@ static func trim(plans: Dictionary, node: int, seg: int) -> float:
 ## with no corner tight enough for a curb return gets a "bend" plan: the
 ## road keeps its full length and only the outside of the bend is filled,
 ## so the curb and sidewalk run on without a notch.
-static func plan_node(net: RoadNetwork, node: int, rural: Dictionary = {}, urban: Dictionary = {}) -> Dictionary:
+static func plan_node(net: RoadNetwork, node: int, rural: Dictionary = {}, urban: Dictionary = {},
+		signals: Dictionary = {}) -> Dictionary:
 	var segs := net.segments_at(node)
 	var center: Vector3 = net.nodes[node]
 	if segs.size() < 2 or center.y < -1.0:
@@ -128,6 +139,8 @@ static func plan_node(net: RoadNetwork, node: int, rural: Dictionary = {}, urban
 		if arm.pts[arm.pts.size() / 2].y < -1.0:
 			return {}
 	var lk := look(center, types)
+	if signals.has(node):
+		lk.ramps = "pair"  # a signal's crosswalks are marked, with a ramp in line with each
 	if country:
 		return _country(center, arms, lk)
 	# Each corner: arm i and the next arm round (counter-clockwise).
@@ -216,7 +229,8 @@ static func corner_radius(t1: int, t2: int, country := false, lk := {}) -> float
 	if country:
 		# INDOT: 30 ft at county roads, 40-50 ft at the state highway; an
 		# old county corner a little tighter, a rebuilt one a little wider.
-		return COUNTRY_RADIUS.get(g, 9.0) * (0.85 + 0.3 * pick) if not lk.is_empty() else COUNTRY_RADIUS.get(g, 9.0)
+		var base: float = COUNTRY_RADIUS.get(g, 9.0)
+		return minf(base * (0.85 + 0.3 * pick) if not lk.is_empty() else base, COUNTRY_MAX)
 	if lk.is_empty():
 		return RETURN_RADIUS.get(g, 6.0)
 	var span: Array = ERA_RADIUS[lk.era].get(g, ERA_RADIUS[lk.era][RoadStyle.Type.STREET])
@@ -284,6 +298,8 @@ static func _corners(arms: Array, country: bool, lk := {}) -> Array:
 		var c := {"a": i, "b": (i + 1) % arms.size(), "theta": theta, "fillet": false}
 		if theta < STRAIGHT and theta > 0.01:
 			_fillet(c, a, b, theta, country, lk)
+			if c.fillet:
+				_walk_corner(c, a, b, country)
 		corners.append(c)
 	for c in corners:
 		if c.fillet:
@@ -469,6 +485,40 @@ static func _fillet(c: Dictionary, a: Dictionary, b: Dictionary, theta: float, c
 		r *= 0.6
 
 
+## The sidewalk round a curb return (c.walk: {ctr, r, ta, tb}, as the
+## return's own). A wide return's sidewalk rounds no wider than the plain
+## radius (RETURN_RADIUS, or COUNTRY_RADIUS), the grass strip widening
+## between it and the curb, as in real subdivisions: a sweeping corner never
+## pushes the walk further into the corner lot than a plain one did.
+static func _walk_corner(c: Dictionary, a: Dictionary, b: Dictionary, country: bool) -> void:
+	c.walk = {"ctr": c.ctr, "r": c.r, "ta": c.ta, "tb": c.tb}
+	var cap := corner_radius(a.type, b.type, country)
+	if c.r <= cap:
+		return
+	var hit = Geometry2D.line_intersects_line(a.n * (a.hw + cap), a.u, -b.n * (b.hw + cap), b.u)
+	if hit == null:
+		return
+	var ctr: Vector2 = hit
+	var ta := ctr.dot(a.u)
+	var tb := ctr.dot(b.u)
+	if ta < 0.0 or tb < 0.0 or ta > c.ta or tb > c.tb:
+		return
+	c.walk = {"ctr": ctr, "r": cap, "ta": ta, "tb": tb}
+
+
+## The corner's sidewalk: round its own (maybe tighter) radius, and on
+## along each road to where the curb return starts.
+static func _corner_walk(walk: SurfaceTool, center: Vector3, c: Dictionary, a: Dictionary, b: Dictionary) -> void:
+	var back := RoadStyle.CURB_WIDTH + RoadStyle.PARKWAY_WIDTH
+	var ww := RoadStyle.SIDEWALK_WIDTH
+	var w: Dictionary = c.get("walk", c)
+	_ring(walk, center, w, a, b, w.r - back - ww, w.r - back, RoadStyle.Y_SIDEWALK)
+	if c.ta - w.ta > 0.05:
+		_band(walk, center, a, 1.0, a.hw + back, a.hw + back + ww, w.ta, c.ta, RoadStyle.Y_SIDEWALK)
+	if c.tb - w.tb > 0.05:
+		_band(walk, center, b, -1.0, b.hw + back, b.hw + back + ww, w.tb, c.tb, RoadStyle.Y_SIDEWALK)
+
+
 ## Points around a corner's curb return at radius `rad` from its centre,
 ## from arm a's side to arm b's (relative to the node).
 ## `f0`..`f1`: just that share of the way round.
@@ -600,7 +650,7 @@ static func _draw_country(j: Dictionary, asphalt: SurfaceTool, extra: Dictionary
 			# their curbs and sidewalks wrap the corner, as in town.
 			var back := RoadStyle.CURB_WIDTH + RoadStyle.PARKWAY_WIDTH
 			_ring(curb, center, c, a, b, c.r - RoadStyle.CURB_WIDTH, c.r, RoadStyle.Y_CURB)
-			_ring(walk, center, c, a, b, c.r - back - RoadStyle.SIDEWALK_WIDTH, c.r - back, RoadStyle.Y_SIDEWALK)
+			_corner_walk(walk, center, c, a, b)
 			_side(curb, walk, center, a, 1.0, c.ta, a.d)
 			_side(curb, walk, center, b, -1.0, c.tb, b.d)
 		if c.fillet:
@@ -744,7 +794,7 @@ static func _draw_node(j: Dictionary, asphalt: SurfaceTool, curb: SurfaceTool, w
 			# The concrete gutter pan carries on round the return, as along
 			# the streets (INDOT E 605 curb and gutter).
 			_ring(curb, center, c, a, b, c.r, c.r + RoadStyle.GUTTER_WIDTH, RoadStyle.Y_ASPHALT + 0.004)
-			_ring(walk, center, c, a, b, c.r - back - walk_w, c.r - back, RoadStyle.Y_SIDEWALK)
+			_corner_walk(walk, center, c, a, b)
 			_side(curb, walk, center, a, 1.0, c.ta, a.d)
 			_side(curb, walk, center, b, -1.0, c.tb, b.d)
 			if diagonal:

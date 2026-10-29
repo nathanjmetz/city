@@ -157,24 +157,9 @@ func _rebuild_all() -> void:
 		var plan: Dictionary = plans[n]
 		if not JunctionMarks.marked(plan):
 			continue
-		var rules := {}
-		var j: Dictionary = traffic.junctions.get(n, {})
-		for wid in traffic.ways_into(n):
-			var rule := ""
-			if j.is_empty() or j.control == TrafficSim.Rule.NONE:
-				pass
-			elif j.control == TrafficSim.Rule.PRIORITY and j.major.has(wid):
-				pass
-			elif j.control == TrafficSim.Rule.PRIORITY and j.sign == "yield":
-				rule = "yield"
-			else:
-				rule = "stop"
-			rules[traffic.ways[wid].seg] = rule
-		var control := JunctionMarks.control_of(j)
-		var shut := {}  # car-free legs: no paint across them
-		for arm in plan.arms:
-			if traffic.closed.has(arm.seg):
-				shut[arm.seg] = true
+		var rules := JunctionMarks.leg_rules(traffic, n)
+		var control := JunctionMarks.control_of(traffic.junctions.get(n, {}))
+		var shut := JunctionMarks.car_free_legs(traffic, plan)
 		var key := [plan, rules, Terrain.shift, control, shut]
 		var hit: Array = _paint_cache.get(n, [])
 		if hit.is_empty() or hit[0] != key:

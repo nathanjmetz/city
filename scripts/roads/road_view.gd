@@ -158,9 +158,32 @@ func is_drawn() -> bool:
 		and _corners_later.is_empty()
 
 
+## Junctions the player put lights at, as last drawn (their corners get
+## a ramp in line with each crosswalk: Junction.plan).
+var _drawn_signals := {}
+var _signal_check := 1.0
+
+
+## The junctions the player put traffic lights at.
+func _signals() -> Dictionary:
+	var out := {}
+	if sim == null:
+		return out
+	for n in sim.traffic.overrides:
+		if int(sim.traffic.overrides[n]) == TrafficSim.Rule.SIGNAL:
+			out[n] = true
+	return out
+
+
 ## Rebuilds when a road has turned from country road to town street or back
 ## (checked at most once a second while the town grows).
 func _process(delta: float) -> void:
+	# Lights put up or taken down: those corners' ramps change.
+	_signal_check -= delta
+	if _signal_check < 0.0 and not _building:
+		_signal_check = 1.0
+		if _signals() != _drawn_signals:
+			rebuild()
 	# The graphics tier moved across High: curbs stand up or lie flat, all
 	# streets redrawn once nothing else is being drawn (never mid-rebuild,
 	# which would leave the town's streets half judged as country roads).
@@ -448,7 +471,8 @@ func _rebuild_all(gen: int) -> void:
 			for side in g[seg]:
 				gaps[seg][side] = g[seg][side]
 	# Town street junctions get real corners; their roads stop short of them.
-	var junctions := Junction.plan(network, _rural, _urban)
+	_drawn_signals = _signals()
+	var junctions := Junction.plan(network, _rural, _urban, _drawn_signals)
 	if junctions != plans:
 		plans = junctions
 		plans_version += 1
