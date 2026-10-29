@@ -125,7 +125,8 @@ func _init() -> void:
 		var planted := []
 		for t in meshes[2]:
 			planted.append([Transform3D(Basis.IDENTITY.scaled(Vector3.ONE * t[3]), at + t[0]), t[1], t[2]])
-		trees.set_trees(str(i), planted)
+		if OS.get_environment("NOTREES") != "1":  # NOTREES=1 for close looks
+			trees.set_trees(str(i), planted)
 		print(st[0], " ", st[1], " storeys ", storeys, " lot ", snappedf(w, 0.1), " m")
 	var cam := Camera3D.new()
 	cam.fov = 45.0
