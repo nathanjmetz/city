@@ -365,7 +365,8 @@ void fragment() {
 
 ## Store signs: a coloured panel (vertex colour) with a line of pale block
 ## letters that reads as a name from the street. UV.x is metres along the
-## sign, UV.y runs 0..1 up it, and vertex alpha carries the width / 30.
+## sign, UV.y runs 0..1 up it, and vertex alpha carries the width / 30
+## (0: real lettering by SignText; 1: neon tubing or a lamp lens).
 const SIGN := """
 void fragment() {
 	float nx = UV.x / max(COLOR.a * 30.0, 0.1);
@@ -378,7 +379,9 @@ void fragment() {
 	float gap = step(0.12, hash(vec2(i, 3.3 + COLOR.g * 31.0)));
 	float band = step(0.12, nx) * step(nx, 0.88);
 	// Alpha 0: the business's real name is lettered on (SignText).
-	float text = inside * on * gap * band * step(0.0001, COLOR.a);
+	// Alpha 1: neon tubing or a lamp lens, bright after dark, a little by day.
+	float neon = step(0.99, COLOR.a);
+	float text = inside * on * gap * band * step(0.0001, COLOR.a) * (1.0 - neon);
 	float aa = smoothstep(0.08, 0.3, fwidth(UV.x / pitch));
 	text = mix(text, 0.3 * band * step(0.25, UV.y) * step(UV.y, 0.78) * step(0.0001, COLOR.a), aa);
 	ALBEDO = mix(vcol(COLOR.rgb), vec3(0.86, 0.84, 0.79), text);
@@ -386,6 +389,7 @@ void fragment() {
 	SPECULAR = 0.5;
 	// Lit signs after dark: bright letters on a softly glowing panel.
 	EMISSION = mix(vcol(COLOR.rgb) * 0.5, vec3(1.0, 0.95, 0.85) * 2.0, text) * smoothstep(0.3, 0.6, night);
+	EMISSION = mix(EMISSION, vcol(COLOR.rgb) * (0.25 + 3.5 * smoothstep(0.2, 0.6, night)), neon);
 }
 """
 
@@ -511,6 +515,7 @@ static func get_mat(key: String) -> Material:
 		"far": mat = _shader(FAR)
 		"membrane": mat = _shader(MEMBRANE)
 		"slipform": mat = _shader(SLIPFORM)
+		"pool": mat = _pool()
 		"foliage": mat = _plain(1.0)
 		_: mat = _plain(0.55)  # paint, shutters, trim
 	_cache[key] = mat
@@ -535,6 +540,30 @@ static func _shader(body: String) -> ShaderMaterial:
 	mat.shader = shader
 	mat.set_shader_parameter("noise_soft", _soft)
 	mat.set_shader_parameter("noise_grain", _grain)
+	return mat
+
+
+## Light thrown by a lot's own lamps after dark (parking-lot LEDs, sign
+## goosenecks): an additive glow, brightest in the middle of the quad and
+## gone by its edge, in the vertex colour; nothing by day. Desktop only.
+const POOL := """
+shader_type spatial;
+render_mode unshaded, blend_add, depth_draw_never, cull_disabled, shadows_disabled, fog_disabled;
+global uniform float night;
+void fragment() {
+	float d = length(UV * 2.0 - 1.0);
+	float f = pow(clamp(1.0 - d, 0.0, 1.0), 2.0);
+	ALBEDO = COLOR.rgb * COLOR.rgb * f * 0.7 * smoothstep(0.25, 0.6, night);
+}
+"""
+
+
+static func _pool() -> ShaderMaterial:
+	var shader := Shader.new()
+	shader.code = POOL
+	var mat := ShaderMaterial.new()
+	mat.shader = shader
+	mat.render_priority = -1
 	return mat
 
 

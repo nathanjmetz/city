@@ -2219,6 +2219,15 @@ func _quad(mat: String, a: Vector3, b: Vector3, c: Vector3, d: Vector3, col: Col
 		st.add_vertex(pts[i])
 
 
+## A soft pool of lamp light after dark (HouseMaterials "pool"), w by h
+## across, centred on c and facing `normal` (the ground by default).
+func _light_pool(c: Vector3, w: float, h: float, col: Color, normal := Vector3.UP) -> void:
+	var u := Vector3(w * 0.5, 0, 0)
+	var v := Vector3(0, 0, h * 0.5) if normal.is_equal_approx(Vector3.UP) else Vector3(0, h * 0.5, 0)
+	_quad("pool", c - u - v, c + u - v, c + u + v, c - u + v, col,
+		[Vector2(0, 0), Vector2(1, 0), Vector2(1, 1), Vector2(0, 1)], normal)
+
+
 func _tri(mat: String, a: Vector3, b: Vector3, c: Vector3, col: Color, uvs := [],
 		want := Vector3.ZERO) -> void:
 	var n := (b - a).cross(c - a).normalized()
@@ -2265,7 +2274,7 @@ func _weather(mat: String, col: Color) -> Color:
 ## How a part weathers (see _weather): glass, signs, plants and plywood keep
 ## their colour; roofing, masonry and everything painted each their own way.
 static func _kind_of(mat: String, col: Color) -> int:
-	if mat in ["glass", "sign", "foliage", "far"] or col == PLYWOOD:
+	if mat in ["glass", "sign", "foliage", "far", "pool"] or col == PLYWOOD:
 		return Weathers.KEEP
 	if mat == "roof":
 		return Weathers.ROOF
