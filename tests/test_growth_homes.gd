@@ -176,7 +176,7 @@ func _init() -> void:
 	_check(styles.size() == 5, "every kind of duplex and the fourplex come up (%s)" % str(styles.keys()))
 	# Postwar walk-ups: the split-entry and mansard kinds fit their lots,
 	# and a third each of the low ones take them.
-	for kind in ["split", "walkmansard"]:
+	for kind in ["split", "walkmansard", "walkmodern"]:
 		for w in [24.0, 28.0, 36.0]:
 			for st in [2, 3]:
 				MetroBuilder.force_row = kind
