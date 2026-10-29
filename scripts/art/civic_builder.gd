@@ -929,7 +929,7 @@ func _flat_roofed_at(mat: String, cx: float, w: float, d: float, cz: float, deck
 	var t := 0.25
 	var ph := top - deck
 	_box(mat, Vector3(w, deck, d), Vector3(cx, deck * 0.5, cz), wall)
-	_dr_note(cx, cz, w, d, deck, "none")
+	_dr_note(cx, cz, w, d, deck, "none", 0.0, mat, wall)
 	var y := deck + 0.02
 	_quad("membrane", Vector3(cx - w * 0.5, y, cz - d * 0.5), Vector3(cx + w * 0.5, y, cz - d * 0.5),
 		Vector3(cx + w * 0.5, y, cz + d * 0.5), Vector3(cx - w * 0.5, y, cz + d * 0.5), _low_slope(w, d, cx + cz, mat == "brick"), [], Vector3.UP)
@@ -949,6 +949,7 @@ func _flat_roofed_at(mat: String, cx: float, w: float, d: float, cz: float, deck
 ## when `back`).
 func _overhead_door(x: float, z: float, w: float, h: float, col: Color, back := false) -> void:
 	var s := 1.0 if back else -1.0
+	_glass_log.append([Vector3(x, 0.3 + h * 0.5, z), Vector3(1, 0, 0), w + 0.6, h + 0.5])
 	_box("siding", Vector3(w, h, 0.08), Vector3(x, 0.3 + h * 0.5, z + s * 0.03), Color(col, 0.0))
 	_glass(Vector3(x, 0.3 + h * 0.72, z + s * 0.08), Vector3(1 if back else -1, 0, 0), w - 0.5, 0.45, 0.0)
 	_box("paint", Vector3(w + 0.3, 0.18, 0.12), Vector3(x, 0.3 + h + 0.09, z + s * 0.06), Color("#cfcbc2"))

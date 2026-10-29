@@ -1040,8 +1040,8 @@ var _dr_main := -1  # the hall that takes the utility corner (-1: the biggest)
 
 ## Notes a hall to dress: centre, width along x, depth along z, eave height.
 ## `busy` is an end wall (-1 or 1 along x) already taken by docks or doors.
-func _dr_note(cx: float, cz: float, w: float, d: float, h: float, roof: String, busy := 0.0) -> void:
-	_dr_halls.append([cx, cz, w, d, h, roof, busy])
+func _dr_note(cx: float, cz: float, w: float, d: float, h: float, roof: String, busy := 0.0, mat := "", wall := Color.WHITE) -> void:
+	_dr_halls.append([cx, cz, w, d, h, roof, busy, mat, wall])
 
 
 ## Dresses every noted hall, then the site's yard (`yard` false: no fence,
@@ -1057,6 +1057,8 @@ func _dress(yard := true, civic := false) -> void:
 		if hall[2] * hall[3] > big[2] * big[3]:
 			big = hall
 		_dr_walls(hall, civic)
+		if civic and hall[7] == "brick":
+			_dr_brick(hall)
 		if hall[5] == "gable":
 			_dr_roof_gable(hall)
 		elif hall[5] == "flat":
@@ -1118,6 +1120,121 @@ func _dr_walls(hall: Array, civic := false) -> void:
 	# Translucent wall lights under a metal eave, along the back.
 	if not flat and h > 6.0:
 		_box("paint", Vector3(w - 1.0, 0.9, 0.04), Vector3(cx, h - 0.9, cz + d * 0.5 + 0.12), Color("#dfe0d6"))
+
+
+## Brick detail on a public building's walls, after Indiana schools,
+## courthouses' annexes and hospitals of the 1950s-70s: a limestone water
+## table at the foot, a precast band a metre under the coping, and on long blank
+## stretches (gyms, stair towers, hospital ends) brick pilasters every
+## 4.5 m and a high aluminium louvre. Everything keeps off windows and
+## doors (_glass_log).
+func _dr_brick(hall: Array) -> void:
+	var cx: float = hall[0]
+	var cz: float = hall[1]
+	var w: float = hall[2]
+	var d: float = hall[3]
+	var h: float = hall[4]
+	var brick: Color = hall[8]
+	var stone := Color(_pick(["#cfc6b0", "#d8d0bc", "#bdb6a6"]))
+	# Each wall: a point at its left end (seen from outside), the way along
+	# it, its outward normal and its length.
+	var walls := [
+		[Vector3(cx + w * 0.5, 0, cz - d * 0.5), Vector3(-1, 0, 0), Vector3(0, 0, -1), w],
+		[Vector3(cx - w * 0.5, 0, cz + d * 0.5), Vector3(1, 0, 0), Vector3(0, 0, 1), w],
+		[Vector3(cx - w * 0.5, 0, cz - d * 0.5), Vector3(0, 0, 1), Vector3(-1, 0, 0), d],
+		[Vector3(cx + w * 0.5, 0, cz + d * 0.5), Vector3(0, 0, -1), Vector3(1, 0, 0), d],
+	]
+	for wall in walls:
+		var p0: Vector3 = wall[0]
+		var along: Vector3 = wall[1]
+		var n: Vector3 = wall[2]
+		var len: float = wall[3]
+		var seg := 1.0
+		var count := int(len / seg)
+		if count < 2:
+			continue
+		var step := len / count
+		var low := []  # blank at the foot (water table)
+		var high := []  # blank under the coping
+		var tall := []  # blank all the way up
+		for i in count:
+			var t0 := i * step
+			var t1 := t0 + step
+			var mid := p0 + along * (t0 + step * 0.5) + n * 0.4
+			var outside := _dr_free(mid, 0.05)
+			low.append(outside and _dr_blank(p0, along, n, t0, t1, 0.0, 0.62))
+			high.append(outside and _dr_blank(p0, along, n, t0, t1, h - 1.1, h - 0.6))
+			tall.append(outside and _dr_blank(p0, along, n, t0 - 0.4, t1 + 0.4, 0.0, h))
+		var a2 := Basis(along, Vector3.UP, n)
+		# Runs of blank segments become one band each.
+		for band in [[low, 0.33, 0.62, 0.07, 0.02], [high, h - 1.0, h - 0.72, 0.06, 0.045]]:
+			var flags: Array = band[0]
+			var i := 0
+			while i < count:
+				if not flags[i]:
+					i += 1
+					continue
+				var j := i
+				while j < count and flags[j]:
+					j += 1
+				# Wrap 14 cm round an open corner (past the other wall's band);
+				# stop 10 cm short of a window or the building next door.
+				var t0 := i * step + 0.1
+				var t1 := j * step - 0.1
+				if i == 0 and _dr_free(p0 - along * 0.3 + n * 0.3, 0.05) and _dr_free(p0 - along * 0.3 - n * 0.3, 0.05):
+					t0 = -0.14
+				if j == count and _dr_free(p0 + along * (len + 0.3) + n * 0.3, 0.05) and _dr_free(p0 + along * (len + 0.3) - n * 0.3, 0.05):
+					t1 = len + 0.14
+				var y0: float = band[1]
+				var y1: float = band[2]
+				# Held off the wall (and clear of any stucco band) so no face lies in
+				# another's plane.
+				var c: Vector3 = p0 + along * ((t0 + t1) * 0.5) + n * (float(band[3]) * 0.5 + float(band[4])) + Vector3(0, (y0 + y1) * 0.5, 0)
+				_box("concrete", Vector3(t1 - t0, y1 - y0, float(band[3])), c, stone, a2)
+				i = j
+		# Pilasters and a louvre on long blank stretches.
+		if h < 5.0:
+			continue
+		var i := 0
+		while i < count:
+			if not tall[i]:
+				i += 1
+				continue
+			var j := i
+			while j < count and tall[j]:
+				j += 1
+			var run := (j - i) * step
+			if run >= 9.0:
+				var k := maxi(1, int(run / 4.5))
+				for q in k + 1:
+					var t := i * step + 0.5 + q * (run - 1.0) / k
+					var c := p0 + along * t + n * 0.115 + Vector3(0, h * 0.5, 0)
+					_box("brick", Vector3(0.6, h - 0.05, 0.16), c, brick.darkened(0.05), a2)
+					_box("concrete", Vector3(0.72, 0.18, 0.24), p0 + along * t + n * 0.18 + Vector3(0, h - 0.35, 0), stone, a2)
+				if run >= 12.0:
+					var lc := p0 + along * (i * step + run * 0.5 + 2.25) + n * 0.06 + Vector3(0, h - 1.9, 0)
+					_box("metal", Vector3(1.5, 1.2, 0.06), lc, Color("#9ea2a2"), a2)
+					for r in 5:
+						_box("metal", Vector3(1.44, 0.04, 0.06), lc + n * 0.02 + Vector3(0, -0.48 + r * 0.24, 0), Color("#7f8484"), a2)
+			i = j
+
+
+## Whether a stretch of wall (t0..t1 along it from p0, y0..y1 up) is clear of
+## every logged window and door on that wall.
+func _dr_blank(p0: Vector3, along: Vector3, n: Vector3, t0: float, t1: float, y0: float, y1: float) -> bool:
+	for g in _glass_log:
+		var c: Vector3 = g[0]
+		if absf((c - p0).dot(n)) > 0.45:
+			continue
+		var right: Vector3 = g[1]
+		if absf(right.normalized().dot(along)) < 0.7:
+			continue  # a pane at right angles to this wall (a vestibule side)
+		var t := (c - p0).dot(along)
+		var hw: float = g[2] * 0.5 + 0.25
+		var hh: float = g[3] * 0.5 + 0.2
+		if t + hw > t0 and t - hw < t1 and c.y + hh > y0 and c.y - hh < y1:
+			return false
+	return true
 
 
 func _dr_spout(foot: Vector3, h: float, col: Color, out: Vector3, scupper: bool) -> void:
