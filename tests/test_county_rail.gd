@@ -55,6 +55,18 @@ func _init() -> void:
 	var cross := CountyRail.crossing(mid + Vector2(-30, -30), mid + Vector2(30, 30))
 	_check(not cross.is_empty() or CountyRail.near(mid.x, mid.y, 1.0).is_empty(), "a line drawn over the track crosses it")
 
+	# Farmhouses stand back from the track, past its right of way.
+	FarmsteadPlan.load_places()
+	var close := 0
+	var data := FileAccess.get_file_as_bytes(Terrain.DIR + "farmsteads.bin")
+	for i in data.decode_u32(4):
+		var at := 8 + i * 7
+		var q := FarmsteadPlan.off_rail(Vector2(data.decode_s16(at), data.decode_s16(at + 2)))
+		if CountyRail.distance(q.x, q.y, 40.0) < 40.0:
+			close += 1
+	_check(close == 0, "no farmstead stands on the railroad (%d too close)" % close)
+
+
 	print("FAILED" if _failed else "ALL PASSED")
 	quit(1 if _failed else 0)
 
