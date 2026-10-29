@@ -63,6 +63,10 @@ static func site_plan(seed: int, lot: Dictionary, strip := false) -> Dictionary:
 ## The same for an office (build_office), whose lot is out back.
 static func office_plan(seed: int, lot: Dictionary, storeys: int) -> Dictionary:
 	var b := DenseBuilder._start(seed, lot)
+	# An old street's office block is at the sidewalk with no lot of its
+	# own (build_office): its people park at the curb.
+	if b.era == "prewar":
+		return b.site
 	b._dry = true
 	b._office(3.9, b.half * 2.0, storeys)
 	return b.site
