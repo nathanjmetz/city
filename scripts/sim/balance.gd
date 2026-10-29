@@ -2180,6 +2180,10 @@ const STATION_BOND_DOWN := 0.25
 ## A school's capital comes from its Operations Fund (IC 20-46-8), a
 ## bigger levy than a town's cumulative funds: dollars a resident a month.
 const STATION_LEVY_OF := {"school": 3.0}
+## What a department pays for the homes or shops it buys behind its station
+## (dollars a square metre of lot, about a small Indiana town's improved
+## residential land with the house on it).
+const STATION_LAND_PER_M2 := 70.0
 ## Each piece: `cost` dollars from the fund, `grow` metres the lot reaches
 ## further back from the street (0 builds on what it has), `needs` from the
 ## town (population; tall = buildings of 3+ storeys; city = a city charter),
