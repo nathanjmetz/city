@@ -1439,6 +1439,51 @@ func _trailhead(size: Vector2, to_curb: float) -> void:
 		_box("metal", Vector3(0.65, 0.05, 0.05), r + Vector3(0, 0.9, 0), DARK)
 	_bench(Vector3(-5.0, 0, -hz + 22.5), 0.0)
 	_park_sign(Vector3(hx - 5.0, 0, -hz + 1.5), "TRAILHEAD")
+	# What real Indiana trailheads add (Cardinal Greenway, Nickel Plate,
+	# Monon): a split-rail fence round the lot, a concrete van-accessible
+	# stall with its blue sign, a picnic table in the shade, a trash can and
+	# a dog-waste station by the trail, and shade trees round the edge.
+	var rail := Color("#8a7458")
+	_split_rail(Vector3(-hx + 1.2, 0, -hz + 3.0), Vector3(-hx + 1.2, 0, -hz + 17.5), rail)
+	_split_rail(Vector3(hx - 1.2, 0, -hz + 3.0), Vector3(hx - 1.2, 0, -hz + 17.5), rail)
+	_split_rail(Vector3(-hx + 1.2, 0, -hz + 17.5), Vector3(-Balance.TRAIL_WIDTH - 1.0, 0, -hz + 17.5), rail)
+	_split_rail(Vector3(Balance.TRAIL_WIDTH + 1.0, 0, -hz + 17.5), Vector3(hx - 1.2, 0, -hz + 17.5), rail)
+	var ax := -hx + 4.0 + 1.4
+	_flat_rect("drive", ax - 2.4, ax + 2.4, -hz + 9.5, -hz + 16.0, 0.07)
+	# The 8 ft access aisle beside it: a blue outline and diagonal hatching.
+	var blue := Color("#2a5aa8")
+	_flat_rect("line", ax + 0.2, ax + 0.3, -hz + 9.6, -hz + 15.9, 0.075, blue)
+	_flat_rect("line", ax + 2.2, ax + 2.3, -hz + 9.6, -hz + 15.9, 0.075, blue)
+	for i in 6:
+		var z := -hz + 10.2 + i * 1.0
+		_strip(Vector3(ax + 0.3, 0, z), Vector3(ax + 2.2, 0, z + 0.7), 0.1, "line", blue, 0.076)
+	_box("metal", Vector3(0.07, 2.1, 0.07), Vector3(ax - 1.6, 1.05, -hz + 16.3), GALV)
+	_box("paint", Vector3(0.3, 0.45, 0.03), Vector3(ax - 1.6, 1.9, -hz + 16.26), Color("#2a5aa8"))
+	_table(Vector3(5.5, 0, -hz + 23.5))
+	var bin := Vector3(Balance.TRAIL_WIDTH * 0.5 + 1.6, 0, -hz + 18.4)
+	_cylinder("metal", bin, 0.32, 0.95, Color("#2f4632"), 12)
+	_box("metal", Vector3(0.06, 1.2, 0.06), bin + Vector3(1.0, 0.6, 0), Color("#2f4632"))
+	_box("paint", Vector3(0.36, 0.4, 0.12), bin + Vector3(1.0, 1.05, -0.06), Color("#2f4632"))
+	for i in 7:
+		var pick := TreeField.pick(rng)
+		var side := -1.0 if i % 2 == 0 else 1.0
+		var p := Vector3(side * (hx - 3.0 - rng.randf_range(0.0, 2.0)), 0, -hz + 19.0 + i * 2.5)
+		if absf(p.x) > Balance.TRAIL_WIDTH + 2.0 and p.z < hz - 2.0:
+			trees.append([p, pick[0], pick[1], rng.randf_range(0.8, 1.1)])
+
+
+## A two-rail split-rail fence (cedar posts about 3 m apart) from a to b.
+func _split_rail(a: Vector3, b: Vector3, col: Color) -> void:
+	var len := a.distance_to(b)
+	if len < 0.5:
+		return
+	var dir := (b - a) / len
+	var yaw := Basis(Vector3.UP, atan2(dir.x, dir.z))
+	var n := maxi(1, int(len / 3.0))
+	for k in n + 1:
+		_box("paint", Vector3(0.16, 1.15, 0.16), a + dir * (len * k / n) + Vector3(0, 0.575, 0), col.darkened(0.1))
+	for y in [0.45, 0.9]:
+		_box("paint", Vector3(0.1, 0.12, len), (a + b) * 0.5 + Vector3(0, y, 0) + Vector3(dir.z, 0, -dir.x) * 0.1, col, yaw)
 
 
 ## The town's trails as one flat mesh in world space (y = 0, to drape over

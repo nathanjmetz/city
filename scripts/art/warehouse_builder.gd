@@ -41,6 +41,9 @@ static func build_warehouse(w: Dictionary, seed: int, to_curb: float) -> Array:
 	b.rng.seed = seed
 	b._flat.begin(Mesh.PRIMITIVE_TRIANGLES)
 	b._warehouse(w, to_curb)
+	b.half = Warehouses.site_width(w) * 0.5
+	b.depth = Warehouses.site_depth(w) * 0.5
+	b._dress(false)
 	return [b._commit_house(), b._commit_flat(), b.trees]
 
 
@@ -59,6 +62,7 @@ func _warehouse(w: Dictionary, to_curb: float) -> void:
 	# The box: tilt-up panels, parapet, flat white roof.
 	_slab(cx, bw, zf, bd)
 	_flat_roofed_at("paint", cx, bw, bd, zf + bd * 0.5, h, h + 1.0, wall)
+	_dr_halls[-1][6] = 1.0  # the drive-in door and side drive are at +x
 	var y := h + 0.04
 	_quad("paint", Vector3(cx - bw * 0.5 + 0.3, y, zf + 0.3), Vector3(cx + bw * 0.5 - 0.3, y, zf + 0.3),
 		Vector3(cx + bw * 0.5 - 0.3, y, zf + bd - 0.3), Vector3(cx - bw * 0.5 + 0.3, y, zf + bd - 0.3), MEMBRANE, [], Vector3.UP)
