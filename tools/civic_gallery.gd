@@ -82,7 +82,7 @@ func _init() -> void:
 		elif name in ["high_school", "college", "university"]:
 			size = Vector2(120, 120)
 			built = CampusBuilder.build_main(name, sd, to_curb)
-		elif name in ["cemetery", "landfill", "recycling"]:
+		elif name in ["cemetery", "landfill", "recycling", "recycling2", "recycling3"]:
 			# A hub grown over three pieces across and two back.
 			var cells := []
 			for x in [-1, 0, 1]:
@@ -90,7 +90,7 @@ func _init() -> void:
 					cells.append(Vector2i(x, y))
 			size = Vector2(150, 100)
 			lot_front = true
-			var hub := HubBuilder.build_hub({"kind": "recycling_1" if name == "recycling" else name, "cells": cells,
+			var hub := HubBuilder.build_hub({"kind": "recycling_" + ("1" if name == "recycling" else name.right(1)) if name.begins_with("recycling") else name, "cells": cells,
 				"cell": 50.0, "built": [], "received": 40_000_000}, sd, to_curb)
 			built = [hub[0], hub[1], hub[2], [], hub[3]]
 		elif name == "warehouse":
