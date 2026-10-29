@@ -331,6 +331,10 @@ func _mixed(to_curb: float, width: float, storeys: int) -> void:
 		# A bronze plaque on the end pier by the stair door: the district's listing.
 		_box("metal", Vector3(0.45, 0.32, 0.04), Vector3(sx + signf(sx) * 0.62, 1.55, zf - 0.23), Color("#6b5428"))
 	_alley_side(w, zf + d, fronts, fw, storeys, shop_h, floor_h, wall)
+	if fine and storeys >= 2:
+		_party_wall(w, d, zf, shop_h, floor_h, storeys, wall)
+	if fine:
+		_front_signs(w, zf, fronts, fw, shop_h, storeys)
 	if depth > zf + d + 3.0:
 		_flat_rect("asphalt", -width * 0.5, width * 0.5, zf + d, minf(depth, zf + d + 10.0), 0.06)
 	_downtown_walk(to_curb, width, zf)
@@ -394,6 +398,121 @@ func _alley_side(w: float, zb: float, fronts: int, fw: float, storeys: int, shop
 			_box("paint", Vector3(1.1, 0.08, 0.14), Vector3(x, y - wh * 0.5 - 0.04, zb + 0.07), FOUNDATION)
 	if fine:
 		_alley_services(w, zb, fronts, fw, storeys, shop_h, floor_h, n)
+
+
+## The side walls of a Main Street block, which show wherever the
+## neighbour is lower or gone (Marion, Wabash, Anderson): windows bricked
+## up in a slightly different brick, and on a tall block now and then a
+## faded painted advertisement, a "ghost sign" for a flour, tobacco or soft
+## drink brand, its lettering worn to pale bands. Desktop only, with its own
+## random numbers so the builder's don't move.
+## Main Street signs that stick out over the walk, desktop only: double-faced
+## blade signs on wrought-iron brackets between the shopfronts (a few of them
+## outlined in neon, the 1940s way) and gooseneck lamps that light the flat
+## sign boards, as on restored fronts in Wabash, Madison or Marion.
+func _front_signs(w: float, zf: float, fronts: int, fw: float, shop_h: float, storeys: int) -> void:
+	var r := RandomNumberGenerator.new()
+	r.seed = hash([rng.seed, 23])
+	var iron := Color("#1e1e20")
+	for k in fronts:
+		var fx := -w * 0.5 + (k + 0.5) * fw
+		var sw := fw - 1.0
+		# Goosenecks over the board: barn-style shades on curved arms.
+		if r.randf() < 0.45:
+			var lamps := 2 if sw < 6.0 else 3
+			# Their light washing down the board.
+			_light_pool(Vector3(fx, 3.85, zf - 0.16), sw * 0.95, 1.4, Color(1.0, 0.86, 0.6), Vector3.FORWARD)
+			for q in lamps:
+				var lx := fx + (float(q) - (lamps - 1) * 0.5) * sw * 0.8 / lamps
+				_box("paint", Vector3(0.04, 0.04, 0.42), Vector3(lx, 4.45, zf - 0.52), iron)
+				_box("paint", Vector3(0.04, 0.22, 0.04), Vector3(lx, 4.35, zf - 0.71), iron)
+				_box("paint", Vector3(0.22, 0.08, 0.22), Vector3(lx, 4.22, zf - 0.71), Color("#2c3e2f"))
+				# The lamp's lens, facing down at the sign; it glows after dark.
+				_quad("sign", Vector3(lx - 0.09, 4.175, zf - 0.8), Vector3(lx + 0.09, 4.175, zf - 0.8),
+					Vector3(lx + 0.09, 4.175, zf - 0.62), Vector3(lx - 0.09, 4.175, zf - 0.62),
+					Color(1.0, 0.86, 0.6, 1.0), [], Vector3.DOWN)
+		# Blade signs hang over the walk from the upper floor's pier.
+		if storeys < 2 or r.randf() > 0.4:
+			continue
+		var bx := fx - fw * 0.5 + 0.3 if k > 0 else fx + sw * 0.5 + 0.1
+		# Boards about 1 m out; some stand tall, the old vertical kind.
+		var bl := r.randf_range(0.8, 1.2)
+		var bh := r.randf_range(0.7, 1.1) if r.randf() < 0.65 or storeys == 2 else r.randf_range(1.6, 2.4)
+		var y0 := shop_h + 0.45
+		var z0 := zf - 0.45
+		var col := Color(CommercialBuilder.SIGNS[r.randi() % CommercialBuilder.SIGNS.size()])
+		col.a = bl / 30.0
+		for s in [-1.0, 1.0]:
+			var x: float = bx + s * 0.035
+			_quad("sign", Vector3(x, y0, z0), Vector3(x, y0, z0 - bl), Vector3(x, y0 + bh, z0 - bl), Vector3(x, y0 + bh, z0),
+				col, [Vector2(0, 0), Vector2(bl, 0), Vector2(bl, 1), Vector2(0, 1)], Vector3(s, 0, 0))
+		var frame := col.darkened(0.45)
+		frame.a = 1.0
+		_box("paint", Vector3(0.05, bh + 0.08, bl + 0.08), Vector3(bx, y0 + bh * 0.5, z0 - bl * 0.5), frame)
+		# The bracket: an arm off the wall, a diagonal brace and two hangers.
+		var arm_y := y0 + bh + 0.22
+		_box("paint", Vector3(0.05, 0.05, bl + 0.5), Vector3(bx, arm_y, zf - 0.02 - (bl + 0.5) * 0.5), iron)
+		var brace := Vector3(0, 0.5, -0.5)
+		_box("paint", Vector3(0.04, 0.04, brace.length()), Vector3(bx, arm_y - 0.25, zf - 0.27),
+			iron, Basis.looking_at(brace.normalized(), Vector3.RIGHT))
+		for t in [0.15, bl - 0.15]:
+			_box("paint", Vector3(0.025, 0.2, 0.025), Vector3(bx, y0 + bh + 0.12, z0 - t), iron)
+		if r.randf() < 0.3:
+			# Neon tubing around the board, both faces: lit after dark.
+			var neon := Color(["#ff3b6b", "#ff5a2a", "#4ad0ff", "#ffd23a", "#7dff6a"][r.randi() % 5])
+			neon.a = 1.0
+			for s in [-1.0, 1.0]:
+				var x: float = bx + s * 0.07
+				for e in [[Vector3(0.03, 0.03, bl - 0.14), Vector3(x, y0 + 0.07, z0 - bl * 0.5)],
+						[Vector3(0.03, 0.03, bl - 0.14), Vector3(x, y0 + bh - 0.07, z0 - bl * 0.5)],
+						[Vector3(0.03, bh - 0.17, 0.03), Vector3(x, y0 + bh * 0.5, z0 - 0.07)],
+						[Vector3(0.03, bh - 0.17, 0.03), Vector3(x, y0 + bh * 0.5, z0 - bl + 0.07)]]:
+					_box("sign", e[0], e[1], neon)
+
+
+func _party_wall(w: float, d: float, zf: float, shop_h: float, floor_h: float, storeys: int, wall: Color) -> void:
+	var r := RandomNumberGenerator.new()
+	r.seed = hash([rng.seed, 4421])
+	for s in [-1.0, 1.0]:
+		var x: float = s * (w * 0.5 + 0.012)
+		var n := int((d - 4.0) / 4.5)
+		for f in range(1, storeys):
+			var y := shop_h + (f - 1) * floor_h + 1.6
+			for i in n:
+				if r.randf() < 0.5:
+					var z := zf + 2.5 + i * 4.5
+					var infill := wall.darkened(r.randf_range(0.04, 0.12)).lerp(Color("#8a5a44"), 0.15)
+					_box("brick", Vector3(0.02, 1.7, 0.95), Vector3(x, y, z), infill)
+					_box("paint", Vector3(0.03, 0.08, 1.05), Vector3(x + s * 0.005, y - 0.9, z), Color("#b9b2a2"))  # the old sill
+		if storeys >= 3 and r.randf() < 0.55:
+			var y0 := shop_h + 0.8
+			var y1 := shop_h + (storeys - 1) * floor_h - 0.6
+			var len := minf(d - 4.0, r.randf_range(8.0, 14.0))
+			var zc := zf + 2.0 + len * 0.5
+			var grounds := [Color("#7a3a30"), Color("#2f4a6a"), Color("#e2d6b4"), Color("#3c4a36")]
+			var ground: Color = grounds[r.randi() % grounds.size()].lerp(wall, 0.45)
+			# Painted straight on the brick, so the bricks still show through.
+			_box("brick", Vector3(0.02, y1 - y0, len), Vector3(x + s * 0.008, (y0 + y1) * 0.5, zc), ground)
+			var ink := Color("#efe6cc").lerp(wall, 0.35)
+			var rows := 2 + r.randi() % 2
+			for k in rows:
+				var ry := lerpf(y1 - 0.9, y0 + 0.7, float(k) / (rows - 1))
+				var rh := 0.9 if k == 0 else 0.5
+				var rl := len * r.randf_range(0.55, 0.85)
+				# Words: runs of letters with gaps between them, a few worn away.
+				var words := 1 + r.randi() % 3
+				var gap := 0.6
+				var wl := (rl - gap * (words - 1)) / words
+				for q in words:
+					var wz := zc - rl * 0.5 + q * (wl + gap) + wl * 0.5
+					var letters := maxi(2, int(wl / (rh * 0.8)))
+					var lw := wl / letters
+					for c in letters:
+						if r.randf() < 0.15:
+							continue
+						var lz := wz - wl * 0.5 + (c + 0.5) * lw
+						_box("brick", Vector3(0.02, rh * r.randf_range(0.8, 1.0), lw * 0.72), Vector3(x + s * 0.02, ry, lz),
+							ink.lerp(wall, r.randf_range(0.0, 0.3)))
 
 
 ## What hangs on a real alley wall downtown (Marion, Wabash, Muncie): each
@@ -537,6 +656,11 @@ func _street_furniture(width: float, tz: float) -> void:
 
 static func build_office(seed: int, to_curb: float, lot: Dictionary, storeys: int, spec := {}) -> Array:
 	var b := _start(seed, lot, spec)
+	# On an old street an office is a Chicago School commercial block at the
+	# sidewalk from the start (the 1900s-20s office blocks of Indianapolis
+	# and Marion), the same look its tower grows into.
+	if b.era == "prewar":
+		return TowerBuilder.build_tower(seed, to_curb, lot, storeys, spec, "chicago")
 	b._office(to_curb, b.half * 2.0, storeys)
 	b._service_yard(false)
 	return b._done()

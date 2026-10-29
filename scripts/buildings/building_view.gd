@@ -296,33 +296,10 @@ func _look(b: Dictionary, key: String) -> Array:
 func _draw(key: String, lot: Dictionary, b: Dictionary, fit: Dictionary, s: int) -> Array:
 	var spec := sim.families.sign_of(sim, "lot:" + key)
 	var storeys := BuildingTypes.storeys(b)
-	var built := []
 	HouseBuilder.owner_care = sim.care.tier_of(key)
 	HouseBuilder.restored = sim.heritage.protected(key)
 	HouseBuilder.keep_arrays = true
-	match BuildingTypes.type_of(b):
-		"house": built = HouseBuilder.build(s, lot.to_curb, fit, storeys)
-		"row_home": built = MetroBuilder.build_row(s, lot.to_curb, fit, int(b.get("units", 2)), storeys)
-		"apartments":
-			# A high-rise is a tower like the offices (860-880 Lake Shore
-			# Drive is apartments).
-			if storeys >= 8:
-				built = TowerBuilder.build_tower(s, lot.to_curb, fit, storeys, {}, "", true)
-			else:
-				built = MetroBuilder.build_apartments(s, lot.to_curb, fit, storeys)
-		"shop": built = DenseBuilder.build_retail(s, lot.to_curb, fit, spec)
-		"shopping_center":
-			CommercialBuilder.force_shop = "strip"
-			built = DenseBuilder.build_retail(s, lot.to_curb, fit, spec)
-			CommercialBuilder.force_shop = ""
-		"mixed_use": built = DenseBuilder.build_mixed(s, lot.to_curb, fit, storeys, spec)
-		"office":
-			# Eight storeys and up is a downtown tower, built for its era.
-			if storeys >= 8:
-				built = TowerBuilder.build_tower(s, lot.to_curb, fit, storeys, spec)
-			else:
-				built = DenseBuilder.build_office(s, lot.to_curb, fit, storeys, spec)
-		_: built = FactoryBuilder.build_chain(b.get("chain", "general"), s, lot.to_curb, fit, spec)
+	var built := build_for(BuildingTypes.type_of(b), storeys, s, lot.to_curb, fit, spec, int(b.get("units", 2)), b.get("chain", "general"), int(b.get("level", 0)))
 	HouseBuilder.keep_arrays = false
 	HouseBuilder.owner_care = 0
 	HouseBuilder.restored = false
@@ -330,6 +307,37 @@ func _draw(key: String, lot: Dictionary, b: Dictionary, fit: Dictionary, s: int)
 		return []
 	return [built[0].get_meta("parts", []), built[1].get_meta("parts", []), built[2] if built.size() > 2 else [],
 		built[3] if built.size() > 3 else []]
+
+
+## What a type's builder draws for a stage of `storeys` on lot `fit` (the
+## game's own pick, shared with tools/growth_strip.gd).
+static func build_for(type: String, storeys: int, s: int, to_curb: float, fit: Dictionary, spec := {}, units := 2, chain := "general", level := 0) -> Array:
+	var built := []
+	match type:
+		"house": built = HouseBuilder.build(s, to_curb, fit, storeys)
+		"row_home": built = MetroBuilder.build_row(s, to_curb, fit, units, storeys)
+		"apartments":
+			# A high-rise is a tower like the offices (860-880 Lake Shore
+			# Drive is apartments).
+			if storeys >= 8:
+				built = TowerBuilder.build_tower(s, to_curb, fit, storeys, {}, "", true)
+			else:
+				built = MetroBuilder.build_apartments(s, to_curb, fit, storeys)
+		"shop": built = DenseBuilder.build_retail(s, to_curb, fit, spec)
+		"shopping_center":
+			# A neighborhood center (the second stage) has a grocer anchor.
+			CommercialBuilder.force_shop = "center" if level >= 1 else "strip"
+			built = DenseBuilder.build_retail(s, to_curb, fit, spec)
+			CommercialBuilder.force_shop = ""
+		"mixed_use": built = DenseBuilder.build_mixed(s, to_curb, fit, storeys, spec)
+		"office":
+			# Eight storeys and up is a downtown tower, built for its era.
+			if storeys >= 8:
+				built = TowerBuilder.build_tower(s, to_curb, fit, storeys, spec)
+			else:
+				built = DenseBuilder.build_office(s, to_curb, fit, storeys, spec)
+		_: built = FactoryBuilder.build_chain(chain, s, to_curb, fit, spec)
+	return built
 
 
 ## Draws building `key` (or, `refill`, only fetches its full drawing again

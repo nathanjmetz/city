@@ -1644,6 +1644,38 @@ const PARK_TREE := [
 		"effects": {"upkeep+": 1_500, "value+": 0.02, "happy+": 0.02}},
 	{"id": "nature_trail", "branch": "Nature", "name": "Nature trail", "size": Vector2.ZERO, "cost": 150_000,
 		"requires": ["walking_loop"], "needs": {"forest": 0.3}, "effects": {"upkeep+": 600, "value+": 0.01, "happy+": 0.02}},
+	# Growth-stage items (Brawn 2026-10-29: a park needs many options to grow
+	# from a lawn into a major park). Sizes are the real layouts: USA
+	# Pickleball's 30 x 60 ft pad per court, ITF tennis courts with runoff,
+	# FIVB beach courts with their free zone; costs from Indiana park
+	# board projects of the 2020s.
+	{"id": "pickleball", "branch": "Sports", "name": "Pickleball courts", "size": Vector2(40, 22), "cost": 350_000,
+		"requires": ["court"], "needs": {"tier": 1, "population": 1_000},
+		"effects": {"upkeep+": 1_200, "value+": 0.01, "happy+": 0.03}},
+	{"id": "tennis", "branch": "Sports", "name": "Tennis courts", "size": Vector2(38, 38), "cost": 600_000,
+		"requires": ["pickleball"], "needs": {"tier": 2, "population": 2_500},
+		"effects": {"upkeep+": 2_000, "value+": 0.01, "happy+": 0.02}},
+	{"id": "volleyball", "branch": "Sports", "name": "Sand volleyball", "size": Vector2(24, 30), "cost": 80_000,
+		"requires": ["pavilion"], "needs": {"population": 600}, "effects": {"upkeep+": 400, "happy+": 0.02}},
+	{"id": "dog_park", "branch": "Play", "name": "Dog park", "size": Vector2(40, 30), "cost": 150_000,
+		"requires": ["paths"], "needs": {"tier": 1, "population": 2_000},
+		"effects": {"upkeep+": 900, "value+": 0.01, "happy+": 0.03}},
+	{"id": "skate_park", "branch": "Play", "name": "Skate park", "size": Vector2(30, 24), "cost": 450_000,
+		"requires": ["playground"], "needs": {"tier": 1, "population": 2_000},
+		"effects": {"upkeep+": 1_500, "happy+": 0.03}},
+	{"id": "shelter_house", "branch": "Gathering", "name": "Shelter house", "size": Vector2(26, 16), "cost": 900_000,
+		"requires": ["pavilion"], "needs": {"tier": 1, "population": 1_500},
+		"effects": {"upkeep+": 3_000, "value+": 0.01, "happy+": 0.03}, "note": "families rent it for reunions and parties"},
+	{"id": "amphitheater", "branch": "Gathering", "name": "Amphitheater", "size": Vector2(52, 44), "cost": 2_500_000,
+		"requires": ["bandstand"], "needs": {"tier": 2, "population": 5_000, "link": 1},
+		"effects": {"upkeep+": 10_000, "value+": 0.02, "happy+": 0.05}, "note": "summer concerts draw neighbor towns"},
+	{"id": "veterans_memorial", "branch": "Gathering", "name": "Veterans memorial", "size": Vector2(20, 20),
+		"cost": 250_000, "requires": ["paths"], "needs": {"population": 1_000},
+		"effects": {"upkeep+": 500, "value+": 0.01, "happy+": 0.02}},
+	{"id": "community_garden", "branch": "Nature", "name": "Community garden", "size": Vector2(26, 20), "cost": 60_000,
+		"requires": ["paths"], "needs": {"population": 800}, "effects": {"upkeep+": 300, "happy+": 0.02}},
+	{"id": "disc_golf", "branch": "Nature", "name": "Disc golf course", "size": Vector2.ZERO, "cost": 40_000,
+		"requires": ["walking_loop"], "needs": {"population": 1_500}, "effects": {"upkeep+": 300, "happy+": 0.02}},
 	{"id": "pool", "branch": "Water", "name": "Swimming pool", "size": Vector2(50, 36), "cost": 2_500_000,
 		"needs": {"tier": 1, "population": 1_500, "water": 1}, "effects": {"upkeep+": 9_000, "happy+": 0.05}},
 	{"id": "aquatic_center", "branch": "Water", "name": "Aquatic center", "size": Vector2(80, 60), "cost": 8_000_000,
@@ -1871,6 +1903,23 @@ const HUB_TREES := {
 		{"id": "transfer", "name": "Transfer station", "cost": 900_000, "upkeep": 7_000,
 			"needs": {"link": 1, "region_buys:garbage": 1}, "effects": {"garbage": 600.0},
 			"note": "a neighbor town pays to send its trash here"},
+		# Leachate tanks and a pretreatment plant: what drains through the
+		# trash is pumped out and cleaned before it goes to the sewer
+		# (federal Subtitle D liners and collection; IDEM 329 IAC 10).
+		{"id": "leachate", "name": "Leachate treatment", "cost": 1_100_000, "upkeep": 6_000,
+			"needs": {"site_pieces": 6, "education": 0.3}, "effects": {"value": 0.01, "reach": 80.0},
+			"note": "no more smell from the ditches"},
+		# A screen of evergreens on a berm round the fence, as county zoning
+		# asks of a landfill near homes.
+		{"id": "screen", "name": "Tree screen", "cost": 150_000, "upkeep": 1_000,
+			"needs": {"population": 1_500}, "effects": {"value": 0.015, "reach": 120.0},
+			"note": "homes nearby stop seeing the mound"},
+		# Solar panels on the capped cells, as at more than a hundred US
+		# landfills (EPA RE-Powering America's Land), once the gas collection
+		# system is in.
+		{"id": "solar", "name": "Solar on the cap", "cost": 2_800_000, "upkeep": 4_000, "requires": ["gas_plant"],
+			"needs": {"site_pieces": 6, "site_tons": 30_000}, "effects": {"power": 900.0},
+			"note": "the closed cells make power"},
 	],
 	"recycling": [
 		# Scrap metal yard: crushes and bales metal for the metal works.
@@ -1885,6 +1934,21 @@ const HUB_TREES := {
 		# Sorting a neighbor town's recycling for a fee.
 		{"id": "regional_mrf", "name": "Regional sorting contract", "cost": 500_000, "upkeep": 3_000,
 			"needs": {"site_level": 3, "link": 1, "region_buys:garbage": 1}, "effects": {"garbage": 900.0}},
+		# Scrap tires shredded into chips for playground mulch and fuel, as at
+		# Indiana's registered tire processors.
+		{"id": "tire_shred", "name": "Tire shredder", "cost": 800_000, "upkeep": 5_000,
+			"needs": {"site_level": 2, "population": 2_500}, "effects": {"sales*": 0.2},
+			"note": "tire chips for playgrounds and fuel"},
+		# Concrete and asphalt from torn-out streets and buildings, crushed
+		# into gravel for new roads (a C&D recycling yard).
+		{"id": "crusher", "name": "Concrete crusher", "cost": 1_000_000, "upkeep": 6_000,
+			"needs": {"population": 1_800}, "effects": {"sales*": 0.25},
+			"note": "old concrete back into road base"},
+		# A reuse store selling salvaged doors, cabinets and furniture, like
+		# a Habitat for Humanity ReStore.
+		{"id": "reuse", "name": "Reuse store", "cost": 300_000, "upkeep": 3_000,
+			"needs": {"population": 1_200}, "effects": {"value": 0.01, "reach": 60.0, "sales*": 0.05},
+			"note": "salvage sold back to the town"},
 	],
 	"cemetery": [
 		{"id": "chapel", "name": "Chapel", "cost": 350_000, "upkeep": 2_000,
@@ -1897,6 +1961,14 @@ const HUB_TREES := {
 		# far, under trees instead of lawn.
 		{"id": "woods", "name": "Natural burial woods", "cost": 200_000, "upkeep": 1_500,
 			"needs": {"site_forest": 0.3}, "effects": {"grow": 0.5}},
+		# Granite niche walls for urns: more than half of Americans are now
+		# cremated (NFDA), and a wall holds hundreds in the space of a row.
+		{"id": "columbarium", "name": "Columbarium", "cost": 400_000, "upkeep": 1_000,
+			"needs": {"population": 1_500}, "effects": {"grow": 0.25}, "note": "room for urns"},
+		# Stone gate piers and a wrought iron arch with the cemetery's name,
+		# as at old Indiana town cemeteries.
+		{"id": "gates", "name": "Entrance gates", "cost": 200_000, "upkeep": 500,
+			"needs": {"population": 800}, "effects": {"value": 0.01, "reach": 60.0}},
 	],
 }
 ## The town funds its landfills, recycling and cemeteries: their leaders plan
