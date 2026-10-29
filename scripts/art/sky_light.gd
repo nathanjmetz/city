@@ -141,6 +141,12 @@ func _ready() -> void:
 		# of the haze colour at every height); about half that keeps a hazy
 		# summer sky pale but blue.
 		env.fog_sky_affect = 0.14
+		# AgX's default curve left the town under a grey veil from the
+		# heights it's played at: woods olive-grey, lawns khaki, shade
+		# lifted. Aerial photos of a Grant County town in July have dark
+		# tree crowns, saturated green lawns and crisp roofs; a steeper
+		# curve (1.25 -> 1.5) gets there (Forward+ only).
+		env.tonemap_agx_contrast = 1.5
 	# Lamps, lit windows and headlights bloom a little; daylight never does.
 	env.glow_enabled = true
 	env.glow_hdr_threshold = 1.2
