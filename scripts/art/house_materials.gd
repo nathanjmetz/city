@@ -515,6 +515,7 @@ static func get_mat(key: String) -> Material:
 		"far": mat = _shader(FAR)
 		"membrane": mat = _shader(MEMBRANE)
 		"slipform": mat = _shader(SLIPFORM)
+		"pool": mat = _pool()
 		"foliage": mat = _plain(1.0)
 		_: mat = _plain(0.55)  # paint, shutters, trim
 	_cache[key] = mat
@@ -539,6 +540,30 @@ static func _shader(body: String) -> ShaderMaterial:
 	mat.shader = shader
 	mat.set_shader_parameter("noise_soft", _soft)
 	mat.set_shader_parameter("noise_grain", _grain)
+	return mat
+
+
+## Light thrown by a lot's own lamps after dark (parking-lot LEDs, sign
+## goosenecks): an additive glow, brightest in the middle of the quad and
+## gone by its edge, in the vertex colour; nothing by day. Desktop only.
+const POOL := """
+shader_type spatial;
+render_mode unshaded, blend_add, depth_draw_never, cull_disabled, shadows_disabled, fog_disabled;
+global uniform float night;
+void fragment() {
+	float d = length(UV * 2.0 - 1.0);
+	float f = pow(clamp(1.0 - d, 0.0, 1.0), 2.0);
+	ALBEDO = COLOR.rgb * COLOR.rgb * f * 0.7 * smoothstep(0.25, 0.6, night);
+}
+"""
+
+
+static func _pool() -> ShaderMaterial:
+	var shader := Shader.new()
+	shader.code = POOL
+	var mat := ShaderMaterial.new()
+	mat.shader = shader
+	mat.render_priority = -1
 	return mat
 
 
