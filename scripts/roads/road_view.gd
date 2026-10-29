@@ -62,7 +62,7 @@ static func _remesh_ms() -> float:
 var sliced := false
 
 ## Bridge parts by material key in _mats (BridgeMesh).
-const BRIDGE_MATS := {"concrete": "concrete", "steel": "galvanized", "marker": "marker"}
+const BRIDGE_MATS := {"concrete": "bridge", "steel": "galvanized", "marker": "marker"}
 var _mats := {
 	"asphalt": Surfaces.asphalt(),
 	"curb": Surfaces.concrete(RoadStyle.CURB_COLOR),
@@ -86,8 +86,10 @@ var _mats := {
 	"domes": Surfaces.concrete(Junction.DOMES_COLOR),
 	"iron": _iron(Color(0.17, 0.16, 0.15)),  # grates and manhole covers
 	"drain": RoadStyle.material(Color(0.03, 0.03, 0.03)),  # the dark under them
+	"wear": Surfaces.lane_wear(),  # oil down the middle of each lane
 	"barricade": _vertex_colour(),
 	"galvanized": _galvanized(),
+	"bridge": BridgeMesh.concrete(),
 	"marker": RoadStyle.material(Color(0.95, 0.76, 0.1)),  # end terminal object marker
 }
 
@@ -109,10 +111,29 @@ func setup(net: RoadNetwork, s: CitySim = null) -> void:
 	rebuild()
 
 
-## True once every street, pole and corner is drawn and no restyle waits
-## (the loading screen waits for this; LoadGate).
-## Curbs stand up off the street on the desktop's High tier and up (the
-## same tiers that show the pavement's photo grain).
+## The other roads that could pass under a road's points: its bridge is
+## drawn again when they change.
+func _roads_by(pts: PackedVector3Array) -> Array:
+	var ix := RoadIndex.of(network)
+	if ix == null or pts.is_empty():
+		return []
+	var box := Rect2(Vector2(pts[0].x, pts[0].z), Vector2.ZERO)
+	for q in pts:
+		box = box.expand(Vector2(q.x, q.z))
+	var ids := ix.near(box.grow(10.0))
+	ids.sort()
+	return ids
+
+
+## True where a road on the ground runs at a point (a bridge's piers keep
+## off it, with a metre and a half of shoulder: AASHTO lateral offset).
+func _under_road(p: Vector3, own: int) -> bool:
+	var near := RoadIndex.segment_near(network, Vector3(p.x, 0.0, p.z), 25.0, 2.0)
+	if near.is_empty() or near.seg == own:
+		return false
+	return float(near.dist) < RoadStyle.right_of_way_half(network.segments[near.seg].type) + 1.5
+
+
 ## Weathered galvanized steel: guardrail and its posts.
 static func _galvanized() -> StandardMaterial3D:
 	var m := StandardMaterial3D.new()
@@ -123,10 +144,14 @@ static func _galvanized() -> StandardMaterial3D:
 	return m
 
 
+## Curbs stand up off the street on the desktop's High tier and up (the
+## same tiers that show the pavement's photo grain).
 static func curbs_wanted() -> bool:
 	return Surfaces.photo_level() > 0.0
 
 
+## True once every street, pole and corner is drawn and no restyle waits
+## (the loading screen waits for this; LoadGate).
 func is_drawn() -> bool:
 	return not _building and _recheck < 0.0 and _later.is_empty() and _poles_later.is_empty() \
 		and _corners_later.is_empty()
@@ -520,7 +545,7 @@ func _rebuild_all(gen: int) -> void:
 			if spec.get("trees", false):
 				median_trees.append_array(_median_trees(id, pts, type))
 			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-			var bkey := [pts, type, Terrain.shift, RoadMesh.raised_curbs]
+			var bkey := [pts, type, Terrain.shift, RoadMesh.raised_curbs, _roads_by(pts)]
 			var span: Array = _bridge_cache.get(id, [])
 			if span.is_empty() or span[0] != bkey:
 				var bparts := {}
@@ -530,7 +555,7 @@ func _rebuild_all(gen: int) -> void:
 				# Desktop detail (High and up, as with raised curbs): girders,
 				# round columns and approach guardrail.
 				var any := BridgeMesh.build(Terrain.lift_all(pts), RoadStyle.right_of_way_half(type), bparts,
-					Terrain.ground_y, RoadMesh.raised_curbs)
+					Terrain.ground_y, RoadMesh.raised_curbs, _under_road.bind(id))
 				var meshes := {}
 				if any:
 					for k in bparts:

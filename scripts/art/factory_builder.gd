@@ -287,12 +287,14 @@ func _mill(to_curb: float) -> void:
 	_foot.append([sx0 + (n - 1) * 3.3, sz - 4.0, (n - 1) * 6.6 + 2.0 * r, 2.0 * r + 8.0, 10.0])
 	# Steel bins behind, cone roofs.
 	var bins := rng.randi_range(1, 3)
+	var placed := []
 	for i in bins:
 		var c := Vector3(sx0 + i * 13.0, 0, sz + 15.0)
 		if _in_lot(c, 7.0):
 			_cylinder("metal", c, 6.0, 11.0, STEEL_BIN, 24)
 			_cone_top(c + Vector3(0, 11.0, 0), 6.2, 3.2, STEEL_BIN.lightened(0.08))
 			_foot.append([c.x, c.z, 12.0, 12.0, 10.0])
+			placed.append(c)
 	# The mill building beside the silos, the dump shed in front of them.
 	var mw := rng.randf_range(16.0, 20.0)
 	_hall(sx0 - r - 3.0 - mw * 0.5, sz + 2.0, mw, 18.0, 10.0, Color(_pick(METAL_WALL)))
@@ -303,6 +305,80 @@ func _mill(to_curb: float) -> void:
 	_box("metal", Vector3(10.0, 0.3, 7.0), Vector3(dx, 6.1, sz - 8.0), STEEL_BIN.darkened(0.15))
 	# Truck scale on the way in.
 	_flat_rect("drive", dx - 1.8, dx + 1.8, zf - 2.0, zf + 20.0 - 14.0, 0.09)
+	_mill_works(sx0, n, r, sh, sz, placed, dx)
+
+
+## What makes a country elevator read as one, from Indiana co-op
+## elevators: the bucket elevator leg climbing from the dump pit past the
+## headhouse, the distributor spouts falling from its head to every silo
+## and bin, a conveyor gallery out to the steel bins, aeration fans at the
+## bins' feet, a caged ladder up the end silo, and a tall column grain
+## dryer with its wet bin and burner where there's room.
+func _mill_works(sx0: float, n: int, r: float, sh: float, sz: float, bins: Array, dx: float) -> void:
+	var g := RandomNumberGenerator.new()
+	g.seed = hash([rng.seed, "mill_works"])
+	var hx := sx0 + (n - 1) * 6.6
+	var leg_x := hx + 4.4
+	var leg_top := sh + 17.0
+	# The leg: a twin casing from the pit to its head above the headhouse.
+	var leg := Color("#9ea3a4")
+	_box("metal", Vector3(1.0, leg_top, 1.7), Vector3(leg_x, leg_top * 0.5, sz - 2.0), leg)
+	_box("metal", Vector3(2.0, 2.4, 2.6), Vector3(leg_x, leg_top + 1.2, sz - 2.0), leg.darkened(0.08))
+	_box("paint", Vector3(2.2, 0.15, 2.8), Vector3(leg_x, leg_top + 2.45, sz - 2.0), PIPE.darkened(0.2))
+	# A guyed lightning mast on the head.
+	UpgradeKits._strut(self, Vector3(leg_x, leg_top + 2.5, sz - 2.0), Vector3(leg_x, leg_top + 6.0, sz - 2.0), 0.08, PIPE)
+	# The boot down in the pit under the dump shed, fed by a drag conveyor.
+	UpgradeKits._strut(self, Vector3(dx, 0.3, sz - 8.0), Vector3(leg_x, 0.3, sz - 2.0), 0.7, leg.darkened(0.15))
+	# Distributor spouts from the head to each silo top and bin roof.
+	var head := Vector3(leg_x - 0.8, leg_top - 0.5, sz - 2.0)
+	for i in n:
+		UpgradeKits._strut(self, head, Vector3(sx0 + i * 6.6, sh + 0.4, sz), 0.32, PIPE.lightened(0.1))
+	for c in bins:
+		UpgradeKits._strut(self, head, c + Vector3(0, 14.4, 0), 0.32, PIPE.lightened(0.1))
+	# A conveyor gallery from the headhouse to the first bin's peak, on a bent.
+	if not bins.is_empty():
+		var c0: Vector3 = bins[0]
+		var a := Vector3(hx, sh + 3.5, sz + 3.0)
+		var b := c0 + Vector3(0, 14.6, 0)
+		UpgradeKits._strut(self, a, b, 1.3, Color("#b7bbbb"))
+		var mid := (a + b) * 0.5
+		for e in [-0.6, 0.6]:
+			UpgradeKits._strut(self, Vector3(mid.x + e, 0, mid.z), Vector3(mid.x + e, mid.y - 0.7, mid.z), 0.25, PIPE)
+	# Aeration fans and roof vents on the bins.
+	for c in bins:
+		var out := Vector3(-1, 0, 0).rotated(Vector3.UP, g.randf_range(-0.6, 0.6))
+		var f: Vector3 = c + out * 6.6
+		_box("metal", Vector3(1.4, 1.2, 1.4), f + Vector3(0, 0.6, 0), Color("#d8d9d6"), Basis(Vector3.UP, atan2(out.x, out.z)))
+		_cylinder("paint", f + out * 0.9 + Vector3(0, 0.0, 0), 0.6, 1.2, Color("#5b6064"), 12)
+		for k in 3:
+			var a := g.randf() * TAU
+			_box("metal", Vector3(0.6, 0.5, 0.6), c + Vector3(cos(a) * 3.2, 12.8, sin(a) * 3.2), Color("#d8d9d6"))
+	# The caged ladder up the end silo.
+	var lx := sx0 - r - 0.25
+	_box("paint", Vector3(0.08, sh, 0.5), Vector3(lx, sh * 0.5, sz), PIPE)
+	var y := 2.4
+	while y < sh:
+		_box("paint", Vector3(0.7, 0.06, 0.06), Vector3(lx - 0.35, y, sz - 0.35), PIPE)
+		_box("paint", Vector3(0.7, 0.06, 0.06), Vector3(lx - 0.35, y, sz + 0.35), PIPE)
+		_box("paint", Vector3(0.06, 0.06, 0.76), Vector3(lx - 0.7, y, sz), PIPE)
+		y += 1.2
+	# The column dryer beside the last bin, if the lot has room.
+	var d := Vector3(sx0 + bins.size() * 13.0 + 2.0, 0, sz + 15.0)
+	if bins.size() < 3 and _in_lot(d, 6.0):
+		var dh := g.randf_range(18.0, 22.0)
+		_box("paint", Vector3(5.0, 0.4, 7.0), d + Vector3(0, 0.2, 0), Color("#b9b5ab"))
+		_box("metal", Vector3(2.6, dh, 4.4), d + Vector3(0, dh * 0.5 + 0.4, 0), Color("#3e4447"))  # screen columns
+		for k in int(dh / 3.0):
+			_box("paint", Vector3(2.7, 0.12, 4.5), d + Vector3(0, 1.4 + k * 3.0, 0), Color("#c9cbc8"))
+		_box("metal", Vector3(3.0, 2.6, 4.8), d + Vector3(0, dh + 1.7, 0), Color("#c9cbc8"))  # garner bin on top
+		_box("metal", Vector3(1.8, 2.2, 2.2), d + Vector3(2.4, 1.5, 1.0), Color("#c9cbc8"))  # fan and burner
+		_cylinder("paint", d + Vector3(3.4, 0.4, 1.0), 0.9, 2.2, Color("#5b6064"), 12)
+		UpgradeKits._strut(self, head, d + Vector3(0, dh + 3.0, 0), 0.32, PIPE.lightened(0.1))
+		# The LP tank that fires it, on two concrete saddles.
+		for e in [-2.2, 2.2]:
+			_box("paint", Vector3(1.6, 0.6, 0.5), d + Vector3(-5.0, 0.3, e), Color("#b9b5ab"))
+		UpgradeKits._drum(self, d + Vector3(-5.0, 1.55, 0), 1.0, 6.4, Color("#efede6"), false)
+		_foot.append([d.x - 1.5, d.z, 11.0, 8.0, 22.0])
 
 
 ## Hardwood sawmill.
@@ -496,11 +572,13 @@ func _metal_works(to_curb: float) -> void:
 	var hx := x0 + 10.0 + hw * 0.5
 	var hz := zf + hd * 0.5
 	var wall := Color(_pick(["#8e9aa3", "#a7aba9", "#6f7b86", "#b9b4a6"]))
-	_hall(hx, hz, hw, hd, rng.randf_range(13.0, 16.0), wall)
+	var hh := rng.randf_range(13.0, 16.0)
+	_hall(hx, hz, hw, hd, hh, wall)
 	# Roof monitor along the ridge (high-bay daylight and fume vents).
 	_box("metal", Vector3(hw * 0.8, 2.0, 3.0), Vector3(hx, 15.5, hz), wall.darkened(0.12))
 	for i in 2:
 		_door(hx - hw * 0.25 + i * hw * 0.5, hz - hd * 0.5, 5.0, 6.0)
+	_fab_shop(hx, hz, hw, hd, hh)
 	# Gantry crane over the coil yard behind.
 	var yz := hz + hd * 0.5 + 9.0
 	if yz + 6.0 < depth:
@@ -510,6 +588,74 @@ func _metal_works(to_curb: float) -> void:
 				_cylinder("metal", Vector3(hx - 9.0 + i * 2.5, 0, yz - 2.0 + j * 4.0), 0.9, 1.5, COIL, 12)
 				# The coil's eye, stored eye-to-sky on its end.
 				_cylinder("paint", Vector3(hx - 9.0 + i * 2.5, 0, yz - 2.0 + j * 4.0), 0.3, 1.52, Color("#3a3c3e"), 8)
+
+
+## What a working fabrication shop shows outside, from Indiana steel
+## fabricators' and stamping plants' photos: a band of translucent wall
+## panels under the eave lighting the high bay, big louvered exhaust fans
+## pulling weld smoke out of the side walls, the cartridge dust collector
+## ducted through the wall, the welding-gas supplier's cryogenic bulk tank
+## (argon or oxygen) with its finned vaporizers behind a fence, and
+## self-dumping hoppers and a roll-off of scrap and turnings by a door.
+func _fab_shop(hx: float, hz: float, hw: float, hd: float, h: float) -> void:
+	var g := RandomNumberGenerator.new()
+	g.seed = hash([rng.seed, "fab_shop"])
+	var panel := Color("#e4e2d2")
+	var y := h - 2.2
+	# The translucent band, front, back and both ends.
+	for s in [-1.0, 1.0]:
+		_box("paint", Vector3(hw - 1.0, 1.2, 0.05), Vector3(hx, y, hz + s * (hd * 0.5 + 0.03)), panel)
+		_box("paint", Vector3(0.05, 1.2, hd - 1.0), Vector3(hx + s * (hw * 0.5 + 0.03), y, hz), panel)
+	# Exhaust fans high on each end wall.
+	for s in [-1.0, 1.0]:
+		var x: float = hx + s * (hw * 0.5 + 0.12)
+		for k in 3:
+			var z := hz - hd * 0.3 + k * hd * 0.3
+			_box("paint", Vector3(0.2, 1.7, 1.7), Vector3(x, h - 5.0, z), Color("#6f7476"))
+			for l in 4:
+				_box("paint", Vector3(0.06, 0.08, 1.5), Vector3(x + s * 0.1, h - 5.6 + l * 0.38, z), Color("#4a4e52"))
+			_box("paint", Vector3(0.5, 0.25, 1.9), Vector3(x + s * 0.2, h - 4.05, z), Color("#8e9496"))  # rain hood
+	# The dust collector on the left end, its duct into the wall.
+	var dc := Vector3(hx - hw * 0.5 - 2.6, 0, hz + hd * 0.2)
+	if _in_lot(dc, 1.8):
+		for e in [[-0.9, -0.9], [0.9, -0.9], [-0.9, 0.9], [0.9, 0.9]]:
+			_box("paint", Vector3(0.15, 2.6, 0.15), dc + Vector3(e[0], 1.3, e[1]), Color("#4a6a8a"))
+		_cone_top(dc + Vector3(0, 2.6, 0), 1.1, -1.0, Color("#4a6a8a"), "paint", 10)
+		_box("metal", Vector3(2.2, 3.6, 2.2), dc + Vector3(0, 4.4, 0), Color("#4a6a8a"))
+		_box("paint", Vector3(0.3, 1.0, 0.6), dc + Vector3(0, 6.7, 0.6), Color("#3a3c3e"))  # pulse valves
+		UpgradeKits._strut(self, dc + Vector3(1.1, 5.6, 0), Vector3(hx - hw * 0.5, 5.6, dc.z), 0.6, Color("#b8bcbe"))
+		_drum_bin(dc + Vector3(0, 0, -1.6))
+	# The bulk gas tank on the right end, fenced, with its vaporizers.
+	var t := Vector3(hx + hw * 0.5 + 4.0, 0, hz - hd * 0.15)
+	if _in_lot(t, 3.0):
+		_box("paint", Vector3(5.0, 0.3, 4.0), t + Vector3(0.6, 0.15, 0), Color("#b9b5ab"))
+		_cylinder("metal", t + Vector3(0, 0.3, -0.6), 1.05, 7.5, Color("#f0efe9"), 16)
+		_cone_top(t + Vector3(0, 7.8, -0.6), 1.05, 0.5, Color("#f0efe9"), "metal", 16)
+		for k in 2:
+			var v := t + Vector3(1.6 + k * 1.1, 0.3, 1.0)
+			_box("paint", Vector3(0.7, 4.0, 0.7), v + Vector3(0, 2.0, 0), Color("#c9cdd0"))
+			for f in 4:
+				_box("paint", Vector3(0.05, 3.8, 0.9), v + Vector3(-0.3 + f * 0.2, 2.0, 0), Color("#d8dcde"))
+		_box("paint", Vector3(0.6, 0.4, 0.04), t + Vector3(0, 2.2, -1.68), Color("#2f6a3a"))  # supplier plate
+	# Scrap: two self-dumping hoppers by the front door, a roll-off of turnings.
+	for k in 2:
+		var p := Vector3(hx + hw * 0.25 + 4.0 + k * 2.4, 0, hz - hd * 0.5 - 2.2)
+		var col: Color = [Color("#2f5d8a"), Color("#e0b81e")][k]
+		_box("paint", Vector3(1.6, 0.25, 1.4), p + Vector3(0, 0.25, 0), Color("#3a3c3e"))
+		_box("metal", Vector3(1.7, 1.0, 1.6), p + Vector3(0, 0.95, 0), col)
+		_box("paint", Vector3(1.5, 0.12, 1.4), p + Vector3(0, 1.4, 0), Color("#7c8084"))
+	var ro := Vector3(hx + hw * 0.5 - 4.0, 0, hz + hd * 0.5 + 4.0)
+	if _in_lot(ro, 3.6):
+		_box("metal", Vector3(6.8, 1.6, 2.4), ro + Vector3(0, 0.95, 0), Color("#8a3b2c"))
+		for k in 9:
+			_box("paint", Vector3(g.randf_range(0.4, 1.2), 0.25, g.randf_range(0.3, 0.9)),
+				ro + Vector3(g.randf_range(-2.8, 2.8), 1.75 + g.randf_range(0.0, 0.2), g.randf_range(-0.8, 0.8)),
+				Color("#8e9296").darkened(g.randf_range(0.0, 0.3)), Basis(Vector3.UP, g.randf() * TAU))
+
+
+## A 55-gallon drum on the ground.
+func _drum_bin(p: Vector3) -> void:
+	_cylinder("paint", p, 0.29, 0.88, Color("#3a3c3e"), 10)
 
 
 ## An outdoor single-girder gantry crane (a 10-15 ton yard crane, as at

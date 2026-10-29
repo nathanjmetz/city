@@ -37,6 +37,9 @@ const DIRT := Color("#6e5a43")
 ## Buildings taller than this (metres, about six storeys) go up under a tower crane.
 const CRANE_FROM := 24.0
 const CONCRETE := Color("#b3afa6")
+## Oriented strand board sheathing, and the share of dry-in it takes.
+const OSB := Color("#c29b62")
+const SHEATHE := 0.45
 ## Wall and roof colours of each method's shell while it's being closed in.
 const SHELL := {
 	"house": [Color("#e9eae6"), Color("#2f2e2d")],   # house wrap, roofing felt
@@ -61,6 +64,7 @@ var _final := MeshInstance3D.new()
 var _ground := MeshInstance3D.new()
 var _found: MeshInstance3D
 var _shell: MeshInstance3D
+var _forms: MeshInstance3D  # the footing forms while the concrete goes in
 var _pad: MeshInstance3D
 var _props: MeshInstance3D
 var _frame: Array = []  # MeshInstance3D per FrameBuilder chunk
@@ -70,6 +74,7 @@ var _height := 6.0
 var _found_h := 0.45
 var _box := AABB()
 var _bldg := AABB()  # the finished building's own bounds (not its lot)
+var _core := AABB()  # the walls and roof alone, without the walks, fences and yard things
 var _crane_on := false  # a high-rise: it goes up under a tower crane
 var _props_for := ""
 var _paving := false
@@ -124,6 +129,7 @@ func setup(built: Array, profile: String, state: Callable) -> void:
 	var aabb: AABB = built[0].get_aabb()
 	_height = aabb.end.y
 	_bldg = aabb
+	_core = _core_box(built[0], aabb)
 	_crane_on = not _paving and _height > CRANE_FROM and _mostly_tall(built[0])
 	_box = aabb
 	if built[1] != null and built[1].get_surface_count() > 0:
@@ -172,11 +178,24 @@ func _show(st: Dictionary) -> void:
 	var show_found := stage in ["foundation", "frame", "dry_in"]
 	if show_found and _found == null:
 		_found = _clipped(CONCRETE, CONCRETE)
+		_param(_found, "keep", _plan_keep())
 	if _found != null:
 		_found.visible = show_found
 		if show_found:
 			var h := _found_h * clampf(t * 1.4, 0.15, 1.0) if stage == "foundation" else _found_h
 			_param(_found, "cut", h)
+	# Forms set round the footings before the pour and stripped after:
+	# aluminum wall forms on a house, lumber edge forms on a slab.
+	var show_forms := stage == "foundation" and t < 0.75
+	if show_forms and _forms == null:
+		var fc := Color("#a7abae") if _profile == "house" else Color("#c4a26e")
+		_forms = _clipped(fc, fc)
+		_param(_forms, "inflate", 0.07)
+		_param(_forms, "walls_only", true)
+		_param(_forms, "cut", _found_h + 0.15)
+		_param(_forms, "keep", _plan_keep())
+	if _forms != null:
+		_forms.visible = show_forms
 	# The frame, member by member up close.
 	var frame_chunks := 0
 	if stage == "frame":
@@ -184,7 +203,7 @@ func _show(st: Dictionary) -> void:
 	elif stage == "dry_in":
 		frame_chunks = FrameBuilder.CHUNKS
 	if frame_chunks > 0 and near and _frame.is_empty():
-		for m in FrameBuilder.build(_built[0], _frame_kind):
+		for m in FrameBuilder.build(_plan_only(_built[0]), _frame_kind):
 			var mi := MeshInstance3D.new()
 			mi.mesh = m
 			add_child(mi)
@@ -196,6 +215,7 @@ func _show(st: Dictionary) -> void:
 	var shell_on := stage == "dry_in" or stage == "exterior" or stage == "frame" and not near
 	if shell_on and _shell == null:
 		_shell = _clipped(Color.WHITE, Color.WHITE)
+		_param(_shell, "keep", _plan_keep())
 	if _shell != null:
 		_shell.visible = shell_on
 		if shell_on:
@@ -206,15 +226,26 @@ func _show(st: Dictionary) -> void:
 			# frame and then of the finished walls.
 			if stage == "frame":
 				_shell_look(FRAME_FAR[_frame_kind], FRAME_FAR[_frame_kind], 0.0)
+				_param(_shell, "pattern", 0)
 				_param(_shell, "cut", _found_h + span * t)
+				_param(_shell, "floor_cut", _found_h)
+			elif stage == "dry_in" and _frame_kind == "wood" and t < SHEATHE:
+				# Sheathing first: OSB nailed on in 4 x 8 ft sheets, walls
+				# and roof deck, climbing the frame; the wrap and felt follow.
+				_shell_look(OSB, OSB.darkened(0.05), 0.04)
+				_param(_shell, "pattern", 3)
+				_param(_shell, "cut", _found_h + span * t / SHEATHE)
 				_param(_shell, "floor_cut", _found_h)
 			elif stage == "dry_in":
 				_shell_look(colors[0], colors[1], 0.04)
-				_param(_shell, "cut", _found_h + span * t)
+				_param(_shell, "pattern", _wrap_pattern())
+				var w := (t - SHEATHE) / (1.0 - SHEATHE) if _frame_kind == "wood" else t
+				_param(_shell, "cut", _found_h + span * w)
 				_param(_shell, "floor_cut", _found_h)
 			else:
 				# The roof was shingled while it was dried in: only walls are wrapped.
 				_shell_look(colors[0], colors[1], 0.08)
+				_param(_shell, "pattern", _wrap_pattern())
 				_param(_shell, "cut", 1000.0)
 				_param(_shell, "floor_cut", _found_h + span * t)
 	_final.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
@@ -279,7 +310,7 @@ func _finish() -> void:
 	_ground.visible = true
 	if _footing != null:
 		_footing.visible = true
-	for n in [_found, _shell, _pad, _entrance, _props, _stone, _mat]:
+	for n in [_found, _forms, _shell, _pad, _entrance, _props, _stone, _mat]:
 		if n != null:
 			n.queue_free()
 	for n in _frame:
@@ -287,6 +318,7 @@ func _finish() -> void:
 	_frame.clear()
 	_found = null
 	_shell = null
+	_forms = null
 	_pad = null
 	_entrance = null
 	_props = null
@@ -341,7 +373,51 @@ func _shell_look(wall: Color, roof: Color, inflate: float) -> void:
 	mats[0].set_shader_parameter("roof_color", roof)
 
 
-static func _param(mi: MeshInstance3D, param: String, v: float) -> void:
+## The finished drawing cut to the building's plan (_plan_keep), as bare
+## triangles for FrameBuilder: the lot's light poles, bollards and yard
+## fence aren't framed as if they were part of the building.
+func _plan_only(mesh: Mesh) -> Mesh:
+	var k := _plan_keep()
+	var out := ArrayMesh.new()
+	for si in mesh.get_surface_count():
+		var arr := mesh.surface_get_arrays(si)
+		var v: PackedVector3Array = arr[Mesh.ARRAY_VERTEX]
+		var idx = arr[Mesh.ARRAY_INDEX]
+		var indexed: bool = idx != null and idx.size() > 0
+		var count: int = idx.size() if indexed else v.size()
+		var kept := PackedInt32Array()
+		for i in range(0, count - 2, 3):
+			var a: int = idx[i] if indexed else i
+			var b: int = idx[i + 1] if indexed else i + 1
+			var c: int = idx[i + 2] if indexed else i + 2
+			var m := (v[a] + v[b] + v[c]) / 3.0
+			if m.x >= k.x and m.z >= k.y and m.x <= k.z and m.z <= k.w:
+				kept.append_array([a, b, c])
+		if kept.is_empty():
+			continue
+		var na := []
+		na.resize(Mesh.ARRAY_MAX)
+		na[Mesh.ARRAY_VERTEX] = v
+		na[Mesh.ARRAY_INDEX] = kept
+		out.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, na)
+	return out if out.get_surface_count() > 0 else mesh
+
+
+## The building's plan with a little room for porches and stoops.
+func _plan_keep() -> Vector4:
+	var g := _core.grow(0.6)
+	return Vector4(g.position.x, g.position.z, g.end.x, g.end.z)
+
+
+## What the closed-in walls show: house wrap's print and felt laps on a
+## house, block coursing where the walls are concrete block.
+func _wrap_pattern() -> int:
+	if _profile == "house":
+		return 1
+	return 2 if _profile in ["shop", "civic", "well"] else 0
+
+
+static func _param(mi: MeshInstance3D, param: String, v: Variant) -> void:
 	for mat: ShaderMaterial in mi.get_meta("mats"):
 		mat.set_shader_parameter(param, v)
 
@@ -359,6 +435,11 @@ uniform bool walls_only = false;
 uniform bool glazing = false;
 uniform vec3 wall_color : source_color = vec3(0.9);
 uniform vec3 roof_color : source_color = vec3(0.3);
+// 0 plain, 1 house wrap (printed rows, felt laps on the roof), 2 block.
+uniform int pattern = 0;
+// Drawn only inside this plan rectangle (x0, z0, x1, z1): the footings
+// go under the building, not under its yard fence and walks.
+uniform vec4 keep = vec4(-1e6, -1e6, 1e6, 1e6);
 varying vec3 lp;
 varying vec3 ln;
 varying float plant;
@@ -370,11 +451,42 @@ void vertex() {
 	plant = COLOR.g > COLOR.r * 1.2 && COLOR.g > COLOR.b * 1.25 ? 1.0 : 0.0;
 }
 void fragment() {
+	if (lp.x < keep.x || lp.z < keep.y || lp.x > keep.z || lp.z > keep.w) {
+		discard;
+	}
 	if (lp.y > cut || lp.y < floor_cut || plant > 0.5 || walls_only && abs(ln.y) > 0.3 && !glazing) {
 		discard;
 	}
 	ALBEDO = abs(ln.y) > 0.3 ? roof_color : wall_color;
 	ROUGHNESS = 0.9;
+	float run = abs(ln.x) > abs(ln.z) ? lp.z : lp.x;
+	if (pattern == 1 && !glazing) {
+		if (abs(ln.y) <= 0.3) {
+			// House wrap comes in 9 ft rolls run round the house: the
+			// maker's print in a row along each roll, a taped lap between.
+			float row = fract(lp.y / 2.74);
+			float dash = step(0.5, fract(run / 1.5)) * step(0.47, row) * step(row, 0.53);
+			ALBEDO = mix(ALBEDO, vec3(0.32, 0.42, 0.58), dash * 0.55);
+			ALBEDO *= 1.0 - 0.06 * step(row, 0.015);
+		} else {
+			// Felt laid in 3 ft courses up the roof, each lap a pale line.
+			ALBEDO = mix(ALBEDO, vec3(0.55), step(fract(lp.y / 0.33), 0.04) * 0.5);
+		}
+	} else if (pattern == 3 && !glazing) {
+		// 4 x 8 ft sheets, long side across the studs, joints staggered;
+		// each sheet's strands a touch lighter or darker than the next.
+		float u = abs(ln.y) <= 0.3 ? run : lp.x + lp.z;
+		float course = floor(lp.y / 1.22);
+		float across = floor(u / 2.44 + 0.5 * mod(course, 2.0));
+		float joint = step(fract(lp.y / 1.22), 0.012) + step(fract(u / 2.44 + 0.5 * mod(course, 2.0)), 0.006);
+		float shade = fract(sin(dot(vec2(course, across), vec2(12.9898, 78.233))) * 43758.5453);
+		ALBEDO *= (0.92 + 0.14 * shade) * (1.0 - 0.3 * min(joint, 1.0));
+	} else if (pattern == 2 && !glazing && abs(ln.y) <= 0.3) {
+		// 8 x 16 in concrete block in running bond, mortar a shade darker.
+		float course = floor(lp.y / 0.203);
+		float joint = step(fract(lp.y / 0.203), 0.05) + step(fract(run / 0.406 + 0.5 * mod(course, 2.0)), 0.025);
+		ALBEDO *= 1.0 - 0.18 * min(joint, 1.0);
+	}
 	if (!FRONT_FACING) {
 		NORMAL = -NORMAL;
 	}
@@ -518,7 +630,7 @@ void fragment() {
 		n = ph_lean(n, ph_gravel_s(wp.xz), pk * 0.8);
 	} else {
 		// Damp low spots go dark and shiny; the high ground dries pale.
-		float wet = smoothstep(0.62, 0.85, big);
+		float wet = smoothstep(0.7, 0.9, big);
 		base *= mix(0.9 + 0.2 * fine, 0.58, wet);
 		rough = mix(0.95, 0.7, wet);
 		float rut = sg_ruts(dr, 26.0);
@@ -543,7 +655,7 @@ func _props_look(stage: String) -> void:
 	if _props != null:
 		_props.queue_free()
 		_props = null
-	if stage == "landscape":
+	if stage == "landscape" and (_paving or _profile != "house" or _core.position.z - _box.position.z < 4.6):
 		return
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
@@ -564,20 +676,55 @@ func _props_look(stage: String) -> void:
 		return
 	var k := absi(hash([snappedf(_bldg.size.x, 0.1), snappedf(_bldg.size.z, 0.1), snappedf(_height, 0.1), "site"]))
 	var fine := not OS.has_feature("web")
+	if stage == "landscape":
+		# Sod by the pallet, and the skid steer that brought it up.
+		for n in 3:
+			_cs_sod(st, Vector3(left + 1.0 + n * 1.45, 0.0, front + 1.5), k + n, fine)
+		SiteMachines.skid_steer(st, Transform3D(Basis(Vector3.UP, -PI * 0.5), Vector3(left + 7.6, 0.0, front + 1.7)),
+			SiteMachines.paint(k + 1), fine)
+		_props = MeshInstance3D.new()
+		_props.mesh = st.commit()
+		_props.material_override = _prop_mat()
+		add_child(_props)
+		return
 	# A porta-john by the front corner, its door to the lot.
 	_cs_john(st, Vector3(left + 0.6, 0.0, front + 1.4), k, fine)
+	if stage != "clear":
+		_cs_power_pole(st, Vector3(left + 3.8, 0.0, front + 0.9), fine)
 	if stage in ["clear", "foundation", "frame"]:
 		# Silt fence: black fabric on stakes down the sides and across the back.
 		var corners := [Vector3(b.position.x, 0, front + 2.0), Vector3(b.position.x, 0, b.end.z),
 			Vector3(b.end.x, 0, b.end.z), Vector3(b.end.x, 0, front + 2.0)]
 		for i in 3:
 			_fence(st, corners[i], corners[i + 1])
+	if stage in ["clear", "foundation", "frame"]:
+		# Straw wattles along the street edge either side of the entrance,
+		# where the silt fence would block the walk (inlet protection).
+		var wz := b.position.z + 0.45
+		var e0 := _drive_x - _drive_w * 0.5 - 0.3
+		var e1 := _drive_x + _drive_w * 0.5 + 0.3
+		for run in [[b.position.x + 0.3, e0], [e1, b.end.x - 0.3]]:
+			if run[1] - run[0] > 1.0:
+				_cs_wattle(st, Vector3((run[0] + run[1]) * 0.5, 0.0, wz), run[1] - run[0], fine)
+	if stage in ["foundation", "frame", "dry_in", "exterior"]:
+		# The concrete washout every pour's trucks rinse their chutes into.
+		# Off the stone on the open side, clear of the building and its stoop.
+		var wx := _drive_x - _drive_w * 0.5 - 2.0
+		var wz := minf(b.position.z + minf(_drive_len, 8.0) - 1.0, _core.position.z - 3.6)
+		var spot := AABB(Vector3(wx - 1.5, 0, wz - 1.5), Vector3(3.0, 1.0, 3.0))
+		if wx - 1.6 > b.position.x + 4.0 and wz - 1.5 > b.position.z + 0.9 and not spot.intersects(_core.grow(1.5)):
+			_cs_washout(st, Vector3(wx, 0.0, wz), fine)
 	if stage in ["clear", "foundation"]:
 		# Spoil from digging the footings, heaped at the back; the topsoil
 		# stripped off the lot in its own darker pile beside it.
 		var back := b.end.z - 3.0
-		_cs_mound(st, Vector3(right - 3.2, 0.0, back), 2.6, 2.0, 1.5, DIRT.lightened(0.05), k)
-		_cs_mound(st, Vector3(right - 7.4, 0.0, back + 0.4), 1.9, 1.6, 1.0, Color("#3f3326"), k + 1)
+		var keep := _core.grow(0.5)
+		for m in [[Vector3(right - 3.2, 0.0, back), 2.6, 2.0, 1.5, DIRT.lightened(0.05)],
+				[Vector3(right - 7.4, 0.0, back + 0.4), 1.9, 1.6, 1.0, Color("#3f3326")]]:
+			var at: Vector3 = m[0]
+			# Heaped where the building isn't going.
+			if not AABB(at - Vector3(m[1], 0, m[2]), Vector3(m[1] * 2.0, 1.0, m[2] * 2.0)).intersects(keep):
+				_cs_mound(st, at, m[1], m[2], m[3], m[4], k)
 	if stage in ["frame", "dry_in", "exterior", "interior"]:
 		# A 20-yard roll-off dumpster along the side, nose to the street.
 		_cs_dumpster(st, Vector3(right - 1.3, 0.0, front + 7.85), k, fine, stage != "frame")
@@ -588,9 +735,9 @@ func _props_look(stage: String) -> void:
 			_cs_lumber(st, Vector3(left + 1.0, 0.0, front + 5.0), fine)
 			_cs_lumber(st, Vector3(left + 2.6, 0.0, front + 5.0), fine)
 			_cs_osb(st, Vector3(left + 1.6, 0.0, front + 9.0), k)
-			var span := minf(minf(_bldg.size.x, _bldg.size.z), 12.0)
-			if b.end.z - _bldg.end.z > 4.5:
-				_cs_trusses(st, Vector3(_bldg.get_center().x, 0.0, _bldg.end.z + 1.2), span, fine)
+			var span := minf(minf(_core.size.x, _core.size.z), 12.0)
+			if b.end.z - _core.end.z > 4.5:
+				_cs_trusses(st, Vector3(_core.get_center().x, 0.0, _core.end.z + 1.2), span, fine)
 		else:
 			# Bundled steel (or panels) on dunnage.
 			var col: Color = FRAME_FAR[_frame_kind] if _frame_kind != "tilt_up" else FrameBuilder.GALV
@@ -599,12 +746,44 @@ func _props_look(stage: String) -> void:
 					_cs_steel(st, Vector3(left + 1.0 + n * 1.6, 0.0, front + 5.0), col)
 				else:
 					_prop(st, Vector3(1.2, 0.6, 4.9), Vector3(left + 1.0 + n * 1.6, 0.42, front + 5.0), col)
+	_cs_machines(st, stage, k, fine)
 	if _crane_on and stage in ["frame", "dry_in", "exterior"]:
 		_crane(st)
 	_props = MeshInstance3D.new()
 	_props.mesh = st.commit()
 	_props.material_override = _prop_mat()
 	add_child(_props)
+
+
+## The building's own walls and roof, from its roofs: the faces up there
+## that look up and are bigger than a lamp head (fences, walks, AC units
+## and porch steps stay below head height; a parking lot's light poles and
+## a sign's pylon are too small), so the machines and stacks are set
+## beside the building, not over the whole lot.
+static func _core_box(mesh: Mesh, fallback: AABB) -> AABB:
+	var lo := Vector3(INF, INF, INF)
+	var hi := Vector3(-INF, -INF, -INF)
+	for i in mesh.get_surface_count():
+		var arr := mesh.surface_get_arrays(i)
+		var v: PackedVector3Array = arr[Mesh.ARRAY_VERTEX]
+		var idx = arr[Mesh.ARRAY_INDEX]
+		var indexed: bool = idx != null and idx.size() > 0
+		var count: int = idx.size() if indexed else v.size()
+		for t in range(0, count - 2, 3):
+			var p0: Vector3 = v[idx[t]] if indexed else v[t]
+			var p1: Vector3 = v[idx[t + 1]] if indexed else v[t + 1]
+			var p2: Vector3 = v[idx[t + 2]] if indexed else v[t + 2]
+			if minf(p0.y, minf(p1.y, p2.y)) < 2.4:
+				continue
+			var n := (p1 - p0).cross(p2 - p0)
+			if n.length() < 0.6 or absf(n.normalized().y) < 0.6:
+				continue
+			for p in [p0, p1, p2]:
+				lo = lo.min(p)
+				hi = hi.max(p)
+	if lo.x > hi.x:
+		return fallback
+	return AABB(Vector3(lo.x, 0.0, lo.z), Vector3(hi.x - lo.x, hi.y, hi.z - lo.z))
 
 
 ## True when a good share of the drawing stands above CRANE_FROM: a tower
@@ -720,6 +899,173 @@ func _paving_props(st: SurfaceTool, stage: String, b: AABB, front: float) -> voi
 
 
 # ---------------------------------------------------------------- site things
+
+## The machines on the lot at each stage (SiteMachines), each where the
+## work is: the excavator digging the footings where the building will
+## stand, a skid steer at the spoil pile and then backfilling, the
+## telehandler on the stone setting lumber up on a house's walls, a boom
+## lift along the front of a bigger building while it's framed and closed in.
+func _cs_machines(st: SurfaceTool, stage: String, k: int, fine: bool) -> void:
+	if _crane_on:
+		return
+	var col := SiteMachines.paint(k)
+	var b := _box
+	match stage:
+		"clear":
+			var at := Vector3(_core.position.x + 2.2, 0.0, _core.position.z + 1.2)
+			SiteMachines.excavator(st, Transform3D(Basis(Vector3.UP, 0.25), at), col, -0.35, fine)
+			if b.size.z > 22.0:
+				SiteMachines.skid_steer(st, Transform3D(Basis(Vector3.UP, 0.4), Vector3(b.end.x - 4.0, 0.0, b.end.z - 8.5)),
+					SiteMachines.paint(k + 1), fine)
+		"foundation":
+			var z := minf(b.position.z + _drive_len + 1.6, _core.position.z - 2.4)
+			if z > b.position.z + 1.6:
+				SiteMachines.skid_steer(st, Transform3D(Basis(Vector3.UP, 0.5), Vector3(_drive_x, 0.0, z)),
+					SiteMachines.paint(k + 1), fine)
+		"frame", "dry_in":
+			if _frame_kind == "wood":
+				# Lumber up to the walls, then shingles up to the roof: on the
+				# stone clear of the walls (the forks reach 4.3 m ahead), or
+				# else alongside the house where the side yard has room.
+				var tcol := Color("#d9661f") if k % 2 == 0 else Color("#e6e4dc")
+				var z := minf(b.position.z + _drive_len * 0.5, _core.position.z - 4.6)
+				var left_gap := _core.position.x - b.position.x
+				var right_gap := b.end.x - _core.end.x
+				if z > b.position.z + 2.2:
+					SiteMachines.telehandler(st, Transform3D(Basis.IDENTITY, Vector3(_drive_x, 0.0, z)), tcol, fine)
+				elif maxf(left_gap, right_gap) > 3.0:
+					var x := _core.position.x - left_gap * 0.5 if left_gap >= right_gap else _core.end.x + right_gap * 0.5
+					# Past the lumber and OSB stacked at the front corner.
+					var tz := maxf(_core.position.z + 2.2, b.position.z + 13.2)
+					if tz + 4.4 < b.end.z:
+						SiteMachines.telehandler(st, Transform3D(Basis.IDENTITY, Vector3(x, 0.0, tz)), tcol, fine)
+	if _frame_kind == "tilt_up" and stage == "frame" and minf(_core.size.x, _core.size.z) > 36.0:
+		# Standing the panels from the slab, boom toward the wall going up.
+		var cc := _core.get_center()
+		SiteMachines.crawler_crane(st, Transform3D(Basis(Vector3.UP, PI * (0.15 + 0.1 * (k % 5))), Vector3(cc.x, 0.0, cc.z)),
+			Color("#b8322a") if k % 2 == 0 else Color("#e0a81a"), fine)
+	var masonry := _profile in ["shop", "civic"] and stage == "exterior" and _core.position.z - b.position.z > 2.6
+	if masonry:
+		_cs_scaffold(st, k, fine)
+	if _profile != "house" and stage in ["frame", "dry_in", "exterior"] and not masonry and _core.position.z - b.position.z > 4.6:
+		var at := Vector3(_core.get_center().x - _core.size.x * 0.2, 0.0, _core.position.z - 2.0)
+		SiteMachines.boom_lift(st, Transform3D(Basis(Vector3.UP, PI * 0.5), at),
+			Color("#d9661f") if k % 3 == 0 else Color("#3d6fb0"), fine)
+
+
+## The temporary electric service the electrician sets before the pour
+## and the utility feeds until the house's own meter goes live: a treated
+## 6x6 post, the meter base, a small breaker panel with weatherproof
+## outlets and the trades' cords, and the ground rod at its foot.
+func _cs_power_pole(st: SurfaceTool, at: Vector3, fine: bool) -> void:
+	_prop(st, Vector3(0.14, 3.4, 0.14), at + Vector3(0, 1.7, 0), Color("#8a7a5c"))
+	_prop(st, Vector3(0.4, 0.06, 0.14), at + Vector3(0, 3.0, 0), Color("#8a7a5c"))  # crossarm brace
+	_prop(st, Vector3(0.3, 0.42, 0.12), at + Vector3(0, 1.75, -0.13), Color("#9ea3a6"))  # meter base
+	_prop(st, Vector3(0.36, 0.5, 0.14), at + Vector3(0, 1.1, -0.14), Color("#6f757a"))  # panel
+	_prop(st, Vector3(0.05, 1.2, 0.05), at + Vector3(0, 2.6, -0.1), Color("#3a3a3a"))  # riser
+	if fine:
+		_prop(st, Vector3(0.14, 0.14, 0.06), at + Vector3(0, 1.8, -0.2), Color("#c9d3d6"))  # meter glass
+		_prop(st, Vector3(0.26, 0.08, 0.05), at + Vector3(0, 0.95, -0.22), Color("#2a2a2a"))  # outlets
+		_prop(st, Vector3(0.025, 0.25, 0.025), at + Vector3(0.12, 0.12, -0.12), Color("#b4743c"))  # ground rod
+		# A yellow cord off to the work, lying on the dirt.
+		_prop(st, Vector3(0.025, 0.025, 4.0), at + Vector3(0.1, 0.03, 2.2), Color("#e3b51e"))
+		_prop(st, Vector3(0.025, 0.9, 0.025), at + Vector3(0.1, 0.47, 0.2), Color("#e3b51e"))
+
+
+## A pallet of Kentucky bluegrass sod, the rolls stacked on the slats.
+func _cs_sod(st: SurfaceTool, at: Vector3, k: int, fine: bool) -> void:
+	_prop(st, Vector3(1.2, 0.13, 1.2), at + Vector3(0, 0.065, 0), Color("#9c8562"))
+	var h := 0.55 + 0.2 * float(k % 3) / 2.0
+	_prop(st, Vector3(1.14, h, 1.14), at + Vector3(0, 0.13 + h * 0.5, 0), Color("#4e3b28"))  # soil side
+	_prop(st, Vector3(1.15, 0.05, 1.15), at + Vector3(0, 0.13 + h, 0), Color("#4f7a31"))
+	if fine:
+		var y := 0.13 + 0.09
+		while y < 0.13 + h:
+			_prop(st, Vector3(1.16, 0.035, 1.16), at + Vector3(0, y, 0), Color("#5b7d36"))  # grass at the roll ends
+			y += 0.11
+
+
+## Frame scaffolding across the front while the masons lay the face
+## brick or block: 5 ft wide walk-through frames in 7 ft bays, a lift
+## every 6.5 ft up to the wall's height, X braces on the outside, planks
+## on the working lift; brick on pallets and a mortar mixer at its foot.
+func _cs_scaffold(st: SurfaceTool, k: int, fine: bool) -> void:
+	var frame: Color = [Color("#b8382c"), Color("#8d969b"), Color("#c96a22")][(k >> 2) % 3]
+	var z0 := _core.position.z - 0.35  # the inner uprights, a hand's width off the wall
+	var z1 := z0 - 1.52
+	var top := minf(_height - 0.6, 12.0)
+	var lifts := maxi(1, floori(top / 1.98))
+	var x := _core.position.x + 0.3
+	var bays := maxi(1, floori((_core.size.x - 0.6) / 2.13))
+	var h := lifts * 1.98
+	for i in bays + 1:
+		var bx := x + i * 2.13
+		for z in [z0, z1]:
+			_prop(st, Vector3(0.05, h, 0.05), Vector3(bx, h * 0.5, z), frame)
+			_prop(st, Vector3(0.15, 0.04, 0.15), Vector3(bx, 0.02, z), Color("#6b5a48"))  # base plate on a mud sill
+		for l in lifts:
+			_prop(st, Vector3(0.05, 0.05, 1.52), Vector3(bx, (l + 1) * 1.98, (z0 + z1) * 0.5), frame)
+			if fine:
+				_prop(st, Vector3(0.04, 0.04, 1.52), Vector3(bx, l * 1.98 + 1.55, (z0 + z1) * 0.5), frame)
+	for i in bays:
+		var mid := x + i * 2.13 + 1.065
+		for l in lifts:
+			var y := l * 1.98 + 0.99
+			if fine:
+				# Cross braces in an X on the outside of each bay.
+				for sgn in [-1.0, 1.0]:
+					_prop(st, Vector3(2.9, 0.03, 0.03), Vector3(mid, y, z1 - 0.04), frame.darkened(0.15),
+						Basis(Vector3.BACK, sgn * atan2(1.98, 2.13)))
+		# Planks on the top lift and one below, where the masons stand.
+		for l in [lifts, maxi(1, lifts - 1)]:
+			_prop(st, Vector3(2.1, 0.05, 1.4), Vector3(mid, l * 1.98 + 0.05, (z0 + z1) * 0.5), Color("#b89a6a"))
+		if fine:
+			# Brick on the plank, ready to hand.
+			_prop(st, Vector3(0.5, 0.35, 0.4), Vector3(mid - 0.4, lifts * 1.98 + 0.25, (z0 + z1) * 0.5), Color("#9a4a32"))
+	# Cubes of brick on pallets and the mortar mixer out front.
+	var gz := z1 - 1.6
+	for i in 3:
+		var px := x + 1.0 + i * 1.4
+		_prop(st, Vector3(1.1, 0.12, 1.1), Vector3(px, 0.06, gz), Color("#9c8562"))
+		_prop(st, Vector3(1.0, 0.85, 1.0), Vector3(px, 0.55, gz), Color("#9a4a32") if k % 2 == 0 else Color("#a88e72"))
+		if fine:
+			_prop(st, Vector3(1.02, 0.02, 1.02), Vector3(px, 0.75, gz), Color("#e6e3d8"))  # banding wrap
+	var mx := x + 1.0 + 3 * 1.4 + 0.6
+	_prop(st, Vector3(1.0, 0.75, 1.4), Vector3(mx, 0.85, gz), Color("#d9661f"))  # drum
+	_prop(st, Vector3(0.1, 0.5, 0.1), Vector3(mx, 0.25, gz - 0.5), Color("#2a2a2a"))
+	SiteMachines._wheel(st, Transform3D.IDENTITY, Vector3(mx - 0.6, 0.3, gz + 0.3), 0.3, 0.18, Color("#232323"), 10)
+	SiteMachines._wheel(st, Transform3D.IDENTITY, Vector3(mx + 0.6, 0.3, gz + 0.3), 0.3, 0.18, Color("#232323"), 10)
+
+
+## A straw wattle (a 9 in fiber roll in its netting) staked along a
+## line `len` long across x, to slow muddy water before the street.
+func _cs_wattle(st: SurfaceTool, c: Vector3, len: float, fine: bool) -> void:
+	SiteMachines._wheel(st, Transform3D.IDENTITY, c + Vector3(0, 0.1, 0), 0.115, len, Color("#b49a5e"), 8 if fine else 5)
+	if fine:
+		var x := -len * 0.5 + 0.6
+		while x < len * 0.5:
+			_prop(st, Vector3(0.04, 0.45, 0.04), c + Vector3(x, 0.2, -0.13), Color("#8a6b45"))
+			x += 1.2
+
+
+## A concrete washout (EPA SWPPP / Indiana Rule 5 practice): a pit ringed
+## with straw bales and lined in black plastic, its floor grey with the
+## slurry rinsed off the trucks' chutes.
+func _cs_washout(st: SurfaceTool, c: Vector3, fine: bool) -> void:
+	var w := 2.8
+	var straw := Color("#c2a764")
+	for sz in [-1.0, 1.0]:
+		_prop(st, Vector3(w, 0.45, 0.46), c + Vector3(0, 0.225, sz * (w * 0.5 - 0.23)), straw)
+		_prop(st, Vector3(0.46, 0.45, w - 0.92), c + Vector3(sz * (w * 0.5 - 0.23), 0.225, 0), straw)
+	_prop(st, Vector3(w - 0.9, 0.06, w - 0.9), c + Vector3(0, 0.12, 0), Color("#8f8c86"))  # slurry
+	if fine:
+		# The liner lapped over the bales, and the sign on its stake.
+		for sz in [-1.0, 1.0]:
+			_prop(st, Vector3(w - 0.4, 0.02, 0.3), c + Vector3(0, 0.46, sz * (w * 0.5 - 0.45)), Color("#1b1b1c"))
+			_prop(st, Vector3(0.3, 0.02, w - 0.9), c + Vector3(sz * (w * 0.5 - 0.45), 0.46, 0), Color("#1b1b1c"))
+		_prop(st, Vector3(0.05, 1.1, 0.05), c + Vector3(w * 0.5 + 0.2, 0.55, -w * 0.5), Color("#8a6b45"))
+		_prop(st, Vector3(0.6, 0.4, 0.03), c + Vector3(w * 0.5 + 0.2, 1.0, -w * 0.5 - 0.03), Color("#e9e6dc"))
+
 
 ## A molded-plastic portable toilet (about 44 x 44 in, 7.5 ft tall): skid
 ## base, body, the pale translucent roof and its dome, a vent stack, and

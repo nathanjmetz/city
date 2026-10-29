@@ -194,6 +194,25 @@ func _community() -> void:
 	for sp in lay.spots:
 		aisles[sp.get("aisle", lay.aisle_z)] = true
 	_check(lay.spots.size() >= 50 and aisles.size() >= 2, "its field has %d stalls off %d aisles" % [lay.spots.size(), aisles.size()])
+	# Bigger still: in a market of 60,000 it grows into a power center.
+	sim.tick_count += 12 * MONTH
+	_check(sim.redevelopment._plan_power(sim, {}).is_empty(), "a market of 16,000 gets no power center")
+	sim.market.regional = 60_000
+	plan = sim.redevelopment._plan_power(sim, {})
+	print("  power ask: ", plan.get("title", "(none)"), " / ", plan.get("why", ""))
+	if plan.is_empty():
+		_check(false, "the community center finds more houses to buy")
+		return
+	_check(plan.keys[0] == site and plan.level == 3, "the center buys %d more lots" % (plan.keys.size() - 1))
+	_check(sim.redevelopment.build(sim, {"kind": "power", "keys": plan.keys, "type": plan.type,
+		"level": plan.level, "was": plan.was}), "a yes makes it a power center")
+	b = sim.buildings[site]
+	lot = sim.lots[site]
+	_check(int(b.level) == 3 and lot.area >= 12_000.0, "a %s on %.0f m²" % [BuildingTypes.name_of(b), lot.area])
+	lay = SiteLayout.for_building(ZoneMap.Zone.COMMERCIAL, int(b.seed), lot, 1, "shopping_center", 3)
+	_check(lay.spots.size() >= 60, "its field has %d stalls" % lay.spots.size())
+	var built := BuildingView.build_for("shopping_center", 1, int(b.seed), 3.9, SiteLayout._fit(lot), {}, 0, "general", 3)
+	_check(built[0].get_surface_count() > 0, "it draws")
 
 
 func _art() -> void:

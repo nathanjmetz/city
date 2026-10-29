@@ -285,6 +285,8 @@ func _tw_chicago(to_curb: float, width: float, storeys: int, roof := true) -> vo
 	var door_x := -w * 0.5 + (floori(bays * 0.5) + 0.5) * bw
 	_box("paint", Vector3(2.4, 2.8, 0.1), Vector3(door_x, 1.4, zf - 0.06), Color("#2c2620"))
 	_box("paint", Vector3(bw - 0.6, 0.5, 1.6), Vector3(door_x, 4.3, zf - 0.8), Color("#2a2a2a"))  # marquee
+	if fine_parts:
+		_tw_chicago_entry(door_x, zf, bw - 0.6)
 	if not _homes:
 		_sign(Vector3(door_x, 4.6, zf - 1.62), bw - 1.0, 0.8)
 	# The shaft: a Chicago window in every bay of every floor, between piers.
@@ -426,6 +428,70 @@ func _tw_added(add: int) -> void:
 	_box("brick", Vector3(5.0, 3.6, 6.0), Vector3(-aw * 0.3, top + 0.6 + 1.8, cz + ad * 0.25), col.darkened(0.1))  # elevator penthouse
 	if storeys >= 8:
 		_tw_roof_sign(Vector3(0, top + 0.6, zf + back + 1.6), minf(aw * 0.6, 20.0))
+
+
+## Desktop: a Chicago School block's lobby entrance (the Marquette and
+## Monadnock in Chicago, Indianapolis's Lemcke and Guaranty buildings): a
+## bronze revolving door with a swing door each side, a transom of
+## prism glass above, and the marquee's bronze fascia with a lit soffit.
+## `mw` is the marquee's width. Draws no random numbers.
+func _tw_chicago_entry(x: float, zf: float, mw: float) -> void:
+	var bronze := Color("#5a4632")
+	var fz := zf - 0.12
+	var dc := Vector3(x, 0, fz - 0.05)
+	_cylinder("metal", dc + Vector3(0, 2.5, 0), 1.2, 0.35, bronze)
+	_cylinder("metal", dc, 1.2, 0.05, bronze)
+	_box("metal", Vector3(0.08, 2.5, 0.08), dc + Vector3(0, 1.25, 0), bronze)
+	for k in 7:
+		var a := TAU * (k + 0.5) / 7.0
+		_box("metal", Vector3(0.06, 2.5, 0.06), dc + Vector3(cos(a) * 1.17, 1.25, sin(a) * 1.17), bronze)
+	for k in 4:
+		var a := TAU * k / 4.0 + 0.3
+		_box("metal", Vector3(1.05, 2.4, 0.05), dc + Vector3(cos(a) * 0.52, 1.25, sin(a) * 0.52), Color("#9fb3bd"),
+			Basis(Vector3.UP, -a))
+	for sx in [-1.0, 1.0]:
+		var c := Vector3(x + sx * 1.9, 0, fz)
+		_box("metal", Vector3(1.1, 2.6, 0.06), c + Vector3(0, 1.3, 0), bronze)
+		_glass(c + Vector3(0, 1.4, -0.04), Vector3(-1, 0, 0), 0.75, 2.0, 0.0)
+		_box("metal", Vector3(0.6, 0.05, 0.08), c + Vector3(0, 1.05, -0.08), Color("#b08d57"))  # push bar
+	_box("metal", Vector3(5.0, 0.15, 0.1), Vector3(x, 2.85, fz), bronze)  # transom bar
+	_box("paint", Vector3(5.0, 0.95, 0.05), Vector3(x, 3.4, fz + 0.02), Color("#9fa49a"))  # prism glass
+	for i in 9:
+		_box("metal", Vector3(0.04, 0.95, 0.06), Vector3(x - 2.0 + i * 0.5, 3.4, fz - 0.02), bronze)
+	# The marquee: a bronze fascia with a lighter band and downlights under it.
+	_box("metal", Vector3(mw + 0.06, 0.12, 0.06), Vector3(x, 4.48, zf - 1.62), Color("#8a6a3e"))
+	_box("metal", Vector3(mw + 0.06, 0.08, 0.06), Vector3(x, 4.12, zf - 1.62), Color("#8a6a3e"))
+	var n := maxi(2, roundi(mw / 1.5))
+	for i in n:
+		_box("paint", Vector3(0.25, 0.03, 0.25), Vector3(x - mw * 0.5 + (i + 0.5) * mw / n, 4.03, zf - 0.8), Color("#f4f0e2"))
+
+
+## Desktop: the mouth of a podium garage on the street (any downtown
+## Indianapolis or Columbus garage): the coiling grille rolled up in its
+## hood, a yellow-and-black clearance bar hung on chains, the ramp's lit
+## ceiling inside, and a blue "P" blade sign beside the opening.
+func _tw_garage_mouth(x: float, zf: float) -> void:
+	_box("metal", Vector3(6.4, 0.5, 0.5), Vector3(x, 4.05, zf - 0.3), Color("#6f7275"))  # grille hood
+	for sx in [-1.0, 1.0]:
+		_box("metal", Vector3(0.12, 3.8, 0.12), Vector3(x + sx * 3.05, 1.9, zf - 0.12), Color("#6f7275"))  # guides
+		_box("metal", Vector3(0.02, 0.5, 0.02), Vector3(x + sx * 2.2, 3.35, zf - 0.6), Color("#3a3a3a"))  # chains
+	for i in 6:
+		_box("paint", Vector3(0.75, 0.15, 0.08), Vector3(x - 2.6 + i * 1.04 + 0.26, 3.05, zf - 0.6),
+			Color("#e5b81e") if i % 2 == 0 else Color("#1a1a1a"))  # clearance bar
+	for i in 3:
+		_box("paint", Vector3(1.2, 0.04, 0.2), Vector3(x - 1.8 + i * 1.8, 3.75, zf - 0.11), Color("#f1eedf"))  # ceiling lights
+	var px := x + (3.9 if x < 0.0 else -3.9)
+	_box("metal", Vector3(0.1, 0.1, 0.6), Vector3(px, 4.4, zf - 0.3), Color("#3a3a3a"))
+	_box("paint", Vector3(0.12, 1.1, 0.9), Vector3(px, 3.8, zf - 0.6), Color("#1d4f9a"))
+	# A white P on each face, its bowl to the viewer's right on both.
+	for s in [-1.0, 1.0]:
+		var fx: float = px + s * 0.07
+		var bz: float = s * 0.17  # the bowl's side, toward the street on the +x face
+		var white := Color("#f5f5f2")
+		_box("paint", Vector3(0.02, 0.7, 0.14), Vector3(fx, 3.8, zf - 0.6 + bz), white)  # the stem
+		_box("paint", Vector3(0.02, 0.12, 0.34), Vector3(fx, 4.09, zf - 0.6), white)
+		_box("paint", Vector3(0.02, 0.12, 0.34), Vector3(fx, 3.79, zf - 0.6), white)
+		_box("paint", Vector3(0.02, 0.42, 0.1), Vector3(fx, 3.94, zf - 0.6 - bz), white)
 
 
 ## The back of a prewar block, on its alley: a steel service door and a
@@ -637,6 +703,8 @@ func _tw_deco(to_curb: float, width: float, storeys: int) -> void:
 			_glass(c, face[1], w0 / n - 1.2, 3.8, 0.0)
 	_box("brick", Vector3(5.0, 8.0, 0.6), Vector3(0, 4.0, zf - 0.3), base_stone.lightened(0.1))  # limestone portal
 	_box("paint", Vector3(3.0, 6.5, 0.1), Vector3(0, 3.25, zf - 0.62), Color("#3b2f22"))  # bronze and glass
+	if fine_parts:
+		_tw_deco_portal(zf - 0.67, base_stone.lightened(0.1))
 	if not _homes:
 		_sign(Vector3(0, 7.3, zf - 0.66), 4.2, 0.6)
 	# The crown: two more small steps.
@@ -672,6 +740,57 @@ func _tw_deco(to_curb: float, width: float, storeys: int) -> void:
 		_:
 			_box("metal", Vector3(0.2, 9.0, 0.2), Vector3(0, top + 4.5, cz1), Color("#c9cccd"))  # flagpole
 			_box("paint", Vector3(2.2, 1.3, 0.04), Vector3(-1.2, top + 8.3, cz1), Color("#3c3b6e"))
+
+
+## Desktop: the deco portal as you walk up to it (Indianapolis's Circle
+## Tower and Indiana Bell Building, Chicago's Board of Trade): stepped,
+## fluted limestone jambs, a pair of bronze-framed glass doors under a
+## transom, a cast bronze grille of chevrons and a sunburst filling the
+## tall opening above, and bronze lanterns either side. `fz` is the face of
+## the bronze panel. Draws no random numbers.
+func _tw_deco_portal(fz: float, stone: Color) -> void:
+	var bronze := Color("#5a4632")
+	var dark := Color("#2e251b")
+	# Stepped jambs: two reveals inside the portal, then flutes on its face.
+	for k in 2:
+		var jw := 3.0 + 0.5 * (k + 1)
+		for sx in [-1.0, 1.0]:
+			_box("brick", Vector3(0.25, 6.6 + k * 0.3, 0.2 + k * 0.15), Vector3(sx * (jw * 0.5 - 0.12), 3.3 + k * 0.15, fz - 0.1 - k * 0.07), stone.darkened(0.04 * k))
+		_box("brick", Vector3(jw, 0.25, 0.2 + k * 0.15), Vector3(0, 6.6 + k * 0.3, fz - 0.1 - k * 0.07), stone.darkened(0.04 * k))
+	for sx in [-1.0, 1.0]:
+		for i in 3:
+			_box("brick", Vector3(0.12, 7.4, 0.08), Vector3(sx * (2.05 + i * 0.22), 3.7, fz + 0.03), stone.lightened(0.06))
+	# The doors: two leaves, each a glass light in a bronze frame.
+	for sx in [-0.7, 0.7]:
+		_box("metal", Vector3(1.3, 2.7, 0.06), Vector3(sx, 1.35, fz - 0.03), bronze)
+		_glass(Vector3(sx, 1.45, fz - 0.07), Vector3(-1, 0, 0), 0.9, 2.1, 0.0)
+		_box("metal", Vector3(0.05, 0.6, 0.08), Vector3(sx * 0.2, 1.1, fz - 0.1), Color("#b08d57"))  # pull
+	_box("metal", Vector3(3.0, 0.18, 0.1), Vector3(0, 2.8, fz - 0.05), bronze)  # transom bar
+	_glass(Vector3(0, 3.15, fz - 0.03), Vector3(-1, 0, 0), 2.7, 0.5, 0.0)
+	_box("metal", Vector3(3.0, 0.12, 0.1), Vector3(0, 3.45, fz - 0.05), bronze)
+	# The grille above: upright bars, rows of chevrons, and a sunburst.
+	for i in 7:
+		_box("metal", Vector3(0.06, 3.0, 0.06), Vector3(-1.35 + i * 0.45, 5.0, fz - 0.05), bronze)
+	for row in 3:
+		var y := 3.9 + row * 0.55
+		for i in 3:
+			var x := -0.9 + i * 0.9
+			for sx in [-1.0, 1.0]:
+				_box("metal", Vector3(0.5, 0.06, 0.06), Vector3(x + sx * 0.2, y + 0.12, fz - 0.08), Color("#8a6a3e"),
+					Basis(Vector3(0, 0, 1), sx * 0.55))
+	var sc := Vector3(0, 5.9, fz - 0.08)
+	_box("metal", Vector3(0.5, 0.25, 0.06), sc, Color("#b08d57"))
+	for i in 9:
+		var a := PI * (i + 0.5) / 9.0
+		_box("metal", Vector3(0.9, 0.05, 0.05), sc + Vector3(cos(a) * 0.5, sin(a) * 0.5, 0), Color("#b08d57"),
+			Basis(Vector3(0, 0, 1), a))
+	# Bronze lanterns on brackets either side of the doors.
+	for sx in [-1.0, 1.0]:
+		var lc := Vector3(sx * 2.9, 3.2, fz + 0.2)
+		_box("metal", Vector3(0.08, 0.08, 0.5), lc + Vector3(0, 0.45, 0.25), dark)  # bracket back to the wall
+		_box("metal", Vector3(0.36, 0.6, 0.36), lc, dark)
+		_box("paint", Vector3(0.28, 0.45, 0.38), lc, Color("#efe2bd"))
+		_box("metal", Vector3(0.44, 0.08, 0.44), lc + Vector3(0, 0.34, 0), dark)
 
 
 # ---------------------------------------------------------------- postwar glass
@@ -1466,9 +1585,21 @@ func _tw_crown(kind: String, w: float, d: float, cz: float, y: float, stone: Col
 				cw -= 3.0
 				cd -= 3.0
 				_box("brick", Vector3(cw, 3.0, cd), Vector3(0, yy + 1.5, cz), stone)
+				if fine_parts and k == 0:
+					# Stone urns on the corners of the setback (the 1980s
+					# borrowing of the 1920s cornice finial).
+					for sx in [-1.0, 1.0]:
+						for sz in [-1.0, 1.0]:
+							var u := Vector3(sx * (w * 0.5 - 0.9), yy, cz + sz * (d * 0.5 - 0.9))
+							_box("brick", Vector3(1.1, 0.5, 1.1), u + Vector3(0, 0.25, 0), stone.lightened(0.08))
+							_tw_pyramid(u + Vector3(0, 0.5, 0), 0.8, 0.8, 1.6, stone.lightened(0.12))
+				elif k == 1:
+					# The top step hides the cooling towers behind louvres.
+					_tw_louvres(cw, cd, cz, yy, 3.0)
 				yy += 3.0
 			var top_col := TW_COPPER if rng.randf() < 0.6 else glass_col.lightened(0.15)
 			_tw_pyramid(Vector3(0, yy, cz), cw, cd, minf(cw, cd) * 0.75, top_col)
+			_tw_pyramid_trim(Vector3(0, yy, cz), cw, cd, minf(cw, cd) * 0.75, top_col)
 		"spires":
 			_box("brick", Vector3(w - 2.0, 4.0, d - 2.0), Vector3(0, y + 2.0, cz), stone)
 			for sx in [-1.0, 1.0]:
@@ -1488,6 +1619,29 @@ func _tw_crown(kind: String, w: float, d: float, cz: float, y: float, stone: Col
 					_glass(face[0] + Vector3(0, yy + 1.8, 0), face[1], face[2] * 0.6, 1.6, 0.0)
 				yy += 3.2
 			_tw_pyramid(Vector3(0, yy, cz), cw, cd, cw * 0.6, TW_COPPER)
+			_tw_pyramid_trim(Vector3(0, yy, cz), cw, cd, cw * 0.6, TW_COPPER)
+
+
+## Up close, a metal roof pyramid's hips are capped with a raised ridge
+## roll, its eaves have a gutter fascia, and a ball and spire finial tops
+## it (as on the copper roofs of the 1980s towers in Indianapolis).
+func _tw_pyramid_trim(base: Vector3, w: float, d: float, h: float, col: Color) -> void:
+	if not fine_parts:
+		return
+	var apex := base + Vector3(0, h, 0)
+	var cap := col.darkened(0.18)
+	for sx in [-1.0, 1.0]:
+		for sz in [-1.0, 1.0]:
+			var hip: Vector3 = apex - (base + Vector3(sx * w * 0.5, 0, sz * d * 0.5))
+			var up := hip.normalized()
+			var side := up.cross(Vector3(sz, 0, -sx).normalized()).normalized()
+			var bs := Basis(side, up, side.cross(up)).orthonormalized()
+			_box("metal", Vector3(0.32, hip.length(), 0.32), apex - hip * 0.5 + Vector3(0, 0.1, 0), cap, bs)
+	for face in _tw_faces(w, d, base.z, base.x):
+		var out: Vector3 = face[1].cross(Vector3.UP)
+		_box("metal", Vector3(face[2] + 0.5, 0.35, 0.2), face[0] + out * 0.1 + Vector3(0, base.y + 0.1, 0), cap, _tw_yaw(face[1]))
+	_box("metal", Vector3(0.6, 0.6, 0.6), apex + Vector3(0, 0.3, 0), Color("#b8963e"))
+	_box("metal", Vector3(0.14, 3.2, 0.14), apex + Vector3(0, 2.2, 0), Color("#b8963e"))
 
 
 ## A four-sided pyramid of base w by d rising h from `base`.
@@ -1558,6 +1712,8 @@ func _tw_podium(to_curb: float, width: float, storeys: int) -> void:
 	_sign(Vector3(tx, ground_h - 0.2, zf - 1.85), 5.0, 0.6)
 	var ramp_x := pw * 0.5 - 4.0 if tx < 0.0 else -pw * 0.5 + 4.0
 	_box("paint", Vector3(6.0, 3.8, 0.1), Vector3(ramp_x, 1.9, zf - 0.05), Color("#1c1d1e"))  # the garage door
+	if fine_parts:
+		_tw_garage_mouth(ramp_x, zf)
 	for lv in range(1, levels):
 		var y := ground_h + park_h * (lv - 1)
 		# Open decks on every side (a garage needs open walls on at least

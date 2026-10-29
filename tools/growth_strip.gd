@@ -26,6 +26,7 @@ const LADDERS := {
 	"added": [["office", 0, 7.0, "", 30.0], ["office", 1, 7.0, "", 30.0, 3], ["office", 2, 7.0, "", 30.0, 5], ["office", 2, 7.0, "", 30.0, 3]],
 	# A small city's office park, phase by phase, on a run of lots.
 	"park": [["office_park", 0, 1.0, "", 110.0], ["office_park", 1, 1.0, "", 110.0], ["office_park", 2, 1.0, "", 110.0]],
+	"campus": [["office_park", 2, 1.0, "", 120.0, 0, 150.0], ["office_park", 3, 1.0, "", 120.0, 0, 150.0], ["office_park", 3, 1.0, "", 100.0, 0, 180.0]],
 	# Modernist glass towers on bought-up sites (their plazas).
 	"plazas": [["office", 3, 12.0, "glass", 50.0], ["office", 4, 16.0, "glass", 64.0], ["office", 4, 16.0, "glass", 72.0]],
 	"sites": [["office", 3, 12.0, "chicago", 30.0], ["office", 3, 12.0, "chicago", 62.0], ["office", 4, 16.0, "deco", 36.0], ["office", 4, 16.0, "deco", 66.0]],
@@ -34,12 +35,13 @@ const LADDERS := {
 	# A neighborhood center, then grown into a community center on the
 	# block behind it (a block's depth, and a deeper one).
 	"community": [["shopping_center", 1, 2.2, "", 120.0], ["shopping_center", 2, 2.2, "", 120.0, 0, 62.0], ["shopping_center", 2, 2.2, "", 120.0, 0, 85.0]],
+	"power": [["shopping_center", 3, 2.2, "", 200.0, 0, 60.0], ["shopping_center", 3, 2.2, "", 150.0, 0, 90.0], ["shopping_center", 3, 2.2, "", 120.0, 0, 105.0]],
 	"homes": [["house", 0, 0.9], ["house", 1, 0.9], ["row_home", 0, 1.2], ["row_home", 1, 1.2], ["apartments", 0, 2.0]],
 	# A house building on, then turned into a duplex and a fourplex.
 	# A corner store to shop with flats, then bought out next door: a
 	# commercial block across both storefronts.
 	"block": [["shop", 0, 2.2], ["mixed_use", 0, 3.0], ["mixed_use", 1, 3.0], ["commercial_block", 0, 3.0], ["commercial_block", 1, 5.0]],
-	"house": [["house", 0, 0.9], ["house", 1, 0.9], ["house", 2, 0.9], ["house", 3, 0.9], ["duplex", 0, 0.9], ["duplex", 1, 0.9]],
+	"house": [["house", 0, 0.9], ["house", 1, 0.9], ["house", 2, 0.9], ["house", 3, 0.9], ["house", 4, 0.9], ["duplex", 0, 0.9], ["duplex", 1, 0.9]],
 }
 const BASE_W := {"office_park": 110.0, "shopping_center": 60.0, "office": 30.0, "apartments": 30.0, "mixed_use": 20.0, "shop": 20.0, "house": 20.0, "duplex": 22.0, "commercial_block": 28.0, "row_home": 24.0}
 const DEPTH := 55.0

@@ -795,9 +795,10 @@ func _building(st: SurfaceTool, f: Transform3D, size: Vector3, wall: Color, roof
 func _draw_gates() -> void:
 	var blink := int(Time.get_ticks_msec() / 500) % 2
 	var sig := ""
-	for c in sim.rail.crossings:
+	var xs := sim.all_crossings()
+	for c in xs:
 		sig += "1" if c.closed else "0"
-	sig += str(blink) + str(sim.rail.crossings.size()) + _sig.substr(0, 40)
+	sig += str(blink) + str(xs.size()) + str(sim.county_trains.version) + _sig.substr(0, 40)
 	if sig == _gate_sig:
 		return
 	_gate_sig = sig
@@ -807,7 +808,7 @@ func _draw_gates() -> void:
 	lit.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var any := false
 	var any_lit := false
-	for c in sim.rail.crossings:
+	for c in xs:
 		if not sim.network.segments.has(c.seg):
 			continue
 		any = true
@@ -882,6 +883,29 @@ func _draw_trains() -> void:
 			if not lists.has(car[0]):
 				lists[car[0]] = []
 			lists[car[0]].append(Transform3D(Basis.looking_at(dir.normalized(), Vector3.UP), mid))
+	# Cars left at the county interchange for the next through freight, from
+	# the interchange track's far end back.
+	for h in sim.county_trains.handoffs:
+		var pid := int(h.piece)
+		if not sim.rail.pieces.has(pid):
+			continue
+		var L: float = sim.rail._length(pid)
+		var x := 0.5
+		for car in h.cars:
+			var k: String = car[0]
+			var len: float = Rail.STOCK[k].len if Rail.STOCK.has(k) else 18.0
+			var f: Vector3 = sim.rail.pose_at(pid, L - x)[0]
+			var b: Vector3 = sim.rail.pose_at(pid, L - x - len + 1.0)[0]
+			x += len + 1.0
+			if f.distance_to(eye) > FAR or not _cars.has(k):
+				continue
+			var front := Vector3(f.x, height_at(f) + RAIL_Y, f.z)
+			var back := Vector3(b.x, height_at(b) + RAIL_Y, b.z)
+			if (front - back).length() < 0.1:
+				continue
+			if not lists.has(k):
+				lists[k] = []
+			lists[k].append(Transform3D(Basis.looking_at((front - back).normalized(), Vector3.UP), (front + back) * 0.5))
 	for kind in _cars:
 		var mm: MultiMesh = _cars[kind].multimesh
 		var list: Array = lists.get(kind, [])

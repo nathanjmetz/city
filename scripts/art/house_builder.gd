@@ -155,6 +155,10 @@ var _reach := 0.0
 var _improved := Rect2()
 ## A backyard cottage (_cottage), once built: yard things keep off it.
 var _cottage_at := Rect2()
+## The outside stair of a house cut into flats (_cf_flats), and how many
+## flats it now holds (0 while it is one home).
+var _cf_stair := Rect2()
+var _cf_units := 0
 ## Trees this lot plants: [local position, TreeField species, tint, scale].
 var trees := []
 ## Where the home's curbside mailbox stands across the lot (local x), or INF.
@@ -242,6 +246,8 @@ func _house(to_curb: float, storeys := 0) -> Array:
 		_addition(info, body.paint)
 	if grown >= 2:
 		_cottage(info, body.paint)
+	if grown >= 3:
+		_cf_flats(info, body.paint)
 	_yard(info, to_curb)
 	if owner_care >= 1:
 		_improve()
@@ -252,6 +258,88 @@ func _house(to_curb: float, storeys := 0) -> Array:
 	_front_yard(info)
 	_drive_hoop(info)
 	return [_commit_house(), _commit_flat(), trees]
+
+
+## House cut into flats (HouseBuilder.grown 3): a landlord splits the house
+## into an up and a down flat, the way so many older houses in Marion,
+## Muncie and Indianapolis's near-east side were in the 1940s-70s. The
+## upstairs flat needs its own way out (the building code's second exit):
+## on a full two-storey house an open wooden stair up the side away from
+## the drive to a landing and door at the back corner; on a cape or
+## bungalow, whose upstairs is under the roof, its own side door at the
+## ground up an inside stair. Mailboxes by the front door and a meter for
+## each flat on the side wall. Its own random numbers.
+func _cf_flats(h: Dictionary, paint: Dictionary) -> void:
+	if outline.size() >= 3 or pad > 0.0:
+		return
+	var own := RandomNumberGenerator.new()
+	own.seed = hash([rng.seed, "cut into flats"])
+	var dx: float = h.drive_x
+	var away := -1.0 if dx >= (float(h.x0) + float(h.x1)) * 0.5 else 1.0
+	var zf: float = h.front_z
+	# The house's side wall away from the drive, and how far back it runs.
+	var wall_x := INF if away < 0.0 else -INF
+	var span := Vector2.ZERO
+	for m: Rect2 in _masses:
+		if m.position.y > zf + 2.0 or m.end.y < zf + 4.0 or _cottage_at.intersects(m):
+			continue
+		var edge := m.position.x if away < 0.0 else m.end.x
+		if (away < 0.0 and edge < wall_x) or (away > 0.0 and edge > wall_x):
+			wall_x = edge
+			span = Vector2(m.position.y, m.end.y)
+	if absf(wall_x) == INF or half - absf(wall_x) < 1.5:
+		return
+	_cf_units = 2
+	var wood := Color(["#8d7b5f", "#7d7f7c", "#a8977a"][own.randi() % 3])
+	var post := wood.darkened(0.12)
+	var door_col := Color(_pick(["#4d5254", "#6b2e2a", "#2f3f52", "#e8e4da"]))
+	var kind: String = h.get("kind", "")
+	var up := 3.0  # the upstairs floor
+	var run := ceilf(up / 0.19) * 0.25
+	if kind in ["cape", "bungalow"] or span.y - span.x < run + 2.6:
+		# Its own side door at the ground by the back corner (clear of a
+		# gable-end chimney and the side windows), under a little hood.
+		var z := maxf(span.y - 0.95, span.x + 1.2)
+		var x := wall_x + away * 0.03
+		_box("paint", Vector3(0.06, 2.05, 0.9), Vector3(x, 0.45 + 1.02, z), door_col)
+		_box("paint", Vector3(0.1, 0.12, 1.15), Vector3(x + away * 0.03, 0.45 + 2.12, z), TRIM)
+		_box("concrete", Vector3(1.0, 0.45, 1.3), Vector3(wall_x + away * 0.5, 0.22, z), FOUNDATION)
+		_box("paint", Vector3(0.8, 0.06, 1.4), Vector3(wall_x + away * 0.4, 0.45 + 2.5, z), paint.roof)
+		_cf_stair = Rect2(minf(wall_x, wall_x + away * 1.0), z - 0.7, 1.0, 1.4)
+	else:
+		# The landing at the back corner, the stair down toward the street.
+		var sw := 1.0
+		var sx := wall_x + away * (sw * 0.5 + 0.05)
+		var z1 := span.y - 0.15
+		var z0 := z1 - 1.4
+		var zb := z0 - run
+		_box("paint", Vector3(sw + 0.1, 0.08, 1.4), Vector3(sx, up - 0.04, (z0 + z1) * 0.5), wood)
+		_box("paint", Vector3(0.06, 2.05, 0.9), Vector3(wall_x + away * 0.03, up + 1.02, (z0 + z1) * 0.5), door_col)
+		_box("paint", Vector3(0.1, 0.12, 1.1), Vector3(wall_x + away * 0.06, up + 2.12, (z0 + z1) * 0.5), TRIM)
+		for pz in [z0 + 0.06, z1 - 0.06]:
+			_box("paint", Vector3(0.12, up + 1.07, 0.12), Vector3(wall_x + away * (sw + 0.04), (up + 1.07) * 0.5, pz), post)
+		var n := ceili(up / 0.19)
+		for j in range(1, n):
+			var t := float(j) / n
+			_box("paint", Vector3(sw - 0.06, 0.04, 0.3), Vector3(sx, up * t, lerpf(zb, z0, t)), wood)
+		var length := Vector2(run, up).length()
+		var tilt := Basis(Vector3.RIGHT, -atan2(up, run))
+		for side in [-1.0, 1.0]:
+			_box("paint", Vector3(0.05, 0.24, length), Vector3(sx + side * (sw * 0.5 - 0.03), up * 0.5 - 0.1, (zb + z0) * 0.5), post, tilt)
+		# Rails: up the outer side of the stair and round the landing.
+		_box("paint", Vector3(0.05, 0.05, length), Vector3(sx + away * (sw * 0.5 - 0.03), up * 0.5 + 0.9, (zb + z0) * 0.5), wood, tilt)
+		var ry := up + 1.07
+		_box("paint", Vector3(0.08, 0.05, 1.4), Vector3(wall_x + away * (sw + 0.04), ry, (z0 + z1) * 0.5), wood)
+		_box("paint", Vector3(sw, 0.05, 0.08), Vector3(sx, ry, z1 - 0.06), wood)
+		for k in 6:
+			_box("paint", Vector3(0.04, 0.97, 0.04), Vector3(wall_x + away * (sw + 0.04), up + 0.5, z0 + 0.15 + k * 0.22), wood)
+		_box("concrete", Vector3(sw + 0.2, 0.06, 1.0), Vector3(sx, 0.03, zb - 0.4), FOUNDATION)
+		_cf_stair = Rect2(minf(wall_x, wall_x + away * (sw + 0.1)), zb - 0.9, sw + 0.1, z1 - zb + 0.9)
+		_cf_units = 2 if own.randf() < 0.6 else 3  # some split the downstairs too
+	# Mailboxes for each flat on the front wall by the door.
+	var mx: float = float(h.door_x) - away * 0.75
+	for k in _cf_units:
+		_box("metal", Vector3(0.32, 0.4, 0.1), Vector3(mx + (k - (_cf_units - 1) * 0.5) * 0.36, 1.35, zf - 0.07), Color("#2a2b2c"))
 
 
 ## Home with backyard cottage (HouseBuilder.grown 2): a one-storey cottage
@@ -595,7 +683,7 @@ func _utilities(h: Dictionary) -> void:
 	if span != Vector2.INF and rng.randf() < 0.88:
 		var zc := maxf(span.x + 2.0, span.y - 1.5)
 		var unit := Vector3(wall_x + away * 0.85, 0.0, zc)
-		if _in_lot(unit, 0.6) and not _hits_mass(unit, 0.5):
+		if _in_lot(unit, 0.6) and not _hits_mass(unit, 0.5) and not _cf_stair.grow(0.5).has_point(Vector2(unit.x, unit.z)):
 			var shell := Color(_pick(["#c9c5b9", "#b4b6b3", "#8c8f8e", "#c2beb2"]))
 			_box("paint", Vector3(0.95, 0.08, 0.95), unit + Vector3(0, 0.04, 0), Color("#a7a59e"))
 			_box("paint", Vector3(0.76, 0.74, 0.76), unit + Vector3(0, 0.45, 0), shell)
@@ -606,6 +694,9 @@ func _utilities(h: Dictionary) -> void:
 			# height, gas low with its regulator.
 			var mz := maxf(span.x + 0.8, zc - 2.2)
 			_box("paint", Vector3(0.3, 0.38, 0.26), Vector3(wall_x + away * 0.06, 1.55, mz), Color("#9fa3a6"))
+			# A house cut into flats has a meter for each (a bank on the wall).
+			for k in range(1, _cf_units):
+				_box("paint", Vector3(0.3, 0.38, 0.26), Vector3(wall_x + away * 0.06, 1.55, mz + k * 0.42), Color("#9fa3a6"))
 			_box("paint", Vector3(0.36, 0.42, 0.34), Vector3(wall_x + away * 0.1, 0.55, mz - 0.9), Color("#b8b9b4"))
 			_box("paint", Vector3(0.06, 0.5, 0.06), Vector3(wall_x + away * 0.12, 0.25, mz - 0.9), Color("#d9b02a"))
 	# Trash and recycling carts (96 gal: 0.74 x 0.86 m, 1.1 m tall) beside
@@ -829,16 +920,15 @@ func _bonus_room(h: Dictionary, paint: Dictionary) -> void:
 ## than pull it down. One that had two storeys already stays as it was; a
 ## cape or bungalow gets a full shed dormer, the usual way a Midwestern
 ## owner finishes the attic (the "dormered" cape and bungalow); a ranch
-## owner who needs two storeys builds new (`key` as asked).
+## owner builds a storey on top (_pop_top).
 func _grown_key(key: Array) -> Array:
 	var first := key.duplicate()
 	first[4] = 0
 	var kind: String = _shape(first).info.get("kind", "")
 	if not kind in ONE_STOREY:
 		return first
-	if kind in ["cape", "bungalow"]:
-		return first + ["dormer"]
-	return key
+	# A cape or bungalow raises a dormer, a ranch a storey (_pop_top).
+	return first + ["dormer"]
 
 
 ## A plan's info and masses without drawing it (a kept plan's, or laid out
@@ -1302,7 +1392,8 @@ func _ranch(zf: float, gs: float, gw: float, siding: Color, roof: Color, shutter
 		_box("brick", Vector3(w + 0.03, bh, 0.14), Vector3(cx, 0.4 + bh * 0.5, zf - 0.05), brick)
 		_box("paint", Vector3(w + 0.1, 0.07, 0.2), Vector3(cx, 0.4 + bh + 0.035, zf - 0.08), Color("#cfc8b6"))
 	var rise := rng.randf_range(1.1, 1.7)
-	if rng.randf() < 0.5:
+	var hip := rng.randf() < 0.5
+	if hip:
 		_hip_roof(cx, cz, top, w, d, rise, roof)
 		_hip_roof(gx, gcz, top, gw, gd, rise * 0.95, roof)
 	else:
@@ -1325,6 +1416,8 @@ func _ranch(zf: float, gs: float, gw: float, siding: Color, roof: Color, shutter
 		_window(Vector3(sx, 2.0, z), Vector3(0, 0, gs), 0.9, 1.35, true, false, shutter)
 	_garage(gx, gz0, gw, 2.15)
 	_back(x0, x1, zf + d, [2.0], 0.4)
+	if _raised:
+		_pop_top(cx, cz, w, d, top, rise, hip, siding, roof, door_x, face, shutters, shutter)
 	return {"drive_x": gx, "drive_w": gw - 0.8, "garage_z": gz0, "door_x": door_x,
 		"walk_z": zf - 1.9, "front_z": zf, "x0": minf(x0, gx - gw * 0.5), "x1": maxf(x1, gx + gw * 0.5), "gs": gs}
 
@@ -1797,8 +1890,56 @@ func _midcentury(zf: float, gs: float, gw: float, roof: Color, door: Color, bric
 	_stoop(door_x, zf, 2.6, 1.4, 0.2)
 	_garage(gx, zf, gw, 2.15)
 	_back(x0, x1, zf + d, [1.8], 0.25)
+	if _raised:
+		_pop_top(cx, cz, w, d, top, 0.9, false, wall, roof, door_x, zf, false, board, true)
 	return {"drive_x": gx, "drive_w": gw - 0.8, "garage_z": zf, "door_x": door_x,
 		"walk_z": zf - 1.4, "front_z": zf, "x0": minf(x0, gx - gw * 0.5), "x1": maxf(x1, gx + gw * 0.5), "gs": gs}
+
+
+## A ranch raised a storey (the "pop-top" or second-storey addition): the
+## owner who needs room on a lot with no space to build out builds up over
+## the living end, leaving the garage as it was, as Indianapolis's
+## Lawrence and Speedway ranches and Fort Wayne's postwar ones have. A
+## storey of siding over the old walls (the old eaves left as a skirt
+## round it), a roof like the old one on top, windows over the ones
+## below, and a gabled portico over the front door, which pop-tops add to
+## carry the taller front. `modern`: a mid-century ranch's, under a low
+## roof with a band of clerestory windows. Its own random numbers.
+func _pop_top(cx: float, cz: float, w: float, d: float, top: float, rise: float, hip: bool, siding: Color,
+		roof: Color, door_x: float, face: float, shutters: bool, shutter: Color, modern := false) -> void:
+	var own := RandomNumberGenerator.new()
+	own.seed = hash([rng.seed, "pop top"])
+	var up := top + 2.7
+	var zf := cz - d * 0.5
+	_box("siding", Vector3(w, up - top, d), Vector3(cx, (top + up) * 0.5, cz), siding)
+	_corners(cx - w * 0.5, cx + w * 0.5, zf, zf + d, top, up)
+	if modern:
+		_gable_roof(cx, cz, up, d, rise, w, true, roof, siding)
+		var n := maxi(2, int((w - 1.0) / 1.6))
+		for i in n:
+			var x := cx - w * 0.5 + 0.8 + (i + 0.5) * (w - 1.6) / n
+			_glass(Vector3(x, up - 0.75, zf - 0.01), Vector3(-1, 0, 0), (w - 1.6) / n - 0.15, 0.8, 0.5)
+		_box("paint", Vector3(w - 1.4, 0.08, 0.12), Vector3(cx, up - 1.2, zf - 0.04), shutter)
+	else:
+		if hip:
+			_hip_roof(cx, cz, up, w, d, rise, roof)
+		else:
+			_gable_roof(cx, cz, up, d, rise, w, true, roof, siding)
+		var n := clampi(int(w / 2.7), 2, 5)
+		for i in n:
+			var x := lerpf(cx - w * 0.5 + 1.3, cx + w * 0.5 - 1.3, i / float(n - 1))
+			_window(Vector3(x, top + 1.45, face), Vector3(-1, 0, 0), 0.9, 1.3, true, shutters, shutter)
+		# The portico: two posts and a little gable over the door.
+		var pd := 1.6
+		_box("concrete", Vector3(2.4, 0.35, pd), Vector3(door_x, 0.175, zf - pd * 0.5), FOUNDATION)
+		for sx in [-1.0, 1.0]:
+			_box("paint", Vector3(0.16, 2.6, 0.16), Vector3(door_x + sx * 1.0, 1.65, zf - pd + 0.15), TRIM)
+		_gable_roof(door_x, zf - pd * 0.5 + 0.05, 2.95, 2.5, own.randf_range(0.6, 0.8), pd + 0.2, false, roof, TRIM)
+	for s in [-1.0, 1.0]:
+		for z in [cz - d * 0.25, cz + d * 0.25]:
+			_window(Vector3(cx + s * w * 0.5, top + 1.45, z), Vector3(0, 0, -s), 0.9, 1.2, true, false, shutter)
+	for x in [cx - w * 0.25, cx + w * 0.25]:
+		_window(Vector3(x, top + 1.45, zf + d), Vector3(1, 0, 0), 0.9, 1.2, true, false, TRIM)
 
 
 # ---------------------------------------------------------------- parts

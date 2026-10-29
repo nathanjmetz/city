@@ -34,7 +34,7 @@ extends RefCounted
 signal changed
 
 const HUB := "developer"
-const KINDS := ["apartments", "highrise", "shopping", "officepark", "community"]
+const KINDS := ["apartments", "highrise", "shopping", "officepark", "community", "power"]
 
 ## permit id -> {"kind", "keys", "type", "level", ...}
 var asks := {}
@@ -238,23 +238,37 @@ func _plan_officepark(sim, faces: Dictionary) -> Dictionary:
 ## big enough for one: it buys the houses on the lots behind (or beside)
 ## it, rezoned, until the site is big enough.
 func _plan_community(sim, _faces: Dictionary) -> Dictionary:
+	return _plan_grow_center(sim, 2, Balance.REDEV_COMMUNITY_HOMES)
+
+
+## A community center that a power center's category killers would come
+## to: it buys more of the block behind it, the same way.
+func _plan_power(sim, _faces: Dictionary) -> Dictionary:
+	return _plan_grow_center(sim, 3, Balance.REDEV_POWER_HOMES)
+
+
+## A shopping center one stage below `level` grows into it by buying, lot by
+## lot, up to `most` houses touching its site, nearest first.
+func _plan_grow_center(sim, level: int, most: int) -> Dictionary:
 	var market: int = sim.market.people(sim)
-	if not Market.supports(market, "shopping_center", 2) or float(sim.demand.get(ZoneMap.Zone.COMMERCIAL, 0.0)) < Balance.REDEV_DEMAND:
+	if not Market.supports(market, "shopping_center", level) or float(sim.demand.get(ZoneMap.Zone.COMMERCIAL, 0.0)) < Balance.REDEV_DEMAND:
 		return {}
-	var need := float(BuildingTypes.TYPES.shopping_center.stages[2].lot)
-	var cap: Array = LotPlanner.MAX_LOT.highway_shop
+	var need := float(BuildingTypes.TYPES.shopping_center.stages[level].lot)
+	var cap: Array = LotPlanner.MAX_LOT.power_center if level >= 3 else LotPlanner.MAX_LOT.highway_shop
 	var centers := []
 	for k in sim.buildings:
 		var b: Dictionary = sim.buildings[k]
-		if BuildingTypes.type_of(b) == "shopping_center" and int(b.get("level", 0)) == 1 and sim.lots.has(k) \
+		if BuildingTypes.type_of(b) == "shopping_center" and int(b.get("level", 0)) == level - 1 and sim.lots.has(k) \
 				and sim.construction.is_done("lot:" + k, sim.tick_count) and not sim.heritage.protected(k):
 			centers.append(k)
 	centers.sort()
 	for key in centers:
 		var lot: Dictionary = sim.lots[key]
+		# A wide center looks as far out from its ends as a small one does.
+		var reach: float = BuildingTypes.ASSEMBLE_REACH + (float(lot.width) * 0.5 if level >= 3 else 0.0)
 		var near := []
 		for k in sim.lots:
-			if k != key and sim.lots[k].pos.distance_to(lot.pos) < BuildingTypes.ASSEMBLE_REACH \
+			if k != key and sim.lots[k].pos.distance_to(lot.pos) < reach \
 					and _zone(sim, k) == ZoneMap.Zone.RESIDENTIAL and _for_sale(sim, k, ["house", ""]):
 				near.append(k)
 		near.sort()
@@ -265,7 +279,7 @@ func _plan_community(sim, _faces: Dictionary) -> Dictionary:
 		var area: float = lot.area
 		var width: float = lot.width
 		var grew := true
-		while grew and area < need and keys.size() <= Balance.REDEV_COMMUNITY_HOMES:
+		while grew and area < need and keys.size() <= most:
 			grew = false
 			for k in near:
 				if k in keys:
@@ -283,6 +297,12 @@ func _plan_community(sim, _faces: Dictionary) -> Dictionary:
 				break
 		if area < need or keys.size() < 2:
 			continue
+		if level == 3:
+			return _plan(sim, "power", keys, "shopping_center", 3,
+				"Let the shopping center on %s become a power center" % _street(sim, key),
+				"A home improvement store and other big stores want to come to town. The center on %s could take them if it buys %d more lots." % [
+					_street(sim, key), keys.size() - 1],
+				"Homes to commercial (power center)")
 		return _plan(sim, "community", keys, "shopping_center", 2,
 			"Let the shopping center on %s grow" % _street(sim, key),
 			"A discount store wants to come to town. The center on %s could take it if it buys %d lots behind it." % [
@@ -373,7 +393,7 @@ func carry_out(sim) -> void:
 		asks.erase(id)
 		if st == Permits.State.APPROVED:
 			sim.permits.done(id)
-			if build(sim, a) and a.kind in ["shopping", "community"]:
+			if build(sim, a) and a.kind in ["shopping", "community", "power"]:
 				sim.culture.nudge("trade", Balance.CULTURE_YES_LEAN)
 		changed.emit()
 
@@ -390,7 +410,7 @@ func build(sim, a: Dictionary) -> bool:
 	var zone := int(BuildingTypes.TYPES[type].zone)
 	var site: String = keys[0]
 	var cap_kind: String = {"apartments": "apartments", "highrise": "downtown", "shopping": "highway_shop",
-		"officepark": "highway_shop", "community": "highway_shop"}[str(a.kind)]
+		"officepark": "highway_shop", "community": "highway_shop", "power": "power_center"}[str(a.kind)]
 	# The rezoning: the whole frontage of every lot not zoned for it yet.
 	var rezoned := false
 	for k in keys:
@@ -416,7 +436,8 @@ func build(sim, a: Dictionary) -> bool:
 	b.why = {"apartments": "The town rezoned these houses for apartments",
 		"highrise": "The town approved a high-rise here", "shopping": "The town rezoned this row for shopping",
 		"officepark": "The town rezoned this land for an office park",
-		"community": "The town let this shopping center grow"}[str(a.kind)]
+		"community": "The town let this shopping center grow",
+		"power": "The town let this shopping center grow into a power center"}[str(a.kind)]
 	sim.buildings[site] = b
 	sim.care.forget(site)
 	var lot: Dictionary = sim.lots[site]

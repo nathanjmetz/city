@@ -601,6 +601,30 @@ static func _photo_apply(mat: ShaderMaterial, key: String, level: float, prefix 
 	mat.set_shader_parameter(prefix, level if mat.get_shader_parameter(prefix + "_albedo") != null else 0.0)
 
 
+## Down the middle of every lane, where no tyre runs, a darker strip of oil
+## and drips from passing cars, patchy along its length; the wheel paths
+## either side stay a touch darker than the shoulder of the lane. Laid over
+## the asphalt as a multiply on desktop High and up (RoadMesh._lane_wear).
+const LANE_WEAR := """
+void fragment() {
+	// UV.x * 4 runs 0..1 across the lane.
+	float a = UV.x * 4.0;
+	vec2 p = world_pos.xz;
+	float fade = clamp(1.0 - length(VERTEX) / 350.0, 0.0, 1.0);
+	float patchy = smoothstep(0.25, 0.75, texture(noise_soft, p / 11.0 + 0.3).r);
+	float drip = exp(-pow((a - 0.5) / 0.12, 2.0)) * (0.35 + 0.65 * patchy);
+	drip *= 0.7 + 0.6 * texture(noise_grain, p / 0.8).r;
+	float tyre = exp(-pow((a - 0.22) / 0.07, 2.0)) + exp(-pow((a - 0.78) / 0.07, 2.0));
+	ALBEDO = vec3(1.0 - fade * (0.3 * drip + 0.07 * tyre));
+}
+"""
+
+
+static func lane_wear() -> ShaderMaterial:
+	return _make("lane wear", LANE_WEAR, {}, COMMON.replace("render_mode cull_disabled;",
+		"render_mode cull_disabled, blend_mul, unshaded, depth_draw_never, shadows_disabled, fog_disabled;"))
+
+
 static func gravel() -> ShaderMaterial:
 	return _make("gravel", GRAVEL, {})
 

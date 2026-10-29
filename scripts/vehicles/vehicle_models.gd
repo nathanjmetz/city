@@ -1221,7 +1221,10 @@ func _garbage_truck() -> void:  # rear loader on a Mack LR cab-over
 	], [_edges(PAINT, TRIM)], PAINT, DARK)
 	_wheels([1.0, 6.6, 7.9], 0.52, hw, 0.3)
 	_box(Vector3(0, 0.9, 0.0), Vector3(2.2, 0.3, 0.1), TRIM)
-	_box(Vector3(hw - 0.25, 1.1, -0.02), Vector3(0.3, 0.16, 0.06), HEAD, true)
+	if _hi:
+		_refuse_face(hw)
+	else:
+		_box(Vector3(hw - 0.25, 1.1, -0.02), Vector3(0.3, 0.16, 0.06), HEAD, true)
 	_box(Vector3(hw - 0.15, 2.4, L + 0.01), Vector3(0.14, 0.14, 0.04), TAIL, true)
 	_box(Vector3(0, 2.86, 1.2), Vector3(0.9, 0.1, 0.2), BEACON_AMBER)
 
@@ -1258,7 +1261,10 @@ func _garbage_side() -> void:
 	_box(Vector3(hw + 0.2, 1.1, 3.2), Vector3(0.08, 0.5, 0.9), STEEL)
 	_wheels([1.0, 6.6, 7.9], 0.52, hw, 0.3)
 	_box(Vector3(0, 0.9, 0.0), Vector3(2.2, 0.3, 0.1), TRIM)
-	_box(Vector3(hw - 0.25, 1.1, -0.02), Vector3(0.3, 0.16, 0.06), HEAD, true)
+	if _hi:
+		_refuse_face(hw)
+	else:
+		_box(Vector3(hw - 0.25, 1.1, -0.02), Vector3(0.3, 0.16, 0.06), HEAD, true)
 	_box(Vector3(hw - 0.2, 2.2, L - 0.15), Vector3(0.14, 0.14, 0.04), TAIL, true)
 	_box(Vector3(0, 2.86, 1.2), Vector3(0.9, 0.1, 0.2), BEACON_AMBER)
 
@@ -1282,7 +1288,10 @@ func _fire_engine() -> void:  # custom-cab pumper (Pierce Enforcer)
 	_wheels([1.3, 7.4], 0.55, hw, 0.32)
 	_box(Vector3(0, 3.06, 1.7), Vector3(2.2, 0.12, 0.3), BEACON_RED)
 	_box(Vector3(0, 1.0, -0.06), Vector3(2.4, 0.4, 0.14), CHROME)
-	_box(Vector3(hw - 0.3, 1.25, -0.02), Vector3(0.36, 0.18, 0.06), HEAD, true)
+	if _hi:
+		_pumper_face(hw)
+	else:
+		_box(Vector3(hw - 0.3, 1.25, -0.02), Vector3(0.36, 0.18, 0.06), HEAD, true)
 	_box(Vector3(hw - 0.1, 1.1, L + 0.01), Vector3(0.14, 0.2, 0.04), TAIL, true)
 	if _lo:
 		return
@@ -1294,6 +1303,59 @@ func _fire_engine() -> void:  # custom-cab pumper (Pierce Enforcer)
 			_box(Vector3(s * (hw + 0.004), 1.65, 4.0 + i * 0.85 + (1.6 if i > 2 else 0.0)), Vector3(0.006, 1.6, 0.04), CHROME)
 	for x in [-1.2, 1.2]:
 		_box(Vector3(x, 2.9, L - 0.05), Vector3(0.12, 0.14, 0.08), BEACON_RED)
+
+
+## Ultra: a low-cab-forward refuse truck's face (Mack LR, Peterbilt 520):
+## the black grille with its chrome bars under the split windshield,
+## headlamps in dark housings at the corners with amber markers above,
+## west-coast mirrors on arms and the convex corner mirrors drivers use to
+## see the curb right below the nose. Layers stand 6 mm apart.
+func _refuse_face(hw: float) -> void:
+	_box(Vector3(0, 1.22, -0.006), Vector3(1.1, 0.42, 0.012), TRIM)
+	for i in 4:
+		_box(Vector3(0, 1.07 + i * 0.1, -0.012), Vector3(1.0, 0.03, 0.012), CHROME)
+	_box(Vector3(hw - 0.3, 1.2, -0.006), Vector3(0.34, 0.2, 0.012), TRIM, true)
+	_box(Vector3(hw - 0.3, 1.2, -0.012), Vector3(0.28, 0.13, 0.012), HEAD, true)
+	_box(Vector3(hw - 0.3, 1.36, -0.006), Vector3(0.22, 0.06, 0.012), Color(0.95, 0.55, 0.05, 0.5), true)
+	_lcf_glass(Vector3(0, 1.52, 0.0), Vector3(0, 2.8, 0.25), hw - 0.1)
+	_lcf_mirrors(hw, 2.15, 0.45)
+
+
+## Ultra: a custom fire cab's face (Pierce Enforcer, E-One): a chrome
+## grille with dark slots, quad headlamps in black housings either side,
+## red warning lights above them that flash with the siren, and mirrors.
+func _pumper_face(hw: float) -> void:
+	_box(Vector3(0, 1.36, -0.006), Vector3(1.0, 0.44, 0.012), CHROME)
+	for i in 5:
+		_box(Vector3(0, 1.2 + i * 0.08, -0.012), Vector3(0.9, 0.035, 0.012), TRIM)
+	_box(Vector3(hw - 0.32, 1.38, -0.006), Vector3(0.44, 0.22, 0.012), TRIM, true)
+	for dx in [-0.1, 0.1]:
+		_box(Vector3(hw - 0.32 + dx, 1.38, -0.012), Vector3(0.16, 0.15, 0.012), HEAD, true)
+	_box(Vector3(hw - 0.32, 1.56, -0.006), Vector3(0.3, 0.07, 0.012), BEACON_RED, true)
+	_lcf_glass(Vector3(0, 1.66, 0.05), Vector3(0, 3.0, 0.35), hw - 0.08)
+	_lcf_mirrors(hw, 2.45, 0.6)
+
+
+## The split windshield's centre post and a pair of parked wipers on a
+## cab-over's face, from its foot `a` to its top `b`, 8 mm out from the
+## glass.
+func _lcf_glass(a: Vector3, b: Vector3, half: float) -> void:
+	var up := (b - a).normalized()
+	var out := Vector3(0, up.z, -up.y) * 0.008
+	_beam(a + out, b + out, 0.06, TRIM)
+	for x in [-half * 0.5, half * 0.5]:
+		_beam(a + out + up * 0.06 + Vector3(x - half * 0.4, 0, 0),
+			a + out + up * 0.06 + Vector3(x + half * 0.4, 0, 0), 0.025, TRIM)
+
+
+## West-coast mirrors on arms out from both doors, and a convex mirror
+## on a stalk at each front corner.
+func _lcf_mirrors(hw: float, y: float, z: float) -> void:
+	for s in [-1.0, 1.0]:
+		_box(Vector3(s * (hw + 0.14), y + 0.2, z), Vector3(0.28, 0.04, 0.04), TRIM)
+		_box(Vector3(s * (hw + 0.3), y, z), Vector3(0.07, 0.5, 0.2), TRIM)
+		_beam(Vector3(s * (hw - 0.12), y - 0.35, 0.02), Vector3(s * (hw - 0.05), y - 0.3, -0.25), 0.03, TRIM)
+		_cyl(Vector3(s * (hw - 0.05), y - 0.3, -0.25), Vector3(s * (hw - 0.05), y - 0.3, -0.3), 0.09, TRIM, 10)
 
 
 ## A rural water tender (Pierce or KME on a commercial chassis): a 3,000
@@ -1727,12 +1789,92 @@ func _tractor() -> void:  # John Deere 8R row-crop tractor
 	_box(Vector3(0, 3.48, 4.0), Vector3(0.12, 0.1, 0.12), BEACON_AMBER)
 	_cyl(Vector3(0.35, 2.0, 1.9), Vector3(0.35, 3.4, 1.9), 0.07, TRIM)
 	var rim := Color(0.95, 0.75, 0.05, 0.4)
-	_wheel(Vector3(-hw, 0.0, 1.0), 0.62, 0.45, rim)
-	_wheel(Vector3(hw, 0.0, 1.0), 0.62, 0.45, rim)
-	_wheel(Vector3(-hw - 0.15, 0.0, 4.2), 1.0, 0.6, rim)
-	_wheel(Vector3(hw + 0.15, 0.0, 4.2), 1.0, 0.6, rim)
-	_box(Vector3(0, 1.4, 0.04), Vector3(0.6, 0.12, 0.1), HEAD, true)
+	if _hi:
+		_tractor_hi(hw, rim)
+	else:
+		_wheel(Vector3(-hw, 0.0, 1.0), 0.62, 0.45, rim)
+		_wheel(Vector3(hw, 0.0, 1.0), 0.62, 0.45, rim)
+		_wheel(Vector3(-hw - 0.15, 0.0, 4.2), 1.0, 0.6, rim)
+		_wheel(Vector3(hw + 0.15, 0.0, 4.2), 1.0, 0.6, rim)
+		_box(Vector3(0, 1.4, 0.04), Vector3(0.6, 0.12, 0.1), HEAD, true)
 	_box(Vector3(0, 0.75, 5.4), Vector3(0.6, 0.15, 0.4), TRIM)
+
+
+## Ultra: what makes a row-crop tractor read as one (JD 8R, Case IH
+## Magnum): lugged ag tyres on dished rims instead of car wheels, fenders
+## arching over the rears, a four-post cab, the grille and lamps on the
+## nose, a stack of suitcase weights out front, steps and a grab rail up to
+## the door, and the orange slow-moving-vehicle triangle every tractor on
+## an Indiana road must carry (IC 9-21-9, ASABE S276).
+func _tractor_hi(hw: float, rim: Color) -> void:
+	for s in [-1.0, 1.0]:
+		_ag_wheel(Vector3(s * hw, 0.0, 1.0), 0.62, 0.45, rim)
+		_ag_wheel(Vector3(s * (hw + 0.15), 0.0, 4.2), 1.0, 0.6, rim)
+		_fender(Vector3(s * (hw + 0.15), 1.0, 4.2), 1.1, 0.72)
+		# Cab posts at the four corners.
+		for z in [2.8, 4.4]:
+			_box(Vector3(s * 0.75, 2.7, z), Vector3(0.08, 1.3, 0.08), TRIM)
+	_box(Vector3(0, 1.4, -0.006), Vector3(0.72, 0.8, 0.012), TRIM)
+	for i in 6:
+		_box(Vector3(0, 1.08 + i * 0.12, -0.012), Vector3(0.66, 0.025, 0.012), PAINT)
+	for x in [-0.24, 0.24]:
+		_box(Vector3(x, 1.68, -0.018), Vector3(0.18, 0.08, 0.012), HEAD)
+	# Suitcase weights on the front bracket.
+	_box(Vector3(0, 0.62, -0.08), Vector3(0.5, 0.18, 0.16), TRIM)
+	for i in 6:
+		_box(Vector3(-0.42 + i * 0.168, 0.7, -0.3), Vector3(0.15, 0.42, 0.3), TRIM)
+	# Steps and the grab rail on the left, up to the door.
+	for y in [0.75, 1.15, 1.55]:
+		_box(Vector3(-0.85, y, 2.85), Vector3(0.3, 0.04, 0.22), STEEL)
+	_beam(Vector3(-0.8, 1.2, 2.72), Vector3(-0.8, 2.9, 2.72), 0.04, STEEL)
+	# Slow-moving-vehicle emblem on the back of the cab: a red-bordered
+	# fluorescent orange triangle, point up.
+	var o := Vector3(0, 2.35, 4.45)
+	_tri(o + Vector3(-0.21, -0.18, 0), o + Vector3(0.21, -0.18, 0), o + Vector3(0, 0.18, 0), TAPE_RED, o - Vector3(0, 0, 1))
+	o.z += 0.006
+	_tri(o + Vector3(-0.15, -0.14, 0), o + Vector3(0.15, -0.14, 0), o + Vector3(0, 0.12, 0), Color(1.0, 0.38, 0.04, 0.4), o - Vector3(0, 0, 1))
+
+
+## A farm tyre on a dished steel rim: deep sidewall, the rim as a plain
+## dish with its hub, and chevron lugs round the tread.
+func _ag_wheel(c: Vector3, r: float, w: float, rim: Color) -> void:
+	var ax := Vector3(1, 0, 0)
+	var mid := Vector3(c.x, r, c.z)
+	_cyl(mid - ax * w * 0.5, mid + ax * w * 0.5, r - 0.03, TIRE, 24)
+	for side in [-1.0, 1.0]:
+		var face: Vector3 = mid + ax * side * (w * 0.5 + 0.008)
+		_disc(face, ax * side, r * 0.62, rim)
+		_disc(face + ax * side * 0.006, ax * side, r * 0.2, Color(0.2, 0.2, 0.2, 0.2))
+		_disc(face + ax * side * 0.012, ax * side, r * 0.08, rim)
+	# Lugs: bars from each shoulder in toward the middle, offset round the
+	# tyre so they meet in a chevron.
+	var n := 22
+	for k in n:
+		var a1 := TAU * k / n
+		for side in [-1.0, 1.0]:
+			var a2: float = a1 + side * 0.12
+			var p1: Vector3 = mid + ax * side * w * 0.48 + Vector3(0, sin(a1), cos(a1)) * (r - 0.01)
+			var p2: Vector3 = mid + ax * side * w * 0.05 + Vector3(0, sin(a2), cos(a2)) * (r - 0.01)
+			_beam(p1, p2, 0.07, TIRE)
+
+
+## A fender arching over a big rear tyre: a strip of painted steel round
+## `c` (the axle) at radius r, w wide, from behind the wheel up and over to
+## the front.
+func _fender(c: Vector3, r: float, w: float) -> void:
+	var n := 8
+	for i in n:
+		var a1 := lerpf(0.35, PI - 0.35, float(i) / n)
+		var a2 := lerpf(0.35, PI - 0.35, float(i + 1) / n)
+		var d1 := Vector3(0, sin(a1), cos(a1))
+		var d2 := Vector3(0, sin(a2), cos(a2))
+		var hx := Vector3(w * 0.5, 0, 0)
+		var p1 := c + d1 * r
+		var p2 := c + d2 * r
+		_quad(p1 - hx, p1 + hx, p2 + hx, p2 - hx, PAINT, c)
+		var q1 := c + d1 * (r + 0.02)
+		var q2 := c + d2 * (r + 0.02)
+		_quad(q1 - hx, q1 + hx, q2 + hx, q2 - hx, PAINT, c + d1 * 5.0)
 
 
 ## A 500 bu gravity wagon (Parker, Brent) on a four-wheel running gear:
@@ -1771,15 +1913,60 @@ func _combine() -> void:  # John Deere S790, header off for the road
 	], [_edges(PAINT, TRIM)], TRIM, PAINT)
 	_box(Vector3(0, 3.0, 1.2), Vector3(1.7, 1.5, 1.4), GLASS)
 	_box(Vector3(0, 3.8, 1.2), Vector3(1.9, 0.12, 1.6), WHITE)
-	_box(Vector3(0, 4.0, 5.0), Vector3(2.6, 0.6, 3.6), PAINT)
+	if _hi:
+		# The grain tank's folding extensions flare out above the body,
+		# open on top over the grain.
+		_loft([
+			[3.2, 3.7, 4.05, 4.3, 1.25, 1.32, 1.42],
+			[6.8, 3.7, 4.05, 4.3, 1.25, 1.32, 1.42],
+		], [_edges(PAINT, PAINT)], PAINT, PAINT)
+		_box(Vector3(0, 4.306, 5.0), Vector3(2.6, 0.004, 3.4), Color(0.82, 0.68, 0.3, 0.4))
+	else:
+		_box(Vector3(0, 4.0, 5.0), Vector3(2.6, 0.6, 3.6), PAINT)
 	_box(Vector3(0, 3.96, 1.4), Vector3(0.14, 0.12, 0.14), BEACON_AMBER)
 	_beam(Vector3(-1.2, 3.8, 3.6), Vector3(-1.4, 3.8, 8.6), 0.18, PAINT)
 	var rim := Color(0.95, 0.75, 0.05, 0.4)
-	_wheel(Vector3(-1.4, 0.0, 2.4), 0.95, 0.7, rim)
-	_wheel(Vector3(1.4, 0.0, 2.4), 0.95, 0.7, rim)
-	_wheel(Vector3(-1.2, 0.0, 7.0), 0.7, 0.45, rim)
-	_wheel(Vector3(1.2, 0.0, 7.0), 0.7, 0.45, rim)
+	if _hi:
+		_combine_hi(L, rim)
+	else:
+		_wheel(Vector3(-1.4, 0.0, 2.4), 0.95, 0.7, rim)
+		_wheel(Vector3(1.4, 0.0, 2.4), 0.95, 0.7, rim)
+		_wheel(Vector3(-1.2, 0.0, 7.0), 0.7, 0.45, rim)
+		_wheel(Vector3(1.2, 0.0, 7.0), 0.7, 0.45, rim)
 	_box(Vector3(0.5, 3.4, 0.45), Vector3(0.3, 0.12, 0.08), HEAD, true)
+
+
+## Ultra: a combine close up (JD S790, Case IH Axial-Flow): lugged drive
+## and steer tyres, the cab's corner posts and mirrors, the stair up the
+## left front to the platform, the dark mouth of the feeder house with
+## its header off, the rotary radiator screen and louvres at the back of
+## the engine bay, the straw chopper's housing, tail lamps and the
+## slow-moving-vehicle triangle.
+func _combine_hi(L: float, rim: Color) -> void:
+	for s in [-1.0, 1.0]:
+		_ag_wheel(Vector3(s * 1.4, 0.0, 2.4), 0.95, 0.7, rim)
+		_ag_wheel(Vector3(s * 1.2, 0.0, 7.0), 0.7, 0.45, rim)
+		for z in [0.5, 1.9]:
+			_box(Vector3(s * 0.85, 3.0, z), Vector3(0.08, 1.5, 0.08), TRIM)
+		_box(Vector3(s * 1.08, 3.45, 0.7), Vector3(0.38, 0.04, 0.04), TRIM)
+		_box(Vector3(s * 1.28, 3.25, 0.7), Vector3(0.06, 0.4, 0.2), TRIM)
+		_box(Vector3(s * 1.0, 1.05, L - 0.2), Vector3(0.14, 0.18, 0.04), TAIL)
+	# The stair: treads stepping up the left front, with its rail.
+	for i in 6:
+		_box(Vector3(-1.05, 0.55 + i * 0.32, 0.55 + i * 0.12), Vector3(0.5, 0.04, 0.25), STEEL)
+	_beam(Vector3(-1.3, 1.1, 0.4), Vector3(-1.3, 2.9, 1.1), 0.05, STEEL)
+	# The feeder house's mouth, open with the header off.
+	_box(Vector3(0, 1.32, -0.006), Vector3(1.1, 0.6, 0.012), Color(0.04, 0.04, 0.04, 0.3))
+	# Radiator screen and engine louvres on the right side at the back.
+	_disc(Vector3(1.51, 3.0, L - 1.6), Vector3(1, 0, 0), 0.55, Color(0.1, 0.1, 0.1, 0.3))
+	for i in 5:
+		_box(Vector3(1.506, 2.3 + i * 0.16, L - 3.2), Vector3(0.012, 0.06, 1.2), TRIM)
+	# Straw chopper housing under the back, and the SMV sign above it.
+	_box(Vector3(0, 1.25, L + 0.15), Vector3(1.9, 0.5, 0.3), TRIM)
+	var o := Vector3(0, 2.2, L + 0.006)
+	_tri(o + Vector3(-0.21, -0.18, 0), o + Vector3(0.21, -0.18, 0), o + Vector3(0, 0.18, 0), TAPE_RED, o - Vector3(0, 0, 1))
+	o.z += 0.006
+	_tri(o + Vector3(-0.15, -0.14, 0), o + Vector3(0.15, -0.14, 0), o + Vector3(0, 0.12, 0), Color(1.0, 0.38, 0.04, 0.4), o - Vector3(0, 0, 1))
 
 
 func _motorcycle() -> void:  # cruiser (Harley-Davidson Street Glide) with rider

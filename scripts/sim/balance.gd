@@ -217,6 +217,8 @@ const MARKET_MIN := {
 	# ACS: a few doubles in towns of 1,500 or so; fourplexes once a market
 	# reaches a county-seat town's size.
 	"duplex": [1500, 5000],
+	# A house cut into flats wants renters, as a double does.
+	"house": [0, 0, 0, 0, 1500],
 	"apartments": [10_000, 25_000, 100_000, 150_000, 400_000],
 	"mixed_use": [0, 5000, 15_000],
 	# Commercial blocks over two storefronts: county-seat downtowns
@@ -226,8 +228,12 @@ const MARKET_MIN := {
 	# A small city's office park (micropolitan towns, OMB 10,000-50,000:
 	# Kokomo, Marion and Wabash each have one on a bypass road); fully
 	# built out once the market is a county's worth of people.
-	"office_park": [10_000, 15_000, 25_000],
-	"shopping_center": [5000, 10_000, 20_000],  # a discount store wants a trade area of about 20,000 (1980s Walmart/Kmart small-town siting)
+	# A headquarters campus wants a metro's worth of workers (Columbus, Indiana's
+	# Cummins in a metro of about 80,000).
+	"office_park": [10_000, 15_000, 25_000, 75_000],
+	"shopping_center": [5000, 10_000, 20_000, 50_000],  # a discount store wants a trade area of about 20,000 (1980s Walmart/Kmart small-town siting)
+	# ...and a power center's category killers (Lowe's, Best Buy, Dick's) a trade
+	# area of about 50,000 (Marion and Grant County, 66,000, has its cluster).
 	# A town of 1,500-2,000 (Upland, Fairmount) keeps a few 30-60 job shops;
 	# a 100-job plant wants a county's labor shed of 5,000 or more.
 	"factory": [0, 1500, 5000],
@@ -325,6 +331,9 @@ const REDEV_CENTER_AREA := 12_000.0
 ## this many houses on the lots behind and beside it (developers' "backlot"
 ## assembly: a block's two rows of lots, about 120 by 60 m).
 const REDEV_COMMUNITY_HOMES := 10
+## The most houses a community center buys behind it to become a power
+## center (about 3 acres in all).
+const REDEV_POWER_HOMES := 18
 ## ITE Trip Generation (10th ed.): low-rise multifamily (220) about 6.7
 ## weekday trips per unit; shopping center (820) about 37.75 per 1,000 sq ft.
 const REDEV_TRIPS_PER_FLAT := 6.7
@@ -1220,6 +1229,10 @@ const SCHOOL_PUPIL_SHARE := 0.08
 ## right after the afternoon bell (8:00 am and 3:00 pm), in game minutes.
 const SCHOOL_MORNING_RUN := 6 * 60 + 40
 const SCHOOL_AFTERNOON_RUN := 15 * 60 + 5
+## Pupils in the walk zone who walk (NHTS 2009: 35% of children living
+## within a mile of school), setting off in the sky's 45 minutes from 6:45.
+const SCHOOL_WALK_PCT := 35
+const SCHOOL_WALK_FROM := 6.75
 # --- Wild trees and brush ----------------------------------------------------
 
 ## Cleared land left alone grows back the way an abandoned lot in southern
@@ -2224,6 +2237,13 @@ const STATION_LAND_PER_M2 := 70.0
 ## What a park board pays for a home lot it buys next to its park (dollars
 ## a square metre of lot, house included, as STATION_LAND_PER_M2).
 const PARK_HOME_PER_M2 := 70.0
+## Streets a park board can ask the town to close (vacate) and join across:
+## plain local streets and alleys only, never an avenue, county road or
+## main street, and no longer than a long block (Indiana towns vacate a
+## block of a quiet street to a park that owns both sides, IC 36-7-3-12).
+const PARK_CLOSABLE_STREETS := [RoadStyle.Type.STREET, RoadStyle.Type.STREET_NARROW, RoadStyle.Type.STREET_BIKE,
+	RoadStyle.Type.STREET_ONEWAY, RoadStyle.Type.ALLEY, RoadStyle.Type.GRAVEL]
+const PARK_CLOSE_MAX_M := 200.0
 ## Each piece: `cost` dollars from the fund, `grow` metres the lot reaches
 ## further back from the street (0 builds on what it has), `needs` from the
 ## town (population; tall = buildings of 3+ storeys; city = a city charter),

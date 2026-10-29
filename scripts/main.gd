@@ -43,6 +43,7 @@ func _ready() -> void:
 	if Session.online():
 		sim = Session.client.my_sim()
 	sim.require_utilities = true
+	sim.county_rail = CountyRail.drawn()
 	# The land under your own town is the one every view and hub reads,
 	# even after neighbor copies load with their own offsets.
 	Resources.pin(sim.terrain_offset)
@@ -97,6 +98,14 @@ func _ready() -> void:
 	var county_rail := CountyRailView.new()
 	add_child(county_rail)
 	county_rail.setup(sim)
+	# Its through freights.
+	var county_trains := CountyTrainView.new()
+	add_child(county_trains)
+	county_trains.setup(sim, _tick_fraction)
+	# Where the county roads and highways cross the creeks and the river.
+	var crossings := WaterCrossingView.new()
+	add_child(crossings)
+	crossings.setup(sim)
 
 	var lot_alerts := LotAlerts.new()
 	lot_alerts.setup(sim)

@@ -37,6 +37,8 @@ var _insts := []
 ## Person -> [top, outfit, month] (dress), kept while the month holds.
 var _worn := {}
 const _NONE := [Color.WHITE, 0, -1]
+var _strollers: MultiMesh
+var _pushes := {}  # person -> [whether they've a baby at home, the town's people count then]
 
 
 func setup(t: TrafficSim, fraction: Callable) -> void:
@@ -113,6 +115,14 @@ void vertex() {
 	} else if (part > 0.85 && part < 0.99) {
 		tint = HAIRS[(o >> 9) & 3];
 	}
+	// A school backpack (0.62), folded away inside the body unless worn.
+	if (part > 0.6 && part < 0.65) {
+		if ((o & 8192) != 0) {
+			tint = HATS[(o >> 6) & 7] * 1.4 + vec3(0.02);
+		} else {
+			VERTEX = vec3(0.0, 1.2, 0.0);
+		}
+	}
 	float ph = (custom.a - worn) * 6.2831853;
 	float a = UV.x * 0.42 * sin(ph);
 	float c = cos(a);
@@ -121,6 +131,27 @@ void vertex() {
 	VERTEX.yz = vec2(UV.y + y * c - VERTEX.z * s, y * s + VERTEX.z * c);
 	NORMAL.yz = vec2(NORMAL.y * c - NORMAL.z * s, NORMAL.y * s + NORMAL.z * c);
 	VERTEX.y -= 0.84 * (1.0 - cos(0.42 * sin(ph)));  // keeps the feet on the ground
+	// Seated (on a porch chair, a bench, at a bus stop's bench): thighs out
+	// level in front, shins straight down from the knee, hands in the lap,
+	// the hips down at seat height (about 0.45 m).
+	if ((o & 4096) != 0) {
+		const float HIP = 0.88;
+		const float KNEE = 0.47;
+		if (UV.x != 0.0 && UV.y > 0.8 && UV.y < 0.95) {
+			if (VERTEX.y >= KNEE) {
+				VERTEX.yz = vec2(HIP - VERTEX.z, VERTEX.y - HIP);
+				NORMAL.yz = vec2(-NORMAL.z, NORMAL.y);
+			} else {
+				VERTEX.y += HIP - KNEE;
+				VERTEX.z -= HIP - KNEE;
+			}
+		} else if (UV.x != 0.0) {
+			float la = 0.45;
+			float ly = VERTEX.y - UV.y;
+			VERTEX.yz = vec2(UV.y + ly * cos(la) - VERTEX.z * sin(la), ly * sin(la) + VERTEX.z * cos(la));
+		}
+		VERTEX.y -= HIP - KNEE;
+	}
 }
 void fragment() { ALBEDO = tint; ROUGHNESS = 0.9; }
 """
@@ -139,6 +170,17 @@ void fragment() { ALBEDO = tint; ROUGHNESS = 0.9; }
 	mi2.material_override = mat
 	mi2.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(mi2)
+	_strollers = MultiMesh.new()
+	_strollers.transform_format = MultiMesh.TRANSFORM_3D
+	_strollers.mesh = stroller_mesh()
+	var smi := MultiMeshInstance3D.new()
+	smi.multimesh = _strollers
+	var smat := StandardMaterial3D.new()
+	smat.vertex_color_use_as_albedo = true
+	smat.roughness = 0.8
+	smi.material_override = smat
+	smi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(smi)
 	for kind in 2:
 		for lod in 5:
 			if lod == 2:
@@ -187,11 +229,21 @@ func _draw_walkers() -> void:
 	# the browser's renderer keeps everyone in the plain outfit.
 	var month := month_of(traffic)
 	var desktop := RenderingServer.get_current_rendering_method() != "gl_compatibility"
+	var prams := 0
 	for w in traffic.walkers:
 		var pose := traffic.walker_pose(w, frac)
 		var p: Vector3 = Terrain.stand(pose[0])
 		if p.distance_to(eye) > _reach:
 			continue
+		if _with_stroller(w, people):
+			var ahead: Vector3 = pose[1]
+			if ahead.length() > 0.5:
+				ahead = Vector3(ahead.x, 0.0, ahead.z).normalized()
+				if prams >= _strollers.instance_count:
+					_strollers.instance_count = maxi(prams * 2, 16)
+				_strollers.set_instance_transform(prams, Transform3D(Basis.looking_at(ahead, Vector3.UP),
+					Terrain.stand(pose[0] + ahead * 0.75)))
+				prams += 1
 		if NearPeople.drawn.has(int(w.id)):
 			continue  # a ready-made person stands in for this one up close
 		var d := p.distance_to(eye)
@@ -227,12 +279,14 @@ func _draw_walkers() -> void:
 		var stride: float = STRIDE * body.y * (0.92 + float((hash(int(w.person)) >> 12) & 15) / 15.0 * 0.16)
 		shirt.a = fposmod(float(pose[2]), stride) / stride
 		if desktop:
-			shirt.a = minf(shirt.a, 0.999) + float(worn[1])
+			var age := int(who.get("age", -1))
+			shirt.a = minf(shirt.a, 0.999) + float(int(worn[1]) | (BACKPACK if age >= 5 and age <= 11 else 0))
 		mm.set_instance_custom_data(n, shirt)
 		counts[kind] = n + 1
 	# On a full desktop (High and up) the nearer figures cast a shadow, as
 	# people on a sunny sidewalk do: from above, the shadow reads as much
 	# as the person. The far, simplest figures and the browser go without.
+	_strollers.visible_instance_count = prams
 	var shade: bool = bool(GraphicsQuality.knob("photo", false)) and not OS.has_feature("web")
 	for i in _insts.size():
 		(_insts[i] as GeometryInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON \
@@ -242,6 +296,68 @@ func _draw_walkers() -> void:
 		(mms[i] as MultiMesh).visible_instance_count = counts[i]
 		total += int(counts[i])
 	_reach = GraphicsQuality.fit_reach(_reach, total, int(GraphicsQuality.knob("people", GraphicsQuality.NO_CAP)), full)
+
+
+## Whether a walker pushes a stroller: a parent (18 to 45) with a baby
+## under 2 at home, out on foot all the way (an errand or a walk; never to
+## their job, nor to the car), who brings the baby along.
+func _with_stroller(w: Dictionary, people: Dictionary) -> bool:
+	var then: Dictionary = w.get("then", {})
+	if not then.has("enter"):
+		return false
+	var who: Dictionary = people.get(int(w.person), {})
+	if who.is_empty() or int(who.age) < 18 or int(who.age) > 45 or str(then.enter) == str(who.get("job", "")):
+		return false
+	var known: Array = _pushes.get(int(w.person), [])
+	if known.is_empty() or int(known[1]) != people.size():
+		var baby := false
+		for pid in traffic._sim.people.residents(str(who.home)):
+			if int(people.get(pid, {}).get("age", 99)) < 2:
+				baby = true
+		known = [baby, people.size()]
+		if _pushes.size() > 50000:
+			_pushes.clear()
+		_pushes[int(w.person)] = known
+	return known[0]
+
+
+## A baby's stroller, about a metre long with its handle back to the one
+## pushing it (it faces -Z, the way it's pushed): a fabric seat and
+## canopy on a dark frame and four small wheels.
+static func stroller_mesh() -> Mesh:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var frame := Color(0.06, 0.06, 0.07)
+	var cloth := Color(0.16, 0.2, 0.28)
+	for x in [-0.22, 0.22]:
+		for z in [-0.3, 0.25]:
+			_cube(st, Vector3(x, 0.08, z), Vector3(0.04, 0.16, 0.16), frame)
+		_cube(st, Vector3(x, 0.57, 0.075), Vector3(0.025, 0.025, 1.11), frame, -0.83)  # front wheel up to the handle
+	_cube(st, Vector3(0, 0.98, 0.45), Vector3(0.48, 0.035, 0.035), frame)  # handle
+	_cube(st, Vector3(0, 0.42, -0.08), Vector3(0.4, 0.2, 0.55), cloth)  # the seat
+	_cube(st, Vector3(0, 0.62, 0.1), Vector3(0.4, 0.38, 0.06), cloth, 0.3)  # its back
+	_cube(st, Vector3(0, 0.78, -0.05), Vector3(0.42, 0.05, 0.4), cloth, -0.25)  # the canopy
+	st.generate_normals()
+	return st.commit()
+
+
+## A box, centred at c, turned `tilt` radians about X.
+static func _cube(st: SurfaceTool, c: Vector3, size: Vector3, col: Color, tilt := 0.0) -> void:
+	var b := Basis(Vector3.RIGHT, tilt)
+	var h := size * 0.5
+	var faces := [[Vector3.RIGHT, Vector3.UP, Vector3.BACK], [Vector3.LEFT, Vector3.UP, Vector3.FORWARD],
+		[Vector3.UP, Vector3.BACK, Vector3.RIGHT], [Vector3.DOWN, Vector3.FORWARD, Vector3.RIGHT],
+		[Vector3.BACK, Vector3.UP, Vector3.LEFT], [Vector3.FORWARD, Vector3.UP, Vector3.RIGHT]]
+	for f in faces:
+		var n: Vector3 = f[0]
+		var u: Vector3 = f[1]
+		var v: Vector3 = f[2]
+		var q := []
+		for k in [[-1, -1], [1, -1], [1, 1], [-1, 1]]:
+			q.append(c + b * ((n + u * k[0] + v * k[1]) * h))
+		for i in [0, 2, 1, 0, 3, 2]:
+			st.set_color(col)
+			st.add_vertex(q[i])
 
 
 ## Tops in the colours a Midwestern crowd wears (sRGB, as picked from
@@ -367,6 +483,17 @@ static func figure(person: int, who := {}) -> int:
 ## centimetres down (CDC NHANES 2015-2018 adult heights and growth charts).
 ## Slight to heavy at any age. The mesh is 1.7 m. Without a person (tools),
 ## a mix of adults and about one in eight a child, as before.
+## Outfit bit for a seated person (the shader bends them into a chair).
+const SEATED := 4096
+## Outfit bit for a school backpack: children 5 to 11 out walking are on the
+## way to or from school (BusNet._school_walks), the only walks they make.
+const BACKPACK := 8192
+
+## Median heights by age, 0 to 17, in cm (CDC 2000 growth charts).
+const BOY_CM := [50, 76, 87, 96, 103, 110, 116, 122, 128, 133, 138, 143, 149, 156, 164, 170, 173, 175]
+const GIRL_CM := [49, 74, 86, 95, 102, 109, 115, 121, 127, 133, 138, 144, 151, 157, 160, 162, 162, 162]
+
+
 static func build(person: int, who := {}) -> Vector3:
 	var h := hash(person)
 	var tall := 0.9 + float(h & 255) / 255.0 * 0.2
@@ -376,10 +503,12 @@ static func build(person: int, who := {}) -> Vector3:
 		var woman := figure(person, who) == 1
 		var m := (1.62 if woman else 1.75) + (float(h & 255) / 255.0 - 0.5) * 0.14
 		if age < 18:
-			# Teens grow about 6 cm a year to 15 (girls stop near 14).
-			var grown := 14 if woman else 17
-			m -= maxf(0.0, float(grown - age)) * (0.05 if woman else 0.06)
+			# Children and teens at their age's height (CDC growth charts,
+			# medians), keeping their place above or below it.
+			var grown: float = (GIRL_CM if woman else BOY_CM)[clampi(age, 0, 17)] / 100.0
+			m *= grown / (1.62 if woman else 1.75)
 			wide = minf(wide, 0.85 + float(age - 10) * 0.03)
+			wide = minf(wide, m / 1.7 * 1.05)
 		elif age > 70:
 			m -= float(age - 70) * 0.004
 		tall = m / 1.7
@@ -433,6 +562,10 @@ static func _person_mesh(kind := 0, lod := 2) -> Mesh:
 	_limb(st, Vector3(0.0, 1.27, 0.0), Vector3(0.0, 1.41, 0.0), Vector2(0.19 * chest, 0.115), Vector2(0.215 * chest, 0.105), shirt, Vector2.ZERO, 8)
 	_limb(st, Vector3(0.0, 1.41, 0.0), Vector3(0.0, 1.46, 0.0), Vector2(0.215 * chest, 0.105), Vector2(0.09, 0.07), shirt, Vector2.ZERO, 8)  # shoulders slope in to the neck
 	_limb(st, Vector3(0.0, 1.45, 0.0), Vector3(0.0, 1.54, 0.0), Vector2(0.05, 0.052), Vector2(0.046, 0.048), skin)
+	# A backpack on the back, shown only for a child on the school walk
+	# (BACKPACK); the shader folds it away for everyone else.
+	if lod >= 1:
+		_blob(st, Vector3(0.0, 1.2, 0.17), Vector3(0.14 * chest, 0.16, 0.075), Color(0.3, 0.3, 0.3, 0.62), Vector2.ZERO, 6, 4)
 	_blob(st, Vector3(0.0, 1.625, -0.005), Vector3(0.082, 0.108, 0.098), skin, Vector2.ZERO, 8, 6)
 	# Hair over the crown and back of the head; the face stays bare.
 	_blob(st, Vector3(0.0, 1.665, 0.022), Vector3(0.091, 0.092, 0.1), hair, Vector2.ZERO, 8, 6)
