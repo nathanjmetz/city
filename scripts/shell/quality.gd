@@ -129,10 +129,6 @@ const DETAIL_FLOOR := [
 ##   cars / people: the most cars or walkers drawn at once. Past that the
 ##     view pulls its reach in until the count fits (fit_reach()), so the
 ##     nearest stay drawn. people_m: how far walkers are drawn.
-##   state_m: how far the state layer's yard props are drawn (StateView;
-##     docs/spec-state-layer.md): 150 m from High up, a light 100 m on
-##     Medium (Nathan's 8 GB Mac mini; decided 2026-10-29), none on Low or
-##     in the browser.
 ## Values a tier already sets in TIERS (detail, shadow_reach, tree_shadows)
 ## aren't repeated here: knob() reads them as detail, shadow_m and
 ## tree_shadows. High is the look the game had before budgets, so a
@@ -140,19 +136,19 @@ const DETAIL_FLOOR := [
 const BUDGETS := [
 	{"grow_ms": 3.0, "woods": 0.6, "far_woods": 2000.0, "far_from": 0.6, "photo": false, "understory": false, "crops": false, "crop_m": 51.0, "crop_shadows": false,
 		"cars_m": 1400.0, "car_near_m": 160.0, "car_detail": false, "cars": 600,
-		"people_m": 180.0, "people": 400, "state_m": 0.0},
+		"people_m": 180.0, "people": 400},
 	{"grow_ms": 3.0, "woods": 0.7, "far_woods": 2600.0, "far_from": 0.7, "photo": false, "understory": false, "crops": false, "crop_m": 51.0, "crop_shadows": false,
 		"cars_m": 1900.0, "car_near_m": 200.0, "car_detail": false, "cars": 1200,
-		"people_m": 250.0, "people": 1000, "state_m": 100.0},
+		"people_m": 250.0, "people": 1000},
 	{"grow_ms": 4.0, "woods": 1.0, "far_woods": 3500.0, "far_from": 1.2, "photo": true, "understory": true, "crops": true, "crop_m": 60.0, "crop_shadows": false,
 		"cars_m": 2600.0, "car_near_m": 240.0, "car_detail": false, "cars": 4000,
-		"people_m": 320.0, "people": 4000, "state_m": 150.0},
+		"people_m": 320.0, "people": 4000},
 	{"grow_ms": 4.0, "woods": 1.0, "far_woods": 4000.0, "far_from": 1.2, "photo": true, "understory": true, "crops": true, "crop_m": 77.0, "crop_shadows": false,
 		"cars_m": 2600.0, "car_near_m": 240.0, "car_detail": true, "cars": 8000,
-		"people_m": 320.0, "people": 8000, "state_m": 150.0},
+		"people_m": 320.0, "people": 8000},
 	{"grow_ms": 4.0, "woods": 1.0, "far_woods": 4500.0, "far_from": 1.2, "photo": true, "understory": true, "crops": true, "crop_m": 81.0, "crop_shadows": true,
 		"cars_m": 2600.0, "car_near_m": 240.0, "car_detail": true, "cars": 16000,
-		"people_m": 320.0, "people": 16000, "state_m": 150.0},
+		"people_m": 320.0, "people": 16000},
 ]
 ## Headless runs and tests (no Quality autoload, or not active): the views
 ## keep the look they had before tiers (detail 1.0), with no field plants,
@@ -161,12 +157,18 @@ const BUDGETS := [
 const NO_CAP := 1 << 30
 const INACTIVE := {"detail": 1.0, "shadow_m": 2000.0, "tree_shadows": true, "grow_ms": 4.0, "woods": 1.0, "far_woods": 3500.0,
 	"far_from": 1.0, "photo": false, "understory": false, "crops": false, "crop_m": 51.0, "crop_shadows": false, "cars_m": 2600.0,
-	"car_near_m": 240.0, "car_detail": false, "cars": NO_CAP, "people_m": 320.0, "people": NO_CAP, "state_m": 0.0}
+	"car_near_m": 240.0, "car_detail": false, "cars": NO_CAP, "people_m": 320.0, "people": NO_CAP}
 ## The browser caps how long a frame may spend growing detail (its one
 ## thread also runs the town).
 const BROWSER_GROW_MS := 3.0
 ## The browser lays out its far woods on its one thread too: not as far.
 const BROWSER_FAR_WOODS := 2600.0
+## How far each tier draws the state layer's yard props (knob "state_m";
+## StateView, docs/spec-state-layer.md): none on Low, a light 100 m on
+## Medium (Nathan's 8 GB Mac mini; decided 2026-10-29), 150 m from High up.
+## Never in the browser. Kept out of BUDGETS so it merges beside other
+## views' knobs; a headless run or test (INACTIVE) gets 0 unless it asks.
+const STATE_M := [0.0, 100.0, 150.0, 150.0, 150.0]
 
 ## Each kind of machine's budget: the frame it aims for (slow_ms: drawing
 ## slower than this counts against the tier; room_ms: the whole frame under
@@ -737,13 +739,13 @@ static func budget_for(t: int, on_browser := false) -> Dictionary:
 	b["detail"] = r.detail
 	b["shadow_m"] = r.shadow_reach
 	b["tree_shadows"] = r.tree_shadows
+	b["state_m"] = 0.0 if on_browser else STATE_M[t]
 	if on_browser:
 		b["grow_ms"] = minf(b.grow_ms, BROWSER_GROW_MS)
 		b["far_woods"] = minf(b.far_woods, BROWSER_FAR_WOODS)
 		b["crops"] = false
 		b["crop_shadows"] = false
 		b["car_detail"] = false
-		b["state_m"] = 0.0
 	return b
 
 

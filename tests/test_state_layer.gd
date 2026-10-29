@@ -6,7 +6,11 @@ extends SceneTree
 ## only on run-down and derelict lots, improvements only on improved and
 ## showpiece ones; who lives there changes nothing; Medium draws them to
 ## 100 m, High and up to 150 m, Low and the browser none; and in the drawn
-## town, the props stand near the camera, never inside a building.
+## town, the props stand near the camera, and their whole footprint (the
+## car's loose wheel, the couch's mattress) keeps off the building, the
+## drive, the front walk as the house drew it (straight or across to the
+## drive), the public sidewalk, a shop's entrance drive and aisles, and
+## every spot a car parks in.
 
 var _failed := false
 var sim: CitySim
@@ -30,6 +34,11 @@ func _initialize() -> void:
 			by[it.item] = int(by.get(it.item, 0)) + 1
 	for name in LotState.ITEMS:
 		_check(int(by.get(name, 0)) > 0, "%s shows somewhere in the town (%d)" % [name, int(by.get(name, 0))])
+	# Every item in the whole town (the house's own plan read from its
+	# builder, so both front walks it might have drawn) keeps clear.
+	var clash := _clashes(a, ia)
+	for what in clash:
+		_check(clash[what] == 0, "across the town, no item on the %s (%d)" % [what, clash[what]])
 	# Tiers: decline items only below kept up, improvements only above.
 	var decline := ["car_blocks", "cans", "couch", "dumpster", "lease"]
 	var wrong := 0
@@ -84,7 +93,7 @@ func _initialize() -> void:
 	_check(reach == [0.0, 100.0, 150.0, 150.0, 150.0], "Low none, Medium 100 m, High and up 150 m (%s)" % [reach])
 	_check(float(GraphicsQuality.budget_for(GraphicsQuality.CINEMATIC, true).state_m) == 0.0
 		and StateView.reach_for(true, 150.0) == 0.0, "the browser draws none")
-	_check(float(GraphicsQuality.INACTIVE.state_m) == 0.0, "nor does a headless run unless a test asks")
+	_check(float(GraphicsQuality.INACTIVE.get("state_m", 0.0)) == 0.0, "nor does a headless run unless a test asks")
 	# Every prop is a real size: the meshes' triangles stay in the budget.
 	var tris := 0
 	for kind in StateView.KINDS:
@@ -128,27 +137,112 @@ func _process(_d: float) -> bool:
 	_check(state.reach == 150.0, "the state view reaches 150 m when the tier asks for it")
 	var eye: Vector3 = root.get_viewport().get_camera_3d().global_position
 	var far := 0
-	var inside := 0
+	var hits := {"building": 0, "drive": 0, "walk": 0, "sidewalk": 0, "parking": 0}
+	var walks := {"straight": 0, "across": 0}
+	var checked := 0
 	for key in state._lots:
 		var lot: Dictionary = sim.lots[key]
+		var b: Dictionary = sim.buildings[key]
 		var inv := SiteLayout.frame(lot).affine_inverse()
-		var masses := view.masses_of(key)
+		var tc := float(lot.get("to_curb", 2.0))
+		var walk1 := -tc + RoadStyle.CURB_WIDTH + RoadStyle.PARKWAY_WIDTH + RoadStyle.SIDEWALK_WIDTH
+		var sidewalk := Rect2(-100.0, walk1 - RoadStyle.SIDEWALK_WIDTH, 200.0, RoadStyle.SIDEWALK_WIDTH)
+		# Where things must stay clear, from the drawing and the traffic's
+		# own parking layout (not from LotState).
+		var drives := []
+		var walk := Rect2()
+		var plan := view.plan_of(key)
+		if not plan.is_empty():
+			var dw := float(plan.drive_w)
+			drives.append(Rect2(float(plan.drive_x) - dw * 0.5, -tc, dw, maxf(float(plan.get("garage_z", 6.0)), 6.0) + tc))
+			walk = plan.walk
+			walks["straight" if walk.position.y < 0.0 else "across"] += 1
+		var lay := SiteLayout.for_building(int(b.zone), int(b.seed), lot, BuildingTypes.storeys(b),
+			BuildingTypes.type_of(b), int(b.get("level", 0)), sim.network, int(b.get("added_from", 0)))
+		var cars := []
+		for sp in lay.spots:
+			var at: Vector2 = sp.pos
+			cars.append(Rect2(at - Vector2(1.0, 2.45), Vector2(2.0, 4.9)))
+		if plan.is_empty() and not lay.main_street and not lay.spots.is_empty():
+			drives.append(Rect2(float(lay.cut_x) - 3.0, -tc, 6.0, float(lay.aisle_z) + tc))
 		for pr in state._lots[key].props:
 			var x: Transform3D = pr[1]
 			if x.origin.distance_to(eye) > 170.0:
 				far += 1
 			if pr[0] in ["lease", "flag"]:
 				continue
-			var q := inv * x.origin
-			for m: Rect2 in masses:
-				if m.has_point(Vector2(q.x, q.z)):
-					inside += 1
+			checked += 1
+			# The prop's whole mesh, laid flat in the lot's frame.
+			var box := StateMeshes.of(pr[0]).get_aabb()
+			var foot := Rect2()
+			for k in 4:
+				var c := inv * (x * Vector3(box.position.x + (box.size.x if k & 1 else 0.0), 0.0,
+					box.position.z + (box.size.z if k & 2 else 0.0)))
+				foot = Rect2(Vector2(c.x, c.z), Vector2.ZERO) if k == 0 else foot.expand(Vector2(c.x, c.z))
+			foot = foot.grow(-0.02)
+			for m: Rect2 in view.masses_of(key):
+				if m.intersects(foot):
+					hits.building += 1
+			for d: Rect2 in drives:
+				if d.intersects(foot):
+					hits.drive += 1
+			if walk.has_area() and walk.intersects(foot):
+				hits.walk += 1
+			if sidewalk.intersects(foot) and not (pr[0] == "planters" and lay.main_street):
+				hits.sidewalk += 1
+			for c: Rect2 in cars:
+				if c.intersects(foot):
+					hits.parking += 1
 	_check(far == 0, "every prop is near the camera (%d far)" % far)
-	_check(inside == 0, "no prop stands inside its building (%d)" % inside)
+	_check(checked > 10, "props on the ground checked (%d)" % checked)
+	_check(walks.straight > 0 and walks.across > 0, "both kinds of front walk are among the homes checked (%s)" % [walks])
+	for what in hits:
+		_check(hits[what] == 0, "no prop's footprint on the %s (%d)" % [what, hits[what]])
 	_check(state.place_ms_max() < 8.0, "placing takes a few ms at most in any frame (%.1f ms, headless)" % state.place_ms_max())
 	print("FAILED" if _failed else "ALL PASSED")
 	quit(1 if _failed else 0)
 	return true
+
+
+## Items over what must stay clear, from the builders' own plans and the
+## traffic's parking layout: {what: count}.
+func _clashes(s: CitySim, all: Dictionary) -> Dictionary:
+	var hits := {"drive": 0, "walk": 0, "sidewalk": 0, "parking": 0}
+	for key in all:
+		var lot: Dictionary = s.lots[key]
+		var b: Dictionary = s.buildings[key]
+		var tc := float(lot.get("to_curb", 2.0))
+		var walk1 := -tc + RoadStyle.CURB_WIDTH + RoadStyle.PARKWAY_WIDTH + RoadStyle.SIDEWALK_WIDTH
+		var clear := {"sidewalk": [Rect2(-100.0, walk1 - RoadStyle.SIDEWALK_WIDTH, 200.0, RoadStyle.SIDEWALK_WIDTH)],
+			"drive": [], "walk": [], "parking": []}
+		var lay := SiteLayout.for_building(int(b.zone), int(b.seed), lot, BuildingTypes.storeys(b),
+			BuildingTypes.type_of(b), int(b.get("level", 0)), s.network, int(b.get("added_from", 0)))
+		for sp in lay.spots:
+			var at: Vector2 = sp.pos
+			clear.parking.append(Rect2(at - Vector2(1.0, 2.45), Vector2(2.0, 4.9)))
+		if BuildingTypes.type_of(b) == "house":
+			var r := RandomNumberGenerator.new()
+			r.seed = int(b.seed)
+			var fit := SiteLayout._fit(lot)
+			var h := HouseBuilder.plan_info(r.randi(), fit.art, BuildingTypes.storeys(b))
+			var dx := float(h.drive_x)
+			var dw := float(h.drive_w)
+			clear.drive.append(Rect2(dx - dw * 0.5, -tc, dw, maxf(float(h.get("garage_z", 6.0)), 6.0) + tc))
+			var dr := float(h.door_x)
+			var wz := float(h.walk_z)
+			clear.walk.append(Rect2(dr - 0.6, -0.3, 1.2, wz + 0.3))
+			clear.walk.append(Rect2(minf(dr, dx) - 0.6, wz - 1.2, absf(dr - dx) + 0.6, 1.2))
+		for it in all[key]:
+			if it.item in ["lease", "flag"]:
+				continue
+			var foot := LotState.footprint(it.item, it.at, it.yaw).grow(-0.02)
+			for what in clear:
+				if what == "sidewalk" and it.item == "planters":
+					continue  # a Main Street shop's planters stand on the walk at its wall
+				for r: Rect2 in clear[what]:
+					if r.intersects(foot):
+						hits[what] += 1
+	return hits
 
 
 ## PerfTown at the look round's mixed tiers, with trash piled on one street.

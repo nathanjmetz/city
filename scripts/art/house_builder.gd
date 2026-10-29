@@ -90,6 +90,9 @@ static var drawn := 0
 ## built, for its foundation and far-off block: the mesh's own bounds also
 ## take in fences and sheds out to the lot lines.
 static var last_masses := []
+## The plan info of the last house built (drive, garage, door, porch and the
+## front walk as drawn: "walk", a Rect2), for the yard props (StateView).
+static var last_info := {}
 ## Plan info alone (where the drive, garage and door are), by plan without
 ## the care tier or paint: what the traffic sim asks for, worked out without drawing.
 static var _infos := {}
@@ -265,6 +268,7 @@ func _house(to_curb: float, storeys := 0) -> Array:
 	_utilities(info)
 	_front_yard(info)
 	_drive_hoop(info)
+	last_info = info
 	return [_commit_house(), _commit_flat(), trees]
 
 
@@ -1992,8 +1996,10 @@ func _yard(h: Dictionary, to_curb: float) -> void:
 	var walk_z: float = h.walk_z
 	if rng.randf() < 0.55 and pad <= 0.0:
 		_flat_rect("drive", door_x - 0.6, door_x + 0.6, -0.3, walk_z, 0.06)
+		h["walk"] = Rect2(door_x - 0.6, -0.3, 1.2, walk_z + 0.3)
 	else:
 		_flat_rect("drive", minf(door_x, dx) - 0.6, maxf(door_x, dx), walk_z - 1.2, walk_z, 0.06)
+		h["walk"] = Rect2(minf(door_x, dx) - 0.6, walk_z - 1.2, absf(door_x - dx) + 0.6, 1.2)
 	# Foundation bed with shrubs along the front, skipping the garage.
 	var fz: float = h.front_z
 	var gs: float = h.gs

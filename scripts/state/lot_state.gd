@@ -60,10 +60,6 @@ const PILED_ODDS := 0.8
 ## The building types each kind of lot covers (BuildingTypes).
 const KINDS := {"house": "home", "duplex": "home", "row_home": "home", "apartments": "apartments",
 	"shop": "shop", "mixed_use": "shop", "commercial_block": "shop", "shopping_center": "shop"}
-## Footprints (metres across x, deep along z, before turning) for the
-## free-spot check.
-const SIZE := {"car_blocks": Vector2(2.0, 5.0), "cans": Vector2(2.5, 1.0), "couch": Vector2(2.4, 1.2),
-	"dumpster": Vector2(3.0, 1.6), "planter": Vector2(0.85, 0.85)}
 ## Faded 1990s paint: oxidized red, chalky maroon, sun-bleached blue,
 ## faded green, dull champagne, grey primer.
 const OLD_PAINT := [Color("#8a4a40"), Color("#5e3236"), Color("#6f7f93"), Color("#5f6f5c"),
@@ -120,50 +116,106 @@ static func shown(city_seed: int, key: String, bseed: int, kind: String, tier: i
 
 
 ## The lot's yard as the builders drew it, in the lot frame: where its door,
-## drive, garage, porch and building masses are, and where cars park.
-## `masses`: the building's footprints (Rect2s, x and z) as BuildingView
-## drew them; without them the plan's own house outline stands in.
-static func yard_of(sim, key: String, masses := []) -> Dictionary:
+## drive, walk, garage, porch and building masses are, where cars park and
+## drive, and where the public sidewalk runs. `masses`: the building's
+## footprints as BuildingView drew them; `plan`: the house's own plan as
+## its builder drew it (HouseBuilder.last_info, kept by BuildingView), walk
+## and all. Without them (a headless test) the plan is read again from the
+## builder (HouseBuilder.plan_info), which can't say which walk was drawn,
+## so both are kept clear.
+static func yard_of(sim, key: String, masses := [], plan := {}) -> Dictionary:
 	var b: Dictionary = sim.buildings[key]
 	var lot: Dictionary = sim.lots[key]
 	var type := BuildingTypes.type_of(b)
 	var storeys := BuildingTypes.storeys(b)
 	var fit := SiteLayout._fit(lot)
+	var tc := float(lot.get("to_curb", 2.0))
 	var y := {"kind": kind_of(b), "half": float(fit.half), "depth": float(fit.depth),
-		"to_curb": float(lot.get("to_curb", 2.0)), "door": Vector2(0.0, 0.4), "drive_x": 0.0, "drive_w": 0.0,
+		"to_curb": tc, "door": Vector2(0.0, 0.4), "drive_x": 0.0, "drive_w": 0.0,
 		"garage_z": -1.0, "front_z": 0.4, "porch": Rect2(), "main_street": false,
-		"masses": masses.duplicate(), "stalls": [], "bays": 0}
+		"masses": masses.duplicate(), "keep_out": [], "bays": 0}
+	# The public sidewalk (as HouseBuilder._curb_cut lays it).
+	var walk1 := -tc + RoadStyle.CURB_WIDTH + RoadStyle.PARKWAY_WIDTH + RoadStyle.SIDEWALK_WIDTH
+	y.sidewalk = Vector2(walk1 - RoadStyle.SIDEWALK_WIDTH, walk1)
+	var keep: Array = y.keep_out
 	if type == "house":
-		# The plan the art draws (HouseBuilder.plan_info), read once: the
-		# same one SiteLayout.house reads for the traffic's drive stall.
-		var r := RandomNumberGenerator.new()
-		r.seed = int(b.seed)
-		var h := HouseBuilder.plan_info(r.randi(), fit.get("art", {"width": fit.half * 2.0, "depth": fit.depth}), storeys)
-		y.drive_x = float(h.drive_x)
-		y.drive_w = float(h.drive_w)
-		y.garage_z = float(h.get("garage_z", -1.0))
-		y.front_z = float(h.front_z)
-		y.door = Vector2(float(h.door_x), float(h.front_z))
-		y.bays = 1 if y.drive_w < 4.5 else (2 if y.drive_w < 8.5 else 3)
-		var bay: float = y.drive_w / y.bays
-		if y.bays > 1 and y.garage_z - 3.2 >= 2.6:
-			y.stalls.append(Vector2(y.drive_x + (y.bays - 1) * 0.5 * bay, y.garage_z - 3.2))
+		var h: Dictionary = plan
+		if h.is_empty():
+			var r := RandomNumberGenerator.new()
+			r.seed = int(b.seed)
+			h = HouseBuilder.plan_info(r.randi(), fit.get("art", {"width": fit.half * 2.0, "depth": fit.depth}), storeys)
+		var dx := float(h.drive_x)
+		var dw := float(h.drive_w)
+		var gz := float(h.get("garage_z", -1.0))
+		var fz := float(h.front_z)
+		var door_x := float(h.door_x)
+		var walk_z := float(h.get("walk_z", fz - 1.9))
+		y.drive_x = dx
+		y.drive_w = dw
+		y.garage_z = gz
+		y.front_z = fz
+		y.door = Vector2(door_x, fz)
+		y.bays = 1 if dw < 4.5 else (2 if dw < 8.5 else 3)
+		# The drive from the curb to the garage (and the apron of a detached
+		# garage), where the household's cars park and drive in and out.
+		var dz := gz + 0.5 if gz > 0.0 else fz + 6.0
+		keep.append(Rect2(dx - dw * 0.5 - 0.25, -tc, dw + 0.5, dz + tc))
+		if float(h.get("garage_w", 0.0)) > 0.0:
+			var gx := float(h.garage_x)
+			var ghw := float(h.garage_w) * 0.5
+			var x0 := minf(gx - ghw, dx - dw * 0.5) - 0.25
+			keep.append(Rect2(x0, gz - 4.75, maxf(gx + ghw, dx + dw * 0.5) + 0.25 - x0, 5.25))
+		# The front walk: straight out to the sidewalk, or across to the drive.
+		var walk: Variant = h.get("walk", null)
+		if walk is Rect2:
+			keep.append((walk as Rect2).grow(0.25))
+		else:
+			keep.append(Rect2(door_x - 0.6, -0.3, 1.2, walk_z + 0.3).grow(0.25))
+			keep.append(Rect2(minf(door_x, dx) - 0.6, walk_z - 1.2, absf(door_x - dx) + 0.6, 1.2).grow(0.25))
+		keep.append(Rect2(door_x - 0.85, walk_z - 0.25, 1.7, fz - walk_z + 0.25))  # steps to the door
 		if h.get("porch", null) is Rect2:
 			y.porch = h.porch
 		if y.masses.is_empty() and h.has("x0"):
-			y.masses = [Rect2(float(h.x0), float(h.front_z), float(h.x1) - float(h.x0), 10.0)]
+			y.masses = [Rect2(float(h.x0), fz, float(h.x1) - float(h.x0), 10.0)]
 	else:
-		var lay := SiteLayout.for_building(int(b.zone), int(b.seed), lot, storeys, type, int(b.get("level", 0)),
-			sim.network, int(b.get("added_from", 0)))
+		# The layout the traffic already keeps for the lot (the stalls its cars
+		# park in), read without touching it; else worked out (a dry run of
+		# the shop's builder, the costly part of a yard plan).
+		var lay: Dictionary = {}
+		var ref := "lot:" + key
+		var pl: Dictionary = sim.traffic._places.get(ref, {}) if sim.traffic != null else {}
+		if pl.has("lay") and int(pl.get("seed", 0)) == sim.traffic._place_seed(ref):
+			lay = pl.lay
+		else:
+			lay = SiteLayout.for_building(int(b.zone), int(b.seed), lot, storeys, type, int(b.get("level", 0)),
+				sim.network, int(b.get("added_from", 0)))
 		y.door = lay.door
 		y.front_z = float(lay.door.y)
 		y.drive_x = float(lay.cut_x)
 		y.main_street = bool(lay.main_street)
+		var door: Vector2 = lay.door
+		y.door_walk = Rect2(door.x - 0.8, -tc, 1.6, door.y + tc)  # the walk in to the door
+		keep.append(y.door_walk)
+		var aisles := {}
 		for s in lay.spots:
-			if s.kind == "stall" or s.kind == "drive":
-				y.stalls.append(s.pos)
-		if y.drive_x != 0.0 or not y.stalls.is_empty():
-			y.drive_w = 3.0 if kind_of(b) == "home" else 0.0
+			if s.kind != "stall" and s.kind != "drive":
+				continue
+			var p: Vector2 = s.pos
+			keep.append(Rect2(p - Vector2(1.5, 2.9), Vector2(3.0, 5.8)))
+			aisles[snappedf(float(s.get("aisle", lay.aisle_z)), 0.5)] = true
+		if not lay.main_street and (y.drive_x != 0.0 or not aisles.is_empty()):
+			# The entrance drive (two lanes) from the street to the lot's
+			# aisles, and each aisle across the lot.
+			var top := float(lay.aisle_z)
+			for a in aisles:
+				top = maxf(top, float(a))
+			if kind_of(b) == "home":
+				y.drive_w = 3.0
+				keep.append(Rect2(y.drive_x - 1.75, -tc, 3.5, maxf(top, 6.0) + tc))
+			else:
+				keep.append(Rect2(y.drive_x - 3.9, -tc, 7.8, top + 3.9 + tc))
+				for a in aisles:
+					keep.append(Rect2(-y.half, float(a) - 3.9, y.half * 2.0, 7.8))
 	if y.masses.is_empty():
 		# Not drawn (a headless test): the building as a block behind its door.
 		var d: Vector2 = y.door
@@ -202,19 +254,32 @@ static func items(city_seed: int, key: String, bseed: int, tier: int, cond: floa
 
 # ------------------------------------------------------------------ spots
 
-## A footprint `size` (x, z before turning) centred at `at`, turned by yaw.
-static func _rect(at: Vector2, size: Vector2, yaw: float) -> Rect2:
-	var s := size if absf(sin(yaw)) < 0.7 else Vector2(size.y, size.x)
-	return Rect2(at - s * 0.5, s)
+## Where a prop reaches on the ground at `at`, turned by `yaw`: its mesh's
+## whole footprint (the wheel lying by the car, the mattress behind the
+## couch, the lid flung open behind the dumpster), as an upright rectangle.
+static func footprint(name: String, at: Vector2, yaw: float) -> Rect2:
+	var box := StateMeshes.of(name).get_aabb()
+	var b := Basis(Vector3.UP, yaw)
+	var r := Rect2()
+	for k in 4:
+		var c := b * Vector3(box.position.x + (box.size.x if k & 1 else 0.0), 0.0,
+			box.position.z + (box.size.z if k & 2 else 0.0))
+		var p := at + Vector2(c.x, c.z)
+		r = Rect2(p, Vector2.ZERO) if k == 0 else r.expand(p)
+	return r
 
 
-## Whether a footprint is clear: on the lot (or its curb strip, for things
-## put out at the curb), off the building, the drive (unless allowed), the
-## parking stalls, the walk to the door and anything already placed.
-static func _free(r: Rect2, yard: Dictionary, taken: Array, curb := false, on_drive := false) -> bool:
+## Whether a footprint is clear: on the lot (or, for things put out at the
+## curb, on the grass strip between the curb and the sidewalk), never on the
+## public sidewalk, off the building, the porch, the drive, the walk, the
+## parking and its lanes, and anything already placed.
+static func _free(r: Rect2, yard: Dictionary, taken: Array, curb := false, on_sidewalk := false) -> bool:
 	var half: float = yard.half
-	var front := -float(yard.to_curb) + 0.35 if curb else 0.3
+	var front := -float(yard.to_curb) + RoadStyle.CURB_WIDTH + 0.1 if curb else 0.3
 	if r.position.x < -half + 0.2 or r.end.x > half - 0.2 or r.position.y < front or r.end.y > float(yard.depth) - 0.3:
+		return false
+	var sw: Vector2 = yard.sidewalk
+	if not on_sidewalk and r.end.y > sw.x - 0.05 and r.position.y < sw.y + 0.05:
 		return false
 	for m: Rect2 in yard.masses:
 		if m.grow(0.35).intersects(r):
@@ -222,30 +287,21 @@ static func _free(r: Rect2, yard: Dictionary, taken: Array, curb := false, on_dr
 	var porch: Rect2 = yard.porch
 	if porch.has_area() and porch.grow(0.3).intersects(r):
 		return false
-	if not on_drive and float(yard.drive_w) > 0.0:
-		var dw: float = yard.drive_w
-		var dz: float = float(yard.garage_z) if float(yard.garage_z) > 0.0 else float(yard.depth) * 0.5
-		if Rect2(float(yard.drive_x) - dw * 0.5 - 0.2, -float(yard.to_curb), dw + 0.4, dz + float(yard.to_curb)).intersects(r):
+	for k: Rect2 in yard.keep_out:
+		if k.intersects(r):
 			return false
-	for s: Vector2 in yard.stalls:
-		if Rect2(s - Vector2(1.5, 2.9), Vector2(3.0, 5.8)).intersects(r):
-			return false
-	var door: Vector2 = yard.door
-	if Rect2(door.x - 0.8, -float(yard.to_curb), 1.6, door.y + float(yard.to_curb)).intersects(r):
-		return false
 	for t: Rect2 in taken:
 		if t.intersects(r):
 			return false
 	return true
 
 
-## Tries spots [at, yaw, may stand on the drive] in turn; places the first
-## free one.
+## Tries spots [at, yaw] in turn; places the first free one.
 static func _first(out: Array, taken: Array, yard: Dictionary, name: String, spots: Array, h: int, col: Color,
 		curb := false) -> bool:
 	for s: Array in spots:
-		var r := _rect(s[0], SIZE[name], s[1])
-		if _free(r, yard, taken, curb, s.size() > 2 and bool(s[2])):
+		var r := footprint(name, s[0], s[1])
+		if _free(r, yard, taken, curb):
 			taken.append(r)
 			out.append({"item": name, "at": s[0], "yaw": s[1], "y": 0.0, "col": col, "v": posmod(h >> 8, 7)})
 			return true
@@ -258,11 +314,19 @@ static func _outward(yard: Dictionary) -> float:
 	return 1.0 if dx >= 0.0 else -1.0
 
 
-## Where carts and couches go at the curb: on the grass strip between the
-## sidewalk and the curb where there is one, else just inside the lot.
-static func _curb_z(yard: Dictionary) -> float:
+## Where something put out at the curb stands, z of its middle: on the grass
+## strip between the curb and the sidewalk if it fits there, else on the lawn
+## just behind the sidewalk.
+static func _curb_spot(yard: Dictionary, name: String, yaw: float) -> Array:
+	var f := footprint(name, Vector2.ZERO, yaw)
 	var tc: float = yard.to_curb
-	return -tc + 0.95 if tc - 1.9 >= 1.2 else 0.85
+	var sw: Vector2 = yard.sidewalk
+	var out := []
+	var strip0 := -tc + RoadStyle.CURB_WIDTH + 0.15
+	if sw.x - 0.1 - strip0 >= f.size.y:
+		out.append(strip0 - f.position.y)
+	out.append(maxf(sw.y + 0.15, 0.35) - f.position.y)
+	return out
 
 
 static func _car(out: Array, taken: Array, yard: Dictionary, h: int) -> void:
@@ -272,54 +336,57 @@ static func _car(out: Array, taken: Array, yard: Dictionary, h: int) -> void:
 	var gz: float = yard.garage_z
 	var fz: float = yard.front_z
 	var tilt := (float(posmod(h, 17)) / 16.0 - 0.5) * 0.12
-	# Beside the drive (on the side yard out toward the lot line, or the
-	# front lawn next to it), nose to the house.
+	# Never on the drive (the household's cars park and drive there): on the
+	# side yard beside it out toward the lot line, up by the garage or
+	# alongside it, or out on the front lawn clear of the walk.
 	var up := clampf(minf(gz if gz > 0.0 else fz, fz + 6.0) - 3.2, 3.0, 30.0)
-	var spots := [[Vector2(dx + s * (dw * 0.5 + 1.45), up), PI + tilt]]
-	for k in 4:
-		spots.append([Vector2(dx - s * (dw * 0.5 + 1.45 + k * 1.1), 3.3), PI + tilt])
-	if posmod(h, 3) == 0:
-		spots.reverse()
-	# On the drive in front of the garage: a one-car drive's apron, or the
-	# bay of a wider one away from where the second car parks (the traffic
-	# sim's drive stall, which _free keeps clear).
-	if gz >= 6.0:
-		var bays := int(yard.bays)
-		var bay := dw / maxf(bays, 1)
-		spots.append([Vector2(dx, gz - 3.1), PI + tilt * 0.3, true])
-		if bays > 1:
-			spots.append([Vector2(dx - (bays - 1) * 0.5 * bay, gz - 3.1), PI + tilt * 0.3, true])
+	var spots := []
+	var places := [Vector2(dx + s * (dw * 0.5 + 1.6), up), Vector2(dx + s * (dw * 0.5 + 1.6), up + 3.5)]
+	if gz > 0.0:
+		places.append(Vector2(dx + s * (dw * 0.5 + 1.6), gz + 2.5))
+	# Else somewhere on the front lawn, short of the walk across it.
+	var lawn := 0.35 + 2.5
+	var half: float = yard.half
+	var x := -half + 1.8
+	var lawn_spots := []
+	while x < half - 1.8:
+		lawn_spots.append(Vector2(x, lawn))
+		x += 1.0
+	if not lawn_spots.is_empty():
+		var k0 := posmod(h >> 4, lawn_spots.size())
+		places.append_array(lawn_spots.slice(k0) + lawn_spots.slice(0, k0))
+	for p in places:
+		# Nose to the house or to the street, whichever leaves the loose
+		# wheel on the grass.
+		spots.append([p, PI + tilt])
+		spots.append([p, tilt])
 	_first(out, taken, yard, "car_blocks", spots, h, OLD_PAINT[posmod(h, OLD_PAINT.size())])
 
 
 static func _cans(out: Array, taken: Array, yard: Dictionary, h: int) -> void:
-	var z := _curb_z(yard)
 	var dx: float = yard.drive_x
 	var dw: float = maxf(float(yard.drive_w), 2.8)
 	var s := 1.0 if posmod(h, 2) == 0 else -1.0
 	var door: Vector2 = yard.door
-	var spots := [
-		[Vector2(dx + s * (dw * 0.5 + 1.5), z), 0.0],
-		[Vector2(dx - s * (dw * 0.5 + 1.5), z), 0.0],
-		[Vector2(door.x + s * 2.1, z), 0.0],
-		[Vector2(door.x - s * 2.1, z), 0.0],
-	]
+	var spots := []
+	for z in _curb_spot(yard, "cans", 0.0):
+		for x in [dx + s * (dw * 0.5 + 1.6), dx - s * (dw * 0.5 + 1.6), door.x + s * 2.3, door.x - s * 2.3]:
+			spots.append([Vector2(x, z), 0.0])
 	_first(out, taken, yard, "cans", spots, h, CARTS[posmod(h >> 3, CARTS.size())], true)
 
 
 static func _couch(out: Array, taken: Array, yard: Dictionary, h: int) -> void:
-	var z := _curb_z(yard) + 0.05
 	var door: Vector2 = yard.door
 	var dx: float = yard.drive_x
 	var dw: float = maxf(float(yard.drive_w), 2.8)
 	var s := 1.0 if posmod(h, 2) == 0 else -1.0
 	var tilt := (float(posmod(h, 13)) / 12.0 - 0.5) * 0.3
-	var spots := [
-		[Vector2(door.x + s * 3.2, z), tilt],
-		[Vector2(door.x - s * 3.2, z), tilt],
-		[Vector2(dx - s * (dw * 0.5 + 3.4), z), tilt],
-		[Vector2(dx + s * (dw * 0.5 + 3.4), z), tilt],
-	]
+	var spots := []
+	# Its footprint counts the mattress leaned on its back whether or not
+	# this one has it out, so a couch never moves when one turns up.
+	for z in _curb_spot(yard, "couch", tilt):
+		for x in [door.x + s * 3.4, door.x - s * 3.4, dx - s * (dw * 0.5 + 3.6), dx + s * (dw * 0.5 + 3.6)]:
+			spots.append([Vector2(x, z), tilt])
 	if _first(out, taken, yard, "couch", spots, h, FABRIC[posmod(h >> 2, FABRIC.size())], true):
 		# A third of them have the mattress out too, leaned on the couch's back.
 		out[-1].v = 1 if posmod(h >> 5, 3) == 0 else 0
@@ -333,20 +400,23 @@ static func _dumpster(out: Array, taken: Array, yard: Dictionary, h: int) -> voi
 	for m: Rect2 in yard.masses:
 		back = maxf(back, m.end.y)
 		front = minf(front, m.position.y)
-	var door: Vector2 = yard.door
+	front = minf(front, depth)
 	var spots := []
 	var s := 1.0 if posmod(h, 2) == 0 else -1.0
-	# Beside the building, back to the lot line and in sight of the street
-	# where there is room; else at the edge of the lot out front, or behind
-	# the building at a back corner.
+	# On a pad beside the building, back to the side lot line, or behind it
+	# at a back corner; never out front, on the drive or the parking.
 	for side in [s, -s]:
-		spots.append([Vector2(side * (half - 1.1), minf(front, depth) + 2.0), side * PI * 0.5])
-		spots.append([Vector2(side * (half - 1.1), minf(front, depth) + 5.0), side * PI * 0.5])
+		var yaw: float = side * PI * 0.5
+		var w := footprint("dumpster", Vector2.ZERO, yaw)
+		var x: float = side * (half - 0.3) - (w.end.x if side > 0.0 else w.position.x)
+		for z in [front + 2.0, front + 5.0, (front + back) * 0.5, back - 1.5]:
+			spots.append([Vector2(x, z), yaw])
 	for side in [s, -s]:
-		spots.append([Vector2(side * (half - 1.1), maxf(door.y - 3.0, 1.5)), side * PI * 0.5])
-	for side in [s, -s]:
-		spots.append([Vector2(side * (half - 1.1), minf(back + 1.8, depth - 1.8)), side * PI * 0.5])
-		spots.append([Vector2(side * (half - 1.6), depth - 1.1), 0.0])
+		var w := footprint("dumpster", Vector2.ZERO, 0.0)
+		spots.append([Vector2(side * (half - 0.3) - (w.end.x if side > 0.0 else w.position.x), depth - 0.4 - w.end.y), 0.0])
+		var yaw: float = side * PI * 0.5
+		var w2 := footprint("dumpster", Vector2.ZERO, yaw)
+		spots.append([Vector2(side * (half - 0.3) - (w2.end.x if side > 0.0 else w2.position.x), minf(back + 1.8, depth - 1.8)), yaw])
 	_first(out, taken, yard, "dumpster", spots, h, STEEL[posmod(h >> 4, STEEL.size())])
 
 
@@ -369,9 +439,9 @@ static func _lease(out: Array, yard: Dictionary, h: int) -> void:
 	if m.size.x < 3.6:
 		return
 	var door: Vector2 = yard.door
-	# Across the boarded window beside the door, under the store's sign.
-	# On the wider side of the door, off the glass and boards (which stand
-	# a little proud of the building's footprint).
+	# Across the boarded window beside the door, under the store's sign, on
+	# the wider side of the door, off the glass and boards (which stand a
+	# little proud of the building's footprint).
 	var side := 1.0 if m.get_center().x >= door.x else -1.0
 	var x := clampf(door.x + side * 2.65, m.position.x + 1.6, m.end.x - 1.6)
 	out.append({"item": "lease", "at": Vector2(x, m.position.y - 0.22), "yaw": 0.0, "y": 0.0,
@@ -379,33 +449,30 @@ static func _lease(out: Array, yard: Dictionary, h: int) -> void:
 
 
 ## Flower beds: 1 m pieces of fresh mulch and annuals in front of the house's
-## foundation bed, clear of the drive, the walk and the porch.
+## foundation bed, clear of the drive, the walk, the steps and the porch.
 static func _beds(out: Array, taken: Array, yard: Dictionary, h: int) -> void:
 	var m := _front_mass(yard)
 	if not m.has_area():
 		return
 	var fz: float = minf(float(yard.front_z), m.position.y)
 	var porch: Rect2 = yard.porch
-	var z := fz - 1.4 - 0.4
-	var door: Vector2 = yard.door
-	var dx: float = yard.drive_x
-	var dw: float = yard.drive_w
+	var z := fz - 1.4 - 0.45
 	var col: Color = FLOWERS[posmod(h, FLOWERS.size())]
 	var x := m.position.x + 0.6
 	var n := 0
+	var placed := []
 	while x < m.end.x - 0.5 and n < 10:
 		var zz := z
 		if porch.has_area() and x > porch.position.x - 0.6 and x < porch.end.x + 0.6:
-			zz = minf(z, porch.position.y - 0.45)
-		var r := Rect2(x - 0.5, zz - 0.35, 1.0, 0.7)
-		var clear := absf(x - door.x) > 1.25 and (dw <= 0.0 or absf(x - dx) > dw * 0.5 + 0.8) and zz > 0.8
-		if clear and _free(r, {"half": yard.half, "depth": yard.depth, "to_curb": yard.to_curb, "masses": yard.masses,
-				"porch": Rect2(), "drive_w": 0.0, "stalls": [], "door": Vector2(9999, 0)}, taken):
-			out.append({"item": "beds", "at": Vector2(x, zz), "yaw": 0.0, "y": 0.0, "col": col, "v": n})
+			zz = minf(z, porch.position.y - 0.5)
+		var at := Vector2(x, zz)
+		var r := footprint("beds", at, 0.0)
+		if zz > 0.8 and _free(r, yard, taken):
+			out.append({"item": "beds", "at": at, "yaw": 0.0, "y": 0.0, "col": col, "v": n})
+			placed.append(r)
 			n += 1
 		x += 1.0
-	if n > 0:
-		taken.append(Rect2(m.position.x, z - 0.4, m.size.x, 0.8))
+	taken.append_array(placed)
 
 
 ## The flag on its bracket: on the porch's corner post where there is a
@@ -424,19 +491,17 @@ static func _flag(out: Array, yard: Dictionary, h: int) -> void:
 static func _planters(out: Array, taken: Array, yard: Dictionary, h: int) -> void:
 	var door: Vector2 = yard.door
 	var m := _front_mass(yard)
-	var z := (m.position.y if m.has_area() else door.y) - 0.8
 	var col: Color = FLOWERS[posmod(h, FLOWERS.size())]
-	var free := {"half": yard.half, "depth": yard.depth, "to_curb": yard.to_curb, "masses": yard.masses,
-		"porch": Rect2(), "drive_w": 0.0, "stalls": yard.stalls, "door": Vector2(9999, 0)}
+	var f := footprint("planters", Vector2.ZERO, 0.0)
+	var z := (m.position.y if m.has_area() else door.y) - 0.4 - f.end.y
+	# The walk in to the door stays open between them.
+	var free: Dictionary = yard.duplicate()
+	var walk: Rect2 = yard.get("door_walk", Rect2())
+	free.keep_out = (yard.keep_out as Array).filter(func(k: Rect2): return k != walk)
 	for s in [-1.0, 1.0]:
-		var at := Vector2(door.x + s * 1.3, z)
-		var r := _rect(at, SIZE.planter, 0.0)
-		if yard.main_street:
-			# Built to the sidewalk: the planters stand on the walk at the wall.
-			free.to_curb = 3.0
-			if _free(r, free, taken, true):
-				taken.append(r)
-				out.append({"item": "planters", "at": at, "yaw": 0.0, "y": 0.0, "col": col, "v": int(s > 0.0)})
-		elif _free(r, free, taken):
+		var at := Vector2(door.x + s * 1.35, z)
+		var r := footprint("planters", at, 0.0)
+		# A shop built to the sidewalk has them on the walk, at its wall.
+		if _free(r, free, taken, yard.main_street, yard.main_street):
 			taken.append(r)
 			out.append({"item": "planters", "at": at, "yaw": 0.0, "y": 0.0, "col": col, "v": int(s > 0.0)})

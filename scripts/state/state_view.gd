@@ -11,10 +11,12 @@ extends Node3D
 ## 100 m with no shadows on Medium, none on Low), each prop dissolving out
 ## over the last 20 m (StateMats) so the ring's edge never pops. One
 ## MultiMesh per kind of prop for the whole ring (eight draw calls, and the
-## shadows of the two biggest). Each frame does one small job: files
-## a slice of the town in its grid, looks round the ring, places a few
-## lots' props (nearest first, within PLACE_MS) or refills the MultiMeshes,
-## so no frame carries more than about a millisecond.
+## shadows of the two biggest). Each frame does one small job: looks round
+## the ring, refills the MultiMeshes, places a few lots' props (nearest
+## first, within PLACE_MS, working out at most one new yard plan, at the
+## frame's start) or, when none of those is waiting, files a slice of the
+## buildings that came or went in its grid, so no frame carries more than
+## about a millisecond.
 ##
 ## Drawn only, never in the town's thinking: what stands on a lot comes
 ## from its condition and seeds alone (LotState), so every copy of the
@@ -31,7 +33,13 @@ const GRID := 64.0
 const LOOK_EVERY := 0.5
 ## Most ms a frame may spend placing lots' props.
 const PLACE_MS := 0.4
-## Buildings filed in the grid a frame.
+## A new yard plan is only worked out this early in a frame (ms): it is the
+## costly step (a shop's site plan, read from its builder), so it never
+## lands on top of other work.
+const YARD_BY_MS := 0.05
+## Buildings checked against the grid a frame (a building that came is filed
+## then, which costs more), and filed a frame when the whole town is.
+const DIFF_STEP := 500
 const INDEX_STEP := 150
 ## Seconds between checks of every lot in the ring for a change (a new
 ## condition, trash piling up or picked up), when nothing says so sooner.
@@ -52,11 +60,12 @@ var reach := 0.0
 
 var _mm := {}           # kind -> MultiMeshInstance3D
 var _grid := {}         # Vector2i -> {key: Vector3 (the lot on the land)}
-var _index_keys := []   # keys still to file in _next_grid
-var _next_grid := {}
+var _filed := {}        # key -> its cell in _grid
+var _index_keys := []   # keys still to check (a diff) or file (all)
 var _index_at := 0
-var _reindex := true
-var _since_index := 10.0
+var _index_drop := []   # filed keys to check are still there, after a diff
+var _diff := true       # a building came or went: check the grid
+var _refile := true     # lots were cut again: file the whole town afresh
 var _lots := {}         # key -> {"sig", "props": [[kind, Transform3D, Color]]}
 var _yards := {}        # key -> [sig, yard] (the yard plan, which needs the drawing)
 var _want := {}         # key -> distance, the lots in the ring
@@ -67,7 +76,6 @@ var _last_eye := Vector3.INF
 var _bloom := true
 var _place_ms_max := 0.0
 var _job_max := {}
-var _yard_made := false
 var _stale := true      # every lot in the ring to be checked at the next look
 var _recheck := 0.0
 var _unfilled := 0.0    # seconds the MultiMeshes have been out of date
@@ -77,9 +85,9 @@ func setup(s: CitySim, view: BuildingView) -> void:
 	sim = s
 	buildings = view
 	sim.buildings_changed.connect(func():
-		_reindex = true
+		_diff = true
 		_stale = true)
-	sim.lots_changed.connect(func(): _reindex = true)
+	sim.lots_changed.connect(func(): _refile = true)
 
 
 func _ready() -> void:
@@ -130,8 +138,8 @@ func _set_reach() -> void:
 
 ## True when every lot in the ring has its props placed (tools wait on it).
 func idle() -> bool:
-	return reach <= 0.0 or (_queue.is_empty() and not _dirty and _index_keys.is_empty() and not _reindex
-		and _last_eye != Vector3.INF)
+	return reach <= 0.0 or (_queue.is_empty() and not _dirty and _index_keys.is_empty() and _index_drop.is_empty()
+		and not _diff and not _refile and _last_eye != Vector3.INF)
 
 
 ## Instances drawn of each kind (for tests and tools).
@@ -173,13 +181,10 @@ func _process(delta: float) -> void:
 func _job(delta: float, t: int) -> String:
 	_look -= delta
 	_recheck -= delta
-	_since_index += delta
 	if _dirty:
 		_unfilled += delta
-	if _index():
-		return "index"
 	var cam := get_viewport().get_camera_3d()
-	if cam != null:
+	if cam != null and not _grid.is_empty():
 		var eye := to_local(cam.global_position)
 		if eye.distance_to(_last_eye) > 4.0 or _look <= 0.0:
 			_look = LOOK_EVERY
@@ -192,40 +197,77 @@ func _job(delta: float, t: int) -> String:
 	if _dirty and (_queue.is_empty() or _unfilled > REFILL_WAIT):
 		_rebuild()
 		return "refill"
-	_place(t)
-	return "place"
+	if not _queue.is_empty():
+		_place(t)
+		return "place"
+	if _index():
+		return "index"
+	return "idle"
 
 
-## Files every building with a lot in the grid, a slice a frame (after any
-## building comes or goes, at most every 2 s). True while it has work.
+## Keeps the grid of buildings up to date, a slice a frame. After lots are
+## cut again, the whole town is filed afresh; after a building comes or
+## goes (or only changes, as most do), only the keys not yet filed are
+## filed and those gone are dropped. True while it had work.
 func _index() -> bool:
-	if _reindex and _index_keys.is_empty() and _since_index > 2.0:
-		_reindex = false
-		_since_index = 0.0
-		_index_keys = sim.buildings.keys()
-		_next_grid = {}
-		_index_at = 0
-	if _index_keys.is_empty():
-		return false
-	var stop := mini(_index_at + INDEX_STEP, _index_keys.size())
-	for i in range(_index_at, stop):
-		var key: String = _index_keys[i]
-		if not sim.lots.has(key) or not sim.buildings.has(key):
-			continue
-		if LotState.kind_of(sim.buildings[key]) == "":
-			continue
-		var p: Vector3 = sim.lots[key].pos
-		var c := Vector2i(floori(p.x / GRID), floori(p.z / GRID))
-		if not _next_grid.has(c):
-			_next_grid[c] = {}
-		_next_grid[c][key] = Vector3(p.x, Terrain.base_y(p.x, p.z), p.z)
-	_index_at = stop
-	if _index_at >= _index_keys.size():
-		_grid = _next_grid
-		_next_grid = {}
-		_index_keys = []
+	if _index_keys.is_empty() and _index_drop.is_empty():
+		if _refile:
+			_refile = false
+			_diff = false
+			_grid = {}
+			_filed = {}
+			_index_keys = sim.buildings.keys()
+			_index_at = 0
+		elif _diff:
+			_diff = false
+			_index_keys = sim.buildings.keys()
+			_index_at = 0
+			_index_drop = _filed.keys()
+		else:
+			return false
+	if not _index_keys.is_empty():
+		var filed := 0
+		var stop := mini(_index_at + DIFF_STEP, _index_keys.size())
+		while _index_at < stop and filed < INDEX_STEP:
+			var key: String = _index_keys[_index_at]
+			_index_at += 1
+			if not _filed.has(key):
+				_file(key)
+				filed += 1
+		if _index_at >= _index_keys.size():
+			_index_keys = []
+			_last_eye = Vector3.INF
+		return true
+	var n := mini(DIFF_STEP, _index_drop.size())
+	for i in n:
+		var key: String = _index_drop[_index_drop.size() - 1 - i]
+		if not sim.buildings.has(key) or not sim.lots.has(key):
+			_unfile(key)
+	_index_drop.resize(_index_drop.size() - n)
+	if _index_drop.is_empty():
 		_last_eye = Vector3.INF
 	return true
+
+
+func _file(key: String) -> void:
+	if not sim.lots.has(key) or not sim.buildings.has(key) or LotState.kind_of(sim.buildings[key]) == "":
+		return
+	var p: Vector3 = sim.lots[key].pos
+	var c := Vector2i(floori(p.x / GRID), floori(p.z / GRID))
+	if not _grid.has(c):
+		_grid[c] = {}
+	_grid[c][key] = Vector3(p.x, Terrain.base_y(p.x, p.z), p.z)
+	_filed[key] = c
+
+
+func _unfile(key: String) -> void:
+	var c: Vector2i = _filed[key]
+	_filed.erase(key)
+	if _grid.has(c):
+		_grid[c].erase(key)
+		if _grid[c].is_empty():
+			_grid.erase(c)
+	_yards.erase(key)
 
 
 ## Which lots are in the ring, and which of them need their props placed
@@ -266,7 +308,7 @@ func _ring(eye: Vector3) -> void:
 func _sig(key: String) -> Array:
 	var b: Dictionary = sim.buildings[key]
 	return [int(b.seed), BuildingTypes.type_of(b), int(b.get("level", 0)), sim.care.tier_of(key),
-		snappedf(sim.care.cond_of(key), 0.01), _piled(key), sim.construction.is_done("lot:" + key, sim.tick_count)]
+		sim.care.cond_of(key), _piled(key), sim.construction.is_done("lot:" + key, sim.tick_count)]
 
 
 func _piled(key: String) -> bool:
@@ -279,10 +321,10 @@ func _in_bloom() -> bool:
 	return m >= 5 and m <= 10
 
 
-## Places queued lots' props, nearest first, until PLACE_MS is spent.
+## Places queued lots' props, nearest first, until PLACE_MS is spent. A
+## lot whose yard plan isn't worked out yet waits for the start of a frame.
 func _place(t0: int) -> void:
 	var limit := int(PLACE_MS * 1000.0)
-	_yard_made = false
 	var skipped := []
 	while not _queue.is_empty() and Time.get_ticks_usec() - t0 < limit:
 		var key: String = _queue.pop_front()
@@ -298,21 +340,19 @@ func _place(t0: int) -> void:
 		if masses.is_empty() and buildings != null:
 			skipped.append(key)  # not drawn yet: try again at the next look
 			continue
-		var ysig := [sig[0], sig[1], sig[2], masses.hash()]
+		var plan: Dictionary = buildings.plan_of(key) if buildings != null else {}
+		var ysig := [sig[0], sig[1], sig[2], masses.hash(), plan.hash()]
 		var yard: Dictionary
 		if _yards.has(key) and _yards[key][0] == ysig:
 			yard = _yards[key][1]
 		else:
-			# Working out a yard plan is the costly part (the house's plan
-			# read from its builder): one a frame, at the frame's start.
-			if _yard_made and Time.get_ticks_usec() - t0 > 100:
+			if Time.get_ticks_usec() - t0 > int(YARD_BY_MS * 1000.0):
 				_queue.push_front(key)
 				break
-			_yard_made = true
-			yard = LotState.yard_of(sim, key, masses)
+			yard = LotState.yard_of(sim, key, masses, plan)
 			_yards[key] = [ysig, yard]
 		var b: Dictionary = sim.buildings[key]
-		var items := LotState.items(sim.city_seed, key, int(b.seed), int(sig[3]), sim.care.cond_of(key), yard, bool(sig[5]))
+		var items := LotState.items(sim.city_seed, key, int(b.seed), int(sig[3]), float(sig[4]), yard, bool(sig[5]))
 		_lots[key] = {"sig": sig, "props": _world(sim.lots[key], items)}
 		_dirty = true
 	if not skipped.is_empty():

@@ -425,6 +425,12 @@ func _close_shots(sim: CitySim) -> void:
 				sim.care.cond_of(key), false)
 			if (want[3] as Array).any(func(i): return not i in shows):
 				continue
+			# And has room for them (the house's plan from its builder; the
+			# drawing's own footprints can still differ a little).
+			var placed := LotState.items(sim.city_seed, key, int(sim.buildings[key].seed), want[2],
+				sim.care.cond_of(key), LotState.yard_of(sim, key), false).map(func(e): return e.item)
+			if (want[3] as Array).any(func(i): return not i in placed):
+				continue
 			var d := Vector2(lot.pos.x, lot.pos.z).distance_to(Vector2(MID.x, MID.z))
 			if d < best:
 				best = d
