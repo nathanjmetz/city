@@ -131,5 +131,35 @@ func _init() -> void:
 	var flurry := MarionWeather.read({"timestamp": fresh, "presentWeather": [{"weather": "snow", "intensity": "light"}]}, now)
 	_check(float(flurry[1]) > 0.0 and float(flurry[3]) == 1.0, "light snow falls as snow (%s)" % [flurry])
 	_check(float(MarionWeather.read({"timestamp": fresh, "presentWeather": [{"weather": "fog"}]}, now)[2]) == 1.0, "fog is full fog")
+	_wet_streets()
 	print("weather: %d failures" % _fails)
 	quit(1 if _fails > 0 else 0)
+
+
+## Wet streets (Nathan, 2026-10-29: "lets make this game look totally
+## real"): rain soaks them within the hour, a light rain only part way, and
+## once it stops they dry over an hour or two of the sky's clock, slower at
+## night.
+func _wet_streets() -> void:
+	var w := 0.0
+	for i in 4:
+		w = Weather.wet_after(w, 0.8, 0.1)
+	_check(is_equal_approx(w, 1.0), "a steady rain soaks the streets within the hour (%.2f)" % w)
+	var light := 0.0
+	for i in 10:
+		light = Weather.wet_after(light, 0.1, 0.1)
+	_check(light > 0.2 and light < 0.6, "a sprinkle only dampens them (%.2f)" % light)
+	var day := Weather.wet_after(1.0, 0.0, 0.5)
+	_check(day > 0.5 and day < 0.85, "half an hour after the rain they are still wet (%.2f)" % day)
+	_check(Weather.wet_after(1.0, 0.0, 2.0) == 0.0, "two hours on they are dry")
+	_check(Weather.wet_after(1.0, 0.0, 0.5, 1.0) > day, "they dry slower at night")
+	_check(Weather.wet_after(0.4, 0.8, 0.0) == 0.4, "with no time gone nothing changes")
+	# The streetlight map covers every lamp with room to spare.
+	var lamps := [["a", Vector3(-500, 0, 20), Vector3.FORWARD, 2.0, 9.0], ["a", Vector3(300, 0, 900), Vector3.FORWARD, 2.0, 9.0]]
+	var c := LampLight.cover(lamps)
+	var ok := true
+	for l in lamps:
+		var p: Vector3 = l[1]
+		ok = ok and p.x - float(c[0]) >= LampLight.MARGIN - 0.01 and p.z - float(c[1]) >= LampLight.MARGIN - 0.01 \
+			and float(c[0]) + float(c[2]) - p.x >= LampLight.MARGIN - 0.01 and float(c[1]) + float(c[2]) - p.z >= LampLight.MARGIN - 0.01
+	_check(ok and is_equal_approx(float(c[2]), 880.0 + 2.0 * LampLight.MARGIN), "the lamp map covers every lamp (%s)" % [c])

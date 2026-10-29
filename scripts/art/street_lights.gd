@@ -8,9 +8,12 @@ extends Node3D
 ##   - highways and ramps: 40 ft steel poles on the outside shoulder
 ## (Spacing and mounting heights follow common US municipal practice and
 ## the IES RP-8 roadway lighting guide.) The poles stand all day; at night
-## the heads glow and each throws a soft warm pool on the street below.
-## One MultiMesh per pole kind and one for the pools, so a whole town of
-## lights is a handful of draw calls.
+## the heads glow and each throws a soft warm pool on the street below:
+## on the desktop a real one, drawn into LampLight's map and lighting the
+## road, walks, grass and car roofs in their own colours; in the browser a
+## flat glow laid on the ground. One MultiMesh per pole kind (and one for
+## the browser's pools), so a whole town of lights is a handful of draw
+## calls.
 
 ## 3000 K LED, the warm white most US towns chose when they replaced the
 ## old orange sodium lamps.
@@ -43,15 +46,19 @@ void fragment() {
 }
 """
 
+## The head: a grey housing whose flat glass lens underneath glows at night,
+## and a little light spilling up its sides.
 const HEAD_SHADER := """
 shader_type spatial;
 global uniform float night;
 uniform vec4 lamp : source_color;
 void fragment() {
 	float on = smoothstep(0.25, 0.6, night);
-	ALBEDO = mix(vec3(0.55, 0.55, 0.52), vec3(0.2), on);
+	vec3 n = (INV_VIEW_MATRIX * vec4(NORMAL, 0.0)).xyz;
+	float lens = smoothstep(-0.5, -0.9, n.y);
+	ALBEDO = mix(vec3(0.55, 0.55, 0.52), vec3(0.2), on * lens);
 	ROUGHNESS = 0.3;
-	EMISSION = lamp.rgb * on * 6.0;
+	EMISSION = lamp.rgb * on * mix(1.2, 14.0, lens);
 }
 """
 
@@ -60,6 +67,8 @@ var network: RoadNetwork
 var visible_amount := 0.0
 var _multis := {}  # mesh key or "pool" -> MultiMeshInstance3D
 var _dirty := true
+## The desktop's light map (null in the browser, which draws the pools).
+var _map: LampLight
 ## Streets and avenues drawn as country roads (RoadView): unlit, like the
 ## county roads, with no second row of poles beside the pole line.
 var country := {}
@@ -81,6 +90,10 @@ func _ready() -> void:
 		if not _multis.has(key):
 			var spec: Array = KINDS[type]
 			_multis[key] = _multi(_pole_mesh(spec[1], spec[2], spec[3]), true)
+	if LampLight.wanted():
+		_map = LampLight.new()
+		add_child(_map)
+		return
 	var quad := QuadMesh.new()
 	quad.size = Vector2(POOL, POOL)
 	quad.orientation = PlaneMesh.FACE_Y
@@ -92,8 +105,11 @@ func _process(_delta: float) -> void:
 	if _dirty:
 		_dirty = false
 		_rebuild()
-	# The pools cost nothing to hide by day.
-	_multis["pool"].visible = visible_amount > 0.0
+	if _map != null:
+		_map.set_amount(visible_amount)
+	else:
+		# The pools cost nothing to hide by day.
+		_multis["pool"].visible = visible_amount > 0.0
 
 
 func _multi(mesh: Mesh, shadows: bool) -> MultiMeshInstance3D:
@@ -109,7 +125,7 @@ func _multi(mesh: Mesh, shadows: bool) -> MultiMeshInstance3D:
 
 
 ## Where every lamp goes: [mesh key, base position, direction to the road,
-## arm reach].
+## arm reach, mounting height].
 static func place(net: RoadNetwork, skip := {}) -> Array:
 	var out := []
 	var taken := {}  # coarse cell -> positions, to keep lamps apart
@@ -145,7 +161,7 @@ static func place(net: RoadNetwork, skip := {}) -> Array:
 			if not taken.has(cell):
 				taken[cell] = []
 			taken[cell].append(base)
-			out.append([mesh_key(kind), base, -right * side, spec[3]])
+			out.append([mesh_key(kind), base, -right * side, spec[3], spec[2]])
 	return out
 
 
@@ -218,12 +234,16 @@ func _rebuild() -> void:
 	var lists := {}
 	for k in _multis:
 		lists[k] = []
-	for l in place(network, country):
+	var lamps := place(network, country)
+	for l in lamps:
 		var dir: Vector3 = l[2]
 		var basis := Basis(Vector3.UP, atan2(dir.x, dir.z))
 		lists[l[0]].append(Transform3D(basis, Terrain.lift(l[1])))
-		var under: Vector3 = l[1] + dir * (float(l[3]) + 1.5)
-		lists.pool.append(Transform3D(Basis.IDENTITY, Terrain.lift(Vector3(under.x, l[1].y + RoadStyle.Y_JUNCTION + 0.03, under.z))))
+		if lists.has("pool"):
+			var under: Vector3 = l[1] + dir * (float(l[3]) + 1.5)
+			lists.pool.append(Transform3D(Basis.IDENTITY, Terrain.lift(Vector3(under.x, l[1].y + RoadStyle.Y_JUNCTION + 0.03, under.z))))
+	if _map != null:
+		_map.draw(lamps)
 	for k in lists:
 		var mm: MultiMesh = _multis[k].multimesh
 		mm.instance_count = lists[k].size()

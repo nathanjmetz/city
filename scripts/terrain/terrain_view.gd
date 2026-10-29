@@ -463,6 +463,8 @@ void fragment() {
 	ALBEDO = col;
 	ROUGHNESS = mix(0.93, 0.75, lies);
 	SPECULAR = 0.25;
+	// Streetlight spilling off the road (LampLight; desktop only).
+	EMISSION = lamp_light(world_pos, col, ROUGHNESS, NORMAL, VIEW, VIEW_MATRIX, 0.25);
 }
 """
 
@@ -574,7 +576,8 @@ static func ground_material() -> ShaderMaterial:
 	if _ground_mat == null:
 		_ground_mat = ShaderMaterial.new()
 		var sh := Shader.new()
-		sh.code = SHADER.replace("// PHOTO_GROUND", PhotoGround.defines() + PhotoGround.glsl())
+		LampLight.ensure_globals()
+		sh.code = SHADER.replace("// PHOTO_GROUND", PhotoGround.defines() + PhotoGround.glsl() + LampLight.GLSL)
 		_ground_mat.shader = sh
 		_ground_mat.set_shader_parameter("noise_soft", Ground.noise(512, 0.012, 4, 11))
 		_ground_mat.set_shader_parameter("noise_grain", Ground.noise(256, 0.09, 2, 23))
