@@ -1638,11 +1638,40 @@ func _school_bus() -> void:  # Type C conventional (Blue Bird Vision, IC CE)
 	for x in [-0.9, 0.9]:
 		_box(Vector3(x, 2.85, 1.58), Vector3(0.16, 0.16, 0.06), BEACON_AMBER)
 		_box(Vector3(x, 2.85, L + 0.02), Vector3(0.16, 0.16, 0.06), BEACON_RED)
-	_box(Vector3(hw - 0.35, 1.2, 0.06), Vector3(0.28, 0.16, 0.1), HEAD, true)
 	_box(Vector3(hw - 0.2, 1.0, L + 0.01), Vector3(0.18, 0.18, 0.04), TAIL, true)
-	if not _lo:
+	if _hi:
+		_school_face(hw)
+	else:
+		# Proud of the hood's nose (behind it the lamps never showed).
+		_box(Vector3(hw - 0.42, 1.15, -0.01), Vector3(0.28, 0.16, 0.04), HEAD, true)
+	if not _lo and not _hi:
 		_box(Vector3(0, 1.0, 0.02), Vector3(0.9, 0.5, 0.06), CHROME)
+	if not _lo:
 		_box(Vector3(-hw - 0.3, 1.9, 2.2), Vector3(0.45, 0.45, 0.03), Color(0.75, 0.05, 0.05, 0.4))
+
+
+## Ultra: a Type C school bus face (IC CE, Thomas C2): a chrome-rimmed
+## black grille with its slots, headlamps in black pods on the fender
+## corners, a heavy black bumper with the crossing arm folded along it and
+## the plate, the windshield's centre post, and the eight-way warning
+## lamps (red outboard of the amber).
+func _school_face(hw: float) -> void:
+	var dark := Color(0.05, 0.05, 0.05, 0.3)
+	_box(Vector3(0, 1.0, -0.004), Vector3(1.0, 0.56, 0.02), CHROME)
+	_box(Vector3(0, 1.0, -0.012), Vector3(0.9, 0.46, 0.02), dark)
+	for i in 5:
+		_box(Vector3(0, 0.82 + i * 0.09, -0.02), Vector3(0.86, 0.018, 0.02), CHROME)
+	_box(Vector3(hw - 0.42, 1.15, -0.004), Vector3(0.34, 0.22, 0.02), dark, true)
+	_box(Vector3(hw - 0.42, 1.15, -0.012), Vector3(0.26, 0.14, 0.02), HEAD, true)
+	_box(Vector3(hw - 0.3, 1.02, -0.012), Vector3(0.06, 0.06, 0.02), Color(1.0, 0.55, 0.05, 0.5), true)
+	_box(Vector3(0, 0.55, -0.1), Vector3(hw * 2.0 - 0.1, 0.26, 0.2), dark)
+	_box(Vector3(0, 0.55, -0.208), Vector3(0.3, 0.15, 0.02), WHITE)
+	# The crossing arm folded along the bumper's curb side.
+	_box(Vector3(0.62, 0.6, -0.235), Vector3(1.0, 0.05, 0.05), Color(0.95, 0.75, 0.05, 0.4))
+	_box(Vector3(1.05, 0.6, -0.225), Vector3(0.1, 0.12, 0.08), dark)
+	_box(Vector3(0, 2.25, 1.568), Vector3(0.06, 0.85, 0.02), dark)
+	for x in [-1.06, 1.06]:
+		_box(Vector3(x, 2.85, 1.58), Vector3(0.14, 0.16, 0.06), BEACON_RED)
 
 
 func _city_bus() -> void:  # 40 ft low-floor transit bus (Gillig, New Flyer)
