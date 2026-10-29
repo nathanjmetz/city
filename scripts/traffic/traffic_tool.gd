@@ -356,8 +356,11 @@ func _update_hint() -> void:
 		text = "Click a road where it meets a junction to put up a No %s Turn sign, or take it down." % turn.capitalize()
 		if _approach != -1:
 			var w: Dictionary = sim.traffic.ways[_approach]
-			text += "\nThis road %s." % (("has a No %s Turn sign" % turn.capitalize())
-				if sim.traffic.lane_rule(w.to, w.seg).get(SIGN_FOR[mode], false) else "can turn " + turn)
+			if not sim.traffic.takes_turn_signs(w.seg):
+				text += "\nA roundabout can't take turn signs: cars only go one way round it, so every exit has to stay open."
+			else:
+				text += "\nThis road %s." % (("has a No %s Turn sign" % turn.capitalize())
+					if sim.traffic.lane_rule(w.to, w.seg).get(SIGN_FOR[mode], false) else "can turn " + turn)
 	elif RULE_FOR.has(mode):
 		text = ["", "", "Click a junction to let the game choose its control.",
 			"Click a junction to add traffic lights.", "Click a junction to make it an all-way stop.",

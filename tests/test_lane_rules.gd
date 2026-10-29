@@ -187,6 +187,53 @@ func _init() -> void:
 	rt.apply({"type": "set_lanes", "node": rn, "seg": rt.traffic.ways[stem].seg, "no_right": true, "lanes": []})
 	_check(_turns_by_kind(rt.traffic, stem).keys() == [TrafficSim.Turn.LEFT], "No Right alone there leaves the left")
 
+	# No turn signs on a roundabout's ring (reviewer 2026-10-29): leaving
+	# for a side street counts as a right off the ring, and the ring only
+	# goes one way, so No Right there would leave that street with no way in.
+	var rb := CitySim.new()
+	rb.economy.money = 1.0e9
+	rb.apply({"type": "build_road", "start": [-200, 0], "ctrl": [0, 0], "end": [200, 0], "road": RoadStyle.Type.AVENUE})
+	rb.apply({"type": "build_roundabout", "center": [0, 0], "radius": 24, "road": RoadStyle.Type.AVENUE})
+	rb.traffic._rebuild()
+	var ring_way := -1
+	var entry_way := -1
+	for wid in rb.traffic.ways:
+		var rw2: Dictionary = rb.traffic.ways[wid]
+		if rb.network.segments_at(rw2.to).size() < 3:
+			continue
+		if RoadStyle.is_ring(rw2.type):
+			ring_way = wid
+		else:
+			entry_way = wid
+	_check(ring_way != -1 and entry_way != -1, "a ring lane and an entry road meet at a roundabout corner")
+	var rnode: int = rb.traffic.ways[ring_way].to
+	var rseg: int = rb.traffic.ways[ring_way].seg
+	var ring_turns: Array = rb.traffic._turns[ring_way].duplicate()
+	_check(not rb.traffic.takes_turn_signs(rseg), "the ring can't take turn signs")
+	_check(not rb.apply({"type": "set_lanes", "node": rnode, "seg": rseg, "no_right": true, "lanes": []}),
+		"No Right on the ring is refused")
+	_check(not rb.apply({"type": "set_lanes", "node": rnode, "seg": rseg, "no_left": true, "lanes": []}),
+		"and so is No Left")
+	_check(rb.traffic.lane_rules.is_empty() and rb.traffic._turns[ring_way] == ring_turns, "the ring keeps every exit")
+	# A No Left from an older save, on the ring: ignored, every exit stays.
+	rb.traffic.lane_rules_from_dict({TrafficSim.lane_key(rnode, rseg): {"no_left": true, "no_right": true, "lanes": []}})
+	rb.traffic._rebuild()
+	_check(rb.traffic._turns[ring_way] == ring_turns, "signs on the ring from an older save close nothing")
+	rb.traffic.lane_rules_from_dict({})
+	rb.traffic._rebuild()
+	_check(rb.traffic.takes_turn_signs(rb.traffic.ways[entry_way].seg), "a road coming into the roundabout still can")
+	# The tool says why on hover.
+	var tool := TrafficTool.new()
+	tool.sim = rb
+	tool.mode = TrafficTool.Mode.NO_RIGHT
+	tool._approach = ring_way
+	tool._update_hint()
+	_check(tool._hint.contains("roundabout can't take turn signs"), "hovering the ring says why (%s)" % tool._hint)
+	tool._approach = entry_way
+	tool._update_hint()
+	_check(tool._hint.contains("can turn right"), "hovering the entry offers the sign")
+	tool.free()
+
 	# A road gone takes its rule with it.
 	sim.apply({"type": "set_lanes", "node": node, "seg": west, "no_left": true, "lanes": []})
 	sim.apply({"type": "remove_road", "seg": _seg_toward(sim, node, Vector3(0, 0, 1))})

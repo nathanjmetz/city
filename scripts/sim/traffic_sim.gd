@@ -592,10 +592,13 @@ func lane_rule(node: int, seg: int) -> Dictionary:
 
 ## Sets the turn rules for road `seg` arriving at junction `node`: No Left
 ## and No Right Turn signs, and lane arrows (one ARROW_* mask per lane, left
-## to right, or [] for the game's own). All off clears the approach.
+## to right, or [] for the game's own). All off clears the approach. No
+## turn signs on a roundabout's ring (see takes_turn_signs).
 func set_lane_rule(node: int, seg: int, no_left: bool, lanes: Array, no_right := false) -> bool:
 	if not network.nodes.has(node) or network.segments_at(node).size() < 3 \
 			or not network.segments_at(node).has(seg):
+		return false
+	if (no_left or no_right) and not takes_turn_signs(seg):
 		return false
 	var masks := []
 	for m in lanes:
@@ -612,6 +615,15 @@ func set_lane_rule(node: int, seg: int, no_left: bool, lanes: Array, no_right :=
 		lane_rules[key] = rule
 	_rebuild()
 	return true
+
+
+## Whether a road can take No Left or No Right Turn signs: not a
+## roundabout's ring (or another one-way loop piece). Its traffic only goes
+## one way round, so closing the turn off it into an exit would leave
+## everyone on that exit's street, fire trucks too, no way in (reviewer
+## 2026-10-29).
+func takes_turn_signs(seg: int) -> bool:
+	return network.segments.has(seg) and not _is_ring(seg)
 
 
 ## Drops turn rules at junctions that are gone, or lost the road they were
@@ -1472,10 +1484,12 @@ func _build_turns(n: int) -> void:
 			kinds.append(kind)
 		var rule: Dictionary = lane_rules.get(lane_key(n, w.seg), {})
 		var banned := []
-		if rule.get("no_left", false):
-			banned.append(Turn.LEFT)
-		if rule.get("no_right", false):
-			banned.append(Turn.RIGHT)
+		# A ring keeps every turn, even under a sign from an older save.
+		if takes_turn_signs(w.seg):
+			if rule.get("no_left", false):
+				banned.append(Turn.LEFT)
+			if rule.get("no_right", false):
+				banned.append(Turn.RIGHT)
 		if not banned.is_empty() and kinds.any(func(k): return not k in banned):
 			# No Left and No Right Turn signs: those turns go, unless they
 			# are the only ways on.
