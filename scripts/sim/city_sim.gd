@@ -53,6 +53,15 @@ const MOVE_EVERY := Balance.MOVE_EVERY
 ## How each zone's buildings go up (see Construction).
 const PROFILE_OF_ZONE := {ZoneMap.Zone.RESIDENTIAL: "house", ZoneMap.Zone.COMMERCIAL: "shop",
 	ZoneMap.Zone.INDUSTRIAL: "factory"}
+## Buildings this tall go up as a high-rise, whatever their zone.
+const HIGHRISE_STOREYS := 7
+
+
+## How a building goes up: its zone's profile, or a high-rise's.
+static func profile_of(b: Dictionary) -> String:
+	if b.has("type") and BuildingTypes.storeys(b) >= HIGHRISE_STOREYS:
+		return "highrise"
+	return PROFILE_OF_ZONE.get(int(b.get("zone", 0)), "house")
 ## Game minutes per tick: at normal speed a day takes 2.4 real minutes.
 const MINUTES_PER_TICK := 1
 ## Tick 0 is 6:00 AM on Monday, January 4, 2027.
@@ -4025,7 +4034,7 @@ func _grow_one(salt := 0) -> String:
 		elif z == ZoneMap.Zone.RESIDENTIAL:
 			economy.money += laws.home_fee()
 		var lot: Dictionary = lots[key]
-		construction.start("lot:" + key, PROFILE_OF_ZONE[z], tick_count, lot.front, -lot.normal, lot.to_curb)
+		construction.start("lot:" + key, profile_of(b), tick_count, lot.front, -lot.normal, lot.to_curb)
 		buildings_changed.emit()
 		return key
 	return ""
@@ -4055,7 +4064,7 @@ func found_business(key: String, zone: int, chain := "") -> bool:
 		buildings[key].chain = chain if Balance.FACTORY_CHAINS.has(chain) else factory_chain(lots[key].pos)
 	# It goes up like any other building, crew and all.
 	var lot: Dictionary = lots[key]
-	construction.start("lot:" + key, PROFILE_OF_ZONE[zone], tick_count, lot.front, -lot.normal, lot.to_curb)
+	construction.start("lot:" + key, profile_of(buildings[key]), tick_count, lot.front, -lot.normal, lot.to_curb)
 	buildings_changed.emit()
 	return true
 

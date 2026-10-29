@@ -431,7 +431,7 @@ func _spawn(key: String, refill := false) -> void:
 		foot.mesh = MeshParts.to_mesh(footing)
 		foot.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	ConstructionSite.add_to(root, [MeshParts.to_mesh(solid), MeshParts.to_mesh(draped), []],
-		CitySim.PROFILE_OF_ZONE.get(int(b.zone), "house"), func(): return sim.construction.state(ref, sim.tick_count),
+		str(sim.construction.sites[ref].profile), func(): return sim.construction.state(ref, sim.tick_count),
 		_site_done.bind(key, root, parts), foot)
 
 
@@ -514,7 +514,7 @@ func _set_trees(key: String, always := true) -> int:
 	# the building's own build date, so nothing new is saved.
 	var b: Dictionary = sim.buildings.get(key, {})
 	var when := {"planted": int(b.get("built", sim.tick_count)) + Construction.duration(
-		CitySim.PROFILE_OF_ZONE.get(int(b.get("zone", 0)), "house"))}
+		CitySim.profile_of(b))}
 	var mailbox := _mailbox_at(key)
 	# Which trees stand (by number), to tell whether anything changed.
 	var kept := PackedInt32Array()
