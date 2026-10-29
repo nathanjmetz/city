@@ -293,6 +293,9 @@ func _wild_trees_in(area: Rect2, detail: bool) -> Array:
 		# on them).
 		if Highways.clears(p.pos.x + o.x, p.pos.z + o.y, Highways.TREE_CLEAR):
 			continue
+		# ...nor on the railroads' right of way (CountyRail).
+		if CountyRail.clears(p.pos.x + o.x, p.pos.z + o.y):
+			continue
 		# ...nor inside Marion and the other backdrop towns, whose streets
 		# and buildings BackdropView draws.
 		if in_town and Backdrop.inside(Vector2(p.pos.x + o.x, p.pos.z + o.y)):
