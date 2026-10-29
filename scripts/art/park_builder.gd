@@ -119,6 +119,8 @@ static func build_site(site: Dictionary, seed: int, to_curb: float, town: String
 		"diner": b._diner(size, to_curb, str(site.name))
 		"gas_station": b._gas_station(size, to_curb, str(site.name))
 		"trailhead": b._trailhead(size, to_curb)
+	if int(site.get("market_stalls", 0)) > 0:
+		b._market(site, size, int(site.market_stalls))
 	var lawn := b._lawn.commit()
 	if lawn.get_surface_count() > 0:
 		lawn.surface_set_material(0, lawn_material())
@@ -2209,3 +2211,100 @@ static func plaza_mesh(blocks: Array) -> Array:
 				var q := o + side2 * lerpf(-w * 0.5 + 0.6, w * 0.5 - 0.6, float(k) / n)
 				b._cyl_y(q + Vector3(0, 0.45, 0), 0.11, 0.9, Color("#2a2c2e"))
 	return [b._commit_flat(), b._commit_house(), b.trees]
+
+
+# ------------------------------------------------------- farmers' market
+
+## Pop-up canopies: white, and the blues, greens and reds vendors buy.
+const CANOPY := [Color("#f1f0ea"), Color("#f1f0ea"), Color("#2f5d9a"), Color("#3f7a45"), Color("#b5402f"),
+	Color("#e2c04a")]
+## Produce on the tables: sweet corn, tomatoes, squash, greens, eggs.
+const PRODUCE := [Color("#d9c35a"), Color("#b8372a"), Color("#d98c2b"), Color("#4f7a2e"), Color("#efe6d2")]
+
+
+## The Saturday farmers' market (FarmersMarket): `n` stalls, each a 10 x 10
+## ft pop-up canopy over a folding table of produce, the vendor's front to
+## the walk, as on a real courthouse square or round a park's shelter.
+func _market(site: Dictionary, size: Vector2, n: int) -> void:
+	for spot in _stall_spots(site, size, n):
+		_stall(spot[0], spot[1])
+
+
+## [centre, facing] for each stall, in the site's frame (front is -z).
+func _stall_spots(site: Dictionary, size: Vector2, n: int) -> Array:
+	var hx := size.x * 0.5
+	var hz := size.y * 0.5
+	var out := []
+	if str(site.kind) == "courthouse":
+		# A ring just inside the walk round the square: the front first (but
+		# clear of the front walk to the steps), then the sides, then the back,
+		# clear of the diagonal walks at the corners.
+		var inset := 6.0
+		var sides := [[Vector3(0, 0, -hz + inset), Vector3.BACK, Vector3.RIGHT],
+			[Vector3(-hx + inset, 0, 0), Vector3.RIGHT, Vector3.BACK],
+			[Vector3(hx - inset, 0, 0), Vector3.LEFT, Vector3.BACK],
+			[Vector3(0, 0, hz - inset), Vector3.FORWARD, Vector3.RIGHT]]
+		for side in sides:
+			var half: float = (hx if side[2] == Vector3.RIGHT else hz) - 12.0
+			var t := -half
+			while t <= half and out.size() < n:
+				var c: Vector3 = side[0] + side[2] * t
+				if side == sides[0] and absf(t) < 6.0:
+					t += 4.5
+					continue
+				# The vendor stands inside; the table faces the walk outside.
+				out.append([c, -side[1]])
+				t += 4.5
+		return out
+	# A park: rows in front of the picnic shelter, then behind it.
+	var frame := Basis.looking_at(site.dir, Vector3.UP).inverse()
+	var c := Vector3.ZERO
+	var sz := Vector2(12, 8)
+	for f in site.features:
+		if f.type == "pavilion":
+			c = frame * (f.pos - site.pos)
+			c.y = 0.0
+			sz = f.size
+			break
+	for row in [[-sz.y * 0.5 - 4.0, Vector3.FORWARD], [sz.y * 0.5 + 4.0, Vector3.BACK]]:
+		for i in 8:
+			if out.size() >= n:
+				return out
+			var x: float = c.x + (i - 3.5) * 4.5
+			var p := Vector3(x, 0, c.z + float(row[0]))
+			if absf(p.x) > hx - 2.5 or absf(p.z) > hz - 2.5:
+				continue
+			out.append([p, row[1]])
+	return out
+
+
+## One stall at `c`, its table toward `face`.
+func _stall(c: Vector3, face: Vector3) -> void:
+	var r := Vector3(-face.z, 0, face.x)
+	var col: Color = CANOPY[rng.randi() % CANOPY.size()]
+	var h := 2.1
+	var hw := 1.5
+	for sx in [-1.0, 1.0]:
+		for sf in [-1.0, 1.0]:
+			_box("paint", Vector3(0.05, h, 0.05), c + r * sx * hw + face * sf * hw + Vector3(0, h * 0.5, 0), Color("#c9cbc8"))
+	# The canopy: a shallow peak with a valance round its edge.
+	var top := c + Vector3(0, h + 0.55, 0)
+	var k := [c + (r + face) * hw, c + (r - face) * hw, c + (-r - face) * hw, c + (-r + face) * hw]
+	for i in 4:
+		var a: Vector3 = k[i] + Vector3(0, h, 0)
+		var b: Vector3 = k[(i + 1) % 4] + Vector3(0, h, 0)
+		var out: Vector3 = ((a + b) * 0.5 - c)
+		out.y = 0.0
+		_tri("paint", a, b, top, col, [], (out.normalized() + Vector3.UP).normalized())
+		_quad("paint", a - Vector3(0, 0.22, 0), b - Vector3(0, 0.22, 0), b, a, col.darkened(0.06), [], out.normalized())
+	# A folding table at the front with crates of produce on it.
+	var t := c + face * (hw - 0.45)
+	_box("paint", Vector3(0.05, 0.72, 0.05) , t + r * 0.8 + Vector3(0, 0.36, 0), Color("#6b6f72"))
+	_box("paint", Vector3(0.05, 0.72, 0.05), t - r * 0.8 + Vector3(0, 0.36, 0), Color("#6b6f72"))
+	var bw := Vector3(absf(r.x) * 1.8 + absf(face.x) * 0.75, 0.04, absf(r.z) * 1.8 + absf(face.z) * 0.75)
+	_box("paint", bw, t + Vector3(0, 0.74, 0), Color("#e8e6df"))
+	for i in 3:
+		var crate := t + r * (i - 1) * 0.58 + Vector3(0, 0.88, 0)
+		var cw := Vector3(absf(r.x) * 0.5 + absf(face.x) * 0.4, 0.24, absf(r.z) * 0.5 + absf(face.z) * 0.4)
+		_box("paint", cw, crate, Color("#9a7a4f"))
+		_box("paint", cw * Vector3(0.9, 0.3, 0.9), crate + Vector3(0, 0.14, 0), PRODUCE[rng.randi() % PRODUCE.size()])

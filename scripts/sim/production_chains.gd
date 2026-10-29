@@ -37,6 +37,7 @@ const NODES := {
 	"rv": {"name": "RV plant", "icon": "rv_plant"},
 	"shop": {"name": "Stores", "icon": "shops"},
 	"post": {"name": "Post office", "icon": "mail"},
+	"market": {"name": "Farmers' market", "icon": "farms"},
 	"build": {"name": "Job sites", "icon": "builder_yard"},
 	"rail": {"name": "Out by rail", "icon": "rail_depot"},
 	"region": {"name": "Region", "icon": "region"},
@@ -55,7 +56,7 @@ const CHAINS := [
 ]
 
 ## Where a chain ends: what goes there is used up or gone.
-const ENDS := ["shop", "build", "post", "rail", "region"]
+const ENDS := ["shop", "build", "post", "market", "rail", "region"]
 
 ## month index -> {"from>to>good": loads}
 var months := {}
