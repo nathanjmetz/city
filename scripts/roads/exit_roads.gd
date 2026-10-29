@@ -39,6 +39,8 @@ var _mats := {
 	"yellow": Surfaces.far_road("paint", RoadStyle.MARKING_YELLOW),
 	"white": Surfaces.far_road("paint", RoadStyle.MARKING_WHITE),
 	"concrete": Surfaces.far_road("concrete", Color(0.66, 0.65, 0.62)),
+	"steel": RoadView._galvanized(),
+	"marker": RoadStyle.material(Color(0.95, 0.76, 0.1)),
 	"pole": RoadStyle.material(Color(0.33, 0.27, 0.21)),
 	"wire": RoadStyle.material(Color(0.12, 0.12, 0.12)),
 }
@@ -102,7 +104,6 @@ func _draw_end(e: Array) -> Node3D:
 		parts[k] = SurfaceTool.new()
 		parts[k].begin(Mesh.PRIMITIVE_TRIANGLES)
 	_draw(parts, e[0], e[1], e[2], e[3], e[4])
-	parts.concrete.generate_normals()
 	for k in parts:
 		var mi := MeshInstance3D.new()
 		mi.mesh = parts[k].commit()
@@ -120,7 +121,7 @@ func _exit_tree() -> void:
 
 ## One county highway from `at` on `length` metres: the same two-lane
 ## country road as in town (RoadMesh._rural), with its pole line and a
-## bridge wherever it crosses water. Built straight and laid straight onto
+## bridge by span wherever it crosses water (BridgeMesh). Built straight and laid straight onto
 ## the land (no draping afterwards), so it's cheap however long.
 func _draw(parts: Dictionary, at: Vector3, dir: Vector3, length: float, type: int, pole_side: float) -> void:
 	var spec: Dictionary = RoadStyle.TYPES[type]
@@ -152,7 +153,7 @@ func _draw(parts: Dictionary, at: Vector3, dir: Vector3, length: float, type: in
 	line.append_array(pts)
 	PoleLine.draw(parts.pole, parts.wire, PoleLine.place(line, off, Vector2(0.0, 6.0)),
 		PoleLine.three_phase(type), PoleLine.top_for(dir))
-	RoadMesh.bridge(pts, RoadStyle.right_of_way_half(type), parts.concrete, Terrain.ground_y)
+	BridgeMesh.build(pts, RoadStyle.right_of_way_half(type), parts, Terrain.ground_y, RoadMesh.raised_curbs)
 
 
 ## The point `d` metres along evenly spaced samples, between its neighbours.

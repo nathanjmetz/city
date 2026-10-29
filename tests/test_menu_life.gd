@@ -76,6 +76,35 @@ func _town() -> void:
 	_check(night.x * 4 <= rush.x and night.y * 4 <= rush.y, "the streets are nearly empty late at night")
 	var cap := MenuLife.caps()
 	_check(cap.x > 0 and cap.y > 0, "there is a cap on cars and people")
+	_settled()
+
+
+## Opening at 11 am, the town's workers are at work and their cars parked
+## there (or in a lot or at the curb nearby), not all at home.
+func _settled() -> void:
+	var sim := MenuSim.new()
+	sim.from_dict(root.get_node("Session")._read(MenuLife.MENU_TOWN))
+	var life := MenuLife.new()
+	life.setup(sim, DayNight.new(), "2026-07-15T11:00")
+	sim.tick_count = life._tick
+	while not sim.people.settle(sim, sim.traffic, 20000):
+		pass
+	var jobs := 0
+	var at_work := 0
+	var cars_out := 0
+	for id in sim.people.people:
+		var p: Dictionary = sim.people.people[id]
+		if p.job == "":
+			continue
+		jobs += 1
+		if p.at == p.job:
+			at_work += 1
+			var car: Dictionary = sim.traffic._vehicle_parked(p.car)
+			if not car.is_empty() and car.at_place != "lot:" + p.home:
+				cars_out += 1
+	print("settled: ", at_work, " of ", jobs, " at work, ", cars_out, " cars parked away from home")
+	_check(at_work * 10 >= jobs * 8, "at 11 am most workers are at work (%d of %d)" % [at_work, jobs])
+	_check(cars_out * 2 >= at_work, "and most drove: their cars are parked by work (%d)" % cars_out)
 
 
 func _check(ok: bool, what: String) -> void:
