@@ -88,6 +88,20 @@ func _init() -> void:
 				clear = clear and not m.grow(2.5).intersects(cot)
 			_check(clear, "cottage %d stands clear of the house and garage" % s)
 	_check(cottages >= 16, "most owners have room for a backyard cottage (%d of 24)" % cottages)
+	# On old streets a two-car garage out back gets a flat built over it
+	# (the carriage house) in place of a cottage.
+	var flats := 0
+	for s in 30:
+		var lot := {"width": 24.0, "depth": 45.0, "era": "prewar"}
+		HouseBuilder.grown = 1
+		var a := HouseBuilder.build(900 + s, 3.9, lot, 2)
+		var before: Array = HouseBuilder.last_masses.duplicate()
+		HouseBuilder.grown = 2
+		var b := HouseBuilder.build(900 + s, 3.9, lot, 2)
+		HouseBuilder.grown = 0
+		if HouseBuilder.last_masses == before and _verts(b) > _verts(a) + 200:
+			flats += 1
+	_check(flats >= 3, "old two-car garages get a flat over them (%d of 30)" % flats)
 	# A house grown to two storeys is the house that was there: one that
 	# had two storeys already stays as built, a cape or bungalow raises a
 	# dormer on the same walls; only a ranch owner builds new.
@@ -242,6 +256,14 @@ func _init() -> void:
 		_check(stockrooms > 20, "most grown %s shops build on (%d of 40)" % [kind, stockrooms])
 	print("FAILED" if failed else "ALL PASSED")
 	quit(1 if failed else 0)
+
+
+func _verts(out: Array) -> int:
+	var n := 0
+	for m: ArrayMesh in out.slice(0, 2):
+		for i in m.get_surface_count():
+			n += m.surface_get_array_len(i)
+	return n
 
 
 ## Every footprint within half-width `half` across and `depth` back.

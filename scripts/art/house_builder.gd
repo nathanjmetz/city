@@ -263,6 +263,8 @@ func _house(to_curb: float, storeys := 0) -> Array:
 func _cottage(h: Dictionary, paint: Dictionary) -> void:
 	if outline.size() >= 3 or pad > 0.0:
 		return
+	if era == "prewar" and _carriage_house(h, paint):
+		return
 	var own := RandomNumberGenerator.new()
 	own.seed = hash([rng.seed, "cottage"])
 	var was := rng
@@ -319,6 +321,62 @@ func _cottage(h: Dictionary, paint: Dictionary) -> void:
 	if z0 - 1.4 > zw:
 		_flat_rect("drive", dx - 0.45, dx + 0.45, zw, z0 - 1.4, 0.07)
 	rng = was
+
+
+## On an old street the backyard cottage is a flat over the detached
+## two-car garage at the back of the lot: the carriage house or garage
+## apartment of Indianapolis's Old Northside and Fort Wayne's West Central,
+## which those cities' ADU rules (2023) let owners build or bring back. A
+## storey of siding over the garage under a steeper roof, windows over the
+## garage doors and down the sides, an inside stair whose door opens on
+## the yard side, a paver walk to the house. Its own random numbers. False
+## when there is no two-car garage out back to build on.
+func _carriage_house(h: Dictionary, paint: Dictionary) -> bool:
+	if not h.has("keep_out") or float(h.get("garage_w", 0.0)) < 5.0:
+		return false
+	var g: Rect2 = h.keep_out
+	var own := RandomNumberGenerator.new()
+	own.seed = hash([rng.seed, "carriage house"])
+	var was := rng
+	rng = own
+	var gw := g.size.x
+	var gd := g.size.y
+	var gx := g.get_center().x
+	var gz := g.get_center().y
+	var z0 := g.position.y
+	var y0 := 2.65
+	var top := y0 + 2.5
+	var siding: Color = paint.siding
+	var roof: Color = paint.roof
+	# The flat's floor is framed a little proud of the garage walls.
+	_box("paint", Vector3(gw + 0.16, 0.2, gd + 0.16), Vector3(gx, y0 + 0.05, gz), TRIM)
+	_box("siding", Vector3(gw + 0.1, top - y0, gd + 0.1), Vector3(gx, (y0 + top) * 0.5, gz), siding)
+	_corners(gx - gw * 0.5 - 0.05, gx + gw * 0.5 + 0.05, z0 - 0.05, z0 + gd + 0.05, y0, top)
+	_gable_roof(gx, gz, top, gw + 0.1, gw * 0.5 * own.randf_range(0.65, 0.85), gd + 0.1, false, roof, siding)
+	# Two windows over the garage doors, one in the back gable, two down
+	# each side.
+	for s in [-1.0, 1.0]:
+		_window(Vector3(gx + s * gw * 0.22, y0 + 1.35, z0 - 0.05), Vector3(-1, 0, 0), 0.8, 1.2, true, false, TRIM)
+		for k in 2:
+			_window(Vector3(gx + s * (gw * 0.5 + 0.05), y0 + 1.35, z0 + gd * (0.3 + 0.4 * k)), Vector3(0, 0, -s), 0.8, 1.2, true, false, TRIM)
+	_window(Vector3(gx, y0 + 1.35, z0 + gd + 0.05), Vector3(1, 0, 0), 0.9, 1.2, true, false, TRIM)
+	# The stair door on the side toward the middle of the lot, with a stoop
+	# and a light over it.
+	var side := -1.0 if gx > 0.0 else 1.0
+	var wx := gx + side * gw * 0.5
+	var dz := z0 + gd - 1.2
+	_box("paint", Vector3(0.06, 2.05, 0.9), Vector3(wx + side * 0.03, 1.2, dz), paint.get("door", Color("#3a3a3a")))
+	_box("paint", Vector3(0.08, 2.2, 1.06), Vector3(wx + side * 0.02, 1.2, dz), TRIM)
+	_box("concrete", Vector3(1.2, 0.15, 1.4), Vector3(wx + side * 0.6, 0.08, dz), FOUNDATION)
+	_box("paint", Vector3(0.12, 0.25, 0.12), Vector3(wx + side * 0.08, 2.5, dz + 0.7), Color("#2a2a2a"))
+	# Its own meter.
+	_box("paint", Vector3(0.1, 0.4, 0.3), Vector3(wx + side * 0.05, 1.4, dz - 1.4), Color("#8a8c8e"))
+	var zw := _back_z + 0.2
+	var px := wx + side * 1.3
+	if dz - 0.5 > zw:
+		_flat_rect("drive", px - 0.45, px + 0.45, zw, dz + 0.5, 0.07)
+	rng = was
+	return true
 
 
 ## Home with addition (HouseBuilder.grown): the owner has built on out back
