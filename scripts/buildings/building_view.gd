@@ -333,8 +333,9 @@ static func build_for(type: String, storeys: int, s: int, to_curb: float, fit: D
 				built = MetroBuilder.build_apartments(s, to_curb, fit, storeys)
 		"shop": built = DenseBuilder.build_retail(s, to_curb, fit, spec, level)
 		"shopping_center":
-			# A neighborhood center (the second stage) has a grocer anchor.
-			CommercialBuilder.force_shop = "center" if level >= 1 else "strip"
+			# A neighborhood center (the second stage) has a grocer anchor, a
+			# community center (the third) a discount store too.
+			CommercialBuilder.force_shop = ["strip", "center", "community"][clampi(level, 0, 2)]
 			built = DenseBuilder.build_retail(s, to_curb, fit, spec)
 			CommercialBuilder.force_shop = ""
 		"mixed_use":
