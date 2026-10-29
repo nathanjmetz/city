@@ -195,6 +195,7 @@ func _station_upgrades(kind: int, size: Vector2, front: float, built: Array) -> 
 				_school_addition(w, z, g, brick, trim)
 				_covered_walk(-22.0, front + 70.0, z + 3.0)
 			"aux_gym": _aux_gym(w, z, g, brick, trim)
+			_: _care_piece(key, w, z, g)
 		z += g
 
 
@@ -532,6 +533,11 @@ func _ribbon_lift(x0: float, x1: float, z: float, out: Vector3, panel: Color, tr
 		_box("paint", Vector3(step - 0.15, 0.85, 0.06), Vector3(c, 1.15 + lift, z + out.z * 0.03), panel)
 		x += step
 	_box("paint", Vector3(x1 - x0 - 1.0, 0.12, 0.14), Vector3((x0 + x1) * 0.5, 3.24 + lift, z + out.z * 0.07), trim)
+
+
+## A nursing home's or daycare's piece (HealthBuilder draws them).
+func _care_piece(_key: String, _w: float, _z: float, _g: float) -> void:
+	pass
 
 
 ## The 911 center's radio tower: a self-supporting lattice about 45 m high,

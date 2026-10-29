@@ -2184,6 +2184,10 @@ const STATION_BOND_DOWN := 0.25
 ## A school's capital comes from its Operations Fund (IC 20-46-8), a
 ## bigger levy than a town's cumulative funds: dollars a resident a month.
 const STATION_LEVY_OF := {"school": 3.0}
+## What a department pays for the homes or shops it buys behind its station
+## (dollars a square metre of lot, about a small Indiana town's improved
+## residential land with the house on it).
+const STATION_LAND_PER_M2 := 70.0
 ## Each piece: `cost` dollars from the fund, `grow` metres the lot reaches
 ## further back from the street (0 builds on what it has), `needs` from the
 ## town (population; tall = buildings of 3+ storeys; city = a city charter),
@@ -2249,6 +2253,31 @@ const STATION_TREES := {
 			"needs": {"population": 6000}, "effects": {"reach*": 0.2}, "note": "eight classrooms on two floors, the portables go"},
 		{"id": "aux_gym", "name": "Second gym", "cost": 2_800_000, "grow": 24.0, "requires": ["addition"],
 			"needs": {"population": 8000}, "effects": {"reach*": 0.05}, "note": "practice space and community leagues"},
+	],
+	# A nursing home: most of Indiana's are owned by county hospitals
+	# (the state's nursing facility supplemental payment program), which
+	# grow them into a senior campus as the town ages: a rehab gym for
+	# short Medicare stays, assisted living (410 IAC 16.2-5), memory care
+	# and independent living cottages.
+	"nursing": [
+		{"id": "therapy_gym", "name": "Rehab therapy gym", "cost": 1_200_000, "grow": 14.0,
+			"needs": {"population": 2000}, "effects": {"reach*": 0.05}, "note": "therapy to get people home after a hospital stay"},
+		{"id": "assisted", "name": "Assisted living wing", "cost": 6_000_000, "grow": 24.0,
+			"needs": {"population": 4000}, "effects": {"reach*": 0.15}, "note": "apartments with help close by"},
+		{"id": "memory_care", "name": "Memory care unit", "cost": 3_000_000, "grow": 22.0, "requires": ["assisted"],
+			"needs": {"population": 6000}, "effects": {"reach*": 0.05}, "note": "a secure wing and garden for dementia care"},
+		{"id": "cottages", "name": "Independent living cottages", "cost": 3_500_000, "grow": 24.0,
+			"needs": {"population": 8000}, "effects": {"reach*": 0.05}, "note": "duplex cottages for couples who want less house"},
+	],
+	# A daycare adds rooms as families move in (Indiana licenses centers by
+	# age group, 470 IAC 3-4.7).
+	"daycare": [
+		{"id": "infant_room", "name": "Infant and toddler room", "cost": 250_000, "grow": 10.0,
+			"needs": {"population": 1500}, "effects": {"reach*": 0.1}, "note": "room for babies and its own small yard"},
+		{"id": "garden", "name": "Outdoor classroom", "cost": 60_000, "grow": 8.0,
+			"needs": {"population": 2500}, "effects": {"reach*": 0.02}, "note": "raised beds under a shade sail"},
+		{"id": "school_age", "name": "Before and after school room", "cost": 350_000, "grow": 12.0,
+			"needs": {"population": 3000}, "effects": {"reach*": 0.1}, "note": "kids from the school come over until pickup"},
 	],
 	"police": [
 		{"id": "sally_port", "name": "Sally port", "cost": 300_000, "grow": 10.0,

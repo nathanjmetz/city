@@ -2475,6 +2475,9 @@ func hub_area(key: String) -> String:
 				if services.buildings.has(id) and services.key_of(id) == key else ""
 		"bus_depot":
 			return "transit" if buses.depots.has(id) and services.buildings.has(id) else ""
+		"station":
+			return Services.area_of(services.buildings[id].kind) \
+				if stations.depts.has(id) and services.buildings.has(id) else ""
 		"water":
 			return "water" if services.water.utilities.has(id) else ""
 		"post_office":
