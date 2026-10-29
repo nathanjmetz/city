@@ -2,7 +2,8 @@ class_name VehicleMaterial
 extends RefCounted
 ## One shader for every vehicle. Vertex alpha picks the surface (see
 ## VehicleModels); per-instance custom data carries the body colour (sRGB) in
-## rgb and, in alpha, 1 while braking plus 2 while running emergency lights.
+## rgb and, in alpha, 1 while braking plus 2 while running emergency lights
+## plus OFF (4) for a parked one with its engine off: no lamps lit.
 ## Cheap enough for the Compatibility renderer. The Ultra version (desktop,
 ## Forward+) adds a clear coat over metallic flake paint, road grime that
 ## builds toward the sills and wheels, and tinted, sharper glass.
@@ -33,6 +34,12 @@ void vertex() {
 float hash(vec3 p) { return fract(sin(dot(p, vec3(12.9898, 78.233, 37.719))) * 43758.5453); }
 void fragment() {
 	float code = COLOR.a;
+	// Flags, rounded first: custom data comes through a hair under a whole
+	// number (2.0 as 1.9999 would read as braking).
+	int flags = int(v_custom.a + 0.5);
+	float brake = float(flags & 1);
+	float siren = float((flags >> 1) & 1);
+	float running = 1.0 - float((flags >> 2) & 1);
 	vec3 col = lin(COLOR.rgb);
 	float rough = 0.6;
 	float metal = 0.0;
@@ -56,22 +63,19 @@ void fragment() {
 		rough = 0.45;
 	} else if (code < 0.55) {   // headlights, on full after dark
 		rough = 0.1;
-		emit = col * (0.35 + smoothstep(0.3, 0.7, night) * 5.0);
+		emit = col * (0.35 + smoothstep(0.3, 0.7, night) * 5.0) * running;
 	} else if (code < 0.65) {   // tail lights, bright when braking
-		// Rounded first: custom data comes through a hair under a whole
-		// number, and mod(1.9999, 2.0) would light every lamp as braking.
-		float brake = mod(floor(v_custom.a + 0.5), 2.0);
 		rough = 0.2;
-		emit = vec3(1.0, 0.04, 0.02) * (0.15 + smoothstep(0.3, 0.7, night) * 1.2 + brake * 2.5);
+		emit = vec3(1.0, 0.04, 0.02) * (0.15 + smoothstep(0.3, 0.7, night) * 1.2 + brake * 2.5) * running;
 	} else if (code < 0.75) {   // red and blue emergency lights
-		float on = step(1.5, v_custom.a);
+		float on = siren;
 		float flash = step(0.5, fract(TIME * 1.6 + (v_side > 0.0 ? 0.5 : 0.0)));
 		col *= 0.5;
 		emit = lin(COLOR.rgb) * on * flash * 4.0;
 	} else {                    // amber beacons always turn
 		float flash = step(0.55, fract(TIME * 1.1));
 		col *= 0.6;
-		emit = lin(COLOR.rgb) * flash * 3.0;
+		emit = lin(COLOR.rgb) * flash * 3.0 * running;
 	}
 	if (ultra) {
 		if (code < 0.05) {
@@ -121,6 +125,9 @@ void fragment() {
 	EMISSION = emit;
 }
 """
+
+## Custom-data alpha flag for a vehicle parked with its engine off.
+const OFF := 4.0
 
 static var _mat: ShaderMaterial
 static var _ultra: ShaderMaterial

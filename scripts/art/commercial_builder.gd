@@ -440,7 +440,7 @@ func _sign(c: Vector3, w: float, h: float) -> void:
 		# sign shader there's real lettering, so it paints no stand-in.
 		col = sign_spec.panel
 		col.a = 0.0
-		labels.append_array(SignText.on_panel(sign_spec, c + Vector3(0, 0, -0.01), w, h, Vector3.FORWARD))
+		labels.append_array(SignText.on_panel(sign_spec, c + Vector3(0, 0, -0.01), w, h, Vector3.FORWARD, true))
 	var r := Vector3(-w * 0.5, 0, 0)
 	var u := Vector3(0, h, 0)
 	# Faces the street (-z); x runs right to left as seen from the street.
