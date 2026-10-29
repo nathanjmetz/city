@@ -110,8 +110,147 @@ func _init() -> void:
 		sim.traffic._find_xings()
 		_check(not sim.traffic._xings.is_empty(), "traffic stops at the county line's gates")
 
+	_interchange(seed)
+	_town_interchange(cs)
 	print("ALL TESTS PASSED" if not _failed else "TESTS FAILED")
 	quit(1 if _failed else 0)
+
+
+## A town's cars left beside the line ride out on the next through freight.
+func _interchange(seed: int) -> void:
+	var ct := CountyTrains.new()
+	var c0: Dictionary = CountyTrains.corridors()[0]
+	var s0 := 20000.0
+	var at := CountyTrains._at(c0, s0)
+	var cars := [["covered", "grain"], ["covered", "grain"], ["hopper", "ore"]]
+	_check(ct.hand_off(100, at + Vector2(3, 3), 7, cars), "a town leaves three cars at its interchange")
+	_check(not ct.hand_off(100, Vector2(-1e6, -1e6), 7, cars), "but not where no county line runs")
+	var taken := -1
+	var tid := 0
+	var stood := 0
+	for tick in range(100, 400_000):
+		var trains := ct.now(tick)
+		ct._pick_up(tick, trains)
+		if taken == -1 and not ct.stops.is_empty():
+			taken = tick
+			tid = ct.stops.keys()[0]
+		if taken != -1:
+			for t in trains:
+				if t.id == tid and t.get("stopped", false):
+					stood += 1
+					if stood == 1:
+						_check(absf(float(t.s) - float(ct.stops[tid].s)) < 2.0, "it stops with its head at the interchange")
+		if taken != -1 and ct.handoffs.is_empty():
+			break
+	_check(taken != -1, "the next through freight to come by stops for them")
+	_check(stood == CountyTrains.STOP, "it stands %d ticks to couple them on (%d)" % [CountyTrains.STOP, stood])
+	_check(ct.handoffs.is_empty(), "the cars leave the interchange with it")
+	var after := {}
+	for tick in range(taken, taken + 400_000, 50):
+		for t in ct.now(tick):
+			if t.id == tid:
+				after = t
+		if not after.is_empty() and after.consist.size() > 0 and after.consist.slice(-3) == cars:
+			break
+	_check(not after.is_empty() and after.consist.slice(-3) == cars, "and they ride on the back of its train")
+	# Saved and loaded, the timetable is the same.
+	var back := CountyTrains.new()
+	back.from_dict(JSON.parse_string(JSON.stringify(ct.to_dict())))
+	var same := true
+	for tick in range(taken, taken + 60_000, 997):
+		if str(ct.now(tick)) != str(back.now(tick)):
+			same = false
+	_check(same, "a saved stop loads the same")
+	# Stopping never brings two trains together.
+	var meets := 0
+	for tick in range(taken - 20_000, taken + 80_000, 25):
+		var list := ct.now(tick).filter(func(t): return t.corridor == 0)
+		for x in list:
+			for y in list:
+				if x.id != y.id and (x.dir != y.dir or absf(float(x.s) - float(y.s)) < CountyTrains._max_len()):
+					meets += 1
+	_check(meets == 0, "a train standing at an interchange never meets or crowds another")
+
+
+## A town near the line builds its main line to an interchange track beside
+## it, and its local freight leaves its cars there and comes back.
+func _town_interchange(cs: Array) -> void:
+	# Somewhere 1.5 km off the line with dry, level ground for a yard.
+	var sim: CitySim
+	var placed := false
+	for s0 in [26000.0, 12000.0, 30000.0, 16000.0, 6000.0, 22000.0, 34000.0]:
+		for side in [1.0, -1.0]:
+			var c0: Dictionary = cs[0]
+			var mid := CountyTrains._at(c0, s0)
+			var dir := (CountyTrains._at(c0, s0 + 10.0) - CountyTrains._at(c0, s0 - 10.0)).normalized()
+			var across: Vector2 = Vector2(-dir.y, dir.x) * float(side)
+			sim = CitySim.new()
+			sim.simulate_traffic = false
+			sim.county_rail = true
+			sim.terrain_offset = mid + across * 1500.0
+			sim.economy.money = 5_000_000
+			# A county road through town, along the line.
+			var a := dir * -2000.0
+			var b := dir * 2000.0
+			sim.apply({"type": "build_county_road", "a": [a.x, a.y], "b": [b.x, b.y], "links": [0, 1]})
+			var site := Rail.site_near(sim.network, Vector3(-across.x, 0, -across.y) * 60.0)
+			if site.is_empty() or sim.rail.site_problem(sim, site[0], site[1], site[2]) != "":
+				continue
+			placed = sim.apply({"type": "place_rail_depot", "pos": [site[0].x, site[0].z],
+				"dir": [site[1].x, site[1].z], "axis": [site[2].x, site[2].z]})
+			if placed:
+				break
+		if placed:
+			break
+	_check(placed, "a depot opens 1.5 km from the county line")
+	if not placed:
+		return
+	var d: Dictionary = sim.rail.depots.values()[0]
+	for i in Balance.RAIL_DECIDE_EVERY + 1:
+		sim.tick()
+	var reqs := sim.rail.open_requests()
+	_check(reqs.size() == 1 and sim.rail.lines[reqs[0]].target.get("county", false),
+		"its main line goes to an interchange with the county line (%s)" % d.why)
+	if reqs.is_empty():
+		return
+	var l: Dictionary = sim.rail.lines[reqs[0]]
+	sim.apply({"type": "permit", "id": l.permit, "answer": "approve"})
+	for i in 24 * 60 * 10:
+		sim.tick()
+		if l.state == "open":
+			break
+	_check(l.state == "open", "it opens")
+	var rp: int = l.pieces[-1]
+	var pc: Dictionary = sim.rail.pieces[rp]
+	var off := sim.terrain_offset
+	var worst := 0.0
+	var pts: Array = pc.pts
+	for i in range(pts.size() / 2, pts.size()):
+		var n := CountyTrains.nearest(Vector2(pts[i].x, pts[i].z) + off)
+		worst = maxf(worst, absf(float(n.dist) - Rail.INTERCHANGE_GAP))
+	_check(pc.get("county", false) and worst < 0.5,
+		"the interchange track runs beside the county's main, 4.6 m between centres (off by %.2f m)" % worst)
+	# The local freight brings five loaded hoppers out.
+	var tid: int = d.freight_train
+	var t: Dictionary = sim.rail.trains[tid]
+	t.legs = ["region"]
+	t.consist = ["gp38", "hopper", "hopper", "hopper", "hopper", "hopper"]
+	t.cars = 5
+	t.cargo = "ore"
+	t.state = "ready"
+	for i in 24 * 60 * 2:
+		sim.tick()
+		if not sim.county_trains.handoffs.is_empty():
+			break
+	_check(sim.county_trains.handoffs.size() == 1 and sim.county_trains.handoffs[0].cars.size() == 5,
+		"the local freight leaves its five cars at the interchange")
+	_check(int(d.get("delivered", 0)) == 5, "and the railroad is paid for them")
+	_check(t.state != "away" and t.consist == ["gp38"] and t.legs == ["yard"], "its engine heads back, not off the map")
+	for i in 24 * 60 * 2:
+		sim.tick()
+		if t.state == "parked" or t.purpose == "Waiting for work":
+			break
+	_check(t.purpose == "Waiting for work", "and gets back to the yard (%s)" % t.purpose)
 
 
 func _edge(p: Vector2) -> bool:

@@ -10,7 +10,7 @@ extends Node3D
 const DRAW_TO := 3500.0
 ## Stock kind -> the model drawn for it.
 const MODEL := {"gp38": "gp38_road", "sd40": "sd40_road", "covered": "covered", "tank": "tank",
-	"hopper": "hopper", "boxcar": "boxcar"}
+	"hopper": "hopper", "boxcar": "boxcar", "flat": "flat"}
 
 var sim: CitySim
 var _frac: Callable
@@ -51,7 +51,7 @@ func _process(_delta: float) -> void:
 	var cam := get_viewport().get_camera_3d()
 	var eye := Vector2(cam.global_position.x, cam.global_position.z) if cam else Vector2.ZERO
 	eye += Terrain.view_origin
-	var lists := poses(sim.tick_count, _frac.call() if _frac.is_valid() else 0.0, eye, DRAW_TO)
+	var lists := poses(sim.tick_count, _frac.call() if _frac.is_valid() else 0.0, eye, DRAW_TO, sim.county_trains.stops)
 	for kind in _cars:
 		var mm: MultiMesh = _cars[kind].multimesh
 		var list: Array = lists.get(kind, [])
@@ -65,12 +65,13 @@ func _process(_delta: float) -> void:
 
 ## Every car within `reach` of `eye` (region coordinates) at tick `tick`
 ## plus `frac` of the next: model -> [Transform3D in view coordinates].
-static func poses(tick: int, frac: float, eye: Vector2, reach: float) -> Dictionary:
+static func poses(tick: int, frac: float, eye: Vector2, reach: float, stops := {}) -> Dictionary:
 	var out := {}
 	var cs := CountyTrains.corridors()
-	for t in CountyTrains.trains_at(tick, CountyTrains.SEED):
+	for t in CountyTrains.trains_at(tick, CountyTrains.SEED, stops):
 		var c: Dictionary = cs[t.corridor]
-		var head: float = float(t.s) + float(t.dir) * CountyTrains.SPEED * TrafficSim.DT * frac
+		var moving := 0.0 if t.get("stopped", false) else frac
+		var head: float = float(t.s) + float(t.dir) * CountyTrains.SPEED * TrafficSim.DT * moving
 		# Skip a train with no part near the camera.
 		var tail: float = head - float(t.dir) * float(t.length)
 		var lo := maxf(minf(head, tail), 0.0)
