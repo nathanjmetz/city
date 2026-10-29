@@ -4,7 +4,8 @@ extends "res://tools/screenshot.gd"
 ## and then its cars pass the camera, saved as OUT_DIR/<view>.png.
 ## Run: xvfb-run godot --resolution 1600x900 -s tools/train_shot.gd -- OUT_DIR 0 0 0 farms [view ...] --quality=ultra
 ## Env: LOOK_MONTH (default 7), LOOK_HOUR (default 11), TRAIN_KIND (grain, tank, manifest or stone; any by default),
-## TRAIN_OFF=1 (the same views with the trains hidden: a before shot), SHOT_PREFIX and SHOT_SUFFIX (around each file name).
+## TRAIN_AT=crossing (stop the train across the county road crossing nearest the
+## demo, for the "crossing" views), TRAIN_OFF=1 (the same views with the trains and county crossing signals hidden: a before shot), SHOT_PREFIX and SHOT_SUFFIX (around each file name).
 
 ## [name, metres behind the lead engine to aim at, yaw off the track, pitch, distance]
 const VIEWS := [
@@ -13,6 +14,8 @@ const VIEWS := [
 	["cars_close", 120.0, 100.0, 16.0, 70.0],
 	["train_mid", 200.0, 80.0, 28.0, 320.0],
 	["train_far", 400.0, 60.0, 35.0, 900.0],
+	["crossing", 150.0, 25.0, 14.0, 70.0],
+	["crossing_wide", 150.0, 50.0, 25.0, 220.0],
 ]
 
 var _view := -1
@@ -42,7 +45,7 @@ func _process(_delta: float) -> bool:
 				c.close_all()
 			if c is CanvasLayer or c is LotAlerts:
 				c.visible = false
-			if c is CountyTrainView and OS.get_environment("TRAIN_OFF") != "":
+			if (c is CountyTrainView or c is GradeCrossingView) and OS.get_environment("TRAIN_OFF") != "":
 				c.queue_free()
 		var args := OS.get_cmdline_user_args()
 		var only := Array(args.slice(5)).filter(func(a): return not a.begins_with("--"))
@@ -82,13 +85,24 @@ func _find_train(sim: CitySim) -> void:
 				best = d
 				at = [ci, s]
 			s += 50.0
+	if OS.get_environment("TRAIN_AT") == "crossing":
+		best = INF
+		for ci in cs.size():
+			for x in GradeCrossingView.crossings():
+				for h in x.hits:
+					if int(h[0]) != ci:
+						continue
+					var d: float = (x.at - o).length()
+					if d < best and d > 1200.0:
+						best = d
+						at = [ci, float(h[1])]
 	var want := OS.get_environment("TRAIN_KIND")
 	for t in range(0, 600000, 10):
 		for tr in CountyTrains.trains_at(t, CountyTrains.SEED):
 			if tr.corridor != at[0] or (want != "" and tr.kind != want):
 				continue
 			var past: float = (float(tr.s) - float(at[1])) * float(tr.dir)
-			if past > 150.0 and past < 152.0:
+			if past >= 150.0 and past < 150.0 + CountyTrains.SPEED * TrafficSim.DT * 10.0:
 				sim.tick_count = t
 				_train = tr
 				print("train ", tr.kind, " ", tr.consist.size(), " cars at tick ", t, " corridor ", at[0], " s ", at[1])

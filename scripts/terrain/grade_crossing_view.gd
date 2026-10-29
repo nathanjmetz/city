@@ -195,7 +195,7 @@ func _set_states(now: int) -> void:
 		return
 	var trains := []
 	if sim.county_rail:
-		trains = CountyTrains.trains_at(sim.tick_count, CountyTrains.SEED)
+		trains = sim.county_trains.now(sim.tick_count)  # with the trains' interchange stops
 	var blink := (now / FLASH_MS) % 2
 	var all := crossings()
 	for i in _drawn:
@@ -210,8 +210,8 @@ func _set_states(now: int) -> void:
 
 
 static func _closed(e: Dictionary, trains: Array) -> bool:
-	var ahead: float = CountyTrains.SPEED * CountyTrains.GATE_WARNING
 	for t in trains:
+		var ahead: float = 0.0 if t.get("stopped", false) else CountyTrains.SPEED * CountyTrains.GATE_WARNING
 		for h in e.hits:
 			if int(t.corridor) != int(h[0]):
 				continue
