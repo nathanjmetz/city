@@ -20,6 +20,14 @@ extends RefCounted
 ## A car TrafficView draws out on the drive, not in the garage
 ## (TrafficView.out_front), opens nothing: the garage looks shut with the
 ## car outside.
+##
+## Warehouse docks (step 2): a dock door goes up once a truck has backed up
+## to it (the truck's dock_t, the tick it got there: DOCK_TICKS to go all
+## the way, exactly), stays up while it sits there being unloaded
+## (TrafficSim.DOCK_DWELL) and while it pulls off the dock, and comes down
+## once it is out in the street. A truck simply parked at a dock with
+## nowhere to go (one based there) leaves its door shut. The busier the
+## warehouse, the more of its doors stand open.
 
 ## Ticks a garage door takes to go all the way up or down (10 s, as a real
 ## opener does; a tick is TrafficSim.DT).
@@ -32,6 +40,9 @@ const STALE := 60
 ## seconds more, so the door is about up as it gets there.
 const LEAD := 6.0
 const LEAD_V := 4.0
+## Ticks a warehouse's dock door takes to go all the way up or down (about
+## 12 s, as a real dock door's opener does).
+const DOCK_TICKS := 120
 
 var traffic: TrafficSim
 ## The town the traffic belongs to, for its lots (else the one the traffic
@@ -71,9 +82,13 @@ func open_near(eye: Vector3, reach: float) -> Dictionary:
 		if _far(car.pos, eye, r2) or _out(car, true):
 			continue
 		_put(out, car.at_place, int(car.spot), up(car, tick))
+	_docks(out, eye, reach)
 	for car in traffic.cars:
 		var j = car.get("j")
 		if j != null and int(j.get("node", 0)) == -1:
+			if int(j.wi) == -1 and car.has("dock_t"):
+				_off_dock(out, car, eye, reach)  # pulling off a warehouse dock
+				continue
 			if int(j.wi) == -1:
 				# Backing out of where it was parked, down the drive.
 				if car.jd < float(j.get("rev", 0.0)):
@@ -138,6 +153,71 @@ func _put(out: Dictionary, ref: String, spot: int, exact: float) -> void:
 		had[3] = -1.0 if exact < 0.0 or had[3] < 0.0 else maxf(exact, had[3])
 		return
 	out[key] = [ref, i, pl.lay.doors[i], exact]
+
+
+## The dock doors of the warehouses near the camera with a truck backed up
+## to them, being unloaded or about to leave, exactly as far up as the time
+## since it got there says.
+func _docks(out: Dictionary, eye: Vector3, reach: float) -> void:
+	var sim: CitySim = town if town != null else traffic._sim
+	if sim == null:
+		return
+	var tick: int = traffic._tick
+	for id in sim.warehouses.buildings:
+		var w: Dictionary = sim.warehouses.buildings[id]
+		if Warehouses.is_store(w):
+			continue
+		var r := reach + Warehouses.site_width(w) * 0.5
+		if _far(w.pos, eye, r * r):
+			continue
+		var ref := Warehouses.traffic_ref(id, w)
+		var at: Array = traffic._parked_at.get(ref, [])
+		if at.is_empty():
+			continue  # no truck there
+		var pl := _place(ref)
+		if pl.is_empty():
+			continue
+		for car in at:
+			if not car.has("dock_t") or (int(car.until) < 0 and not car.get("pending", false)):
+				continue
+			var i: int = car.spot
+			if i >= 0 and i < pl.spots.size() and pl.spots[i].get("rear", false):
+				_put_dock(out, ref, w, int(pl.spots[i].door), clampf(float(tick - int(car.dock_t)) / DOCK_TICKS, 0.0, 1.0))
+
+
+## A truck pulling off a warehouse dock: its door stays up until it is out
+## in the street.
+func _off_dock(out: Dictionary, car: Dictionary, eye: Vector3, reach: float) -> void:
+	var ref: String = car.get("from_place", "")
+	var sim: CitySim = town if town != null else traffic._sim
+	if not ref.begins_with("wh:") or sim == null:
+		return
+	var w = sim.warehouses.buildings.get(int(ref.substr(3).get_slice("@", 0)))
+	if w == null:
+		return
+	var pl := _place(ref)
+	var r := reach + Warehouses.site_width(w) * 0.5
+	if _far(w.pos, eye, r * r):
+		return
+	# The dock it pulls off is where its path starts (the truck forgets its
+	# spot number as it sets off): its front bumper there.
+	var start: Vector3 = car.j.pts[0]
+	for s in pl.spots:
+		if s.get("rear", false) and TrafficSim._nose(s, float(car.len)).distance_squared_to(start) < 0.25:
+			_put_dock(out, ref, w, int(s.door), -1.0)
+			return
+
+
+func _put_dock(out: Dictionary, ref: String, w: Dictionary, door: int, exact: float) -> void:
+	var doors := Warehouses.dock_doors(w)
+	if door < 0 or door >= doors.size():
+		return
+	var key := "%s#%d" % [ref, door]
+	var had: Array = out.get(key, [])
+	if not had.is_empty():
+		had[3] = -1.0 if exact < 0.0 or had[3] < 0.0 else maxf(exact, had[3])
+		return
+	out[key] = [ref, door, doors[door], exact]
 
 
 ## door_for, kept per place and spot.
