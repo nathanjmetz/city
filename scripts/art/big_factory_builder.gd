@@ -67,7 +67,7 @@ static func build_plant(f: Dictionary, seed: int, to_curb: float) -> Array:
 func _site(w: float, d: float, to_curb: float, drive_x: float, yard: String) -> void:
 	var front := -d * 0.5
 	_flat_rect(yard, -w * 0.5 + 0.5, w * 0.5 - 0.5, front + 0.5, d * 0.5 - 0.5, 0.05, YARD_GRAVEL if yard == "gravel" else LINE)
-	_flat_rect("asphalt", drive_x - 6.0, drive_x + 6.0, front - to_curb, front + 30.0, 0.09)
+	_curb_cut(drive_x, 6.0, front - to_curb, front + 30.0, 0.09)
 	_fence(Vector2(-w * 0.5 + 1.0, front + 26.0), Vector2(w * 0.5 - 1.0, d * 0.5 - 1.0), 2.4, true)
 
 

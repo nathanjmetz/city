@@ -74,7 +74,7 @@ func _front(zf: float, x0: float, dx: float, to_curb: float) -> void:
 	while x <= x0 + ow + 6.0:
 		_flat_rect("line", x - 0.06, x + 0.06, 0.0, 5.5, 0.07, LINE)
 		x += 2.75
-	_flat_rect("asphalt", dx - 3.6, dx + 3.6, -to_curb, zf, 0.1)
+	_curb_cut(dx, 3.6, -to_curb, zf)
 
 
 ## Gravel over the working yard behind the street setback.

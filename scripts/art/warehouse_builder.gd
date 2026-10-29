@@ -102,7 +102,7 @@ func _warehouse(w: Dictionary, to_curb: float) -> void:
 	_flat_rect("drive", start - 1.0, x1 + 1.0, zf - apron, zf, 0.08)
 	_flat_rect("asphalt", -sw * 0.5 + 0.3, sw * 0.5 - 0.3, front + 0.3, zf, 0.06)
 	var truck_x := (start + x1) * 0.5
-	_flat_rect("asphalt", truck_x - 6.0, truck_x + 6.0, front - to_curb, front + 0.3, 0.1)
+	_curb_cut(truck_x, 6.0, front - to_curb, front + 0.3)
 	# Visitor parking in front of the office.
 	var vx := cx - bw * 0.5 + 0.5
 	while vx < start - 2.5:
