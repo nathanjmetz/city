@@ -209,6 +209,7 @@ jobs:
           run_test tests/test_street_reach.gd
           run_test tests/test_patrols.gd
           run_test tests/test_people_dress.gd
+          run_test tests/test_walker_looks.gd
           run_test tests/test_cursor_cards.gd
           run_test tests/test_road_warning.gd
           run_test tests/test_resource_bands.gd

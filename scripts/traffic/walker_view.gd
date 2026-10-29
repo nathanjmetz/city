@@ -32,6 +32,8 @@ var _mm2: MultiMesh
 ## Every figure at every detail: index figure * 5 + detail (0 farthest to
 ## 4 closest).
 var _mms := []
+## The instance drawing each of _mms, for turning shadows on and off.
+var _insts := []
 ## Person -> [top, outfit, month] (dress), kept while the month holds.
 var _worn := {}
 const _NONE := [Color.WHITE, 0, -1]
@@ -141,6 +143,7 @@ void fragment() { ALBEDO = tint; ROUGHNESS = 0.9; }
 		for lod in 5:
 			if lod == 2:
 				_mms.append(_mm if kind == 0 else _mm2)
+				_insts.append(mi if kind == 0 else mi2)
 				continue
 			var m := MultiMesh.new()
 			m.transform_format = MultiMesh.TRANSFORM_3D
@@ -153,6 +156,7 @@ void fragment() { ALBEDO = tint; ROUGHNESS = 0.9; }
 			inst.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 			add_child(inst)
 			_mms.append(m)
+			_insts.append(inst)
 
 
 func _process(_delta: float) -> void:
@@ -172,6 +176,7 @@ func _draw_walkers() -> void:
 	counts.resize(mms_count())
 	counts.fill(0)
 	var mms := _mms
+	var people: Dictionary = traffic._sim.people.people if traffic._sim != null else {}
 	# How far each detail reaches grows with what the machine can draw
 	# (GraphicsQuality.detail): faces and smooth bodies close up, simple
 	# figures far off, sooner in the browser.
@@ -195,7 +200,8 @@ func _draw_walkers() -> void:
 			if d < float(reach[r]):
 				lod = 4 - r
 				break
-		var kind := figure(int(w.person)) * 5 + lod
+		var who: Dictionary = people.get(int(w.person), {})
+		var kind := figure(int(w.person), who) * 5 + lod
 		var mm: MultiMesh = mms[kind]
 		var n: int = counts[kind]
 		if n >= mm.instance_count:
@@ -203,7 +209,7 @@ func _draw_walkers() -> void:
 		var dir: Vector3 = pose[1]
 		if dir.length() < 0.5:
 			dir = Vector3.FORWARD
-		var body := build(int(w.person))
+		var body := build(int(w.person), who)
 		mm.set_instance_transform(n, Transform3D(Basis.looking_at(Vector3(dir.x, 0.0, dir.z).normalized(), Vector3.UP).scaled(body), p))
 		mm.set_instance_color(n, skin_tone(int(w.person)))
 		# Standing at the kerb, the phase stays put: feet together if it's 0.
@@ -224,6 +230,13 @@ func _draw_walkers() -> void:
 			shirt.a = minf(shirt.a, 0.999) + float(worn[1])
 		mm.set_instance_custom_data(n, shirt)
 		counts[kind] = n + 1
+	# On a full desktop (High and up) the nearer figures cast a shadow, as
+	# people on a sunny sidewalk do: from above, the shadow reads as much
+	# as the person. The far, simplest figures and the browser go without.
+	var shade: bool = bool(GraphicsQuality.knob("photo", false)) and not OS.has_feature("web")
+	for i in _insts.size():
+		(_insts[i] as GeometryInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON \
+			if shade and i % 5 >= 2 else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	var total := 0
 	for i in mms.size():
 		(mms[i] as MultiMesh).visible_instance_count = counts[i]
@@ -337,19 +350,40 @@ func mms_count() -> int:
 	return _mms.size()
 
 
-## Which figure a person is drawn with: about half the town each.
-static func figure(person: int) -> int:
+## Which figure a person is drawn with: the woman's (1) for a woman, by
+## her first name (PersonNames.FIRST runs man, woman, man...), so Mary on
+## the sidewalk is drawn as a woman; about half each for anyone unknown.
+static func figure(person: int, who := {}) -> int:
+	if who.has("first"):
+		var i := PersonNames.FIRST.find(String(who.first))
+		if i >= 0:
+			return i % 2
 	return (hash([person, "figure"]) >> 3) & 1
 
 
-## Each person's own height and build, the same every time they're seen:
-## adults from short to tall and slight to heavy, and about one in eight a
-## child (US adults run roughly 1.5 to 1.9 m; the mesh is 1.7 m).
-static func build(person: int) -> Vector3:
+## Each person's own height and build, the same every time they're seen,
+## from who they are: a man about 1.75 m and a woman about 1.62 m give or
+## take 7 cm, a teenager shorter by their age, and someone past 70 a few
+## centimetres down (CDC NHANES 2015-2018 adult heights and growth charts).
+## Slight to heavy at any age. The mesh is 1.7 m. Without a person (tools),
+## a mix of adults and about one in eight a child, as before.
+static func build(person: int, who := {}) -> Vector3:
 	var h := hash(person)
 	var tall := 0.9 + float(h & 255) / 255.0 * 0.2
 	var wide := 0.85 + float((h >> 8) & 255) / 255.0 * 0.45
-	if (h >> 16) % 8 == 0:
+	if who.has("age"):
+		var age := int(who.age)
+		var woman := figure(person, who) == 1
+		var m := (1.62 if woman else 1.75) + (float(h & 255) / 255.0 - 0.5) * 0.14
+		if age < 18:
+			# Teens grow about 6 cm a year to 15 (girls stop near 14).
+			var grown := 14 if woman else 17
+			m -= maxf(0.0, float(grown - age)) * (0.05 if woman else 0.06)
+			wide = minf(wide, 0.85 + float(age - 10) * 0.03)
+		elif age > 70:
+			m -= float(age - 70) * 0.004
+		tall = m / 1.7
+	elif (h >> 16) % 8 == 0:
 		tall = 0.6 + float((h >> 20) & 15) / 15.0 * 0.15
 		wide = 0.75 + float((h >> 24) & 15) / 15.0 * 0.15
 	return Vector3(wide, tall, lerpf(wide, 1.0, 0.4))

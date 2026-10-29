@@ -11,7 +11,8 @@ extends Node3D
 ## is, and wears what that figure wears (WalkerView.dress): the model's top,
 ## bottoms and hair are recoloured to the person's own, keeping the cloth's
 ## folds and seams, so nobody changes clothes as the camera comes closer.
-## In the cold months people get a model with long sleeves.
+## In the cold months people get a model with long sleeves, and in short
+## sleeves a long-sleeved outfit is cut to a T-shirt.
 
 const FOLDER := "res://art/people"
 const NEAR := 30.0        # metres (times GraphicsQuality.detail)
@@ -92,7 +93,8 @@ var traffic: TrafficSim
 var tick_fraction: Callable
 ## [{scene, female, long, suit (MeshInstance3D name), hair}] per model.
 var _models := []
-var _pools := {}          # model index -> [{node, player, walker, suit, hair}]
+var _pools := {}          # model * 2 + short sleeves -> [{node, player, walker, suit, hair}]
+var _short := {}          # model index -> its outfit's mesh cut to short sleeves
 var _shader: Shader
 var _materials := {}      # texture path -> ShaderMaterial
 
@@ -131,8 +133,8 @@ func setup(t: TrafficSim, frac: Callable) -> void:
 ## The model a person is drawn with: one of their figure's (WalkerView.figure:
 ## 1 is a woman's), with long sleeves when they're in them, the same each
 ## time.
-func _model_for(person: int, outfit: int) -> int:
-	var female := WalkerView.figure(person) == 1
+func _model_for(person: int, outfit: int, who := {}) -> int:
+	var female := WalkerView.figure(person, who) == 1
 	var long := outfit & 8 != 0
 	var picks := []
 	for pass_ in 3:
@@ -148,9 +150,10 @@ func _model_for(person: int, outfit: int) -> int:
 	return int(picks[(hash([person, "model"]) >> 2) % picks.size()])
 
 
-func _take(model: int) -> Dictionary:
-	var pool: Array = _pools.get(model, [])
-	_pools[model] = pool
+func _take(model: int, short := false) -> Dictionary:
+	var key := model * 2 + int(short)
+	var pool: Array = _pools.get(key, [])
+	_pools[key] = pool
 	for e in pool:
 		if int(e.walker) == -1:
 			return e
@@ -168,6 +171,10 @@ func _take(model: int) -> Dictionary:
 		if SUITS.has(n):
 			e.suit = mi
 			mi.material_override = _material(mi, SUITS[n], false)
+			if short:
+				if not _short.has(model):
+					_short[model] = _cut_sleeves(mi)
+				mi.mesh = _short[model]
 		elif n.ends_with("_generic"):
 			mi.material_override = _material(mi, {"top": 1.0, "bottoms": 1.0}, false, true)
 		elif HAIRS.has(n):
@@ -175,6 +182,50 @@ func _take(model: int) -> Dictionary:
 			mi.material_override = _material(mi, {"top": HAIRS[n], "bottoms": 1.0}, true)
 	pool.append(e)
 	return e
+
+
+## Bones whose part of a sleeve a short-sleeved shirt leaves bare: the
+## lower upper arm, the forearm and the hand.
+const BARE_BONES := ["upperarm02", "lowerarm01", "lowerarm02", "wrist", "finger", "metacarpal", "thumb"]
+
+
+## The outfit's mesh with its sleeves cut to short ones: every triangle of
+## the top that rides mostly on the lower arm goes, and the arm under it
+## shows (the body is whole under the clothes). The models are all made
+## with long sleeves or none; summer wants a T-shirt.
+static func _cut_sleeves(mi: MeshInstance3D) -> Mesh:
+	var src: Mesh = mi.mesh
+	var a: Array = src.surface_get_arrays(0)
+	var bare := {}
+	if mi.skin != null:
+		for i in mi.skin.get_bind_count():
+			var name := String(mi.skin.get_bind_name(i)).to_lower()
+			for b in BARE_BONES:
+				if name.begins_with(b):
+					bare[i] = true
+	var bones: PackedInt32Array = a[Mesh.ARRAY_BONES]
+	var weights: PackedFloat32Array = a[Mesh.ARRAY_WEIGHTS]
+	var verts: PackedVector3Array = a[Mesh.ARRAY_VERTEX]
+	var per := bones.size() / maxi(verts.size(), 1)
+	var on_arm := PackedByteArray()
+	on_arm.resize(verts.size())
+	for v in verts.size():
+		var w := 0.0
+		for k in per:
+			if bare.has(bones[v * per + k]):
+				w += weights[v * per + k]
+		on_arm[v] = 1 if w > 0.5 else 0
+	var idx: PackedInt32Array = a[Mesh.ARRAY_INDEX]
+	var kept := PackedInt32Array()
+	for t in range(0, idx.size(), 3):
+		if on_arm[idx[t]] + on_arm[idx[t + 1]] + on_arm[idx[t + 2]] >= 2:
+			continue
+		kept.append_array([idx[t], idx[t + 1], idx[t + 2]])
+	a[Mesh.ARRAY_INDEX] = kept
+	var out := ArrayMesh.new()
+	out.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, a, [], {}, src.surface_get_format(0) & ~Mesh.ARRAY_FORMAT_INDEX | Mesh.ARRAY_FORMAT_INDEX)
+	out.surface_set_material(0, src.surface_get_material(0))
+	return out
 
 
 ## The recolouring material for a part, made once for each texture.
@@ -254,19 +305,20 @@ func _process(_delta: float) -> void:
 		var pose: Array = near[i][2]
 		var p: Vector3 = near[i][3]
 		var person := int(w.person)
-		var age := -1
-		if traffic._sim != null and traffic._sim.people.people.has(person):
-			age = int(traffic._sim.people.people[person].age)
-		var worn := WalkerView.dress(person, month, age)
-		var model := _model_for(person, int(worn[1]))
+		var who: Dictionary = traffic._sim.people.people.get(person, {}) if traffic._sim != null else {}
+		var worn := WalkerView.dress(person, month, int(who.get("age", -1)))
+		var model := _model_for(person, int(worn[1]), who)
+		# A long-sleeved outfit is cut to a T-shirt for someone in short
+		# sleeves.
+		var short: bool = int(worn[1]) & 8 == 0 and _models[model].long
 		# The same walker keeps the same person while it stays near.
 		var e: Dictionary = {}
-		for k in _pools.get(model, []):
+		for k in _pools.get(model * 2 + int(short), []):
 			if int(k.walker) == int(w.id):
 				e = k
 				break
 		if e.is_empty():
-			e = _take(model)
+			e = _take(model, short)
 			e.walker = int(w.id)
 			_wear(e, worn)
 		var dir: Vector3 = pose[1]

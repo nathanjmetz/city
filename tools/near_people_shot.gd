@@ -52,7 +52,8 @@ func _init() -> void:
 	for i in count:
 		var person := seed + i * 37 + 5
 		var worn := WalkerView.dress(person, month, 20 + (i * 11) % 60)
-		var e := np._take(np._model_for(person, int(worn[1])))
+		var model := np._model_for(person, int(worn[1]))
+		var e := np._take(model, int(worn[1]) & 8 == 0 and np._models[model].long)
 		e.walker = person
 		NearPeople._wear(e, worn)
 		var x := (i - (count - 1) * 0.5) * 1.1
