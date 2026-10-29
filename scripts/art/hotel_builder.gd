@@ -241,6 +241,39 @@ static func _bar(b: DenseBuilder, cx: float, l: float, d: float, zf: float, grou
 		for f in range(1, floors + 1):
 			b._glass(Vector3(cx + s * (l * 0.5 + 0.03), ground + (f - 1) * fh + 1.6, cz), Vector3(0, 0, s), 1.2, 1.6, 0.0)
 	b._rooftop(l * 0.7, d * 0.5, cz, top, 4)
+	# The elevator overrun over the lobby core.
+	b._box("paint", Vector3(3.6, 2.4, 3.0), Vector3(lobby_x, top + 1.2, cz), upper.darkened(0.08))
+	if not b.fine_parts:
+		return
+	# Up close, the roof of a hotel whose rooms have their own through-wall
+	# units: a bathroom exhaust fan over every pair of rooms each side of the
+	# corridor, and the corridors' make-up air units near the ends.
+	for i in range(0, n, 2):
+		var fx := cx - l * 0.5 + (i + 1.0) * bay
+		if absf(fx - lobby_x) < 2.5:
+			continue
+		for sz in [-1.0, 1.0]:
+			b._cylinder("metal", Vector3(fx, top, cz + sz * 2.4), 0.28, 0.45, Color("#b9bcbc"), 8)
+			b._cylinder("metal", Vector3(fx, top + 0.45, cz + sz * 2.4), 0.42, 0.12, Color("#a6a9a9"), 8)
+	for s in [-1.0, 1.0]:
+		var mx: float = cx + s * l * 0.32
+		b._box("metal", Vector3(3.2, 1.5, 1.6), Vector3(mx, top + 0.75, cz), Color("#c4c6c4"))
+		b._box("paint", Vector3(0.9, 0.08, 0.9), Vector3(mx + 1.0, top + 1.54, cz), Color("#3a3c3e"))
+	if eifs:
+		# Up close: the EIFS's reveal at every floor line, and the top floor
+		# a shade darker (the brands' prototype elevations).
+		for f in range(2, floors + 1):
+			var y := ground + (f - 1) * fh
+			for z in [zf - 0.025, zf + d + 0.025]:
+				b._box("paint", Vector3(l + 0.06, 0.05, 0.03), Vector3(cx, y, z), upper.darkened(0.25))
+		b._box("paint", Vector3(l + 0.04, fh - 0.05, d + 0.04), Vector3(cx, top - fh * 0.5, cz), upper.darkened(0.1))
+	# Foundation plantings along the back, in a mulch bed.
+	if b.depth - (zf + d) > 1.7:
+		b._flat_rect("mulch", cx - l * 0.5, cx + l * 0.5, zf + d + 0.15, zf + d + 1.55, 0.075)
+		var x := cx - l * 0.5 + 1.2
+		while x < cx + l * 0.5 - 1.0:
+			b._shrub(Vector3(x, 0.1, zf + d + 0.85), r.randf_range(0.4, 0.6))
+			x += r.randf_range(2.0, 3.0)
 
 
 ## The drop-off canopy: a flat roof out over the lane on four columns, its

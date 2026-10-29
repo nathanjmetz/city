@@ -39,6 +39,9 @@ var site := {"stalls": [], "door": Vector2(0.0, 0.4), "cut_x": 0.0, "aisle_z": 0
 ## A shop's first stage (BuildingTypes "shop" level 0), which may be drawn
 ## as a corner store (CornerStore).
 var small_store := false
+## The trade words a strip centre's tenants letter on its fascia, in order,
+## for its pylon's panels.
+var _tenant_words := []
 ## A shop's second stage (BuildingTypes "shop" level 1): a corner store
 ## stays one, built on.
 var grow_shop := false
@@ -734,7 +737,10 @@ func _channel_letters(c: Vector3, w: float, h: float, named := "") -> void:
 	col.a = 1.0
 	var lh := h * r.randf_range(0.7, 0.95)
 	# A trade word (no names) in block capitals built up from strokes.
-	var word: String = TRADE_WORDS[r.randi() % 50] if named == "" else named
+	var wi := r.randi() % 50
+	var word: String = TRADE_WORDS[wi] if named == "" else named
+	if named == "":
+		_tenant_words.append(wi)
 	var px := minf(lh / 5.0, w * 0.85 / (word.length() * 4.0 - 1.0))
 	lh = px * 5.0
 	var span := word.length() * 4.0 * px - px
@@ -746,9 +752,11 @@ func _channel_letters(c: Vector3, w: float, h: float, named := "") -> void:
 
 
 ## Block capitals from the 3x5 pixel font, centred on `cx`, facing the street
-## (-z, so letters run toward -x), bottom at `y0`, in `px`-square strokes.
-func _pixel_text(word: String, cx: float, y0: float, z: float, px: float, depth: float, col: Color, mat: String) -> void:
-	var x0 := cx + (word.length() * 4.0 * px - px) * 0.5  # +x is the viewer's left
+## (-z, so letters run toward -x; `facing` 1 for the back of a two-sided
+## sign), bottom at `y0`, in `px`-square strokes.
+func _pixel_text(word: String, cx: float, y0: float, z: float, px: float, depth: float, col: Color, mat: String, facing := -1.0) -> void:
+	var f := -facing  # 1: letters run toward -x
+	var x0 := cx + f * (word.length() * 4.0 * px - px) * 0.5  # +x is the viewer's left
 	for i in word.length():
 		var rows: Array = DenseBuilder.PIXEL_FONT.get(word[i], [])
 		for ry in rows.size():
@@ -761,7 +769,7 @@ func _pixel_text(word: String, cx: float, y0: float, z: float, px: float, depth:
 				var run := 0
 				while k + run < 3 and row[k + run] == "#":
 					run += 1
-				var lx := x0 - i * 4.0 * px - (k + run * 0.5) * px
+				var lx := x0 - f * (i * 4.0 * px + (k + run * 0.5) * px)
 				_box(mat, Vector3(run * px, px, depth), Vector3(lx, y0 + (4.5 - ry) * px, z), col)
 				k += run
 
@@ -812,6 +820,7 @@ func _awning(cx: float, w: float, zf: float, y: float, col: Color) -> void:
 ## to five tenants, each its own storefront and sign, under a continuous
 ## canopy on square columns, with a parking field in front.
 func _strip_center(to_curb: float, anchor := false) -> void:
+	_tenant_words = []
 	var w := half * 2.0 - 2.0
 	var d := rng.randf_range(14.0, minf(18.0, maxf(depth - 18.0, 14.0)))
 	var h := rng.randf_range(5.2, 6.0)
@@ -1649,17 +1658,25 @@ func _strip_lot_dress(to_curb: float, back: float, n: int, wall: Color) -> void:
 		_box("brick", Vector3(0.6, base + cab_h + 0.4, 0.6), Vector3(sx + s * 1.5, (base + cab_h + 0.4) * 0.5, sz), wall.darkened(0.25))
 	_box("paint", Vector3(2.5, cab_h, 0.4), Vector3(sx, base + cab_h * 0.5, sz), Color("#d9d6cc"))
 	_box("paint", Vector3(2.5, 1.0, 0.44), Vector3(sx, base + cab_h - 0.5, sz), cap)  # the centre's name
+	# What centres call themselves (no place names): Northpark Plaza,
+	# Eastbrook Commons, the Crossing.
+	var centre: String = ["PLAZA", "COMMONS", "CROSSING", "SQUARE", "CENTER", "VILLAGE", "SHOPPES", "MARKET PLACE"][r.randi() % 8]
+	var cp := minf(0.11, 2.2 / (centre.length() * 4.0 - 1.0))
 	for side in [-1.0, 1.0]:
-		_box("paint", Vector3(1.6, 0.18, 0.02), Vector3(sx, base + cab_h - 0.5, sz + side * 0.23), Color("#f2efe4"))
+		_pixel_text(centre, sx, base + cab_h - 0.5 - cp * 2.5, sz + side * 0.23, cp, 0.02, Color("#f2efe4"), "paint", side)
 		for t in tenants:
 			var y := base + 0.3 + t * ph
 			var col := Color(AWNING[r.randi() % AWNING.size()]).lightened(r.randf_range(0.0, 0.15))
-			# Backlit tenant panels, as on a real centre's pylon.
+			# Backlit tenant panels, as on a real centre's pylon: the shops'
+			# own trades, top panel the first in the row.
 			col.a = 2.3 / 60.0
+			var v0 := 0.0
+			if not _tenant_words.is_empty():
+				v0 = 2.0 * (1 + _tenant_words[(tenants - 1 - t) % _tenant_words.size()])
 			var pz: float = sz + side * 0.215
 			_quad("sign", Vector3(sx - 1.15, y - ph * 0.5 + 0.04, pz), Vector3(sx + 1.15, y - ph * 0.5 + 0.04, pz),
 				Vector3(sx + 1.15, y + ph * 0.5 - 0.04, pz), Vector3(sx - 1.15, y + ph * 0.5 - 0.04, pz), col,
-				[Vector2(0, 0), Vector2(2.3, 0), Vector2(2.3, 1), Vector2(0, 1)], Vector3(0, 0, side))
+				[Vector2(0, v0), Vector2(2.3, v0), Vector2(2.3, v0 + 1.0), Vector2(0, v0 + 1.0)], Vector3(0, 0, side))
 	_box("concrete", Vector3(4.2, 0.25, 1.2), Vector3(sx, 0.125, sz), FOUNDATION)
 
 
