@@ -202,17 +202,36 @@ func _car(p: Dictionary) -> void:
 	_loft(gh, codes, PAINT, PAINT)
 	_wheels(p.axles, p.wr, hw, 0.24)
 	# Lights, grille, bumpers, mirrors, plate.
-	_box(Vector3(hw - 0.3, hood - 0.13, 0.08), Vector3(0.36, 0.1, 0.12), HEAD, true)
+	if _hi:
+		_car_face(p)
+	else:
+		_box(Vector3(hw - 0.3, hood - 0.13, 0.08), Vector3(0.36, 0.1, 0.12), HEAD, true)
 	_box(Vector3(hw - 0.2, tail - 0.13, L - 0.06), Vector3(0.3, 0.12, 0.1), TAIL, true)
 	if _lo:
 		return
-	_box(Vector3(0, hood - 0.24, 0.03), Vector3(p.W * 0.42, 0.16, 0.08), p.get("grille", TRIM))
+	if not _hi:
+		_box(Vector3(0, hood - 0.24, 0.03), Vector3(p.W * 0.42, 0.16, 0.08), p.get("grille", TRIM))
 	_box(Vector3(0, c + 0.1, 0.1), Vector3(p.W - 0.3, 0.14, 0.16), TRIM)
 	_box(Vector3(0, c + 0.12, L - 0.1), Vector3(p.W - 0.3, 0.14, 0.16), TRIM)
 	_box(Vector3(0, tail - 0.3, L + 0.005), Vector3(0.3, 0.15, 0.02), WHITE)
 	_box(Vector3(hw + 0.07, belt + 0.07, p.a + 0.2), Vector3(0.14, 0.11, 0.08), PAINT, true)
 	if _hi:
 		_car_detail(p)
+
+
+## Ultra: a modern car's face on the nose itself, not tucked behind it:
+## slim headlamps in dark housings with an LED running-light strip, the
+## upper grille between them and the wide lower intake in the bumper.
+## Layers stand 6 mm apart so none of them fight.
+func _car_face(p: Dictionary) -> void:
+	var hw: float = p.W * 0.5
+	var y: float = p.hood - 0.15
+	var lx := hw - 0.33
+	_box(Vector3(lx, y, 0.044), Vector3(0.34, 0.1, 0.1), TRIM, true)
+	_box(Vector3(lx + 0.02, y + 0.01, 0.038), Vector3(0.26, 0.06, 0.1), HEAD, true)
+	_box(Vector3(lx, y - 0.04, 0.038), Vector3(0.32, 0.018, 0.1), HEAD, true)
+	_box(Vector3(0, y - 0.02, 0.044), Vector3(2.0 * (lx - 0.19), 0.12, 0.1), p.get("grille", TRIM))
+	_box(Vector3(0, p.clear + 0.3, 0.044), Vector3(p.W * 0.55, 0.16, 0.1), Color(0.03, 0.03, 0.03, 0.3))
 
 
 func _sedan() -> void:  # Toyota Camry
@@ -598,7 +617,7 @@ func _car_detail(p: Dictionary) -> void:
 	for x in [-0.35, 0.3]:
 		_box(Vector3(x, belt + 0.03, p.a + 0.1), Vector3(0.5, 0.015, 0.02), seam)
 	_box(Vector3(0, p.hood - 0.42, -0.005), Vector3(0.3, 0.15, 0.02), WHITE)
-	_box(Vector3(0, p.hood - 0.24, -0.005), Vector3(0.09, 0.06, 0.02), CHROME)
+	_box(Vector3(0, p.hood - 0.17, -0.008), Vector3(0.1, 0.06, 0.02), CHROME)
 
 
 # --- Pickups ----------------------------------------------------------------
