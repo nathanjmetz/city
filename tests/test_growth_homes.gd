@@ -283,6 +283,18 @@ func _init() -> void:
 							break
 					prev = m
 			_check(moved == 0, "a %s %s keeps its walls at every stage (%d moved)" % [era, t, moved])
+	# A Main Street block grown by floors added on top is the block it was,
+	# with the new storey's own brick and a belt course (most seeds).
+	var added := 0
+	for s in 20:
+		var lot := {"width": 20.0, "depth": 40.0, "era": "prewar"}
+		var plain := DenseBuilder.build_mixed(300 + s, 3.9, lot, 3)
+		var m_plain: Array = HouseBuilder.last_masses.duplicate()
+		lot.added_from = 2
+		var grown := DenseBuilder.build_mixed(300 + s, 3.9, lot, 3)
+		if HouseBuilder.last_masses == m_plain and _verts(grown) > _verts(plain):
+			added += 1
+	_check(added >= 10, "Main Street blocks show floors added on top (%d of 20)" % added)
 	# A house cut into flats shows it: an outside stair or a side door,
 	# mailboxes and meters, on most lots.
 	var cut := 0
