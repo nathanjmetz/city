@@ -329,6 +329,56 @@ func _tw_chicago(to_curb: float, width: float, storeys: int) -> void:
 	_box("brick", Vector3(5.0, 3.6, 6.0), Vector3(-w * 0.3, top + 3.7, cz + d * 0.25), shaft.darkened(0.1))  # elevator penthouse
 	if storeys >= 8:
 		_tw_roof_sign(Vector3(0, top + 1.9, zf + 1.6), minf(w * 0.6, 20.0))
+	_tw_alley(w, zf + d, ground_h, floor_h, storeys, lc)
+
+
+## The back of a prewar block, on its alley: a steel service door and a
+## loading door in the base, barred windows, the trash dumpsters, and a
+## steel fire escape zigzagging up the back (or the light court's back
+## wall): stairs and a landing at every floor, the second way out that
+## 1900s-20s codes took before enclosed exit stairs (desktop only).
+func _tw_alley(w: float, zb: float, ground_h: float, floor_h: float, storeys: int, r: RandomNumberGenerator) -> void:
+	var steel := Color("#2b2c2d")
+	var ox := r.randf_range(-w * 0.3, -w * 0.1)
+	_box("paint", Vector3(1.1, 2.3, 0.08), Vector3(ox, 1.15, zb + 0.04), Color("#5a5f63"))  # service door
+	_box("paint", Vector3(3.2, 3.4, 0.08), Vector3(ox - 4.0, 1.7, zb + 0.04), Color("#6c6e6f"))  # loading door
+	for i in 3:
+		var x := w * 0.1 + i * 4.0
+		if x > w * 0.5 - 1.5:
+			break
+		_glass(Vector3(x, 2.4, zb + 0.04), Vector3(1, 0, 0), 1.4, 1.6, 0.5)
+		for k in 4:
+			_box("paint", Vector3(0.03, 1.6, 0.03), Vector3(x - 0.55 + k * 0.37, 2.4, zb + 0.1), steel)  # bars
+	if not fine_parts:
+		return
+	for k in 2:
+		_box("paint", Vector3(1.9, 1.3, 1.6), Vector3(ox + 2.5 + k * 2.2, 0.65, zb + 1.5), Color(["#2f5a3a", "#3a4a6a"][k]))
+		_box("paint", Vector3(1.95, 0.06, 1.65), Vector3(ox + 2.5 + k * 2.2, 1.33, zb + 1.5), Color("#1f2a22"))
+	if storeys < 4:
+		return
+	# The fire escape: on the court's back wall when there is one.
+	var fz := zb - _court.y if _court != Vector2.ZERO else zb
+	var fx := 0.0 if _court != Vector2.ZERO else r.randf_range(-w * 0.15, w * 0.25)
+	var run := 2.6
+	for f in range(1, storeys - 1):
+		var y := ground_h + floor_h * (f - 1)
+		var cz := fz + 0.65
+		_box("paint", Vector3(run + 1.6, 0.06, 1.2), Vector3(fx, y, cz), steel)  # landing grate
+		_box("paint", Vector3(run + 1.6, 0.04, 0.04), Vector3(fx, y + 0.95, fz + 1.23), steel)  # rail
+		for e in [-1.0, 1.0]:
+			_box("paint", Vector3(0.04, 0.95, 0.04), Vector3(fx + e * (run * 0.5 + 0.78), y + 0.47, fz + 1.23), steel)
+			_box("paint", Vector3(0.05, 0.05, 1.2), Vector3(fx + e * (run * 0.5 + 0.78), y - 0.2, cz), steel)  # bracket
+		if f < storeys - 2:
+			# The stair up to the next landing, flipping side every floor.
+			var s := 1.0 if f % 2 == 0 else -1.0
+			var a := Vector3(fx - s * run * 0.5, y, cz)
+			var b := Vector3(fx + s * run * 0.5, y + floor_h, cz)
+			var along := (b - a).normalized()
+			var side := Vector3(0, 0, 1)
+			var basis := Basis(along, along.cross(side).normalized() * -1.0, side)
+			_box("paint", Vector3((b - a).length(), 0.08, 0.75), (a + b) * 0.5, steel, basis)
+	# The drop ladder down from the first landing, held up off the alley.
+	_box("paint", Vector3(0.5, 2.2, 0.05), Vector3(fx + run * 0.5 + 0.5, ground_h - 1.3, fz + 1.2), steel)
 
 
 ## A Chicago block's light court (width along the street, depth from the
