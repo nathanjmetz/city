@@ -75,6 +75,9 @@ static func office_plan(seed: int, lot: Dictionary, storeys: int) -> Dictionary:
 	if b.era == "prewar":
 		return b.site
 	b._dry = true
+	b._added = int(lot.get("added_from", 0))
+	if b._added >= storeys:
+		b._added = 0
 	b._postwar_office(3.9, b.half * 2.0, storeys)
 	return b.site
 
@@ -1403,9 +1406,9 @@ static func build_office(seed: int, to_curb: float, lot: Dictionary, storeys: in
 func _postwar_office(to_curb: float, width: float, storeys: int) -> void:
 	var r := RandomNumberGenerator.new()
 	r.seed = hash([rng.seed, "midrise office"])
-	# (A mirror-glass box shows no added floors: it was built whole. The pick
-	# stays the same either way, so SiteLayout's dry run finds the same lot.)
-	if storeys >= 4 and r.randf() < 0.55:
+	# A mirror-glass box was built whole: an owner who added floors kept the
+	# ribbon-window block they had (the draw is made either way).
+	if storeys >= 4 and r.randf() < 0.55 and _added == 0:
 		_office_mirror(to_curb, width, storeys)
 	else:
 		_office(to_curb, width, storeys)
