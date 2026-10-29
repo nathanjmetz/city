@@ -244,46 +244,6 @@ func _mb_porch(cx: float, w: float, zb: float, base: float, floor_h: float, floo
 			_shrub(Vector3(tx, y + 0.3, zb + 0.5), 0.3)
 
 
-## One stair flight from `a` (bottom) to `b` (top), running along x: open
-## treads on two stringers and a handrail on the outer side.
-func _mb_flight(a: Vector3, b: Vector3, sw: float, wood: Color, post: Color) -> void:
-	var rise := b.y - a.y
-	var run := b.x - a.x
-	var length := Vector2(run, rise).length()
-	var tilt := Basis(Vector3(0, 0, 1), atan2(rise, run))
-	var mid := (a + b) * 0.5
-	if not fine:
-		# The browser: the flight as one sloped run, stringers and all.
-		_box("paint", Vector3(length, 0.2, sw), mid + Vector3(0, -0.05, 0), wood, tilt)
-		_box("paint", Vector3(length, 0.05, 0.05), mid + Vector3(0, 0.9, sw * 0.5 - 0.02), wood, tilt)
-		return
-	var n := maxi(2, ceili(rise / 0.2))
-	for j in range(1, n):
-		var t := float(j) / n
-		_box("paint", Vector3(0.3, 0.04, sw), Vector3(lerpf(a.x, b.x, t), a.y + rise * t, a.z), wood)
-	for s in [-1.0, 1.0]:
-		_box("paint", Vector3(length, 0.24, 0.05), mid + Vector3(0, -0.1, s * (sw * 0.5 - 0.02)), post, tilt)
-	_box("paint", Vector3(length, 0.05, 0.05), mid + Vector3(0, 0.9, sw * 0.5 - 0.02), wood, tilt)
-
-
-## A porch guard from `a` to `b` (at rail height), on a deck at `floor_y`:
-## top rail, bottom rail and balusters about every 4 in, drawn every 30 cm
-## (desktop).
-func _mb_rail(a: Vector3, b: Vector3, floor_y: float, wood: Color) -> void:
-	var span := a.distance_to(b)
-	var along := (b - a) / span
-	var basis := Basis(along.cross(Vector3.UP), Vector3.UP, along)
-	var mid := (a + b) * 0.5
-	_box("paint", Vector3(0.12, 0.05, span), mid, wood, basis)
-	if fine:
-		_box("paint", Vector3(0.06, 0.05, span), Vector3(mid.x, floor_y + 0.1, mid.z), wood, basis)
-	# The browser keeps its triangle budget: a post every 1.2 m, no balusters.
-	var n := maxi(1, int(span / (0.3 if fine else 1.2)))
-	for k in n + 1:
-		var p := a.lerp(b, float(k) / n)
-		_box("paint", Vector3(0.04, a.y - floor_y - 0.1, 0.04), Vector3(p.x, (a.y + floor_y + 0.1) * 0.5, p.z), wood)
-
-
 ## The yards behind a row of flats: each fenced on its side lines and
 ## along the alley (4 ft chain-link mostly, some 6 ft wood), a gate and a
 ## walk out to the alley, and the trash and recycling carts by the gate.

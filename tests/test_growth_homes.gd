@@ -295,6 +295,29 @@ func _init() -> void:
 		if HouseBuilder.last_masses == m_plain and _verts(grown) > _verts(plain):
 			added += 1
 	_check(added >= 10, "Main Street blocks show floors added on top (%d of 20)" % added)
+	# Two-storey Main Street blocks mostly have an outside stair up the back
+	# to the flats (a landing more than a metre off the back wall, up at the
+	# second floor), and it stays on the lot.
+	var stairs := 0
+	for s in 20:
+		var w: float = [14.0, 18.0, 24.0][s % 3]
+		var lot := {"width": w, "depth": 40.0, "era": "prewar"}
+		if MainInfill.wanted(DenseBuilder._start(400 + s, lot), 2):
+			continue
+		var out := DenseBuilder.build_mixed(400 + s, 3.9, lot, 2)
+		var zb := 0.0
+		for m: Rect2 in HouseBuilder.last_masses:
+			zb = maxf(zb, m.end.y)
+		var found := false
+		for m: ArrayMesh in out.slice(0, 2):
+			for i in m.get_surface_count():
+				for v: Vector3 in m.surface_get_arrays(i)[Mesh.ARRAY_VERTEX]:
+					if v.z > zb + 1.0 and v.z < zb + 1.5 and v.y > 3.5 and v.y < 6.0:
+						found = true
+					_check(absf(v.x) < w * 0.5 + 0.05 or v.z < 8.0, "a Main Street back stair stays on its %d m lot" % w)
+		if found:
+			stairs += 1
+	_check(stairs >= 8, "two-storey Main Street blocks have an outside back stair (%d of 20)" % stairs)
 	# A house cut into flats shows it: an outside stair or a side door,
 	# mailboxes and meters, on most lots.
 	var cut := 0
