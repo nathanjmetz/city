@@ -153,6 +153,7 @@ All sounds are built in code by `tools/audio/make_assets.py` (`python3 tools/aud
 | `scripts/ui/chat_panel.gd` | The region chat. |
 | `tests/` | Headless tests: `godot --headless -s tests/test_roads.gd` and `tests/test_sim.gd`, `tests/test_traffic.gd`, `tests/test_net.gd` (a real server with two players) |
 | `tools/screenshot.gd` | Renders a demo town to a PNG: `godot -s tools/screenshot.gd -- out.png` |
+| `tools/look_round.gd` | The look round's fixed 10 shots (street, 40 m, 100 m, 300 m, 1 km; dusk, night, rain, snow; farm edge) of the same test town, plus frame times: `HOME=<throwaway> godot --resolution 1920x1080 -s tools/look_round.gd -- OUT_DIR [--quality=cinematic\|medium]` |
 
 The game uses the Compatibility renderer so the same project runs in browsers and on modest Mac and Windows machines.
 Mac and Windows downloads come later.
