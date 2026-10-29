@@ -68,7 +68,7 @@ func _init() -> void:
 		if kind in ["care", "careshop"]:
 			HouseBuilder.owner_care = i - 2
 		var w: float = {"care": 24.0, "careshop": 26.0, "retailgrown": 20.0, "shopsgrown": 24.0, "gasgrown": [26.0, 26.0, 34.0, 34.0, 30.0][i % 5], "row": 22.0, "apartments": 36.0, "mixed": 22.0, "main": 16.0 + 4.0 * (i % 3), "mainold": 16.0 + 4.0 * (i % 3), "mainrestored": 16.0 + 4.0 * (i % 3), "office": 40.0, "towers": 44.0, "hometowers": 54.0, "towerfar": 44.0, "flats": 24.0, "courtyard": 48.0, "walkup": 26.0, "garage": 44.0, "growth": [40.0, 40.0, 44.0, 56.0, 64.0, 64.0, 72.0][i % 7], "oddlots": [26.0, 22.0, 20.0, 26.0, 18.0][i % 5],
-			"grown": 22.0, "grownold": 22.0, "carriage": 24.0, "cornergrown": [18.0, 18.0, 20.0, 20.0, 18.0][i % 5], "rows": 22.0, "garden": 40.0, "walkups": 32.0, "plexes": 22.0, "infill": [16.0, 20.0, 24.0, 18.0, 26.0][i % 5], "duplex": [16.0, 20.0, 24.0, 24.0, 22.0][i % 5],
+			"grown": 22.0, "grownold": 22.0, "carriage": 24.0, "poptop": 22.0, "cornergrown": [18.0, 18.0, 20.0, 20.0, 18.0][i % 5], "rows": 22.0, "garden": 40.0, "walkups": 32.0, "plexes": 22.0, "infill": [16.0, 20.0, 24.0, 18.0, 26.0][i % 5], "duplex": [16.0, 20.0, 24.0, 24.0, 22.0][i % 5],
 			"corner": [14.0, 13.0, 12.0, 22.0, 20.0][i % 5], "cottage": [16.0, 20.0, 22.0, 18.0, 24.0][i % 5], "cornerflats": [14.0, 18.0, 12.0, 16.0, 16.0][i % 5]}.get(k, 20.0)
 		var sd := seed * 100 + i
 		match k:
@@ -152,6 +152,11 @@ func _init() -> void:
 				meshes = HouseBuilder.build(seed * 100 + maxi(0, i - 2) * 17, 3.9, {"width": w, "depth": 45.0, "era": "recent" if k == "grown" else "prewar"},
 					[0, 2, 2, 2, 2][i])
 				HouseBuilder.grown = 0
+			"poptop":
+				# Ranches as built, then raised a storey; a mid-century ranch too.
+				HouseBuilder.force_kind = ["ranch", "ranch", "midcentury", "midcentury", "ranch"][i]
+				meshes = HouseBuilder.build(seed * 100 + (i / 2) * 17, 3.9, {"width": w, "depth": 45.0, "era": "postwar"}, [0, 2, 0, 2, 2][i])
+				HouseBuilder.force_kind = ""
 			"carriage":
 				# Old houses with an addition, then a flat over the garage.
 				HouseBuilder.grown = [1, 2, 1, 2, 2][i]

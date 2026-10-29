@@ -565,6 +565,7 @@ func _mixed(to_curb: float, width: float, storeys: int) -> void:
 		_party_wall(w, d, zf, shop_h, floor_h, storeys, wall)
 	if fine:
 		_front_signs(w, zf, fronts, fw, shop_h, storeys)
+		_shop_stoops(w, zf, fronts, fw)
 	if depth > zf + d + 3.0:
 		_flat_rect("asphalt", -width * 0.5, width * 0.5, zf + d, minf(depth, zf + d + 10.0), 0.06)
 	_downtown_walk(to_curb, width, zf)
@@ -636,6 +637,56 @@ func _alley_side(w: float, zb: float, fronts: int, fw: float, storeys: int, shop
 ## faded painted advertisement, a "ghost sign" for a flour, tobacco or soft
 ## drink brand, its lettering worn to pale bands. Desktop only, with its own
 ## random numbers so the builder's don't move.
+## Desktop: what shopkeepers set out against their own fronts on a Main
+## Street walk (the building side, clear of the door and the walking lane
+## the ADA asks for): potted plants by the door, a chalkboard A-frame, a
+## cafe's bistro table and chairs. Its own random numbers.
+func _shop_stoops(w: float, zf: float, fronts: int, fw: float) -> void:
+	var r := RandomNumberGenerator.new()
+	r.seed = hash([rng.seed, 29])
+	var black := Color("#1f2224")
+	for k in fronts:
+		var fx := -w * 0.5 + (k + 0.5) * fw
+		var sw := fw - 1.0
+		if r.randf() < 0.45:
+			# A pair of planters flanking the door.
+			var pot := Color(["#9a5a3c", "#3b3f42", "#d8d2c4"][r.randi() % 3])
+			for sx in [-1.0, 1.0]:
+				var px: float = fx + sx * 1.15
+				_box("paint", Vector3(0.5, 0.5, 0.5), Vector3(px, 0.25, zf - 0.45), pot)
+				var keep := rng
+				rng = r
+				_shrub(Vector3(px, 0.5, zf - 0.45), 0.32)
+				rng = keep
+		var pick := r.randf()
+		if pick < 0.3:
+			# A sandwich board, two chalkboards leaning together.
+			var ax := fx + sw * r.randf_range(0.22, 0.38) * (1.0 if r.randf() < 0.5 else -1.0)
+			for sz in [-1.0, 1.0]:
+				var tilt := Basis(Vector3.RIGHT, deg_to_rad(-12.0 * sz))  # tops lean together
+				_box("paint", Vector3(0.62, 0.95, 0.03), Vector3(ax, 0.47, zf - 0.95 + sz * 0.1), Color("#2b2f2c"), tilt)
+				_box("paint", Vector3(0.66, 0.06, 0.04), Vector3(ax, 0.93, zf - 0.95 + sz * 0.02), Color("#6b5038"), tilt)
+				# Chalked specials on the face toward the walk.
+				var c := Vector3(ax, 0.47, zf - 0.95 + sz * 0.1)
+				for line in 4:
+					var lw := r.randf_range(0.22, 0.48)
+					_box("paint", Vector3(lw, 0.035, 0.01), c + tilt * Vector3(0, 0.3 - line * 0.17, 0.025 * sz), Color("#e8e6df"), tilt)
+		elif pick < 0.5:
+			# A cafe's bistro set: a round-ish table and two chairs.
+			var tx := fx + sw * 0.3 * (1.0 if r.randf() < 0.5 else -1.0)
+			var tz := zf - 0.85
+			_box("paint", Vector3(0.06, 0.72, 0.06), Vector3(tx, 0.36, tz), black)
+			_box("paint", Vector3(0.62, 0.04, 0.62), Vector3(tx, 0.74, tz), black)
+			_box("paint", Vector3(0.44, 0.04, 0.62), Vector3(tx, 0.741, tz), black.lightened(0.05), Basis(Vector3.UP, PI * 0.25))
+			for sx in [-1.0, 1.0]:
+				var cx: float = tx + sx * 0.58
+				_box("paint", Vector3(0.42, 0.04, 0.42), Vector3(cx, 0.45, tz), black)
+				_box("paint", Vector3(0.04, 0.45, 0.42), Vector3(cx + sx * 0.2, 0.7, tz), black)
+				for lx in [-0.18, 0.18]:
+					_box("paint", Vector3(0.03, 0.43, 0.03), Vector3(cx + lx, 0.22, tz - 0.18), black)
+					_box("paint", Vector3(0.03, 0.43, 0.03), Vector3(cx + lx, 0.22, tz + 0.18), black)
+
+
 ## Main Street signs that stick out over the walk, desktop only: double-faced
 ## blade signs on wrought-iron brackets between the shopfronts (a few of them
 ## outlined in neon, the 1940s way) and gooseneck lamps that light the flat
