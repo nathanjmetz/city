@@ -287,10 +287,26 @@ func _tw_glass(to_curb: float, width: float, storeys: int) -> void:
 	var top := ground_h + floor_h * (storeys - 1)
 	var tint := Color(0.42, 0.40, 0.36) if rng.randf() < 0.6 else Color(0.36, 0.42, 0.46)
 	var mech := 3.6
+	# Later glass towers vary the box (own random numbers, so the builder's
+	# don't move): cut corners, which 1970s-80s towers used for more
+	# corner offices, or an upper block set back on a sky terrace.
+	var vr := RandomNumberGenerator.new()
+	vr.seed = hash([rng.seed, "glass shape"])
+	var chamfer := 0.0
+	var tele := 0
+	if storeys >= 12:
+		var x := vr.randf()
+		if x < 0.3:
+			chamfer = vr.randf_range(2.5, minf(w, d) * 0.18)
+		elif x < 0.55 and storeys >= 18:
+			tele = ceili(storeys * 0.3)
 	if _far:
 		_tw_far_box(Vector3(w - 6.0, ground_h, d - 6.0), Vector3(0, ground_h * 0.5, cz), Color("#2a2c2e"), 0.0)
-		_tw_far_box(Vector3(w, top - ground_h, d), Vector3(0, (ground_h + top) * 0.5, cz), tint.darkened(0.55), 1.0)
-		_tw_far_box(Vector3(w, mech, d), Vector3(0, top + mech * 0.5, cz), Color("#2b2d2f"), 0.0)
+		var split := top - floor_h * tele
+		_tw_far_box(Vector3(w, split - ground_h, d), Vector3(0, (ground_h + split) * 0.5, cz), tint.darkened(0.55), 1.0)
+		if tele > 0:
+			_tw_far_box(Vector3(w - 6.0, top - split, d - 6.0), Vector3(0, (split + top) * 0.5, cz), tint.darkened(0.55), 1.0)
+		_tw_far_box(Vector3(w - (6.0 if tele > 0 else 0.0) - chamfer, mech, d - (6.0 if tele > 0 else 0.0) - chamfer), Vector3(0, top + mech * 0.5, cz), Color("#2b2d2f"), 0.0)
 		return
 	# The core and lobby, recessed behind the columns.
 	_box("paint", Vector3(w - 6.0, ground_h, d - 6.0), Vector3(0, ground_h * 0.5, cz), Color("#2a2c2e"))
@@ -300,7 +316,27 @@ func _tw_glass(to_curb: float, width: float, storeys: int) -> void:
 	for i in cols + 1:
 		for zz in [zf + 0.5, zf + d - 0.5]:
 			_box("metal", Vector3(0.6, ground_h, 0.6), Vector3(-w * 0.5 + 0.5 + i * (w - 1.0) / cols, ground_h * 0.5, zz), TW_STEEL)
-	# The tower: a dark box wrapped in glass floor by floor.
+	if chamfer > 0.0 or tele > 0:
+		_tw_glass_shaped(w, d, cz, ground_h, floor_h, storeys, chamfer, tele, mech)
+	else:
+		_tw_glass_box(w, d, cz, ground_h, floor_h, storeys, top, mech)
+	# The plaza: granite paving, planters and the name on a low wall.
+	_flat_rect("drive", -width * 0.5 + 0.5, width * 0.5 - 0.5, -to_curb + RoadStyle.CURB_WIDTH, zf + d, 0.06)
+	for s in [-1.0, 1.0]:
+		_box("concrete", Vector3(4.0, 0.6, 2.0), Vector3(s * w * 0.3, 0.3, zf * 0.45), Color("#8f8b84"))
+		_shrub(Vector3(s * w * 0.3, 0.6, zf * 0.45), 0.6)
+	_box("concrete", Vector3(6.0, 0.9, 0.5), Vector3(0, 0.45, zf * 0.25), Color("#8f8b84"))
+	_sign(Vector3(0, 0.95, zf * 0.25 - 0.27), 5.0, 0.5)
+	if depth - (zf + d) > 12.0:
+		_parking(-width * 0.5 + 0.6, width * 0.5 - 0.6, zf + d + 2.0, depth - 1.0, width)
+	for s in [-1.0, 1.0]:
+		var pick := TreeField.pick(rng)
+		trees.append([Vector3(s * (width * 0.5 - 3.0), 0, zf * 0.6), pick[0], pick[1], rng.randf_range(0.8, 1.0)])
+
+
+## The International Style box: a dark core wrapped in glass floor by
+## floor, I-beam mullions and floor lines in the steel, a louvred top.
+func _tw_glass_box(w: float, d: float, cz: float, ground_h: float, floor_h: float, storeys: int, top: float, mech: float) -> void:
 	_box("paint", Vector3(w, top - ground_h, d), Vector3(0, (ground_h + top) * 0.5, cz), Color("#1c1e20"))
 	for f in range(1, storeys):
 		var y := ground_h + floor_h * (f - 1) + floor_h * 0.5
@@ -322,18 +358,80 @@ func _tw_glass(to_curb: float, width: float, storeys: int) -> void:
 	# The louvred mechanical floor and a flat roof.
 	_box("metal", Vector3(w, mech, d), Vector3(0, top + mech * 0.5, cz), Color("#2b2d2f"))
 	_tw_roof(w, d, cz, top + mech)
-	# The plaza: granite paving, planters and the name on a low wall.
-	_flat_rect("drive", -width * 0.5 + 0.5, width * 0.5 - 0.5, -to_curb + RoadStyle.CURB_WIDTH, zf + d, 0.06)
-	for s in [-1.0, 1.0]:
-		_box("concrete", Vector3(4.0, 0.6, 2.0), Vector3(s * w * 0.3, 0.3, zf * 0.45), Color("#8f8b84"))
-		_shrub(Vector3(s * w * 0.3, 0.6, zf * 0.45), 0.6)
-	_box("concrete", Vector3(6.0, 0.9, 0.5), Vector3(0, 0.45, zf * 0.25), Color("#8f8b84"))
-	_sign(Vector3(0, 0.95, zf * 0.25 - 0.27), 5.0, 0.5)
-	if depth - (zf + d) > 12.0:
-		_parking(-width * 0.5 + 0.6, width * 0.5 - 0.6, zf + d + 2.0, depth - 1.0, width)
-	for s in [-1.0, 1.0]:
-		var pick := TreeField.pick(rng)
-		trees.append([Vector3(s * (width * 0.5 - 3.0), 0, zf * 0.6), pick[0], pick[1], rng.randf_range(0.8, 1.0)])
+
+
+## The glass tower as a prism: corners cut by `chamfer`, and the top
+## `tele` floors on a block 3 m in on every side over a sky terrace.
+func _tw_glass_shaped(w: float, d: float, cz: float, ground_h: float, floor_h: float, storeys: int, chamfer: float, tele: int, mech: float) -> void:
+	var tiers := [[w, d, 1, storeys - tele]]
+	if tele > 0:
+		tiers.append([w - 6.0, d - 6.0, storeys - tele, storeys])
+	var tw := w
+	var td := d
+	var y1 := ground_h
+	for t in tiers:
+		tw = t[0]
+		td = t[1]
+		var y0: float = ground_h + floor_h * (int(t[2]) - 1)
+		y1 = ground_h + floor_h * (int(t[3]) - 1)
+		var c := minf(chamfer, minf(tw, td) * 0.25)
+		var edges := _tw_prism_edges(tw, td, cz, c)
+		for e in edges:
+			var a: Vector3 = e[0]
+			var b: Vector3 = e[1]
+			var along: Vector3 = (b - a).normalized()
+			var out := along.cross(Vector3.UP)
+			var len := a.distance_to(b)
+			_quad("paint", a + Vector3(0, y0, 0), b + Vector3(0, y0, 0), b + Vector3(0, y1, 0), a + Vector3(0, y1, 0), Color("#1c1e20"), [], out)
+			var mid := (a + b) * 0.5 + out * 0.03
+			for f in range(int(t[2]), int(t[3])):
+				var y := ground_h + floor_h * (f - 1) + floor_h * 0.5
+				_glass(mid + Vector3(0, y, 0), along, len - 0.2, floor_h - 0.25, rng.randf_range(0.1, 0.5))
+				_box("metal", Vector3(len + 0.1, 0.12, 0.25), mid + out * 0.1 + Vector3(0, ground_h + floor_h * (f - 1), 0), TW_STEEL, _tw_yaw(along))
+			var n := maxi(1, roundi(len / 1.6))
+			for i in n + 1:
+				var p: Vector3 = a + along * (i * len / n) + out * 0.12
+				p.y = (y0 + y1) * 0.5
+				_box("metal", Vector3(0.14, y1 - y0, 0.22), p, TW_STEEL, _tw_yaw(along))
+		# The cap: the sky terrace (or the roof) inside the parapet.
+		var pts := []
+		for e in edges:
+			pts.append(e[0])
+		var mid_pt := Vector3(0, y1 + 0.03, cz)
+		for k in pts.size():
+			var a: Vector3 = pts[k]
+			var b: Vector3 = pts[(k + 1) % pts.size()]
+			_tri("paint", mid_pt, b + Vector3(0, y1 + 0.03, 0), a + Vector3(0, y1 + 0.03, 0), GRAVEL if t == tiers[-1] else Color("#8f8b84"), [], Vector3.UP)
+		if t != tiers[-1]:
+			# Planters and a glass guard round the terrace.
+			for e in edges:
+				var a: Vector3 = e[0]
+				var b: Vector3 = e[1]
+				var along: Vector3 = (b - a).normalized()
+				var out := along.cross(Vector3.UP)
+				_glass((a + b) * 0.5 - out * 0.2 + Vector3(0, y1 + 0.55, 0), along, a.distance_to(b) - 0.4, 1.1, 0.0)
+			for s in [-1.0, 1.0]:
+				_shrub(Vector3(s * (tw * 0.5 - 2.0), y1, cz - td * 0.5 + 1.5), 0.7)
+	var c := minf(chamfer, minf(tw, td) * 0.25)
+	_box("metal", Vector3(tw - c * 1.2, mech, td - c * 1.2), Vector3(0, y1 + mech * 0.5, cz), Color("#2b2d2f"))
+	_tw_roof(tw - c * 1.2, td - c * 1.2, cz, y1 + mech)
+
+
+## The outline of a w by d footprint with corners cut by c, as edges
+## [from, to] at y 0, each running "right as seen from outside" (so
+## along x UP points out), starting along the street front.
+func _tw_prism_edges(w: float, d: float, cz: float, c: float) -> Array:
+	var hw := w * 0.5
+	var hd := d * 0.5
+	var p := [Vector3(hw - c, 0, cz - hd), Vector3(-hw + c, 0, cz - hd), Vector3(-hw, 0, cz - hd + c), Vector3(-hw, 0, cz + hd - c),
+		Vector3(-hw + c, 0, cz + hd), Vector3(hw - c, 0, cz + hd), Vector3(hw, 0, cz + hd - c), Vector3(hw, 0, cz - hd + c)]
+	var out := []
+	for i in p.size():
+		var a: Vector3 = p[i]
+		var b: Vector3 = p[(i + 1) % p.size()]
+		if a.distance_to(b) > 0.1:
+			out.append([a, b])
+	return out
 
 
 # ---------------------------------------------------------------- supertall
