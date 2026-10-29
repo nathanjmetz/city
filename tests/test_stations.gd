@@ -64,7 +64,7 @@ func _init() -> void:
 	_check(Services.size_of(copy.services.buildings[id]).is_equal_approx(Services.size_of(sim.services.buildings[id])),
 		"and its lot")
 	# Every piece has a real reference's numbers and draws.
-	for kind in [Services.Kind.FIRE, Services.Kind.POLICE]:
+	for kind in [Services.Kind.FIRE, Services.Kind.POLICE, Services.Kind.CLINIC]:
 		var all := []
 		for n in Stations.tree(kind):
 			all.append(n.id)
