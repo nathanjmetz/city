@@ -61,7 +61,7 @@ static func site_plan(seed: int, lot: Dictionary, strip := false, level := 1) ->
 	b.small_store = level == 0 and not strip
 	b.grow_shop = level == 1 and not strip
 	if strip:
-		force_shop = "community" if level >= 2 else "strip"
+		force_shop = "power" if level >= 3 else ("community" if level >= 2 else "strip")
 	b._shop(3.9, lot, false)
 	force_shop = ""
 	return b.site
