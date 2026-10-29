@@ -17,6 +17,8 @@ const LADDERS := {
 	"forms": [["office", 4, 16.0, "chicago"], ["office", 4, 16.0, "deco"], ["office", 4, 16.0, "glass"], ["office", 4, 16.0, "pomo"], ["office", 4, 16.0, "podium"]],
 	"homeforms": [["apartments", 4, 6.6, "glass"], ["apartments", 4, 6.6, "podium"], ["apartments", 4, 6.6, "balcony"], ["apartments", 3, 4.4, "balcony"], ["apartments", 3, 4.4, "glass"]],
 	# One prewar office on a storefront lot and on sites bought up next door.
+	# The five-storey apartment stage on lots of different widths.
+	"midrise": [["apartments", 2, 4.4, "", 20.0], ["apartments", 2, 4.4, "", 24.0], ["apartments", 2, 4.4, "", 28.0], ["apartments", 2, 4.4, "", 40.0]],
 	# Modernist glass towers on bought-up sites (their plazas).
 	"plazas": [["office", 3, 12.0, "glass", 50.0], ["office", 4, 16.0, "glass", 64.0], ["office", 4, 16.0, "glass", 72.0]],
 	"sites": [["office", 3, 12.0, "chicago", 30.0], ["office", 3, 12.0, "chicago", 62.0], ["office", 4, 16.0, "deco", 36.0], ["office", 4, 16.0, "deco", 66.0]],
@@ -27,7 +29,7 @@ const LADDERS := {
 	# A corner store to shop with flats, then bought out next door: a
 	# commercial block across both storefronts.
 	"block": [["shop", 0, 2.2], ["mixed_use", 0, 3.0], ["mixed_use", 1, 3.0], ["commercial_block", 0, 3.0], ["commercial_block", 1, 5.0]],
-	"house": [["house", 0, 0.9], ["house", 1, 0.9], ["house", 2, 0.9], ["duplex", 0, 0.9], ["duplex", 1, 0.9]],
+	"house": [["house", 0, 0.9], ["house", 1, 0.9], ["house", 2, 0.9], ["house", 3, 0.9], ["duplex", 0, 0.9], ["duplex", 1, 0.9]],
 }
 const BASE_W := {"shopping_center": 60.0, "office": 30.0, "apartments": 30.0, "mixed_use": 20.0, "shop": 20.0, "house": 20.0, "duplex": 22.0, "commercial_block": 28.0, "row_home": 24.0}
 const DEPTH := 55.0

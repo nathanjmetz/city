@@ -68,6 +68,26 @@ func _init() -> void:
 				var out := MainBlock.build(7, 3.9, {"width": w, "depth": 45.0, "era": era}, storeys)
 				_check(out.size() >= 3 and _inside(HouseBuilder.last_masses, w * 0.5, 45.0),
 					"%s commercial block on a %d m lot fits it" % [era, w])
+	# A backyard cottage: inside the lot, clear of the house, on most lots.
+	var cottages := 0
+	for s in 24:
+		var lot := {"width": [16.0, 20.0, 24.0][s % 3], "depth": 45.0, "era": ["prewar", "postwar", "recent"][s % 3]}
+		HouseBuilder.grown = 1
+		HouseBuilder.build(700 + s, 3.9, lot, 2)
+		var before: Array = HouseBuilder.last_masses.duplicate()
+		HouseBuilder.grown = 2
+		HouseBuilder.build(700 + s, 3.9, lot, 2)
+		HouseBuilder.grown = 0
+		var after: Array = HouseBuilder.last_masses
+		_check(_inside(after, lot.width * 0.5, 45.0), "cottage %d stays inside its lot" % s)
+		if after.size() > before.size():
+			cottages += 1
+			var cot: Rect2 = after[after.size() - 1]
+			var clear := true
+			for m: Rect2 in before:
+				clear = clear and not m.grow(2.5).intersects(cot)
+			_check(clear, "cottage %d stands clear of the house and garage" % s)
+	_check(cottages >= 16, "most owners have room for a backyard cottage (%d of 24)" % cottages)
 	# A house grown to two storeys is the house that was there: one that
 	# had two storeys already stays as built, a cape or bungalow raises a
 	# dormer on the same walls; only a ranch owner builds new.
