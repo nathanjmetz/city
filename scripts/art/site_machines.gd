@@ -54,6 +54,43 @@ static func excavator(st: SurfaceTool, t: Transform3D, col: Color, swing: float,
 	_m(st, up, Vector3(0.6, 0.45, 0.55), tip + Vector3(0, -0.12, -0.18), dark, Basis(Vector3.RIGHT, 0.5))
 
 
+## A crawler dozer (CAT D6 class, about 20 t) stripping topsoil and rough
+## grading: two steel tracks on their idlers, the long engine hood, the
+## ROPS cab at the back and the semi-U blade out front on its push arms
+## and lift rams, a ripper shank behind on a fine draw.
+static func dozer(st: SurfaceTool, t: Transform3D, col: Color, fine: bool) -> void:
+	var dark := Color("#262626")
+	for sx in [-1.0, 1.0]:
+		_m(st, t, Vector3(0.6, 0.85, 3.3), Vector3(sx * 1.0, 0.45, 0), dark)
+		if fine:
+			for z in [-1.55, 1.55]:
+				_wheel(st, t, Vector3(sx * 1.0, 0.45, z), 0.43, 0.62, dark.lightened(0.04), 12)
+			_m(st, t, Vector3(0.64, 0.3, 1.0), Vector3(sx * 1.0, 1.0, -1.15), dark.lightened(0.06))  # sprocket
+			_m(st, t, Vector3(0.66, 0.06, 2.9), Vector3(sx * 1.0, 0.92, 0.1), col.darkened(0.15))  # track guard
+	_m(st, t, Vector3(1.4, 0.5, 3.4), Vector3(0, 0.95, 0), dark.lightened(0.05))
+	_m(st, t, Vector3(1.3, 1.05, 2.0), Vector3(0, 1.62, 0.75), col)  # engine hood
+	_m(st, t, Vector3(2.4, 0.18, 1.6), Vector3(0, 1.25, -0.9), col)  # fenders
+	_m(st, t, Vector3(1.5, 1.35, 1.45), Vector3(0, 2.1, -0.95), dark)  # cab frame
+	for g in [[Vector3(1.4, 1.05, 0.02), Vector3(0, 2.15, -0.22)], [Vector3(0.02, 1.0, 1.3), Vector3(-0.76, 2.15, -0.95)],
+			[Vector3(0.02, 1.0, 1.3), Vector3(0.76, 2.15, -0.95)]]:
+		_m(st, t, g[0], g[1], Color("#2b3a44"))
+	_m(st, t, Vector3(1.6, 0.08, 1.55), Vector3(0, 2.82, -0.95), col)  # ROPS canopy
+	if fine:
+		_m(st, t, Vector3(0.12, 0.6, 0.12), Vector3(0.4, 2.4, 1.3), dark)  # exhaust stack
+		_m(st, t, Vector3(0.9, 0.12, 0.14), Vector3(0, 2.9, -0.95), Color("#e8a020"))  # beacon bar
+	# The blade, curved in two planes, on push arms from the track frames.
+	_m(st, t, Vector3(3.3, 0.85, 0.16), Vector3(0, 0.62, 2.45), col, Basis(Vector3.RIGHT, -0.18))
+	_m(st, t, Vector3(3.3, 0.55, 0.16), Vector3(0, 1.28, 2.35), col, Basis(Vector3.RIGHT, 0.25))
+	_m(st, t, Vector3(3.3, 0.06, 0.2), Vector3(0, 0.04, 2.55), Color("#8a8a86"))  # cutting edge
+	for sx in [-1.0, 1.0]:
+		_m(st, t, Vector3(0.14, 1.6, 0.14), Vector3(sx * 1.62, 0.95, 2.4), col)  # blade end bits
+		_strut(st, t, Vector3(sx * 1.25, 0.55, 0.6), Vector3(sx * 1.25, 0.55, 2.3), Vector2(0.18, 0.22), col.darkened(0.1))
+		_strut(st, t, Vector3(sx * 0.55, 1.7, 1.6), Vector3(sx * 0.7, 1.05, 2.3), Vector2(0.12, 0.12), Color("#b8b8b4"))
+	if fine:
+		_m(st, t, Vector3(1.1, 0.3, 0.6), Vector3(0, 0.9, -2.0), dark)  # ripper frame
+		_m(st, t, Vector3(0.12, 1.0, 0.2), Vector3(0, 0.45, -2.3), dark, Basis(Vector3.RIGHT, 0.3))
+
+
 ## A skid steer with a dirt bucket: four tyres, the body, the cab cage on
 ## top, the lift arms down each side from the back to the bucket.
 static func skid_steer(st: SurfaceTool, t: Transform3D, col: Color, fine: bool) -> void:
@@ -187,7 +224,9 @@ static func crawler_crane(st: SurfaceTool, t: Transform3D, col: Color, fine: boo
 
 ## A box at `c` (machine space) turned by `b`, placed by `t`.
 static func _m(st: SurfaceTool, t: Transform3D, size: Vector3, c: Vector3, col: Color, b := Basis.IDENTITY) -> void:
-	ConstructionSite._prop(st, size, t * c, col, t.basis * b)
+	# A uniform scale on `t` (a bigger machine of the same build) scales the box.
+	var k := t.basis.x.length()
+	ConstructionSite._prop(st, size * k, t * c, col, (t.basis * b).orthonormalized())
 
 
 ## A beam of section `sec` (width, depth) from `a` to `b`, machine space.
@@ -209,14 +248,14 @@ static func _wheel(st: SurfaceTool, t: Transform3D, c: Vector3, r: float, w: flo
 		var a1 := TAU * (i + 1) / segs
 		var p0 := Vector3(0, cos(a0) * r, sin(a0) * r)
 		var p1 := Vector3(0, cos(a1) * r, sin(a1) * r)
-		var n := t.basis * ((p0 + p1) * 0.5).normalized()
+		var n := (t.basis * (p0 + p1)).normalized()
 		var q := [t * (c + p0 + Vector3(-hw, 0, 0)), t * (c + p1 + Vector3(-hw, 0, 0)),
 			t * (c + p1 + Vector3(hw, 0, 0)), t * (c + p0 + Vector3(hw, 0, 0))]
 		st.set_normal(n)
 		for v in [q[0], q[1], q[2], q[0], q[2], q[3]]:
 			st.add_vertex(v)
 		for sx in [-1.0, 1.0]:
-			st.set_normal(t.basis * Vector3(sx, 0, 0))
+			st.set_normal((t.basis * Vector3(sx, 0, 0)).normalized())
 			var e0: Vector3 = t * (c + p0 + Vector3(sx * hw, 0, 0))
 			var e1: Vector3 = t * (c + p1 + Vector3(sx * hw, 0, 0))
 			var m: Vector3 = t * (c + Vector3(sx * hw, 0, 0))
