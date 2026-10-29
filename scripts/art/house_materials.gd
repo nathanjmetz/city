@@ -302,6 +302,26 @@ void fragment() {
 }
 """
 
+## Slip-formed concrete (grain silos and their headhouse): faint lift lines
+## 1.2 m apart, dark rain streaks running down the height of the bins, and
+## splash grime at the foot. UV.y is the height up the wall in metres.
+const SLIPFORM := """
+void fragment() {
+	float h = world_pos.y;
+	float across = world_pos.x * 0.7 + world_pos.z * 0.7;
+	float streak = smoothstep(0.45, 0.85, texture(noise_grain, vec2(across / 1.4, h / 60.0)).r);
+	float wash = texture(noise_soft, vec2(across / 10.0, h / 35.0)).r;
+	float lift = abs(fract(h / 1.2) - 0.5) * 1.2;
+	float line = (1.0 - smoothstep(0.0, 0.02 + fwidth(h) * 1.5, lift)) * clamp(0.03 / max(fwidth(h), 0.0001), 0.0, 1.0);
+	float grime = 1.0 - 0.12 * (1.0 - smoothstep(0.0, 2.5, UV.y));
+	vec3 c = vcol(COLOR.rgb) * (0.96 + wash * 0.08) * (1.0 - streak * 0.1) * (1.0 - line * 0.05) * grime;
+	float cover = snow_cover(0.8, 0.95);
+	ALBEDO = mix(c, vec3(0.86, 0.88, 0.92), cover);
+	ROUGHNESS = 0.8;
+	SPECULAR = 0.4;
+}
+"""
+
 ## Ribbed metal panels (walls and roofs of metal buildings): ribs every 12 in
 ## across UV.x, catching light on one side.
 const METAL := """
@@ -490,6 +510,7 @@ static func get_mat(key: String) -> Material:
 		"pasture": mat = _shader(PASTURE)
 		"far": mat = _shader(FAR)
 		"membrane": mat = _shader(MEMBRANE)
+		"slipform": mat = _shader(SLIPFORM)
 		"foliage": mat = _plain(1.0)
 		_: mat = _plain(0.55)  # paint, shutters, trim
 	_cache[key] = mat
