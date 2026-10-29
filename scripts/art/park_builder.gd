@@ -205,6 +205,11 @@ func _park(site: Dictionary, size: Vector2, to_curb: float) -> void:
 			"pond": _pond(s[0], s[1])
 			"pool": _pool(s[0], s[1], false)
 			"aquatic_center": _pool(s[0], s[1], true)
+			"pickleball": _pickleball(s[0], s[1])
+			"tennis": _tennis(s[0], s[1])
+			"volleyball": _volleyball(s[0], s[1])
+			"dog_park": _dog_park(s[0], s[1])
+			"skate_park": _skate_park(s[0], s[1])
 	if has.has("field_lights"):
 		for s in spots:
 			if s[2] == "ball_diamond":
@@ -1000,6 +1005,228 @@ func _bleachers(c: Vector3, length: float, rows: int, far: bool) -> void:
 
 
 # ---------------------------------------------------------------- park tree
+
+## A chain-link fence from a to b, `h` tall: posts every 3 m, a top rail,
+## the fabric (see-through, the chain material), and below `screen` metres
+## a dark windscreen (tennis), or none.
+func _chain_run(a: Vector3, b: Vector3, h: float, col: Color, screen := 0.0) -> void:
+	var len := a.distance_to(b)
+	if len < 0.3:
+		return
+	var dir := (b - a) / len
+	var yaw := Basis(Vector3.UP, atan2(dir.x, dir.z))
+	var n := maxi(1, int(len / 3.0))
+	for k in n + 1:
+		_box("paint", Vector3(0.07, h, 0.07), a + dir * (len * k / n) + Vector3(0, h * 0.5, 0), col)
+	_box("paint", Vector3(0.05, 0.05, len), (a + b) * 0.5 + Vector3(0, h, 0), col, yaw)
+	var off := Vector3(dir.z, 0, -dir.x) * 0.05
+	_quad("chain", a + off + Vector3(0, 0.05, 0), b + off + Vector3(0, 0.05, 0), b + off + Vector3(0, h, 0), a + off + Vector3(0, h, 0),
+		col, [Vector2(0, 0), Vector2(len, 0), Vector2(len, h), Vector2(0, h)], off)
+	if screen > 0.0:
+		_quad("paint", a + off * 2.0 + Vector3(0, 0.1, 0), b + off * 2.0 + Vector3(0, 0.1, 0), b + off * 2.0 + Vector3(0, screen, 0),
+			a + off * 2.0 + Vector3(0, screen, 0), Color("#24382c"), [], off)
+
+
+func _chain_box(c: Vector3, size: Vector2, h: float, col: Color, gate := 0.0, screen := 0.0) -> void:
+	var hx := size.x * 0.5
+	var hz := size.y * 0.5
+	# The gate: a gap in the front (-z) run, `gate` wide, left of centre.
+	if gate > 0.0:
+		_chain_run(c + Vector3(-hx, 0, -hz), c + Vector3(-gate - 1.0, 0, -hz), h, col, screen)
+		_chain_run(c + Vector3(-1.0, 0, -hz), c + Vector3(hx, 0, -hz), h, col, screen)
+	else:
+		_chain_run(c + Vector3(-hx, 0, -hz), c + Vector3(hx, 0, -hz), h, col, screen)
+	_chain_run(c + Vector3(hx, 0, -hz), c + Vector3(hx, 0, hz), h, col, screen)
+	_chain_run(c + Vector3(hx, 0, hz), c + Vector3(-hx, 0, hz), h, col, screen)
+	_chain_run(c + Vector3(-hx, 0, hz), c + Vector3(-hx, 0, -hz), h, col, screen)
+
+
+## A court line: a white strip on the surface.
+func _court_line(a: Vector3, b: Vector3, y: float) -> void:
+	var lo := Vector3(minf(a.x, b.x), 0, minf(a.z, b.z))
+	var hi := Vector3(maxf(a.x, b.x), 0, maxf(a.z, b.z))
+	_flat_rect("line", lo.x - 0.025, hi.x + 0.025, lo.z - 0.025, hi.z + 0.025, y, LINE)
+
+
+## A net across x at `c`: two posts and a dark band, `h` at the posts.
+func _net(c: Vector3, w: float, h: float, band := 0.9) -> void:
+	for sx in [-1.0, 1.0]:
+		_box("paint", Vector3(0.08, h, 0.08), c + Vector3(sx * w * 0.5, h * 0.5, 0), Color("#3a3c3e"))
+	_box("paint", Vector3(w, band, 0.02), c + Vector3(0, h - band * 0.5, 0), Color("#1d1f22"))
+	_box("paint", Vector3(w, 0.06, 0.03), c + Vector3(0, h - 0.03, 0), WHITE)
+
+
+## Four pickleball courts side by side (the courts' long side back from the
+## walk): blue playing surface on a green pad, the kitchen lines, nets and
+## a 10 ft chain-link fence round the block (USA Pickleball's layout).
+func _pickleball(c: Vector3, size: Vector2) -> void:
+	_flat_rect("gravel", c.x - size.x * 0.5 + 0.8, c.x + size.x * 0.5 - 0.8, c.z - size.y * 0.5 + 0.8,
+		c.z + size.y * 0.5 - 0.8, 0.06, Color("#3f6f4c"))
+	var pad := 9.14
+	for i in 4:
+		var x: float = c.x + (i - 1.5) * pad
+		var cw := 6.1
+		var cl := 13.41
+		_flat_rect("gravel", x - cw * 0.5 - 0.3, x + cw * 0.5 + 0.3, c.z - cl * 0.5 - 0.3, c.z + cl * 0.5 + 0.3, 0.065, Color("#3d6ea6"))
+		for sx in [-1.0, 1.0]:
+			_court_line(Vector3(x + sx * cw * 0.5, 0, c.z - cl * 0.5), Vector3(x + sx * cw * 0.5, 0, c.z + cl * 0.5), 0.07)
+		for sz in [-1.0, 1.0]:
+			_court_line(Vector3(x - cw * 0.5, 0, c.z + sz * cl * 0.5), Vector3(x + cw * 0.5, 0, c.z + sz * cl * 0.5), 0.07)
+			# The non-volley zone, 7 ft each side of the net, and the centre line.
+			_court_line(Vector3(x - cw * 0.5, 0, c.z + sz * 2.13), Vector3(x + cw * 0.5, 0, c.z + sz * 2.13), 0.07)
+			_court_line(Vector3(x, 0, c.z + sz * 2.13), Vector3(x, 0, c.z + sz * cl * 0.5), 0.07)
+		_net(Vector3(x, 0, c.z), cw + 0.6, 0.91, 0.75)
+	_chain_box(c, size - Vector2(1.6, 1.6), 3.0, Color("#2b2d2f"), 1.2)
+	for i in 3:
+		_bench(c + Vector3((i - 1) * pad * 1.33, 0, -size.y * 0.5 + 1.6), PI)
+
+
+## Two tennis courts side by side: green inside the lines on a red-brown
+## surround, the full doubles lines, nets, and a 12 ft fence with a green
+## windscreen along the bottom (ITF court, 78 x 36 ft, with runoff).
+func _tennis(c: Vector3, size: Vector2) -> void:
+	_flat_rect("gravel", c.x - size.x * 0.5 + 0.8, c.x + size.x * 0.5 - 0.8, c.z - size.y * 0.5 + 0.8,
+		c.z + size.y * 0.5 - 0.8, 0.06, Color("#8a3f36"))
+	var half_l := 11.885
+	var dbl := 5.485
+	var sgl := 4.115
+	for i in 2:
+		var x: float = c.x + (i - 0.5) * 18.3
+		_flat_rect("gravel", x - dbl, x + dbl, c.z - half_l, c.z + half_l, 0.065, Color("#3e7a52"))
+		for e in [-dbl, -sgl, sgl, dbl]:
+			_court_line(Vector3(x + e, 0, c.z - half_l), Vector3(x + e, 0, c.z + half_l), 0.07)
+		for sz in [-1.0, 1.0]:
+			_court_line(Vector3(x - dbl, 0, c.z + sz * half_l), Vector3(x + dbl, 0, c.z + sz * half_l), 0.07)
+			_court_line(Vector3(x - sgl, 0, c.z + sz * 6.4), Vector3(x + sgl, 0, c.z + sz * 6.4), 0.07)
+			_court_line(Vector3(x, 0, c.z), Vector3(x, 0, c.z + sz * 6.4), 0.07)
+		_net(Vector3(x, 0, c.z), dbl * 2.0 + 1.8, 1.07, 0.85)
+	_chain_box(c, size - Vector2(1.6, 1.6), 3.66, Color("#2b2d2f"), 1.2, 1.8)
+
+
+## Two sand volleyball courts, front to back: timber-edged sand, blue
+## boundary tape, nets on posts at the men's height (FIVB beach court,
+## 16 x 8 m inside a 3 m free zone).
+func _volleyball(c: Vector3, size: Vector2) -> void:
+	for sz in [-1.0, 1.0]:
+		var cz: float = c.z + sz * size.y * 0.25
+		var w := size.x - 2.0
+		var d := size.y * 0.5 - 1.2
+		_flat_rect("gravel", c.x - w * 0.5, c.x + w * 0.5, cz - d * 0.5, cz + d * 0.5, 0.06, Color("#d9c79a"))
+		for e in [[Vector3(-w * 0.5, 0, -d * 0.5), Vector3(w * 0.5, 0, -d * 0.5)], [Vector3(-w * 0.5, 0, d * 0.5), Vector3(w * 0.5, 0, d * 0.5)]]:
+			_box("paint", Vector3(w + 0.3, 0.2, 0.15), Vector3(c.x, 0.1, cz) + (e[0] + e[1]) * 0.5, WOOD)
+		for sx in [-1.0, 1.0]:
+			_box("paint", Vector3(0.15, 0.2, d), Vector3(c.x + sx * w * 0.5, 0.1, cz), WOOD)
+		# The court runs across the lot: 16 m along x, 8 m along z.
+		var tape := Color("#2f6fb0")
+		for sx in [-8.0, 8.0]:
+			_box("paint", Vector3(0.05, 0.02, 8.0), Vector3(c.x + sx, 0.08, cz), tape)
+		for zz in [-4.0, 4.0]:
+			_box("paint", Vector3(16.0, 0.02, 0.05), Vector3(c.x, 0.08, cz + zz), tape)
+		_box("paint", Vector3(0.1, 2.6, 0.1), Vector3(c.x, 1.3, cz - 4.9), Color("#3a3c3e"))
+		_box("paint", Vector3(0.1, 2.6, 0.1), Vector3(c.x, 1.3, cz + 4.9), Color("#3a3c3e"))
+		_box("paint", Vector3(0.02, 1.0, 9.6), Vector3(c.x, 1.93, cz), Color("#1d1f22"))
+		_box("paint", Vector3(0.04, 0.05, 9.6), Vector3(c.x, 2.43, cz), WHITE)
+
+
+## A dog park: 5 ft black chain link split into a big-dog and a small-dog
+## yard, each entered through a double-gated vestibule; worn ground at the
+## gates, a few agility pieces, a drinking fountain, benches and a waste
+## station (benchmarked on Indiana town dog parks of the 2010s-20s).
+func _dog_park(c: Vector3, size: Vector2) -> void:
+	var hx := size.x * 0.5 - 0.5
+	var hz := size.y * 0.5 - 0.5
+	var black := Color("#202224")
+	var split: float = c.x + hx * 0.4
+	_chain_run(c + Vector3(-hx, 0, hz), c + Vector3(hx, 0, hz), 1.5, black)
+	_chain_run(c + Vector3(-hx, 0, -hz), c + Vector3(-hx, 0, hz), 1.5, black)
+	_chain_run(c + Vector3(hx, 0, -hz), c + Vector3(hx, 0, hz), 1.5, black)
+	_chain_run(Vector3(split, 0, c.z - hz), Vector3(split, 0, c.z + hz), 1.5, black)
+	# The front with a vestibule for each yard.
+	for g in [c.x - hx * 0.3, split + (hx - (split - c.x)) * 0.5]:
+		_chain_run(Vector3(g - 1.5, 0, c.z - hz - 3.0), Vector3(g + 1.5, 0, c.z - hz - 3.0), 1.5, black)
+		_chain_run(Vector3(g - 1.5, 0, c.z - hz - 3.0), Vector3(g - 1.5, 0, c.z - hz), 1.5, black)
+		_chain_run(Vector3(g + 1.5, 0, c.z - hz - 3.0), Vector3(g + 1.5, 0, c.z - hz), 1.5, black)
+		# Worn dirt where every dog comes in.
+		_flat_rect("gravel", g - 3.5, g + 3.5, c.z - hz, c.z - hz + 6.0, 0.05, Color("#8a7458"))
+	var front := [c.x - hx, c.x - hx * 0.3 - 1.5, c.x - hx * 0.3 + 1.5, split, split + 0.01,
+		split + (hx - (split - c.x)) * 0.5 - 1.5, split + (hx - (split - c.x)) * 0.5 + 1.5, c.x + hx]
+	for i in range(0, front.size(), 2):
+		_chain_run(Vector3(front[i], 0, c.z - hz), Vector3(front[i + 1], 0, c.z - hz), 1.5, black)
+	# Agility: an A-frame, two hurdles and a tunnel in the big yard.
+	var a := c + Vector3(-hx * 0.45, 0, hz * 0.3)
+	for s in [-1.0, 1.0]:
+		_quad("paint", a + Vector3(-0.6, 0.05, s * 1.6), a + Vector3(0.6, 0.05, s * 1.6), a + Vector3(0.6, 1.4, 0),
+			a + Vector3(-0.6, 1.4, 0), Color("#d9a21b") if s < 0 else Color("#2f6fb0"), [], Vector3(0, 1, s))
+	for k in 2:
+		var h := c + Vector3(-hx * 0.1 + k * 3.0, 0, -hz * 0.2)
+		for sx in [-0.6, 0.6]:
+			_box("paint", Vector3(0.06, 0.7, 0.06), h + Vector3(sx, 0.35, 0), WHITE)
+		_box("paint", Vector3(1.2, 0.05, 0.05), h + Vector3(0, 0.5, 0), Color("#c23a3a"))
+	_cylinder("paint", c + Vector3(-hx * 0.75, 0.0, -hz * 0.35), 0.35, 0.9, Color("#5a7a9a"), 10)
+	_box("paint", Vector3(0.4, 0.9, 0.4), c + Vector3(split - c.x - 1.5, 0.45, hz - 2.0), Color("#3a5a3a"))
+	for p in [c + Vector3(-hx * 0.6, 0, hz - 1.5), c + Vector3(hx * 0.7, 0, hz - 1.5)]:
+		_bench(p, 0.0)
+	_box("paint", Vector3(0.08, 1.4, 0.08), c + Vector3(-hx - 1.2, 0.7, -hz - 1.0), Color("#3a5a3a"))
+	_box("paint", Vector3(0.35, 0.45, 0.2), c + Vector3(-hx - 1.2, 1.2, -hz - 1.0), Color("#2f6b3a"))
+
+
+## A street-style skate park, the kind small Indiana towns pour: a
+## concrete pad with two quarter pipes facing each other, a funbox with a
+## rail, a ledge and a flat bar (benchmarked on 2010s town skate parks).
+func _skate_park(c: Vector3, size: Vector2) -> void:
+	var pad := CONCRETE.lightened(0.05)
+	_flat_rect("gravel", c.x - size.x * 0.5 + 0.5, c.x + size.x * 0.5 - 0.5, c.z - size.y * 0.5 + 0.5,
+		c.z + size.y * 0.5 - 0.5, 0.06, pad)
+	for s in [-1.0, 1.0]:
+		_quarter_pipe(c + Vector3(s * (size.x * 0.5 - 3.4), 0, 0), -s, 8.0, 1.5)
+	# The funbox: a flat top, a slope each end, a handrail down one side.
+	var fb := c + Vector3(0, 0, -2.0)
+	_box("paint", Vector3(3.0, 0.6, 2.4), fb + Vector3(0, 0.3, 0), pad.darkened(0.04))
+	for s in [-1.0, 1.0]:
+		var e: float = fb.x + s * 1.5
+		var f: float = fb.x + s * 3.8
+		_quad("paint", Vector3(e, 0.6, fb.z - 1.2), Vector3(f, 0.07, fb.z - 1.2), Vector3(f, 0.07, fb.z + 1.2),
+			Vector3(e, 0.6, fb.z + 1.2), pad.darkened(0.02), [], Vector3(s * 0.25, 1, 0))
+		for z in [fb.z - 1.2, fb.z + 1.2]:
+			_tri("paint", Vector3(e, 0.6, z), Vector3(f, 0.07, z), Vector3(e, 0.07, z), pad.darkened(0.1), [], Vector3(0, 0, z - fb.z))
+	_strut(fb + Vector3(-3.6, 0.45, 1.4), fb + Vector3(-1.4, 0.95, 1.4), 0.05, GALV)
+	_strut(fb + Vector3(-1.4, 0.95, 1.4), fb + Vector3(1.4, 0.95, 1.4), 0.05, GALV)
+	for x in [-3.4, -1.4, 1.4]:
+		_box("paint", Vector3(0.05, 0.95, 0.05), fb + Vector3(x, 0.47, 1.4), GALV)
+	# A ledge with steel edging and a flat bar.
+	var ld := c + Vector3(-2.0, 0, size.y * 0.5 - 4.0)
+	_box("paint", Vector3(6.0, 0.45, 0.9), ld + Vector3(0, 0.225, 0), pad.darkened(0.06))
+	_box("paint", Vector3(6.0, 0.04, 0.06), ld + Vector3(0, 0.47, -0.44), GALV)
+	var fbar := c + Vector3(3.5, 0, size.y * 0.5 - 6.5)
+	_box("paint", Vector3(4.0, 0.05, 0.05), fbar + Vector3(0, 0.35, 0), GALV)
+	for x in [-1.8, 1.8]:
+		_box("paint", Vector3(0.05, 0.35, 0.05), fbar + Vector3(x, 0.17, 0), GALV)
+	for i in 2:
+		_bench(c + Vector3(-size.x * 0.25 + i * size.x * 0.5, 0, -size.y * 0.5 - 1.2), PI)
+
+
+## A quarter pipe `w` wide with a radius of `r`, rising toward `face`
+## (+1: rising toward +x) from `c`, with a deck and steel coping.
+func _quarter_pipe(c: Vector3, face: float, w: float, r: float) -> void:
+	var col := CONCRETE.lightened(0.02)
+	var segs := 7
+	var deck := 1.4
+	for i in segs:
+		var a0 := (PI * 0.5) * i / segs
+		var a1 := (PI * 0.5) * (i + 1) / segs
+		var x0: float = c.x + face * (r * sin(a0) - r)
+		var x1: float = c.x + face * (r * sin(a1) - r)
+		var y0 := r - r * cos(a0) + 0.06
+		var y1 := r - r * cos(a1) + 0.06
+		_quad("paint", Vector3(x0, y0, c.z - w * 0.5), Vector3(x1, y1, c.z - w * 0.5), Vector3(x1, y1, c.z + w * 0.5),
+			Vector3(x0, y0, c.z + w * 0.5), col, [], Vector3(-face * sin(a0 + 0.1), cos(a0 + 0.1), 0))
+		for z in [c.z - w * 0.5, c.z + w * 0.5]:
+			_quad("paint", Vector3(x0, 0.06, z), Vector3(x1, 0.06, z), Vector3(x1, y1, z), Vector3(x0, y0, z), col.darkened(0.1),
+				[], Vector3(0, 0, z - c.z))
+	_box("paint", Vector3(deck, r, w), c + Vector3(face * deck * 0.5, r * 0.5 + 0.06, 0), col.darkened(0.05))
+	_box("paint", Vector3(0.08, 0.08, w), c + Vector3(0, r + 0.1, 0), GALV)
+	_chain_run(c + Vector3(face * deck, r + 0.06, -w * 0.5), c + Vector3(face * deck, r + 0.06, w * 0.5), 1.0, GALV)
+
 
 ## A splash pad: coloured rubber surfacing with spray posts and a dumping
 ## bucket, the standard small-town install of the 2010s.
