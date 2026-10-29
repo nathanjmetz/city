@@ -160,7 +160,7 @@ func _ready() -> void:
 	bank_view.setup(sim)
 
 	var cars := TrafficView.new()
-	cars.setup(sim.traffic, _tick_fraction)
+	cars.setup(sim.traffic, _tick_fraction, sim)
 	cars.parked = func(): return sim.construction.parked_poses()
 	add_child(cars)
 
