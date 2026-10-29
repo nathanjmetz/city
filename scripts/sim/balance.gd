@@ -227,7 +227,9 @@ const MARKET_MIN := {
 	# Kokomo, Marion and Wabash each have one on a bypass road); fully
 	# built out once the market is a county's worth of people.
 	"office_park": [10_000, 15_000, 25_000],
-	"shopping_center": [5000, 10_000, 20_000],  # a discount store wants a trade area of about 20,000 (1980s Walmart/Kmart small-town siting)
+	"shopping_center": [5000, 10_000, 20_000, 50_000],  # a discount store wants a trade area of about 20,000 (1980s Walmart/Kmart small-town siting)
+	# ...and a power center's category killers (Lowe's, Best Buy, Dick's) a trade
+	# area of about 50,000 (Marion and Grant County, 66,000, has its cluster).
 	# A town of 1,500-2,000 (Upland, Fairmount) keeps a few 30-60 job shops;
 	# a 100-job plant wants a county's labor shed of 5,000 or more.
 	"factory": [0, 1500, 5000],
@@ -325,6 +327,9 @@ const REDEV_CENTER_AREA := 12_000.0
 ## this many houses on the lots behind and beside it (developers' "backlot"
 ## assembly: a block's two rows of lots, about 120 by 60 m).
 const REDEV_COMMUNITY_HOMES := 10
+## The most houses a community center buys behind it to become a power
+## center (about 3 acres in all).
+const REDEV_POWER_HOMES := 18
 ## ITE Trip Generation (10th ed.): low-rise multifamily (220) about 6.7
 ## weekday trips per unit; shopping center (820) about 37.75 per 1,000 sq ft.
 const REDEV_TRIPS_PER_FLAT := 6.7

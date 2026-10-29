@@ -116,6 +116,13 @@ const TYPES := {
 		# commercial lots next door.
 		# Discount stores staffed about 1 job per 400-500 sq ft.
 		{"name": "Community shopping center", "storeys": 1, "cap": [170, 240], "load": 12, "lot": 6500.0},
+		# A power center: three or more "category killer" boxes (home
+		# improvement, electronics, sporting goods) beside the discount
+		# store, few small shops, and pads along the road (ICSC 250,000-
+		# 600,000 sq ft on 25-80 acres; Marion's Baldwin Avenue, Fort Wayne's
+		# Apple Glen, scaled down like the community center). About 3 acres:
+		# it buys more of the block behind it.
+		{"name": "Power center", "storeys": 1, "cap": [320, 440], "load": 20, "lot": 12000.0},
 	]},
 	# Only a rezoning makes one (Redevelopment): a developer buys a run of
 	# lots on a busy road at the edge of town and builds it in phases, as
