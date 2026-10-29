@@ -9,9 +9,11 @@ extends SceneTree
 ## home, two storeys, then three with an addition out back) and duplex (an
 ## up-and-down, a double, a ranch and a two-storey duplex, and a fourplex).
 ## "far:<kind>" draws the same
-## buildings as their far versions (BuildingView.far_version).
+## buildings as their far versions (BuildingView.far_version). GALLERY_HOUR
+## (0-24) sets the time of day.
 
 var _frames := 0
+var _sky: SkyLight
 
 
 func _init() -> void:
@@ -30,7 +32,8 @@ func _init() -> void:
 	var seed := int(args[2]) if args.size() > 2 else 1
 	var world := Node3D.new()
 	root.add_child(world)
-	world.add_child(SkyLight.new())
+	_sky = SkyLight.new()
+	world.add_child(_sky)
 	world.add_child(Ground.new())
 	# A street along x in front of the lots (lots face -z, toward it).
 	var road := MeshInstance3D.new()
@@ -55,15 +58,19 @@ func _init() -> void:
 				mi.position = part[1]
 				world.add_child(mi)
 	var x := -50.0
-	for i in (0 if kind in ["oil", "ore"] else (8 if kind.begins_with("tract") else 5)):
+	for i in (0 if kind in ["oil", "ore"] else (8 if kind.begins_with("tract") else (7 if kind == "growth" else 5))):
 		var meshes: Array
 		var k := kind
 		if kind == "types":
 			k = ["house", "row", "apartments", "mixed", "office"][i]
 		if kind in ["care", "careshop"]:
 			HouseBuilder.owner_care = i - 2
-		var w: float = {"care": 24.0, "careshop": 26.0, "row": 22.0, "apartments": 36.0, "mixed": 22.0, "main": 16.0 + 4.0 * (i % 3), "mainold": 16.0 + 4.0 * (i % 3), "mainrestored": 16.0 + 4.0 * (i % 3), "office": 40.0, "towers": 44.0, "hometowers": 54.0, "towerfar": 44.0, "flats": 24.0, "courtyard": 48.0, "walkup": 26.0, "garage": 44.0, "oddlots": [26.0, 22.0, 20.0, 26.0, 18.0][i % 5],
-			"grown": 22.0, "duplex": [16.0, 20.0, 24.0, 24.0, 22.0][i]}.get(k, 20.0)
+## careshop (the same for a shop), grown (a house up its growth path: family
+## home, two storeys, then three with an addition out back) and duplex (an
+## up-and-down, a double, a ranch and a two-storey duplex, and a fourplex).
+## "far:<kind>" draws the same
+## buildings as their far versions (BuildingView.far_version). GALLERY_HOUR
+## (0-24) sets the time of day.
 		var sd := seed * 100 + i
 		match k:
 			"shop": meshes = CommercialBuilder.build_shop(sd, 3.9)
@@ -76,6 +83,13 @@ func _init() -> void:
 				meshes = DenseBuilder.build_mixed(sd, 3.9, {"width": w, "depth": 45.0, "era": "prewar"}, 2 + i % 3)
 				HouseBuilder.restored = false
 			"office": meshes = DenseBuilder.build_office(sd, 3.9, {"width": w, "depth": 55.0}, [3, 5, 8][i % 3])
+			"growth":
+				# One office's stages left to right, drawn as BuildingView does.
+				var st: int = [3, 5, 8, 16, 30, 48, 100][i % 7]
+				if st >= 8:
+					meshes = TowerBuilder.build_tower(seed * 100, 3.9, {"width": w, "depth": 60.0}, st)
+				else:
+					meshes = DenseBuilder.build_office(seed * 100, 3.9, {"width": w, "depth": 60.0}, st)
 			"towers": meshes = TowerBuilder.build_tower(sd, 3.9, {"width": w, "depth": 55.0}, [12, 22, 24, 10, 16][i],
 				{}, ["chicago", "deco", "glass", "chicago", "glass"][i])
 			"hometowers": meshes = TowerBuilder.build_tower(sd, 3.9, {"width": w, "depth": 55.0}, [12, 22, 24, 10, 16][i],
@@ -169,6 +183,12 @@ static func _odd_lot(i: int, w: float) -> PackedVector2Array:
 
 func _process(_delta: float) -> bool:
 	_frames += 1
+	# GALLERY_HOUR=21 lights the row for that time of day (night signs, lit windows).
+	if _frames == 2 and OS.get_environment("GALLERY_HOUR") != "":
+		var hour := float(OS.get_environment("GALLERY_HOUR"))
+		_sky.set_time(hour, 6.5)
+		RenderingServer.global_shader_parameter_set("night", _sky.darkness)
+		RenderingServer.global_shader_parameter_set("windows_lit", DayNight.window_share(hour))
 	if _frames == 30:
 		var args := OS.get_cmdline_user_args()
 		var out := args[0] if args.size() > 0 else "gallery.png"

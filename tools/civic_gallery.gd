@@ -58,12 +58,32 @@ func _init() -> void:
 		var view := [25.0, 28.0, 0.0]
 		if str(w).contains("@"):
 			var v := str(w).get_slice("@", 1).split(",")
-			view = [float(v[0]), float(v[1]), float(v[2]) if v.size() > 2 else 0.0]
+			view = [float(v[0]), float(v[1]), float(v[2]) if v.size() > 2 else 0.0,
+				float(v[3]) if v.size() > 4 else 0.0, float(v[4]) if v.size() > 4 else 0.0]
 		var built := []
 		var size := Vector2(30, 30)
 		if SVC.has(name):
 			size = Services.KINDS[SVC[name]].size
 			built = CivicBuilder.build_service(SVC[name], sd, size, to_curb)
+		elif name == "campus":
+			# A county hospital grown into a regional campus: every piece of
+			# its development tree on its own strip, as Healthcare lays them.
+			var pieces := [{"key": "er", "rect": [35.0, 55.0, 0.0, 60.0]},
+				{"key": "offices", "rect": [-60.0, -35.0, 0.0, 60.0]},
+				{"key": "maternity", "rect": [-35.0, 35.0, 60.0, 76.0]},
+				{"key": "community", "rect": []},
+				{"key": "surgery", "rect": [35.0, 75.0, 60.0, 105.0]},
+				{"key": "rehab", "rect": [-35.0, 0.0, 76.0, 120.0]},
+				{"key": "nursing_school", "rect": [-95.0, -60.0, 0.0, 60.0]},
+				{"key": "helipad", "rect": [75.0, 105.0, 100.0, 130.0]},
+				{"key": "heart", "rect": [-95.0, -35.0, 60.0, 105.0]},
+				{"key": "cancer", "rect": [0.0, 35.0, 76.0, 150.0]},
+				{"key": "teaching", "rect": [55.0, 105.0, 0.0, 60.0]}]
+			if OS.get_environment("STAGE") == "1":
+				pieces = pieces.slice(0, 5)
+			var hub := {"x0": -95.0, "x1": 105.0, "depth": 150.0, "pieces": pieces}
+			size = Vector2(200, 150)
+			built = HealthBuilder.build_care(Services.Kind.HOSPITAL, sd, size, to_curb, hub)
 		elif CARE.has(name):
 			size = Services.KINDS[CARE[name]].size
 			built = HealthBuilder.build_care(CARE[name], sd, size, to_curb)
@@ -155,6 +175,8 @@ func _init() -> void:
 		trees.set_trees(str(_items.size()), planted)
 		var dist: float = view[2] if view[2] > 0.0 else maxf(size.x, size.y) * 1.35 + 25.0
 		var look := at + Vector3(0, 0, size.y * 0.5 if lot_front else 0.0)
+		if view.size() > 4:
+			look += Vector3(view[3], 0, view[4])  # "@yaw,pitch,dist,x,z" aims off centre
 		var shot := str(w).get_slice("@", 0).replace("#", "-")
 		for other in _items:
 			if other[0] == shot:
