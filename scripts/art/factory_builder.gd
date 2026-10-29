@@ -917,8 +917,7 @@ func _brick_works(to_curb: float) -> void:
 	var brick := Color(_pick(FACADE_BRICK))
 	var cz := zf + d * 0.5
 	_box("brick", Vector3(w, h, d), Vector3(0, h * 0.5, cz), brick)
-	_box("paint", Vector3(w + 0.3, 0.5, d + 0.3), Vector3(0, h + 0.25, cz), brick.darkened(0.2))
-	_box("paint", Vector3(w - 0.4, 0.1, d - 0.4), Vector3(0, h + 0.05, cz), Color("#3a3a3c"))  # tar roof inside the parapet
+	_box("paint", Vector3(w - 0.4, 0.1, d - 0.4), Vector3(0, h + 0.2, cz), Color("#3a3a3c"))  # tar roof inside the parapet
 	_dr_note(0.0, cz, w, d, h + 0.1, "flat")
 	var n := int(w / 3.2)
 	for f in floors:
@@ -936,7 +935,98 @@ func _brick_works(to_curb: float) -> void:
 		_box("paint", Vector3(0.2, 4.0, 0.2), Vector3(tx, h + 2.1, cz) + p, PIPE.darkened(0.3))
 	_cylinder("siding", Vector3(tx, h + 4.1, cz), 2.2, 3.6, Color("#7a5a3c"), 14)
 	_cone_top(Vector3(tx, h + 7.7, cz), 2.4, 1.6, Color("#5a5e60"))
+	_brick_works_life(w, d, h, zf, floors, fh, brick, sx)
 	_yard_gravel(zf + d)
+
+
+## What makes an old mill read as one: windows on every wall under
+## segmental brick arches, a stepped corbel under a hollow parapet (the tar
+## roof shows), a stair and freight-elevator tower that pokes above the roof,
+## a stone-trimmed front door, a rear loading dock under a shed canopy, a
+## faded painted wall sign and a banded stack (Indiana mill buildings of
+## 1890-1925: Marion's Malleable Iron and Anderson's Remy plant).
+func _brick_works_life(w: float, d: float, h: float, zf: float, floors: int, fh: float, brick: Color, sx: float) -> void:
+	var g := RandomNumberGenerator.new()
+	g.seed = hash([rng.seed, "brick_works"])
+	var zb := zf + d
+	var cz := zf + d * 0.5
+	var dark := brick.darkened(0.22)
+	var stone := Color("#c9c1ae")
+	# Hollow parapet over a corbel band, so the tar roof reads from above.
+	for side in [-1.0, 1.0]:
+		_box("paint", Vector3(w + 0.3, 0.9, 0.35), Vector3(0, h + 0.45, cz + side * (d * 0.5 - 0.02)), dark)
+		_box("paint", Vector3(0.35, 0.9, d + 0.3), Vector3(side * (w * 0.5 - 0.02), h + 0.45, cz), dark)
+		_box("paint", Vector3(w + 0.5, 0.12, 0.55), Vector3(0, h + 0.94, cz + side * (d * 0.5 - 0.02)), stone)  # stone coping
+		_box("paint", Vector3(0.55, 0.12, d + 0.5), Vector3(side * (w * 0.5 - 0.02), h + 0.94, cz), stone)
+	_box("paint", Vector3(w + 0.5, 0.35, d + 0.5), Vector3(0, h - 0.6, cz), dark)
+	# Floor lines: a thin soldier course at each floor.
+	for f in range(1, floors):
+		_box("paint", Vector3(w + 0.16, 0.18, d + 0.16), Vector3(0, f * fh + 0.35, cz), dark)
+	# Arches over the front windows; windows and arches on the rear and side walls.
+	var n := int(w / 3.2)
+	var nd := int(d / 3.2)
+	for f in floors:
+		var y := 0.9 + f * fh + 1.3
+		for i in n:
+			var x := -w * 0.5 + 1.6 + i * (w - 3.2) / maxf(n - 1, 1)
+			_box("paint", Vector3(1.9, 0.3, 0.12), Vector3(x, y + 1.45, zf - 0.08), dark)
+			if f == 0 and absf(x) < 3.0:
+				continue  # the loading dock door goes here at the back
+			_glass(Vector3(x, y, zb + 0.06), Vector3(1, 0, 0), 1.6, 2.6, 0.2)
+			_box("paint", Vector3(1.9, 0.3, 0.12), Vector3(x, y + 1.45, zb + 0.08), dark)
+			_box("paint", Vector3(1.9, 0.18, 0.2), Vector3(x, y - 1.35, zb + 0.1), stone)
+		for i in nd:
+			var z := zf + 1.6 + i * (d - 3.2) / maxf(nd - 1, 1)
+			for side in [-1.0, 1.0]:
+				var x: float = side * (w * 0.5 + 0.06)
+				if side < 0.0 and f == floors - 1 and absf(z - cz) < d * 0.38:
+					continue  # blank brick behind the painted sign
+				_glass(Vector3(x, y, z), Vector3(0, 0, -side), 1.6, 2.6, 0.2)
+				_box("paint", Vector3(0.12, 0.3, 1.9), Vector3(x + side * 0.02, y + 1.45, z), dark)
+				_box("paint", Vector3(0.2, 0.18, 1.9), Vector3(x + side * 0.04, y - 1.35, z), stone)
+	# Stair and freight-elevator tower on the back wall, one storey proud.
+	var tw := 5.0
+	var th := h + fh
+	var tx := w * 0.5 - tw * 0.5 - 1.0
+	var tz := zb + 2.2
+	if _in_lot(Vector3(tx, 0, tz + 2.2), 0.5):
+		_box("brick", Vector3(tw, th, 4.6), Vector3(tx, th * 0.5, tz), brick.darkened(0.04))
+		_box("paint", Vector3(tw + 0.3, 0.6, 4.9), Vector3(tx, th + 0.3, tz), dark)
+		_box("paint", Vector3(tw + 0.4, 0.12, 5.0), Vector3(tx, th + 0.66, tz), stone)
+		for f in floors + 1:
+			_glass(Vector3(tx, 1.4 + f * fh + 0.6, tz + 2.36), Vector3(1, 0, 0), 1.0, 1.8, 0.1)
+		_box("paint", Vector3(1.0, 2.2, 0.08), Vector3(tx, 1.1, tz + 2.34), Color("#5a5048"))
+	# Front door: stone surround, transom and a date stone.
+	_box("paint", Vector3(3.0, 3.6, 0.25), Vector3(0, 1.8, zf - 0.1), stone)
+	_box("paint", Vector3(2.0, 2.5, 0.08), Vector3(0, 1.25, zf - 0.24), Color("#4a3a2c"))
+	_glass(Vector3(0, 3.0, zf - 0.26), Vector3(-1, 0, 0), 2.0, 0.6, 0.0)
+	_box("paint", Vector3(1.6, 0.6, 0.1), Vector3(0, h - 1.4, zf - 0.08), stone)
+	_box("paint", Vector3(3.6, 0.3, 1.8), Vector3(0, 0.15, zf - 0.9), CONCRETE)
+	# A faded painted wall sign high on the street side wall.
+	var ghost := Color(stone, 1.0).lerp(brick, 0.45)
+	_box("paint", Vector3(0.04, fh * 0.9, d * 0.7), Vector3(-w * 0.5 - 0.08, h - fh * 0.6, cz), ghost)
+	_box("paint", Vector3(0.04, 0.35, d * 0.55), Vector3(-w * 0.5 - 0.1, h - fh * 0.45, cz), brick.darkened(0.35))
+	_box("paint", Vector3(0.04, 0.3, d * 0.45), Vector3(-w * 0.5 - 0.1, h - fh * 0.8, cz), brick.darkened(0.35))
+	# Rear loading dock: a raised concrete platform under a shed canopy on
+	# steel brackets, two freight doors, bumpers and a step.
+	var dw := minf(w * 0.5, 14.0)
+	if _in_lot(Vector3(0, 0, zb + 3.0), 1.0):
+		_box("paint", Vector3(dw, 1.2, 2.6), Vector3(0, 0.6, zb + 1.3), CONCRETE)
+		_box("paint", Vector3(dw + 1.0, 0.18, 3.6), Vector3(0, 4.6, zb + 1.8), Color("#5c6266"), Basis(Vector3.RIGHT, -0.12))
+		for bx in [-dw * 0.5 + 0.3, 0.0, dw * 0.5 - 0.3]:
+			UpgradeKits._strut(self, Vector3(bx, 3.2, zb + 0.05), Vector3(bx, 4.45, zb + 3.2), 0.12, PIPE.darkened(0.3))
+		for dx in [-dw * 0.22, dw * 0.22]:
+			_box("paint", Vector3(2.8, 3.0, 0.08), Vector3(dx, 2.7, zb + 0.06), Color("#7a6a52") if g.randf() < 0.5 else Color("#6c7072"))
+			for bx in [-1.0, 1.0]:
+				_box("paint", Vector3(0.3, 0.45, 0.15), Vector3(dx + bx * 1.0, 0.85, zb + 2.68), Color("#1e1e1e"))
+		_box("paint", Vector3(1.2, 0.4, 0.8), Vector3(dw * 0.5 + 0.6, 0.2, zb + 1.8), CONCRETE)
+	# The stack gets a plinth, iron bands and a corbelled cap.
+	if _in_lot(Vector3(sx, 0, zb + 4.0), 2.0):
+		var sp := Vector3(sx, 0, zb + 4.0)
+		_box("brick", Vector3(3.4, 2.4, 3.4), sp + Vector3(0, 1.2, 0), dark)
+		for k in 4:
+			_cylinder("paint", sp + Vector3(0, 5.0 + k * (h + 6.0) / 4.0, 0), 1.34, 0.18, Color("#2c2c2c"), 12)
+		_cylinder("paint", sp + Vector3(0, h + 13.2, 0), 1.55, 0.8, dark, 12)
 
 
 ## A sawtooth-roof shop: one tall storey of brick with north-facing roof
