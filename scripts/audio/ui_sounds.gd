@@ -118,7 +118,7 @@ func _on_command(cmd: Dictionary) -> void:
 			play("road" if on else "bulldoze")
 		"paint_zone":
 			play("brush")
-		"set_junction":
+		"set_junction", "set_lanes":
 			play("click")
 
 
