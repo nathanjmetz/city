@@ -121,6 +121,27 @@ void vertex() {
 	VERTEX.yz = vec2(UV.y + y * c - VERTEX.z * s, y * s + VERTEX.z * c);
 	NORMAL.yz = vec2(NORMAL.y * c - NORMAL.z * s, NORMAL.y * s + NORMAL.z * c);
 	VERTEX.y -= 0.84 * (1.0 - cos(0.42 * sin(ph)));  // keeps the feet on the ground
+	// Seated (on a porch chair, a bench, at a bus stop's bench): thighs out
+	// level in front, shins straight down from the knee, hands in the lap,
+	// the hips down at seat height (about 0.45 m).
+	if ((o & 4096) != 0) {
+		const float HIP = 0.88;
+		const float KNEE = 0.47;
+		if (UV.x != 0.0 && UV.y > 0.8 && UV.y < 0.95) {
+			if (VERTEX.y >= KNEE) {
+				VERTEX.yz = vec2(HIP - VERTEX.z, VERTEX.y - HIP);
+				NORMAL.yz = vec2(-NORMAL.z, NORMAL.y);
+			} else {
+				VERTEX.y += HIP - KNEE;
+				VERTEX.z -= HIP - KNEE;
+			}
+		} else if (UV.x != 0.0) {
+			float la = 0.45;
+			float ly = VERTEX.y - UV.y;
+			VERTEX.yz = vec2(UV.y + ly * cos(la) - VERTEX.z * sin(la), ly * sin(la) + VERTEX.z * cos(la));
+		}
+		VERTEX.y -= HIP - KNEE;
+	}
 }
 void fragment() { ALBEDO = tint; ROUGHNESS = 0.9; }
 """
@@ -367,6 +388,14 @@ static func figure(person: int, who := {}) -> int:
 ## centimetres down (CDC NHANES 2015-2018 adult heights and growth charts).
 ## Slight to heavy at any age. The mesh is 1.7 m. Without a person (tools),
 ## a mix of adults and about one in eight a child, as before.
+## Outfit bit for a seated person (the shader bends them into a chair).
+const SEATED := 4096
+
+## Median heights by age, 0 to 17, in cm (CDC 2000 growth charts).
+const BOY_CM := [50, 76, 87, 96, 103, 110, 116, 122, 128, 133, 138, 143, 149, 156, 164, 170, 173, 175]
+const GIRL_CM := [49, 74, 86, 95, 102, 109, 115, 121, 127, 133, 138, 144, 151, 157, 160, 162, 162, 162]
+
+
 static func build(person: int, who := {}) -> Vector3:
 	var h := hash(person)
 	var tall := 0.9 + float(h & 255) / 255.0 * 0.2
@@ -376,10 +405,12 @@ static func build(person: int, who := {}) -> Vector3:
 		var woman := figure(person, who) == 1
 		var m := (1.62 if woman else 1.75) + (float(h & 255) / 255.0 - 0.5) * 0.14
 		if age < 18:
-			# Teens grow about 6 cm a year to 15 (girls stop near 14).
-			var grown := 14 if woman else 17
-			m -= maxf(0.0, float(grown - age)) * (0.05 if woman else 0.06)
+			# Children and teens at their age's height (CDC growth charts,
+			# medians), keeping their place above or below it.
+			var grown: float = (GIRL_CM if woman else BOY_CM)[clampi(age, 0, 17)] / 100.0
+			m *= grown / (1.62 if woman else 1.75)
 			wide = minf(wide, 0.85 + float(age - 10) * 0.03)
+			wide = minf(wide, m / 1.7 * 1.05)
 		elif age > 70:
 			m -= float(age - 70) * 0.004
 		tall = m / 1.7

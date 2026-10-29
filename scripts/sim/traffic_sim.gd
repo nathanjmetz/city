@@ -3056,8 +3056,16 @@ func _site_place(e: Dictionary) -> Dictionary:
 			"local": Vector2.ZERO})
 	else:
 		spots = _curb_spots(stop, 1)
-	return {"ref": ref, "stop": stop, "lot": {}, "lay": {}, "spots": spots, "taken": _fill(spots.size()),
+	var pl := {"ref": ref, "stop": stop, "lot": {}, "lay": {}, "spots": spots, "taken": _fill(spots.size()),
 		"door": door, "drive": drive, "zone": -1}
+	# A site people walk to (a school's front doors): out its front walk to
+	# the sidewalk.
+	if e.get("on_foot", false):
+		var at_walk := _walk_stop(door)
+		if not at_walk.is_empty():
+			pl.foot_lot = at_walk
+			pl.foot_out = PackedVector3Array([door, at_walk.walk_pt])
+	return pl
 
 
 ## A car at the curb pulls away the way it faces.
@@ -4587,6 +4595,8 @@ func _walk_between(a: Dictionary, b: Dictionary) -> PackedVector3Array:
 func _front_walk(pl: Dictionary) -> Dictionary:
 	if pl.has("walk_lot"):
 		return {"lot": pl.walk_lot, "path": pl.walk_out}
+	if pl.has("foot_lot"):
+		return {"lot": pl.foot_lot, "path": pl.foot_out}
 	if pl.lot.is_empty() or pl.lay.is_empty():
 		return {}
 	var path := _door_out(pl)

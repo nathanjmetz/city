@@ -121,13 +121,22 @@ func setup(t: TrafficSim, frac: Callable) -> void:
 		# What it wears, from its parts' names (Human_female_casualsuit01).
 		var probe := s.instantiate()
 		var suit := ""
+		var top := 0.0  # the top of its head, hair and all
 		for mi in probe.find_children("*", "MeshInstance3D", true, false):
 			var n := String(mi.name).trim_prefix("Human_")
 			if SUITS.has(n):
 				suit = n
+			var xf: Transform3D = mi.transform
+			var up: Node = mi.get_parent()
+			while up != null and up != probe:
+				if up is Node3D:
+					xf = (up as Node3D).transform * xf
+				up = up.get_parent()
+			top = maxf(top, (xf * (mi as MeshInstance3D).get_aabb()).end.y)
 		probe.free()
 		_models.append({"scene": s, "female": suit.begins_with("female"), "long": SUITS.get(suit, {}).get("long", true),
-			"rare": SUITS.get(suit, {}).get("rare", false), "overalls": suit == "male_worksuit01"})
+			"rare": SUITS.get(suit, {}).get("rare", false), "overalls": suit == "male_worksuit01",
+			"height": top if top > 1.0 else 1.7})
 
 
 ## The model a person is drawn with: one of their figure's (WalkerView.figure:
@@ -326,9 +335,12 @@ func _process(_delta: float) -> void:
 			dir = Vector3.FORWARD
 		var node: Node3D = e.node
 		node.visible = true
-		# The model faces +Z; turn it to walk along `dir`.
-		node.global_transform = Transform3D(Basis.looking_at(-Vector3(dir.x, 0.0, dir.z).normalized(), Vector3.UP), p)
+		# The model faces +Z; turn it to walk along `dir`. Sized to the
+		# person's own height (WalkerView.build), so a child walking to school
+		# is a child's size close up too, and takes quicker, shorter steps.
+		var size: float = WalkerView.build(person, who).y * 1.7 / float(_models[model].height)
+		node.global_transform = Transform3D(Basis.looking_at(-Vector3(dir.x, 0.0, dir.z).normalized(), Vector3.UP).scaled(Vector3.ONE * size), p)
 		if e.player != null:
-			e.player.speed_scale = float(w.get("v", WALK_SPEED)) / WALK_SPEED
+			e.player.speed_scale = float(w.get("v", WALK_SPEED)) / WALK_SPEED / size
 		drawn[int(w.id)] = true
 	Terrain.shift = Vector2.ZERO

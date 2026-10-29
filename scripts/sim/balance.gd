@@ -1220,6 +1220,10 @@ const SCHOOL_PUPIL_SHARE := 0.08
 ## right after the afternoon bell (8:00 am and 3:00 pm), in game minutes.
 const SCHOOL_MORNING_RUN := 6 * 60 + 40
 const SCHOOL_AFTERNOON_RUN := 15 * 60 + 5
+## Pupils in the walk zone who walk (NHTS 2009: 35% of children living
+## within a mile of school), setting off in the sky's 45 minutes from 6:45.
+const SCHOOL_WALK_PCT := 35
+const SCHOOL_WALK_FROM := 6.75
 # --- Wild trees and brush ----------------------------------------------------
 
 ## Cleared land left alone grows back the way an abandoned lot in southern
