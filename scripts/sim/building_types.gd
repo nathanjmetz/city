@@ -184,6 +184,16 @@ static func make(sim, key: String, b: Dictionary, type: String, level: int) -> D
 	out.focc = mini(int(b.get("focc", 0)), out.flats)
 	out.changed = int(b.get("changed", b.built))
 	out.why = str(b.get("why", ""))
+	# Grown a stage on the same lot: some owners add floors on top of the
+	# building they have ("added_from": its storeys before), the rest
+	# rebuild (Balance.ADD_ON_PERCENT). Anything else is a new building.
+	var was := int(b.get("level", 0))
+	if type != type_of(b) or level < was or st.has("plate") or st.has("lot"):
+		out.erase("added_from")
+	elif level == was + 1:
+		out.erase("added_from")
+		if type in Balance.ADD_ON_TYPES and absi(hash([int(b.seed), level, "add on"])) % 100 < Balance.ADD_ON_PERCENT:
+			out.added_from = int(TYPES[type].stages[was].storeys)
 	return out
 
 
