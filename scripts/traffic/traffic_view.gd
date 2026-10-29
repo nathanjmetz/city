@@ -19,9 +19,9 @@ extends Node3D
 ## Close vehicles get the detailed model (the close-up one on the desktop
 ## Ultra tier), far ones a simple one, and very far ones aren't drawn.
 ## Parked vehicles in stalls, driveways and at docks are drawn too; ones
-## inside a bay are out of sight, and so is one household car in three
-## that the simulation has in its home garage (the rest are drawn out on the
-## drive: see _out_front).
+## inside a bay or a home's garage are out of sight, except that on the
+## desktop two household cars in three that the simulation has in its
+## garage are drawn out on the drive (see _out_front).
 
 ## Metres from the camera where models switch to the simple version, and
 ## where they stop being drawn, on a full desktop (High and up); lower
@@ -45,12 +45,15 @@ const OUT_FRONT := 2
 const OUT_OF := 3
 ## Metres a car drawn out front stands from its garage spot (the drive spot
 ## in front of a bay, SiteLayout.house), and how far back from the street
-## edge of the lot its middle must be, as the drive spot's must.
+## edge of the lot its middle must be, as the drive spot's must (its rear
+## bumper must be on the lot too).
 const DRIVE_OUT := 6.2
 const DRIVE_MIN_Z := 2.6
 ## Metres the camera moves, or the reach changes, before the parked
-## vehicles' batches are filled again.
-const REFILL_M := 8.0
+## vehicles' batches are filled again, and the fewest frames between
+## fills (one car parking or the camera panning never refills every frame).
+const REFILL_M := 16.0
+const REFILL_FRAMES := 4
 ## Kinds whose emergency lights run.
 const EMERGENCY := ["fire_engine", "ambulance"]
 ## Bodies longer than this (metres) are drawn further out than cars.
@@ -66,6 +69,9 @@ const ROLL := 0.006
 const LEAN_MAX := 0.03
 
 var traffic: TrafficSim
+## The town the traffic belongs to (see setup); null draws no car out on a
+## drive.
+var town: CitySim
 ## Returns how far through the current tick the clock is, 0 to 1.
 var tick_fraction: Callable
 ## Vehicles standing still off the traffic list (a crew's pickup at a job
@@ -86,14 +92,15 @@ var _parked_version := -1
 ## [place, spot, pos, cargo, items where it is, items out on the drive].
 var _pcache := {}
 ## What the kept drawings were worked out against: the roads' version (the
-## ground is graded with them) and whether the town's lots were known yet
-## (a loaded town's traffic meets its town on the first tick).
+## ground is graded with them) and whether cars go out on the drive.
 var _pcache_for := []
 ## Parked vehicles' own batches (mesh key -> [near, far, Ultra] or null),
 ## filled again only when the camera has moved or the reach changed (see
 ## _fill_parked), and what they were last filled for.
 var _pmm := {}
 var _pfill := [Vector3.INF, 0.0, 0.0, 0.0]
+var _pfill_due := true
+var _pfill_age := 0
 var _parked_drawn := 0
 ## How far vehicles are drawn now, and inside it the full model: the
 ## graphics tier's cars_m and car_near_m, pulled in on a crowded road to
@@ -148,9 +155,13 @@ class Motion:
 static var premade := {}
 
 
-func setup(t: TrafficSim, fraction: Callable) -> void:
+## `sim` is the town the traffic belongs to, for its lots and buildings
+## (which garage cars stand out on the drive): passed in, since a
+## neighbor's town or one just loaded hasn't stepped its traffic yet.
+func setup(t: TrafficSim, fraction: Callable, sim: CitySim = null) -> void:
 	traffic = t
 	tick_fraction = fraction
+	town = sim
 
 
 func _ready() -> void:
@@ -682,7 +693,14 @@ func _rebuild_parked() -> void:
 
 
 func _pcache_key() -> Array:
-	return [traffic.version, traffic._sim != null]
+	return [traffic.version, _drive_cars()]
+
+
+## Garage cars drawn out on the drive: on the desktop where the graphics
+## tier's budget allows (drive_cars), never in the browser, which draws
+## and counts its cars as it always has.
+static func _drive_cars() -> bool:
+	return not OS.has_feature("web") and bool(GraphicsQuality.knob("drive_cars", true))
 
 
 ## What a parked vehicle draws, standing with its front bumper at `pos`
@@ -717,31 +735,42 @@ func _parked_items(car: Dictionary, pos: Vector3, face: Vector3) -> Array:
 ## copies still have it in the garage. [] for one that stays inside.
 func _out_front(car: Dictionary) -> Array:
 	var ref := str(car.get("at_place", ""))
-	if traffic._sim == null or not ref.begins_with("lot:") or absi(hash([car.id, "out front"])) % OUT_OF >= OUT_FRONT:
+	if town == null or not _drive_cars() or not ref.begins_with("lot:") \
+			or absi(hash([car.id, "out front"])) % OUT_OF >= OUT_FRONT:
 		return _NONE
 	var kind := _kind(car)
 	if kind == "golf_cart" or VehicleModels.ARTIC.has(kind) or not car.has("face"):
 		return _NONE
-	var b = traffic._sim.buildings.get(ref.substr(4))
-	var lot = traffic._sim.lots.get(ref.substr(4))
+	var b = town.buildings.get(ref.substr(4))
+	var lot = town.lots.get(ref.substr(4))
 	if b == null or lot == null or int(b.zone) != ZoneMap.Zone.RESIDENTIAL:
 		return _NONE  # a factory's bay or an office deck stays shut
 	var face: Vector3 = car.face
 	var pos: Vector3 = car.pos - face * DRIVE_OUT
-	var mid: Vector3 = SiteLayout.frame(lot).affine_inverse() * (pos - face * float(car.get("len", 4.5)) * 0.5)
-	if mid.z < DRIVE_MIN_Z:
-		return _NONE  # a short drive: it would stick out over the sidewalk
+	var len := float(car.get("len", 4.5))
+	var inv := SiteLayout.frame(lot).affine_inverse()
+	if (inv * (pos - face * len * 0.5)).z < DRIVE_MIN_Z or (inv * (pos - face * len)).z < 0.0:
+		return _NONE  # a short drive (or a long pickup): it would stick out over the sidewalk
 	return _parked_items(car, pos, face)
 
 
-## Parked vehicles go in batches of their own, filled again when the camera
-## has moved REFILL_M or the reach has changed, or one parks or leaves, not
-## every frame: a big town has thousands standing in drives and lots.
+## Parked vehicles go in batches of their own, filled again when one parks
+## or leaves, the camera has moved REFILL_M or the reach has changed by
+## that much, and at most every REFILL_FRAMES frames, not every frame: a big
+## town has thousands standing in drives and lots. The count drawn (for the
+## tier's cap) is the last fill's, a little off while the reach changes.
 func _fill_parked(eye: Vector3, ultra2: float, rebuilt: bool) -> void:
-	if not rebuilt and eye.distance_squared_to(_pfill[0]) < REFILL_M * REFILL_M \
-			and absf(_reach_far - float(_pfill[1])) < REFILL_M and _reach_near == _pfill[2] and ultra2 == _pfill[3]:
+	_pfill_due = _pfill_due or rebuilt
+	_pfill_age += 1
+	if _pfill[0] != Vector3.INF and _pfill_age < REFILL_FRAMES:
+		return
+	if not _pfill_due and eye.distance_squared_to(_pfill[0]) < REFILL_M * REFILL_M \
+			and absf(_reach_far - float(_pfill[1])) < maxf(REFILL_M, _reach_far * 0.05) \
+			and absf(_reach_near - float(_pfill[2])) < REFILL_M and ultra2 == _pfill[3]:
 		return
 	_pfill = [eye, _reach_far, _reach_near, ultra2]
+	_pfill_due = false
+	_pfill_age = 0
 	var by := [{}, {}, {}]  # lod -> mesh key -> [[transforms], [customs]]
 	_parked_drawn = 0
 	for item in _parked:

@@ -671,7 +671,7 @@ func _bd_exits() -> void:
 ## The town's people and cars, as in the game.
 func _bd_cars() -> void:
 	var cars := TrafficView.new()
-	cars.setup(_sim.traffic, _life.tick_fraction)
+	cars.setup(_sim.traffic, _life.tick_fraction, _sim)
 	add_child(cars)
 	TrafficView.premade.clear()
 

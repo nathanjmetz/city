@@ -191,11 +191,12 @@ func _check_motion() -> void:
 
 
 ## Household cars aren't all shut in the garage (look critic round 0,
-## 2026-10-29: "empty driveways and shop lots"): about two in three the
-## simulation parks in a home's garage are drawn out on the drive in front
-## of its bay, the same ones on every computer and after a load, clear of
-## every other car and back from the sidewalk. Only the drawing changes:
-## the simulation and its save still have them in the garage.
+## 2026-10-29: "empty driveways and shop lots"): on the desktop about two in
+## three the simulation parks in a home's garage are drawn out on the drive
+## in front of its bay, the same ones on every computer, in a neighbor's
+## town and in a town just loaded, clear of every other car and back from
+## the sidewalk. Only the drawing changes: the simulation and its save
+## still have them in the garage. The browser draws its cars as before.
 func _check_driveways() -> void:
 	var sim := CitySim.new()
 	PerfTown.build(sim, "small")
@@ -204,62 +205,79 @@ func _check_driveways() -> void:
 	var t: TrafficSim = sim.traffic
 	var saved := var_to_bytes(t.to_dict())
 	var view := TrafficView.new()
-	view.setup(t, func(): return 0.0)
+	view.setup(t, func(): return 0.0, sim)
 	view._rebuild_parked()
-	var drawn := {}  # x,z of every front bumper drawn
-	for item in view._parked:
-		drawn[_xz(item[0])] = item[0]
-	var garaged := 0
-	var shown := 0
+	var bodies := _bodies(view)
+	# Each car the simulation has in sight is drawn where it is; what's left
+	# over must each be a home garage's car, out on the drive in front of it.
+	var left := bodies.duplicate()
 	var visible := 0
-	var bad_spot := []
+	var lost := []
 	for car in t.parked:
-		var key := _xz(Terrain.stand(car.pos))
 		if not car.hidden:
 			visible += 1
+			if not _take(left, Terrain.stand(car.pos)):
+				lost.append(car.id)
+	var garaged := 0
+	var shown := 0
+	var bad_spot := []
+	for car in t.parked:
+		if not car.hidden or not car.at_place.begins_with("lot:") or car.kind == "golf_cart" \
+				or int(sim.buildings[car.at_place.substr(4)].zone) != ZoneMap.Zone.RESIDENTIAL:
 			continue
-		var res: bool = car.at_place.begins_with("lot:") and int(sim.buildings[car.at_place.substr(4)].zone) == ZoneMap.Zone.RESIDENTIAL
-		if drawn.has(key):
-			bad_spot.append(car.id)  # drawn inside the garage
-		var out := _xz(Terrain.stand(car.pos - car.face * TrafficView.DRIVE_OUT))
-		if res and car.kind != "golf_cart":
-			garaged += 1
-			if drawn.has(out):
-				shown += 1
-				var lot: Dictionary = sim.lots[car.at_place.substr(4)]
-				var mid: Vector3 = SiteLayout.frame(lot).affine_inverse() * (car.pos - car.face * (TrafficView.DRIVE_OUT + car.len * 0.5))
-				if mid.z < TrafficView.DRIVE_MIN_Z:
-					bad_spot.append(car.id)  # over the sidewalk
-		elif drawn.has(out):
-			bad_spot.append(car.id)  # a bay or deck opened up
+		garaged += 1
+		var back: Vector3 = car.pos - car.face * TrafficView.DRIVE_OUT
+		if _take(left, Terrain.stand(back)):
+			shown += 1
+			var inv := SiteLayout.frame(sim.lots[car.at_place.substr(4)]).affine_inverse()
+			if (inv * (back - car.face * car.len * 0.5)).z < TrafficView.DRIVE_MIN_Z or (inv * (back - car.face * car.len)).z < 0.0:
+				bad_spot.append(car.id)  # over the sidewalk
+	_check(lost.is_empty(), "the cars on drives, at stalls and at the curb are still drawn where they are (%d) %s" % [visible, lost])
 	_check(garaged > 50, "the small town parks its household cars in their garages (%d)" % garaged)
 	var share := float(shown) / maxf(garaged, 1)
 	_check(share > 0.5 and share < 0.75, "about two in three of them are drawn out on the drive (%d of %d)" % [shown, garaged])
-	_check(view._parked.size() >= visible + shown, "the cars on drives, at stalls and at the curb still are (%d)" % visible)
-	_check(bad_spot.is_empty(), "none is drawn in a garage, a bay or over the sidewalk %s" % [bad_spot.slice(0, 5)])
+	_check(left.is_empty() and bad_spot.is_empty(),
+		"nothing is drawn in a garage, a bay or over the sidewalk %s %s" % [left.slice(0, 3), bad_spot.slice(0, 5)])
 	var crowded := []
-	var fronts: Array = drawn.values()
-	for i in fronts.size():
-		for j in range(i + 1, fronts.size()):
-			if Vector2(fronts[i].x - fronts[j].x, fronts[i].z - fronts[j].z).length() < 2.0:
-				crowded.append(fronts[i])
+	for i in bodies.size():
+		for j in range(i + 1, bodies.size()):
+			if Vector2(bodies[i].x - bodies[j].x, bodies[i].z - bodies[j].z).length() < 2.0:
+				crowded.append(bodies[i])
 	_check(crowded.is_empty(), "no two cars are drawn on top of each other %s" % [crowded.slice(0, 3)])
 	_check(var_to_bytes(t.to_dict()) == saved and t.parked.all(func(c): return c.spot >= 0),
 		"the simulation and its save are untouched (the cars are still in the garage there)")
-	# Every computer, and the town loaded again, shows the same ones.
+	# A neighbor's town, and a town just loaded, never step their traffic
+	# before they are drawn: the same cars stand on the same drives at once.
 	var copy := CitySim.new()
 	copy.from_dict(sim.to_dict())
-	copy.traffic._sim = copy  # as its first tick does
 	var again := TrafficView.new()
-	again.setup(copy.traffic, func(): return 0.0)
+	again.setup(copy.traffic, func(): return 0.0, copy)
 	again._rebuild_parked()
-	var same := again._parked.size() == view._parked.size()
-	for item in again._parked:
-		same = same and drawn.has(_xz(item[0]))
-	_check(same, "a loaded copy draws the very same cars on the very same drives (%d)" % again._parked.size())
+	var mine := bodies.map(func(p): return _xz(p))
+	var theirs := _bodies(again).map(func(p): return _xz(p))
+	mine.sort()
+	theirs.sort()
+	_check(copy.traffic._sim == null and mine == theirs,
+		"a neighbor's or a just-loaded town that hasn't ticked draws the very same cars on the very same drives (%d)" % theirs.size())
+	# Desktop only, where the tier allows: Low and the browser draw only the
+	# cars the simulation has in sight, so the browser's count and cap are
+	# as they were.
+	var tiers := []
+	for tier in GraphicsQuality.BUDGETS.size():
+		for web in [false, true]:
+			GraphicsQuality.budget = GraphicsQuality.budget_for(tier, web)
+			view._rebuild_parked()
+			tiers.append([tier, web, _bodies(view).size()])
+	GraphicsQuality.budget = GraphicsQuality.INACTIVE.duplicate()
+	view._rebuild_parked()
+	var tiers_ok := true
+	for row in tiers:
+		var want: int = visible if row[1] or row[0] == 0 else bodies.size()
+		tiers_ok = tiers_ok and row[2] == want
+	_check(tiers_ok, "cars go out on the drive from Medium up on the desktop, never on Low or in the browser %s" % [tiers])
 	# Drawn in batches of their own, filled when the camera moves.
 	view._ready()
-	var eye: Vector3 = fronts[0] + Vector3(0, 60, 0)
+	var eye: Vector3 = bodies[0] + Vector3(0, 60, 0)
 	view._reach_far = TrafficView.FAR
 	view._reach_near = TrafficView.NEAR
 	view._fill_parked(eye, -1.0, true)
@@ -270,6 +288,19 @@ func _check_driveways() -> void:
 				in_batches += mi.multimesh.visible_instance_count
 	_check(in_batches == view._parked_drawn and in_batches == view._parked.size(),
 		"every parked car in reach is in the batches (%d of %d)" % [in_batches, view._parked.size()])
+	# Not every frame: panning 2 m a frame with the near reach drifting (a
+	# crowded road pulling it under 160 m) refills about once in 10 frames,
+	# and a car parking every frame refills at most every few.
+	var fills := 0
+	for f in 10:
+		view._reach_near = 150.0 + f * 0.5
+		view._fill_parked(eye + Vector3(2.0 * (f + 1), 0, 0), -1.0, false)
+		fills += 1 if view._pfill_age == 0 else 0
+	var busy := 0
+	for f in 12:
+		view._fill_parked(eye, -1.0, true)
+		busy += 1 if view._pfill_age == 0 else 0
+	_check(fills <= 2 and busy <= 3, "the parked batches aren't refilled every frame (%d in 10 panning, %d in 12 parking)" % [fills, busy])
 	# Far off, every body style is drawn as its kind's one simple model, so
 	# every kind with body styles has a batch for it (far sedans had none and
 	# weren't drawn, 2026-10-29).
@@ -277,6 +308,24 @@ func _check_driveways() -> void:
 	_check(VehicleModels.VARIANTS.keys().all(func(k): return keys.has(k)), "every kind's far model has a batch")
 	view.free()
 	again.free()
+
+
+## The front bumper of every body a view draws parked (not trailers).
+static func _bodies(view: TrafficView) -> Array:
+	var out := []
+	for item in view._parked:
+		if item[2].origin.is_equal_approx(item[0]):
+			out.append(item[0])
+	return out
+
+
+## Takes the point at `p` out of `list`; false if none is there.
+static func _take(list: Array, p: Vector3) -> bool:
+	for i in list.size():
+		if Vector2(list[i].x - p.x, list[i].z - p.z).length() < 0.05:
+			list.remove_at(i)
+			return true
+	return false
 
 
 static func _xz(p: Vector3) -> Vector2i:
