@@ -77,6 +77,10 @@ static func _tw_start(seed: int, to_curb: float, lot: Dictionary, storeys: int, 
 			var pr := RandomNumberGenerator.new()
 			pr.seed = hash([seed, "prewar form"])
 			kind = "deco" if storeys >= 14 or pr.randf() < 0.3 else "chicago"
+			# Flats on an old street are a 1920s apartment tower, not an
+			# office block with flats in it.
+			if homes:
+				kind = "flats"
 		else:
 			kind = _tw_form(seed, b.half * 2.0, homes)
 	match kind:
@@ -85,6 +89,7 @@ static func _tw_start(seed: int, to_curb: float, lot: Dictionary, storeys: int, 
 		"pomo": b._tw_pomo(to_curb, b.half * 2.0, storeys)
 		"podium": b._tw_podium(to_curb, b.half * 2.0, storeys)
 		"tubes": b._tw_tubes(to_curb, b.half * 2.0, storeys)
+		"flats": b._tw_flats(to_curb, b.half * 2.0, storeys)
 		_:
 			if homes:
 				b._tw_slab(to_curb, b.half * 2.0, storeys)
@@ -952,6 +957,124 @@ func _tw_podium(to_curb: float, width: float, storeys: int) -> void:
 	if blade:
 		var bx := tx + (tw * 0.5 - 0.6) * (1.0 if rng.randf() < 0.5 else -1.0)
 		_box("paint", Vector3(0.8, mech + 12.0, td * 0.8), Vector3(bx, top + (mech + 12.0) * 0.5 - 2.0, tz), Color("#d9dde0"))
+
+
+# ---------------------------------------------------------------- 1920s apartment towers
+
+const TW_FLATS_BRICK := ["#9b5a42", "#8a4a38", "#b07a55", "#c9a77c", "#7a4234"]  # red, dark red, tan, buff, brown
+
+
+## A 1920s apartment tower (Chicago's Lake Shore Drive and Sheridan Road
+## co-ops, Indianapolis's Meridian Street apartment buildings): a
+## limestone base of two storeys behind a strip of lawn and a canvas
+## canopy out to the curb; a brick shaft of paired double-hung windows
+## with stone sills, limestone quoins at the corners and a belt course
+## every few floors; a cornice, and on the taller ones a set-back
+## penthouse storey of arched windows under a hipped tile roof that hides
+## the water tank.
+func _tw_flats(to_curb: float, width: float, storeys: int) -> void:
+	var w := minf(width - 4.0, rng.randf_range(24.0, 36.0))
+	var d := minf(depth - 8.0, rng.randf_range(20.0, 26.0))
+	if w < 14.0 or d < 12.0:
+		_tw_chicago(to_curb, width, storeys)
+		return
+	var zf := rng.randf_range(3.0, 6.0)
+	var cz := zf + d * 0.5
+	var ground_h := 4.6
+	var floor_h := 3.2
+	var base_f := 2
+	var y_base := ground_h + floor_h * (base_f - 1)
+	var top := ground_h + floor_h * (storeys - 1)
+	var brick := Color(_pick(TW_FLATS_BRICK))
+	var stone := Color(_pick(TW_LIMESTONE))
+	var tile := Color(_pick(["#8a3b2a", "#5f6b4e", "#4a4a4c"]))  # red tile, green tile, slate
+	var pent := storeys >= 14
+	if _far:
+		_tw_far_box(Vector3(w, y_base, d), Vector3(0, y_base * 0.5, cz), stone, 0.4)
+		_tw_far_box(Vector3(w, top - y_base, d), Vector3(0, (y_base + top) * 0.5, cz), brick, 0.5)
+		if pent:
+			_tw_far_box(Vector3(w - 8.0, 4.0, d - 8.0), Vector3(0, top + 2.0, cz), stone, 0.3)
+			_tw_pyramid(Vector3(0, top + 4.0, cz), w - 7.0, d - 7.0, 4.0, tile)
+		return
+	# A strip of lawn and shrubs in front, a walk under the canopy.
+	_flat_rect("drive", -width * 0.5, width * 0.5, -to_curb + RoadStyle.CURB_WIDTH, -to_curb + RoadStyle.CURB_WIDTH + 1.8, 0.06)
+	_flat_rect("drive", -1.6, 1.6, -to_curb + RoadStyle.CURB_WIDTH, zf, 0.065)
+	var sx := -w * 0.5 + 0.8
+	while sx < w * 0.5 - 0.8:
+		if absf(sx) > 2.6:
+			_shrub(Vector3(sx, 0, zf - 0.8), rng.randf_range(0.45, 0.7))
+		sx += rng.randf_range(1.6, 2.4)
+	# The base: rusticated limestone, tall windows, the entry.
+	_box("brick", Vector3(w, y_base, d), Vector3(0, y_base * 0.5, cz), stone)
+	_box("brick", Vector3(w, top - y_base, d), Vector3(0, (y_base + top) * 0.5, cz), brick)
+	_box("paint", Vector3(w + 0.3, 0.45, d + 0.3), Vector3(0, y_base + 0.1, cz), stone.lightened(0.08))  # belt course
+	var bays := maxi(4, roundi(w / 3.6))
+	var bw := w / bays
+	var side_bays := maxi(3, roundi(d / 3.6))
+	var sbw := d / side_bays
+	for i in bays:
+		var x := -w * 0.5 + (i + 0.5) * bw
+		if absf(x) < 2.4:
+			continue
+		_glass(Vector3(x, 2.2, zf - 0.03), Vector3(-1, 0, 0), bw - 1.4, 2.4, rng.randf_range(0.2, 0.6))
+		_glass(Vector3(x, ground_h + 1.6, zf - 0.03), Vector3(-1, 0, 0), bw - 1.6, 1.8, rng.randf_range(0.2, 0.6))
+	_box("brick", Vector3(3.6, 4.2, 0.4), Vector3(0, 2.1, zf - 0.2), stone.lightened(0.1))  # entry surround
+	_box("paint", Vector3(2.0, 2.8, 0.08), Vector3(0, 1.4, zf - 0.42), Color("#3b2f22"))  # bronze doors
+	# The canopy: canvas on brass poles out to the curb (Chicago's apartment
+	# canopies run across the parkway so residents step out of a cab dry).
+	var cz0 := -to_curb + RoadStyle.CURB_WIDTH + 0.4
+	var canvas := Color(_pick(["#1f3a2a", "#5a1f22", "#1f2a44", "#2a2a2a"]))
+	var clen := zf - cz0
+	if clen > 2.0:
+		_box("paint", Vector3(2.4, 0.35, clen), Vector3(0, 3.0, cz0 + clen * 0.5), canvas)
+		for z in [cz0 + 0.2, cz0 + clen * 0.5]:
+			for s in [-1.0, 1.0]:
+				_box("metal", Vector3(0.07, 2.85, 0.07), Vector3(s * 1.1, 1.42, z), Color("#b59a5a"))
+	# The shaft: paired double-hung windows with stone sills, quoins, and a
+	# belt course every fourth floor.
+	for f in range(base_f, storeys):
+		var y := ground_h + floor_h * (f - 1) + 1.6
+		for face in _tw_faces(w, d, cz):
+			var n: int = bays if face[3] else side_bays
+			var len_b: float = bw if face[3] else sbw
+			var out: Vector3 = face[1].cross(Vector3.UP)
+			for i in n:
+				var c: Vector3 = face[0] + face[1] * (-face[2] * 0.5 + (i + 0.5) * len_b)
+				c.y = y
+				for k in [-1.0, 1.0]:
+					_glass(c + face[1] * k * 0.55, face[1], 0.85, 1.7, rng.randf_range(0.1, 0.7))
+				if fine:
+					_box("paint", Vector3(2.3, 0.1, 0.18), c + out * 0.06 + Vector3(0, -0.92, 0), stone, _tw_yaw(face[1]))  # sill
+		if (f - base_f) % 4 == 3:
+			_box("paint", Vector3(w + 0.16, 0.3, d + 0.16), Vector3(0, ground_h + floor_h * (f - 1) + 0.15, cz), stone)
+	for qx in [-1.0, 1.0]:
+		for qz in [-1.0, 1.0]:
+			var q := Vector3(qx * (w * 0.5 - 0.35), 0, cz + qz * (d * 0.5 - 0.35))
+			var y := y_base
+			while y < top - 0.6:
+				_box("brick", Vector3(0.9 if int(y / 0.6) % 2 == 0 else 0.75, 0.55, 0.9 if int(y / 0.6) % 2 == 1 else 0.75), q + Vector3(0, y + 0.3, 0), stone)
+				y += 0.6
+	# The cornice, then the penthouse and its tile roof, or a parapet.
+	_box("paint", Vector3(w + 1.4, 0.7, d + 1.4), Vector3(0, top + 0.35, cz), stone.lightened(0.06))
+	if pent:
+		var pw := w - 8.0
+		var pd := d - 8.0
+		_box("brick", Vector3(pw, 4.0, pd), Vector3(0, top + 2.7, cz), stone)
+		for face in _tw_faces(pw, pd, cz):
+			var n := maxi(3, roundi(face[2] / 3.0))
+			for i in n:
+				var c: Vector3 = face[0] + face[1] * (-face[2] * 0.5 + (i + 0.5) * face[2] / n)
+				c.y = top + 2.5
+				_glass(c, face[1], 1.4, 2.4, 0.2)
+		_tw_pyramid(Vector3(0, top + 4.7, cz), pw + 1.0, pd + 1.0, minf(pw, pd) * 0.35, tile)
+	else:
+		_box("brick", Vector3(w, 1.0, d), Vector3(0, top + 1.2, cz), brick)
+		_tw_roof(w, d, cz, top + 1.7)
+		if storeys >= 6:
+			_tw_tank(Vector3(rng.randf_range(-w * 0.2, w * 0.2), top + 1.7, cz + d * 0.15))
+	for s in [-1.0, 1.0]:
+		var pick := TreeField.pick(rng)
+		trees.append([Vector3(s * (width * 0.5 - 2.0), 0, -to_curb + RoadStyle.CURB_WIDTH + 0.9), pick[0], pick[1], rng.randf_range(0.6, 0.8)])
 
 
 # ---------------------------------------------------------------- parts
