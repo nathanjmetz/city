@@ -84,6 +84,8 @@ var _mats := {
 	"apron": RoadStyle.material(Color(0.5, 0.44, 0.38)),  # tinted, textured-look concrete
 	"tunnel": RoadStyle.material(Color(0.1, 0.1, 0.12, 0.45), true),
 	"domes": Surfaces.concrete(Junction.DOMES_COLOR),
+	"iron": _iron(Color(0.17, 0.16, 0.15)),  # grates and manhole covers
+	"drain": RoadStyle.material(Color(0.03, 0.03, 0.03)),  # the dark under them
 	"barricade": _vertex_colour(),
 	"galvanized": _galvanized(),
 	"marker": RoadStyle.material(Color(0.95, 0.76, 0.1)),  # end terminal object marker
@@ -1073,6 +1075,14 @@ func _median_trees(id: int, pts: PackedVector3Array, type: int) -> Array:
 
 ## Post, white rail and orange rail of a Type III barricade.
 const BARRICADE := [Color(0.52, 0.53, 0.52), Color(0.9, 0.9, 0.88), Color(0.93, 0.42, 0.08)]
+
+
+## Cast iron worn smooth by tyres: dark, a little metallic, with a dull sheen.
+static func _iron(color: Color) -> StandardMaterial3D:
+	var m := RoadStyle.material(color)
+	m.metallic = 0.45
+	m.roughness = 0.55
+	return m
 
 
 static func _vertex_colour() -> StandardMaterial3D:
