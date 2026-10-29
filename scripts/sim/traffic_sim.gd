@@ -2527,6 +2527,10 @@ func place(ref: String) -> Dictionary:
 		pl = _lot_place(ref)
 	elif ref.begins_with("svc:"):
 		pl = _park_place(ref)
+		# Any other service is a stop on the street out front (crews and
+		# deliveries while it goes up), as for any site.
+		if pl.is_empty() and _sites.has(ref):
+			pl = _site_place(_sites[ref])
 	elif _sites.has(ref):
 		pl = _site_place(_sites[ref])
 	if pl.is_empty():

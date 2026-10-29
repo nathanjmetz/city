@@ -167,6 +167,7 @@ jobs:
           run_test tests/test_mail.gd
           run_test tests/test_economy.gd
           run_test tests/test_construction.gd
+          run_test tests/test_local_supply.gd
           run_test tests/test_builders.gd
           run_test tests/test_telemetry.gd
           run_test tests/test_pollution.gd

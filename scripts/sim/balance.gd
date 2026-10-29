@@ -432,6 +432,23 @@ const NEEDS_IMPORT_SLOW := 0.25
 ## yard a mile past a nearby plant.
 const NEEDS_CONCRETE_YD_PER_HOME := 45
 const NEEDS_CONCRETE_HAUL := 1.0
+## Local materials (LocalSupply, Brawn's pick #12): a job site's big loads
+## come from the town's own quarry, sawmill or metal works when it has one.
+## How far each will truck a load, metres: ready-mix must be placed within
+## 90 minutes of batching (ASTM C94), so plants serve about 25 km; hot-mix
+## asphalt leaves the plant at about 150 C and is hauled about 40 km at most;
+## crushed stone and fill pay to haul about 50 km (NSSGA); lumber and
+## fabricated steel go anywhere in the county.
+const LOCAL_SUPPLY_REACH := {"ready_mix": 25_000.0, "asphalt": 40_000.0, "stone": 50_000.0,
+	"lumber": 80_000.0, "steel": 80_000.0}
+## What the town's quarry earns on one load it sends a job site, dollars:
+## a 10 yd truck of ready-mix at about $165 a yard (NRMCA 2024), a 20 ton
+## tandem of crushed stone at the quarry price plus a short haul, a tandem
+## of fill dirt, and 20 tons of hot-mix at about $75 a ton (INDOT bid
+## averages). Sawmills and metal works are zoned factories without books of
+## their own, so their loads count but pay no one here.
+const LOCAL_SUPPLY_PRICE := {"ready-mix concrete": 1650, "curb concrete": 1650, "crushed stone": 450,
+	"fill dirt": 200, "hot-mix asphalt": 1500}
 ## Builders: about one crew per 1,500 people (at least 2), each with about
 ## 6 houses going up at once; past that, labor costs climb about $15,000 a
 ## home at double the load.
