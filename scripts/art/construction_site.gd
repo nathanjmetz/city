@@ -61,6 +61,7 @@ var _final := MeshInstance3D.new()
 var _ground := MeshInstance3D.new()
 var _found: MeshInstance3D
 var _shell: MeshInstance3D
+var _forms: MeshInstance3D  # the footing forms while the concrete goes in
 var _pad: MeshInstance3D
 var _props: MeshInstance3D
 var _frame: Array = []  # MeshInstance3D per FrameBuilder chunk
@@ -174,11 +175,24 @@ func _show(st: Dictionary) -> void:
 	var show_found := stage in ["foundation", "frame", "dry_in"]
 	if show_found and _found == null:
 		_found = _clipped(CONCRETE, CONCRETE)
+		_param(_found, "keep", _plan_keep())
 	if _found != null:
 		_found.visible = show_found
 		if show_found:
 			var h := _found_h * clampf(t * 1.4, 0.15, 1.0) if stage == "foundation" else _found_h
 			_param(_found, "cut", h)
+	# Forms set round the footings before the pour and stripped after:
+	# aluminum wall forms on a house, lumber edge forms on a slab.
+	var show_forms := stage == "foundation" and t < 0.75
+	if show_forms and _forms == null:
+		var fc := Color("#a7abae") if _profile == "house" else Color("#c4a26e")
+		_forms = _clipped(fc, fc)
+		_param(_forms, "inflate", 0.07)
+		_param(_forms, "walls_only", true)
+		_param(_forms, "cut", _found_h + 0.15)
+		_param(_forms, "keep", _plan_keep())
+	if _forms != null:
+		_forms.visible = show_forms
 	# The frame, member by member up close.
 	var frame_chunks := 0
 	if stage == "frame":
@@ -208,15 +222,18 @@ func _show(st: Dictionary) -> void:
 			# frame and then of the finished walls.
 			if stage == "frame":
 				_shell_look(FRAME_FAR[_frame_kind], FRAME_FAR[_frame_kind], 0.0)
+				_param(_shell, "pattern", 0)
 				_param(_shell, "cut", _found_h + span * t)
 				_param(_shell, "floor_cut", _found_h)
 			elif stage == "dry_in":
 				_shell_look(colors[0], colors[1], 0.04)
+				_param(_shell, "pattern", _wrap_pattern())
 				_param(_shell, "cut", _found_h + span * t)
 				_param(_shell, "floor_cut", _found_h)
 			else:
 				# The roof was shingled while it was dried in: only walls are wrapped.
 				_shell_look(colors[0], colors[1], 0.08)
+				_param(_shell, "pattern", _wrap_pattern())
 				_param(_shell, "cut", 1000.0)
 				_param(_shell, "floor_cut", _found_h + span * t)
 	_final.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
@@ -281,7 +298,7 @@ func _finish() -> void:
 	_ground.visible = true
 	if _footing != null:
 		_footing.visible = true
-	for n in [_found, _shell, _pad, _entrance, _props, _stone, _mat]:
+	for n in [_found, _forms, _shell, _pad, _entrance, _props, _stone, _mat]:
 		if n != null:
 			n.queue_free()
 	for n in _frame:
@@ -289,6 +306,7 @@ func _finish() -> void:
 	_frame.clear()
 	_found = null
 	_shell = null
+	_forms = null
 	_pad = null
 	_entrance = null
 	_props = null
@@ -343,7 +361,21 @@ func _shell_look(wall: Color, roof: Color, inflate: float) -> void:
 	mats[0].set_shader_parameter("roof_color", roof)
 
 
-static func _param(mi: MeshInstance3D, param: String, v: float) -> void:
+## The building's plan with a little room for porches and stoops.
+func _plan_keep() -> Vector4:
+	var g := _core.grow(0.6)
+	return Vector4(g.position.x, g.position.z, g.end.x, g.end.z)
+
+
+## What the closed-in walls show: house wrap's print and felt laps on a
+## house, block coursing where the walls are concrete block.
+func _wrap_pattern() -> int:
+	if _profile == "house":
+		return 1
+	return 2 if _profile in ["shop", "civic", "well"] else 0
+
+
+static func _param(mi: MeshInstance3D, param: String, v: Variant) -> void:
 	for mat: ShaderMaterial in mi.get_meta("mats"):
 		mat.set_shader_parameter(param, v)
 
@@ -361,6 +393,11 @@ uniform bool walls_only = false;
 uniform bool glazing = false;
 uniform vec3 wall_color : source_color = vec3(0.9);
 uniform vec3 roof_color : source_color = vec3(0.3);
+// 0 plain, 1 house wrap (printed rows, felt laps on the roof), 2 block.
+uniform int pattern = 0;
+// Drawn only inside this plan rectangle (x0, z0, x1, z1): the footings
+// go under the building, not under its yard fence and walks.
+uniform vec4 keep = vec4(-1e6, -1e6, 1e6, 1e6);
 varying vec3 lp;
 varying vec3 ln;
 varying float plant;
@@ -372,11 +409,33 @@ void vertex() {
 	plant = COLOR.g > COLOR.r * 1.2 && COLOR.g > COLOR.b * 1.25 ? 1.0 : 0.0;
 }
 void fragment() {
+	if (lp.x < keep.x || lp.z < keep.y || lp.x > keep.z || lp.z > keep.w) {
+		discard;
+	}
 	if (lp.y > cut || lp.y < floor_cut || plant > 0.5 || walls_only && abs(ln.y) > 0.3 && !glazing) {
 		discard;
 	}
 	ALBEDO = abs(ln.y) > 0.3 ? roof_color : wall_color;
 	ROUGHNESS = 0.9;
+	float run = abs(ln.x) > abs(ln.z) ? lp.z : lp.x;
+	if (pattern == 1 && !glazing) {
+		if (abs(ln.y) <= 0.3) {
+			// House wrap comes in 9 ft rolls run round the house: the
+			// maker's print in a row along each roll, a taped lap between.
+			float row = fract(lp.y / 2.74);
+			float dash = step(0.5, fract(run / 1.5)) * step(0.47, row) * step(row, 0.53);
+			ALBEDO = mix(ALBEDO, vec3(0.32, 0.42, 0.58), dash * 0.55);
+			ALBEDO *= 1.0 - 0.06 * step(row, 0.015);
+		} else {
+			// Felt laid in 3 ft courses up the roof, each lap a pale line.
+			ALBEDO = mix(ALBEDO, vec3(0.55), step(fract(lp.y / 0.33), 0.04) * 0.5);
+		}
+	} else if (pattern == 2 && !glazing && abs(ln.y) <= 0.3) {
+		// 8 x 16 in concrete block in running bond, mortar a shade darker.
+		float course = floor(lp.y / 0.203);
+		float joint = step(fract(lp.y / 0.203), 0.05) + step(fract(run / 0.406 + 0.5 * mod(course, 2.0)), 0.025);
+		ALBEDO *= 1.0 - 0.18 * min(joint, 1.0);
+	}
 	if (!FRONT_FACING) {
 		NORMAL = -NORMAL;
 	}
