@@ -174,6 +174,36 @@ func _init() -> void:
 	corner_lot.corner = false
 	_check(SiteLayout.corner_side(net, corner_lot) == 0.0, "a lot mid-block has no side street")
 	_check(styles.size() == 5, "every kind of duplex and the fourplex come up (%s)" % str(styles.keys()))
+	# Postwar walk-ups: the split-entry and mansard kinds fit their lots,
+	# and a third each of the low ones take them.
+	for kind in ["split", "walkmansard"]:
+		for w in [24.0, 28.0, 36.0]:
+			for st in [2, 3]:
+				MetroBuilder.force_row = kind
+				var out := MetroBuilder.build_apartments(7 + st, 3.9, {"width": w, "depth": 45.0, "era": "postwar"}, st)
+				MetroBuilder.force_row = ""
+				_check(out.size() >= 3 and _inside(HouseBuilder.last_masses, w * 0.5, 45.0),
+					"a %d-storey %s walk-up fits its %d m lot" % [st, kind, w])
+	# Shops with flats built new on postwar and recent streets: their own
+	# era's fronts, wall to wall on the lot; prewar streets keep the old ones.
+	var infill := {"prewar": 0, "postwar": 0, "recent": 0}
+	for era in ["prewar", "postwar", "recent"]:
+		for s in 100:
+			var w: float = [14.0, 18.0, 24.0][s % 3]
+			var lot := {"width": w, "depth": 40.0, "era": era}
+			if MainInfill.wanted(DenseBuilder._start(s, lot), 2 + s % 3):
+				infill[era] += 1
+				var out := DenseBuilder.build_mixed(s, 3.9, lot, 2 + s % 3)
+				_check(out.size() >= 3 and _inside(HouseBuilder.last_masses, w * 0.5, 40.0),
+					"a %s shop with flats (%d) fits its %d m lot" % [era, s, w])
+	_check(infill.prewar == 0 and infill.postwar > 30 and infill.postwar < 70 and infill.recent > 60,
+		"postwar and recent streets build shops with flats of their own era (%s)" % str(infill))
+	_check(not MainInfill.wanted(DenseBuilder._start(3, {"width": 20.0, "depth": 40.0, "era": "recent"}), 5),
+		"five storeys and up stay the towers' job")
+	var kinds := [0, 0, 0]
+	for s in 300:
+		kinds[absi(hash([s, "walkup kind"])) % 3] += 1
+	_check(kinds.min() > 70, "the three postwar walk-up kinds share the low apartments (%s)" % str(kinds))
 	print("FAILED" if failed else "ALL PASSED")
 	quit(1 if failed else 0)
 

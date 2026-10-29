@@ -206,7 +206,10 @@ func _apartments(to_curb: float, width: float, storeys: int) -> void:
 
 static func build_mixed(seed: int, to_curb: float, lot: Dictionary, storeys: int, spec := {}) -> Array:
 	var b := _start(seed, lot, spec)
-	b._mixed(to_curb, b.half * 2.0, storeys)
+	if MainInfill.wanted(b, storeys):
+		MainInfill.draw(b, to_curb, storeys)
+	else:
+		b._mixed(to_curb, b.half * 2.0, storeys)
 	b._service_yard(b.era == "prewar")
 	return b._done()
 

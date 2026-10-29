@@ -68,7 +68,7 @@ func _init() -> void:
 		if kind in ["care", "careshop"]:
 			HouseBuilder.owner_care = i - 2
 		var w: float = {"care": 24.0, "careshop": 26.0, "row": 22.0, "apartments": 36.0, "mixed": 22.0, "main": 16.0 + 4.0 * (i % 3), "mainold": 16.0 + 4.0 * (i % 3), "mainrestored": 16.0 + 4.0 * (i % 3), "office": 40.0, "towers": 44.0, "hometowers": 54.0, "towerfar": 44.0, "flats": 24.0, "courtyard": 48.0, "walkup": 26.0, "garage": 44.0, "growth": [40.0, 40.0, 44.0, 56.0, 64.0, 64.0, 72.0][i % 7], "oddlots": [26.0, 22.0, 20.0, 26.0, 18.0][i % 5],
-			"grown": 22.0, "rows": 22.0, "garden": 40.0, "duplex": [16.0, 20.0, 24.0, 24.0, 22.0][i],
+			"grown": 22.0, "rows": 22.0, "garden": 40.0, "walkups": 32.0, "infill": [16.0, 20.0, 24.0, 18.0, 26.0][i], "duplex": [16.0, 20.0, 24.0, 24.0, 22.0][i],
 			"corner": [14.0, 13.0, 12.0, 22.0, 20.0][i], "cottage": [16.0, 20.0, 22.0, 18.0, 24.0][i], "cornerflats": [14.0, 18.0, 12.0, 16.0, 16.0][i]}.get(k, 20.0)
 		var sd := seed * 100 + i
 		match k:
@@ -128,6 +128,20 @@ func _init() -> void:
 				# Row homes of each kind, two storeys and three.
 				MetroBuilder.force_row = ["townhomes", "townhomes", "mansard", "mansard", "row"][i]
 				meshes = MetroBuilder.build_row(sd, 3.9, {"width": w, "depth": 45.0}, 3, 2 + i % 2)
+				MetroBuilder.force_row = ""
+			"infill":
+				# Main Street shops with flats built new: postwar, then recent.
+				var era: String = ["postwar", "postwar", "recent", "recent", "recent"][i]
+				for t in 40:
+					sd = seed * 100 + i * 50 + t
+					var probe := DenseBuilder._start(sd, {"width": w, "depth": 40.0, "era": era})
+					if MainInfill.wanted(probe, 3):
+						break
+				meshes = DenseBuilder.build_mixed(sd, 3.9, {"width": w, "depth": 40.0, "era": era}, [2, 3, 2, 3, 4][i])
+			"walkups":
+				# Postwar walk-ups: split-entry, mansard and the plain block.
+				MetroBuilder.force_row = ["split", "split", "walkmansard", "walkmansard", "plain"][i]
+				meshes = MetroBuilder.build_apartments(sd, 3.9, {"width": w, "depth": 50.0, "era": "postwar"}, [2, 3, 2, 3, 3][i])
 				MetroBuilder.force_row = ""
 			"garden":
 				MetroBuilder.force_row = "garden"

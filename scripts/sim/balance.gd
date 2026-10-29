@@ -1424,6 +1424,12 @@ const TRADE_PRICE := {
 	"steel": 19_000.0,
 	"rv": 44_000.0,
 	"co2": 1_200.0,
+	# Raw loads a town ships (TradeHaul): a 1,000 bu hopper of soft red
+	# winter wheat at $5.50; a 20 ton tandem of crushed stone at the quarry's
+	# $16 a ton (USGS 2023); a 180 barrel crude tanker at $70.
+	"wheat": 5_500.0,
+	"ore": 320.0,
+	"crude oil": 12_600.0,
 }
 ## Price for a good with no entry above.
 const TRADE_PRICE_DEFAULT := 100.0
@@ -1766,6 +1772,28 @@ const AMENITIES := {
 	"trailhead": {"cost": 350_000, "upkeep": 2_500, "size": Vector2(50, 36),
 		"value": 0.01, "value_reach": 300.0, "happy": 0.03, "happy_reach": 1500.0},
 }
+# --- Saturday farmers' market (FarmersMarket) -------------------------------
+# Brawn's pick #19 (Farthest Frontier, Anno). Indiana's outdoor markets run
+# Saturday mornings from May through October, most on the courthouse square
+# or under a park's shelter. A small-town market has about 10 to 25 vendors
+# (USDA AMS National Farmers Market Managers Survey, 2019).
+
+## Calendar months it runs (May to October) and its day (6 = Saturday).
+const FARMERS_MARKET_MONTHS := [5, 6, 7, 8, 9, 10]
+const FARMERS_MARKET_DAY := 6
+## Most stalls on one market day.
+const FARMERS_MARKET_MAX_VENDORS := 24
+## Share of the town's farms that sell there, percent. Only about 6% of US
+## farms sell straight to people (2017 Census of Agriculture), more near
+## towns; a town's farms here are its whole farm economy, so more of them
+## come with a truck of sweet corn, tomatoes, eggs or beef.
+const FARMERS_MARKET_SHARE := 40
+## What one stall sells on a market day, dollars (a few hundred is typical
+## for a small-town market vendor; USDA AMS survey).
+const FARMERS_MARKET_SALES := 450
+## How far a farm will drive to sell there, metres (about 30 miles).
+const FARMERS_MARKET_REACH := 50_000.0
+
 # --- Tourism and events --------------------------------------------------------
 # Brawn green-lit (2026-10-22): a fairgrounds hub whose fair board grows it
 # and runs a county fair each summer, and the football field as a stadium

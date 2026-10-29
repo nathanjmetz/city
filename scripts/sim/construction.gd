@@ -93,6 +93,16 @@ const PROFILES := {
 		"words": ["Clearing the site", "Footings and the ground slab", "Setting the precast tees",
 			"Topping the decks and ramps", "Spandrels, stairs and the elevator", "Lighting and striping", "Planting"],
 		"deliveries": {"frame": [["flatbed", "precast double tees"]]}},
+	# A high-rise (7 storeys and up): deep foundations (piles or caissons and
+	# a mat), a structural frame topped out floor by floor under a tower
+	# crane, the curtain wall closing it in, then a long fit-out. Mid-size
+	# US apartment and office towers take about 18 to 24 months.
+	"highrise": {"frame": "steel", "weeks": [3, 8, 30, 14, 10, 22, 3], "found": 0.3,
+		"words": ["Clearing and excavating", "Piles and the foundation mat", "Topping out the frame floor by floor",
+			"Closing in the curtain wall", "Facade, roof and elevators", "Finishing the floors inside", "Paving and planting"],
+		"deliveries": {"foundation": [["concrete_mixer", "foundation concrete"]],
+			"frame": [["flatbed", "structural steel"], ["concrete_mixer", "floor deck concrete"]],
+			"dry_in": [["flatbed", "curtain wall panels"]]}},
 	# A phase of a subdivision, before any house (Subdivisions): the land is
 	# cleared and its topsoil stripped and stockpiled, rough graded, the
 	# sanitary sewer and storm drains laid deepest first, then the water

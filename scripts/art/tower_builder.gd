@@ -236,14 +236,28 @@ func _tw_chicago(to_curb: float, width: float, storeys: int) -> void:
 		_tw_far_box(Vector3(w, 1.1, d), Vector3(0, top + 1.35, cz), shaft, 0.0)
 		return
 	_downtown_walk(to_curb, width, zf)
-	# The stone base with its tall shop and lobby windows.
-	_box("brick", Vector3(w, y_base, d), Vector3(0, y_base * 0.5, cz), stone)
-	_box("brick", Vector3(w, top - y_base, d), Vector3(0, (y_base + top) * 0.5, cz), shaft)
-	_box("paint", Vector3(w + 0.3, 0.5, d + 0.3), Vector3(0, y_base + 0.1, cz), stone.lightened(0.08))  # belt course
 	var bays := maxi(3, roundi(w / 6.0))
 	var bw := w / bays
 	var side_bays := maxi(3, roundi(d / 6.0))
 	var sbw := d / side_bays
+	# Before air conditioning every office wanted a window, so a deep block
+	# was built as a U above its base, a light court open to the alley out
+	# back (the Fletcher Trust in Indianapolis, the Rookery and the Monadnock
+	# era in Chicago). Own random numbers, so the builder's draws don't move.
+	var lc := RandomNumberGenerator.new()
+	lc.seed = hash([rng.seed, "light court"])
+	var ck := (3 if bays >= 9 else 1) if bays % 2 == 1 else (4 if bays >= 10 else 2)
+	_court = Vector2.ZERO
+	if storeys >= 8 and d >= 22.0 and (w - ck * bw) * 0.5 >= 6.0 and lc.randf() < 0.6:
+		_court = Vector2(ck * bw, maxf(8.0, d * lc.randf_range(0.38, 0.5)))
+	var zc := zf + d - _court.y
+	_court_z = zc
+	# The stone base with its tall shop and lobby windows.
+	_box("brick", Vector3(w, y_base, d), Vector3(0, y_base * 0.5, cz), stone)
+	_tw_u(w, d, zf, y_base, top - y_base, 0.0, shaft, "brick")
+	if _court != Vector2.ZERO:
+		_tw_roof(_court.x, _court.y, zc + _court.y * 0.5, y_base)
+	_box("paint", Vector3(w + 0.3, 0.5, d + 0.3), Vector3(0, y_base + 0.1, cz), stone.lightened(0.08))  # belt course
 	# Shopfronts and the lobby arch between granite piers.
 	for i in bays:
 		var x := -w * 0.5 + (i + 0.5) * bw
@@ -268,9 +282,20 @@ func _tw_chicago(to_curb: float, width: float, storeys: int) -> void:
 				# showing between them as the mullions.
 				var gw := len_b - 1.3
 				var blinds := rng.randf_range(0.0, 0.6)
+				var sash := [rng.randf_range(0.0, 0.6), rng.randf_range(0.0, 0.6)]
+				if _in_court(c):
+					continue
 				_glass(c, face[1], gw * 0.52, 2.3, blinds)
 				for k in [-1.0, 1.0]:
-					_glass(c + face[1] * k * gw * 0.38, face[1], gw * 0.2, 2.3, rng.randf_range(0.0, 0.6))
+					_glass(c + face[1] * k * gw * 0.38, face[1], gw * 0.2, 2.3, sash[0 if k < 0.0 else 1])
+		# The light court's own walls: plain sash windows, a pair a bay.
+		if _court != Vector2.ZERO:
+			for wall in _court_walls(zc, zf + d):
+				var nb := maxi(1, roundi(float(wall[2]) / 3.2))
+				for i in nb:
+					var c: Vector3 = wall[0] + wall[1] * (-float(wall[2]) * 0.5 + (i + 0.5) * float(wall[2]) / nb)
+					c.y = y
+					_glass(c, wall[1], float(wall[2]) / nb - 1.2, 2.1, lc.randf_range(0.0, 0.6))
 	# Continuous piers up the shaft.
 	for face in _tw_faces(w, d, cz):
 		var n: int = bays if face[3] else side_bays
@@ -279,26 +304,153 @@ func _tw_chicago(to_curb: float, width: float, storeys: int) -> void:
 		for i in n + 1:
 			var c: Vector3 = face[0] + face[1] * (-face[2] * 0.5 + i * len_b) + out * 0.12
 			c.y = (y_base + top) * 0.5
+			if _in_court(c, 0.2):
+				continue
 			_box("brick", Vector3(0.9, top - y_base, 0.9), c, shaft.darkened(0.05))
 	# The attic storey under a deep cornice, then a parapet.
-	_box("paint", Vector3(w + 0.4, 0.6, d + 0.4), Vector3(0, top - floor_h + 0.3, cz), shaft.lightened(0.1))
+	_tw_u(w, d, zf, top - floor_h, 0.6, 0.4, shaft.lightened(0.1), "paint")
 	for face in _tw_faces(w, d, cz):
 		var n: int = bays * 2 if face[3] else side_bays * 2
 		var len_b: float = face[2] / n
 		for i in n:
 			var c: Vector3 = face[0] + face[1] * (-face[2] * 0.5 + (i + 0.5) * len_b)
 			c.y = top - floor_h * 0.5 + 0.2
-			_glass(c, face[1], len_b - 0.9, 1.3, 0.3)
-	_box("paint", Vector3(w + 2.4, 0.8, d + 2.4), Vector3(0, top + 0.4, cz), stone.lightened(0.12))
-	_box("brick", Vector3(w, 1.1, d), Vector3(0, top + 1.35, cz), shaft)
-	_tw_roof(w, d, cz, top + 1.9)
-	_tw_rooftop(w, d, cz, top + 1.9, 0.0, false, true)
-	var tank_at := Vector3(rng.randf_range(-w * 0.25, w * 0.25), top + 1.9, cz + rng.randf_range(-d * 0.2, d * 0.2))
+			if not _in_court(c):
+				_glass(c, face[1], len_b - 0.9, 1.3, 0.3)
+	_tw_u(w, d, zf, top, 0.8, 2.4, stone.lightened(0.12), "paint")
+	_tw_u(w, d, zf, top + 0.8, 1.1, 0.0, shaft, "brick")
+	for r in _court_rects(w, d, zf):
+		_tw_roof(r[0], r[1], r[2], top + 1.9, r[3])
+	var dz := d - _court.y
+	_tw_rooftop(w, dz, zf + dz * 0.5, top + 1.9, 0.0, false, true)
+	var tank_at := Vector3(rng.randf_range(-w * 0.25, w * 0.25), top + 1.9, zf + dz * 0.5 + rng.randf_range(-dz * 0.2, dz * 0.2))
 	if storeys >= 6:  # city water pressure reaches about six floors
 		_tw_tank(tank_at)
 	_box("brick", Vector3(5.0, 3.6, 6.0), Vector3(-w * 0.3, top + 3.7, cz + d * 0.25), shaft.darkened(0.1))  # elevator penthouse
 	if storeys >= 8:
 		_tw_roof_sign(Vector3(0, top + 1.9, zf + 1.6), minf(w * 0.6, 20.0))
+	_tw_alley(w, zf + d, ground_h, floor_h, storeys, lc)
+
+
+## The back of a prewar block, on its alley: a steel service door and a
+## loading door in the base, barred windows, the trash dumpsters, and a
+## steel fire escape zigzagging up the back (or the light court's back
+## wall): stairs and a landing at every floor, the second way out that
+## 1900s-20s codes took before enclosed exit stairs (desktop only).
+func _tw_alley(w: float, zb: float, ground_h: float, floor_h: float, storeys: int, r: RandomNumberGenerator) -> void:
+	var steel := Color("#2b2c2d")
+	var ox := r.randf_range(-w * 0.3, -w * 0.1)
+	_box("paint", Vector3(1.1, 2.3, 0.08), Vector3(ox, 1.15, zb + 0.04), Color("#5a5f63"))  # service door
+	_box("paint", Vector3(3.2, 3.4, 0.08), Vector3(ox - 4.0, 1.7, zb + 0.04), Color("#6c6e6f"))  # loading door
+	for i in 3:
+		var x := w * 0.1 + i * 4.0
+		if x > w * 0.5 - 1.5:
+			break
+		_glass(Vector3(x, 2.4, zb + 0.04), Vector3(1, 0, 0), 1.4, 1.6, 0.5)
+		for k in 4:
+			_box("paint", Vector3(0.03, 1.6, 0.03), Vector3(x - 0.55 + k * 0.37, 2.4, zb + 0.1), steel)  # bars
+	if not fine_parts:
+		return
+	for k in 2:
+		_box("paint", Vector3(1.9, 1.3, 1.6), Vector3(ox + 2.5 + k * 2.2, 0.65, zb + 1.5), Color(["#2f5a3a", "#3a4a6a"][k]))
+		_box("paint", Vector3(1.95, 0.06, 1.65), Vector3(ox + 2.5 + k * 2.2, 1.33, zb + 1.5), Color("#1f2a22"))
+	if storeys < 4:
+		return
+	# The fire escape: on the court's back wall when there is one.
+	var fz := zb - _court.y if _court != Vector2.ZERO else zb
+	var fx := 0.0 if _court != Vector2.ZERO else r.randf_range(-w * 0.15, w * 0.25)
+	var run := 2.6
+	for f in range(1, storeys - 1):
+		var y := ground_h + floor_h * (f - 1)
+		var cz := fz + 0.65
+		_box("paint", Vector3(run + 1.6, 0.06, 1.2), Vector3(fx, y, cz), steel)  # landing grate
+		_box("paint", Vector3(run + 1.6, 0.04, 0.04), Vector3(fx, y + 0.95, fz + 1.23), steel)  # rail
+		for e in [-1.0, 1.0]:
+			_box("paint", Vector3(0.04, 0.95, 0.04), Vector3(fx + e * (run * 0.5 + 0.78), y + 0.47, fz + 1.23), steel)
+			_box("paint", Vector3(0.05, 0.05, 1.2), Vector3(fx + e * (run * 0.5 + 0.78), y - 0.2, cz), steel)  # bracket
+		if f < storeys - 2:
+			# The stair up to the next landing, flipping side every floor.
+			var s := 1.0 if f % 2 == 0 else -1.0
+			var a := Vector3(fx - s * run * 0.5, y, cz)
+			var b := Vector3(fx + s * run * 0.5, y + floor_h, cz)
+			var along := (b - a).normalized()
+			var side := Vector3(0, 0, 1)
+			var basis := Basis(along, along.cross(side).normalized() * -1.0, side)
+			_box("paint", Vector3((b - a).length(), 0.08, 0.75), (a + b) * 0.5, steel, basis)
+	# The drop ladder down from the first landing, held up off the alley.
+	_box("paint", Vector3(0.5, 2.2, 0.05), Vector3(fx + run * 0.5 + 0.5, ground_h - 1.3, fz + 1.2), steel)
+
+
+## The back of a postwar tower's base, where the building is served: two
+## truck docks with black seals and yellow bumpers off a concrete apron, a
+## steel service door under a small canopy, the trash compactor, and the
+## utility's pad-mounted transformer in its green cabinet behind bollards
+## (a downtown office of this size takes its power at medium voltage).
+## Own random numbers; the small parts are desktop only.
+func _tw_dock(w: float, zb: float) -> void:
+	var r := RandomNumberGenerator.new()
+	r.seed = hash([rng.seed, "dock"])
+	var dx := r.randf_range(-w * 0.3, w * 0.05)
+	var room := depth - zb
+	if room > 3.0:
+		_flat_rect("drive", dx - 6.5, dx + 6.5, zb, zb + minf(room - 0.3, 14.0), 0.075)
+	for k in 2:
+		var x := dx - 3.0 + k * 6.0
+		_box("paint", Vector3(3.0, 3.2, 0.08), Vector3(x, 1.6 + 1.2, zb + 0.04), Color("#7a7d80"))  # dock door
+		_box("paint", Vector3(3.6, 3.6, 0.3), Vector3(x, 2.6, zb + 0.15), Color("#1d1e1f"))  # seal
+		for e in [-1.0, 1.0]:
+			_box("paint", Vector3(0.3, 0.5, 0.15), Vector3(x + e * 1.2, 1.0, zb + 0.35), Color("#d8b024"))  # bumpers
+	var sx := dx + 7.5
+	_box("paint", Vector3(1.0, 2.2, 0.08), Vector3(sx, 1.1, zb + 0.04), Color("#5a5f63"))
+	_box("paint", Vector3(1.8, 0.12, 1.0), Vector3(sx, 2.6, zb + 0.5), Color("#3a3c3e"))
+	if not fine_parts or room < 3.0:
+		return
+	_box("paint", Vector3(2.4, 1.8, 4.5), Vector3(dx - 10.5, 0.9, zb + 2.3), Color(["#2f5a3a", "#3a4a6a", "#5a5c5e"][r.randi() % 3]))  # compactor
+	_box("paint", Vector3(1.2, 1.2, 0.8), Vector3(dx - 10.5, 1.9, zb + 0.4), Color("#4a4c4e"))  # chute
+	if room > 5.0:
+		var tx := sx + 4.0
+		_box("concrete", Vector3(2.6, 0.15, 2.4), Vector3(tx, 0.08, zb + 2.0), Color("#b9b5ac"))
+		_box("paint", Vector3(2.0, 1.6, 1.8), Vector3(tx, 0.95, zb + 2.0), Color("#56705a"))  # transformer
+		for b in [Vector2(-1.5, 3.6), Vector2(1.5, 3.6), Vector2(1.7, 0.6)]:
+			_box("paint", Vector3(0.18, 1.1, 0.18), Vector3(tx + b.x, 0.55, zb + b.y), Color("#e0b020"))  # bollards
+
+
+## A Chicago block's light court (width along the street, depth from the
+## back), or zero when it is built solid.
+var _court := Vector2.ZERO
+var _court_z := 0.0  # its front wall
+
+
+## The block's plan as rectangles [w, d, cz, cx]: the whole block, or, with
+## a light court, the front range and the two wings either side of it.
+func _court_rects(w: float, d: float, zf: float) -> Array:
+	if _court == Vector2.ZERO:
+		return [[w, d, zf + d * 0.5, 0.0]]
+	var dz := d - _court.y
+	var ww := (w - _court.x) * 0.5
+	return [[w, dz, zf + dz * 0.5, 0.0], [ww, _court.y, zf + dz + _court.y * 0.5, -(w - ww) * 0.5],
+		[ww, _court.y, zf + dz + _court.y * 0.5, (w - ww) * 0.5]]
+
+
+## A box over the block's plan from `y` up `h`, standing `grow` proud of
+## every wall (into the court too): the shaft, a band, the cornice.
+func _tw_u(w: float, d: float, zf: float, y: float, h: float, grow: float, col: Color, mat: String) -> void:
+	for r in _court_rects(w, d, zf):
+		_box(mat, Vector3(r[0] + grow, h, r[1] + grow), Vector3(r[3], y + h * 0.5, r[2]), col)
+
+
+## True when a spot on the block's back wall falls across its light court.
+func _in_court(c: Vector3, edge := 0.0) -> bool:
+	return _court != Vector2.ZERO and c.z > _court_z + 0.1 and absf(c.x) < _court.x * 0.5 - edge
+
+
+## The court's three walls: [centre, right, length], each facing into it.
+func _court_walls(zc: float, zb: float) -> Array:
+	var hx := _court.x * 0.5
+	var mz := (zc + zb) * 0.5
+	return [[Vector3(0, 0, zc + 0.03), Vector3(1, 0, 0), _court.x],
+		[Vector3(-hx + 0.03, 0, mz), Vector3(0, 0, -1), _court.y],
+		[Vector3(hx - 0.03, 0, mz), Vector3(0, 0, 1), _court.y]]
 
 
 # ---------------------------------------------------------------- Art Deco setbacks
@@ -311,6 +463,14 @@ func _tw_deco(to_curb: float, width: float, storeys: int) -> void:
 	var floor_h := 3.7
 	var stone := Color(_pick(TW_LIMESTONE))
 	var spandrel := Color(_pick(TW_SPANDREL))
+	# About a third are buff or tan brick with a limestone portal, as many
+	# Midwest deco towers are (own random numbers, so no draw moves).
+	var dr := RandomNumberGenerator.new()
+	dr.seed = hash([rng.seed, "deco look"])
+	var base_stone := stone
+	if dr.randf() < 0.35:
+		stone = Color(["#c9a974", "#b8956a", "#d2b98c"][dr.randi() % 3])
+	var crown_kind := dr.randi() % 3
 	# The 1916 rule: the street wall rises about a third of the way, then
 	# each tier steps back, ending in a slim tower and a stepped crown.
 	# On an assembled site the street wall runs the whole frontage and the
@@ -329,6 +489,7 @@ func _tw_deco(to_curb: float, width: float, storeys: int) -> void:
 		_tw_far_box(Vector3(tiers[-1][0] - 4.0, 3.5, tiers[-1][1] - 4.0), Vector3(0, fy + 1.75, zf + d * 0.5), stone, 0.0)
 		return
 	_downtown_walk(to_curb, width, zf)
+	_tw_dock(w0, zf + d)
 	var y0 := 0.0
 	var f0 := 0
 	for t in tiers:
@@ -372,7 +533,7 @@ func _tw_deco(to_curb: float, width: float, storeys: int) -> void:
 			var c: Vector3 = face[0] + face[1] * (-w0 * 0.5 + (i + 0.5) * w0 / n)
 			c.y = 2.6
 			_glass(c, face[1], w0 / n - 1.2, 3.8, 0.0)
-	_box("brick", Vector3(5.0, 8.0, 0.6), Vector3(0, 4.0, zf - 0.3), stone.lightened(0.1))
+	_box("brick", Vector3(5.0, 8.0, 0.6), Vector3(0, 4.0, zf - 0.3), base_stone.lightened(0.1))  # limestone portal
 	_box("paint", Vector3(3.0, 6.5, 0.1), Vector3(0, 3.25, zf - 0.62), Color("#3b2f22"))  # bronze and glass
 	if not _homes:
 		_sign(Vector3(0, 7.3, zf - 0.66), 4.2, 0.6)
@@ -387,7 +548,28 @@ func _tw_deco(to_curb: float, width: float, storeys: int) -> void:
 			break
 		_box("brick", Vector3(cw, 3.5, cd), Vector3(0, top + 1.75, zf + d * 0.5), stone)
 		top += 3.5
-	_tw_tank(Vector3(0, top, zf + d * 0.5))
+	# The crown hides the house tank, as deco towers did: steps under a
+	# flagpole (Indianapolis's Circle Tower), a copper or gilded pyramid
+	# (the Chicago Board of Trade, Fort Wayne's Lincoln Tower's lantern
+	# cousins), or a lit lantern with a mast.
+	var cz1 := zf + d * 0.5
+	match crown_kind:
+		1:
+			var pcol := TW_COPPER if dr.randf() < 0.6 else Color("#b89a4a")
+			_tw_pyramid(Vector3(0, top, cz1), cw + 0.6, cd + 0.6, minf(cw, cd) * 0.6, pcol)
+		2:
+			var lw := maxf(cw * 0.55, 3.0)
+			var ld := maxf(cd * 0.55, 3.0)
+			_box("brick", Vector3(lw, 5.0, ld), Vector3(0, top + 2.5, cz1), stone)
+			for face in _tw_faces(lw, ld, cz1):
+				var c: Vector3 = face[0]
+				c.y = top + 2.6
+				_glass(c, face[1], face[2] - 1.2, 3.6, 0.0)
+			_tw_pyramid(Vector3(0, top + 5.0, cz1), lw + 0.4, ld + 0.4, minf(lw, ld) * 0.5, TW_COPPER)
+			_tw_mast(Vector3(0, top + 5.0 + minf(lw, ld) * 0.5, cz1), 6.0)
+		_:
+			_box("metal", Vector3(0.2, 9.0, 0.2), Vector3(0, top + 4.5, cz1), Color("#c9cccd"))  # flagpole
+			_box("paint", Vector3(2.2, 1.3, 0.04), Vector3(-1.2, top + 8.3, cz1), Color("#3c3b6e"))
 
 
 # ---------------------------------------------------------------- postwar glass
@@ -904,6 +1086,7 @@ func _tw_pomo(to_curb: float, width: float, storeys: int) -> void:
 		_tw_far_box(Vector3(tiers[-1][0] * 0.7, 6.0, tiers[-1][1] * 0.7), Vector3(0, fy + 3.0, cz), TW_COPPER if crown != "spires" else granite, 0.0)
 		return
 	_downtown_walk(to_curb, width, zf)
+	_tw_dock(w - minf(w, d) * 0.3, zf + d)
 	# The base: dark polished granite, tall shop windows, the arched entry.
 	_tw_notched("brick", w, d, cz, 0.0, y_base, base_col, minf(w, d) * 0.14)
 	var bays := maxi(3, roundi(w / 7.0))
@@ -1098,6 +1281,7 @@ func _tw_podium(to_curb: float, width: float, storeys: int) -> void:
 		_tw_far_box(Vector3(tw * 0.62, mech, td * 0.62), Vector3(tx, top + mech * 0.5, tz), Color("#3a3f44"), 0.0)
 		return
 	_downtown_walk(to_curb, width, zf)
+	_tw_dock(pw, zf + pd)
 	# The podium: storefronts at the sidewalk, parking decks above.
 	_box("paint", Vector3(pw, ph, pd), Vector3(0, ph * 0.5, pcz), panel)
 	var shops := maxi(2, roundi(pw / 9.0))
