@@ -377,6 +377,12 @@ func _s_curve() -> void:
 	_check(absf(straight[0][1].z) < 0.01 and absf(straight[1][1].z) < 0.01, "bends in a line give a straight road")
 
 	# Drawn with the tool: four points, then both halves built and joined.
+	# Off the county roads at the origin (a road joined to one can't be undone).
+	var o := Vector3(500, 0, 400)
+	a += o
+	b1 += o
+	b2 += o
+	e += o
 	var sim := CitySim.new()
 	sim.economy.money = 10_000_000
 	var t := RoadTool.new()
@@ -402,8 +408,31 @@ func _s_curve() -> void:
 	var before := sim.network.segments.size()
 	for curve in drawn:
 		_check(t._is_valid(curve), "each half can be built")
-		t._build(curve)
-	_check(sim.network.segments.size() > before, "the S-curve is built")
+	# One S-curve is one change: one command, so one undo takes all of it
+	# (second reviewer 2026-10-29: each half was its own build and undo).
+	var sent := []
+	sim.send_command = func(cmd: Dictionary) -> void:
+		sent.append(cmd)
+		sim.apply_now(cmd)
+	_check(t._build_all(drawn), "the S-curve is built")
+	sim.send_command = Callable()
+	_check(sent.size() == 1 and sent[0].type == "build_roads" and sent[0].roads.size() == 2,
+		"it goes to the town as one command (%d sent)" % sent.size())
+	var built := sim.network.segments.size()
+	_check(built > before, "the S-curve is in")
+	_check(sim.apply_now({"type": "undo"}) and sim.network.segments.size() == before,
+		"one undo takes the whole S-curve out (%d roads left of %d)" % [sim.network.segments.size(), before])
+	# The town (online, the region server) builds all of it or none: with
+	# money for one half only, nothing goes in, whatever the screen said.
+	sim.economy.money = half + 10
+	_check(not sim.apply_now(sent[0]) and sim.network.segments.size() == before and sim.economy.money == half + 10,
+		"money for one half only: the town builds none of it")
+	var bad: Dictionary = sent[0].duplicate(true)
+	bad.roads[1] = [bad.roads[1][0], bad.roads[1][0], [bad.roads[1][0][0] + 1.0, bad.roads[1][0][1]]]
+	sim.economy.money = 10_000_000
+	_check(not sim.apply_now(bad) and sim.network.segments.size() == before and sim.economy.money == 10_000_000,
+		"a second half the town refuses (too short): the first half isn't built either")
+	_check(sim.apply_now(sent[0]) and sim.network.segments.size() == built, "built again in one go")
 	_check(sim.network.find_node_near(drawn[0][2], 0.5) != -1, "the halves share a junction in the middle")
 	sim.tick()
 	var start: Dictionary = sim.network.find_segment_near(a.lerp(drawn[0][1], 0.1), 1.0)

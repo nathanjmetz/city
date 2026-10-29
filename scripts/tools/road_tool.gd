@@ -500,11 +500,16 @@ func _click() -> void:
 						for curve in drawn:
 							curves.append(RoadShapes.offset(curve, parallel_gap))
 					var go := func() -> void:
-						for curve in drawn:
-							if not _build(curve):
-								return
-							if parallel:
-								_build(RoadShapes.offset(curve, parallel_gap))
+						# One road drawn is one change: an S-curve's halves go
+						# in together or not at all, and undo as one. Parallel's
+						# twin is its own change, as for every road.
+						if not _build_all(drawn):
+							return
+						if parallel:
+							var twin := []
+							for curve in drawn:
+								twin.append(RoadShapes.offset(curve, parallel_gap))
+							_build_all(twin)
 						_points.clear()
 						_points.append(drawn[drawn.size() - 1][2])
 					_ask_first(p, curves, road_type, go)
@@ -965,6 +970,17 @@ func _build(curve: Array) -> bool:
 	# Raised: the road climbs over the roads and track it crosses.
 	return sim.apply({"type": "build_road", "start": _xz(curve[0]), "ctrl": _xz(curve[1]),
 		"end": _xz(curve[2]), "road": road_type, "join": true, "over": elevation > 0.0})
+
+
+## Builds the curves of one drawn road: one curve as a road, an S-curve's
+## two halves as one command (CitySim._build_roads).
+func _build_all(curves: Array) -> bool:
+	if curves.size() == 1:
+		return _build(curves[0])
+	var roads := []
+	for c in curves:
+		roads.append([_xz(c[0]), _xz(c[1]), _xz(c[2])])
+	return sim.apply({"type": "build_roads", "roads": roads, "road": road_type, "join": true, "over": elevation > 0.0})
 
 
 ## The pieces a raised road is built as (Overpass), worked out once per

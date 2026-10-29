@@ -18,7 +18,7 @@ const WINDOW_MS := 30000
 const KEEP := 10
 
 ## Commands that draw roads: undone by putting the road network back.
-const ROAD_TYPES := ["build_road", "build_grid", "build_grid_shape", "build_roundabout", "upgrade_road"]
+const ROAD_TYPES := ["build_road", "build_roads", "build_grid", "build_grid_shape", "build_roundabout", "upgrade_road"]
 ## Commands that place one thing, and the command that removes it again.
 const PLACE_TYPES := {
 	"place_service": "remove_service", "place_park": "remove_park", "place_warehouse": "remove_warehouse",

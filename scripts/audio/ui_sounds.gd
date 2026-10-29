@@ -105,7 +105,7 @@ func _on_button() -> void:
 
 func _on_command(cmd: Dictionary) -> void:
 	match cmd.get("type", ""):
-		"build_road", "build_grid", "build_roundabout", "upgrade_road":
+		"build_road", "build_roads", "build_grid", "build_roundabout", "upgrade_road":
 			play("road")
 		"place_service", "place_farmhouse", "place_warehouse", "place_park":
 			play("build")
