@@ -72,7 +72,11 @@ static func _tw_start(seed: int, to_curb: float, lot: Dictionary, storeys: int, 
 		if storeys >= 60 and not homes:
 			kind = "tubes"
 		elif b.era == "prewar":
-			kind = "deco" if storeys >= 14 or b.rng.randf() < 0.3 else "chicago"
+			# From its own random numbers, so a block that grows from three
+			# storeys keeps its brick and stone (DenseBuilder.build_office).
+			var pr := RandomNumberGenerator.new()
+			pr.seed = hash([seed, "prewar form"])
+			kind = "deco" if storeys >= 14 or pr.randf() < 0.3 else "chicago"
 		else:
 			kind = _tw_form(seed, b.half * 2.0, homes)
 	match kind:
@@ -181,7 +185,9 @@ func _tw_chicago(to_curb: float, width: float, storeys: int) -> void:
 	_box("paint", Vector3(w + 2.4, 0.8, d + 2.4), Vector3(0, top + 0.4, cz), stone.lightened(0.12))
 	_box("brick", Vector3(w, 1.1, d), Vector3(0, top + 1.35, cz), shaft)
 	_tw_roof(w, d, cz, top + 1.9)
-	_tw_tank(Vector3(rng.randf_range(-w * 0.25, w * 0.25), top + 1.9, cz + rng.randf_range(-d * 0.2, d * 0.2)))
+	var tank_at := Vector3(rng.randf_range(-w * 0.25, w * 0.25), top + 1.9, cz + rng.randf_range(-d * 0.2, d * 0.2))
+	if storeys >= 6:  # city water pressure reaches about six floors
+		_tw_tank(tank_at)
 	_box("brick", Vector3(5.0, 3.6, 6.0), Vector3(-w * 0.3, top + 3.7, cz + d * 0.25), shaft.darkened(0.1))  # elevator penthouse
 
 
