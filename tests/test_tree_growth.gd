@@ -663,7 +663,7 @@ func _shadows() -> void:
 		var field := TreeField.new()
 		root.add_child(field)
 		var trees := []
-		for d in [20.0, 70.0, 100.0]:
+		for d in [20.0, 50.0, 70.0]:
 			trees.append([Transform3D(Basis(), Vector3(d, 0, 0)), sp, Color.GREEN, {"age": 20.0}])
 		field.set_trees("near shadows", trees)
 		var g := GrownTrees.new()
@@ -681,8 +681,8 @@ func _shadows() -> void:
 				shadows[key] = c[key]
 		var light := GrownTrees.shadow_group(GrownTrees.card_group(sp, TreeMesher.Lod.LIGHT))
 		if near:
-			# 20 m and 70 m are filed (45 m and the lookup's slack); the
-			# shader thins them out by 45 m.
+			# 20 m and 50 m are filed (45 m and as far as the camera moves
+			# before the next lookup), not 70 m; the shader thins them out by 45 m.
 			_check(shadows.size() == 1 and shadows.get(light, 0) == 2 and g._scan_shadow_r == 45.0,
 				"Medium: only the nearest trees cast, by their light trees (%s)" % [shadows])
 		else:

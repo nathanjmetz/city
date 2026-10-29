@@ -297,9 +297,11 @@ func _scan_some(ms: float) -> void:
 	var near_hi := _scan_r.x + MARGIN
 	var near_lo := _scan_r.x - MARGIN - TreeLook.BAND
 	var reach := _scan_r.y + MARGIN
-	# Shadows are filed with the lookup's slack too; the leaves' shader
-	# thins them out to nothing by the reach itself (TreeLook).
-	var shadow_r := _scan_shadow_r + MARGIN if _scan_shadow_r > 0.0 else 0.0
+	# A tier's near shadows (Medium) end at their reach round the camera
+	# (TreeLook's near_fade): only trees that can cast inside it are filed,
+	# out to as far as the camera may move before the next lookup (RESCAN),
+	# not the bands' whole slack (most of those would cast nothing).
+	var shadow_r := _scan_shadow_r + RESCAN if _scan_shadow_r > 0.0 else 0.0
 	while true:
 		if _scan_field == null or not is_instance_valid(_scan_field) or _scan_i >= _scan_n:
 			_scan_field = null
