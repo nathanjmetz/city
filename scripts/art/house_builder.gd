@@ -228,7 +228,28 @@ func _house(to_curb: float, storeys := 0) -> Array:
 	_back_yard(info)
 	_utilities(info)
 	_front_yard(info)
+	_drive_hoop(info)
 	return [_commit_house(), _commit_flat(), trees]
+
+
+## What an Indiana street is full of: a basketball goal at the side of the
+## drive (in-ground pole, 10 ft rim, 54 in backboard facing the drive).
+## Drawn last in the lot.
+func _drive_hoop(h: Dictionary) -> void:
+	var dx: float = h.drive_x
+	var dw: float = h.drive_w
+	var gz: float = h.get("garage_z", 0.0)
+	if gz > 7.0 and rng.randf() < (0.12 if era == "prewar" else 0.22):
+		var s := 1.0 if dx >= 0.0 else -1.0  # the outer edge of the drive
+		var pole := Vector3(dx + s * (dw * 0.5 + 0.35), 0.0, gz - rng.randf_range(4.0, 6.0))
+		if _in_lot(pole, 0.4) and not _hits_mass(pole, 0.6):
+			var steel := Color("#2a2c2e")
+			_box("paint", Vector3(0.11, 3.2, 0.11), pole + Vector3(0, 1.6, 0), steel)
+			_box("paint", Vector3(0.7, 0.08, 0.08), pole + Vector3(-s * 0.35, 3.0, 0), steel)
+			var board := pole + Vector3(-s * 0.72, 3.35, 0)
+			_box("paint", Vector3(0.05, 0.9, 1.37), board, Color("#eef0ee"))
+			_box("paint", Vector3(0.012, 0.45, 0.6), board + Vector3(-s * 0.03, -0.12, 0), Color("#c23b22"))
+			_box("paint", Vector3(0.45, 0.025, 0.45), Vector3(board.x - s * 0.28, 3.05, board.z), Color("#d9541e"))
 
 
 ## What an owner adds out front: mulch rings round the yard trees (most
