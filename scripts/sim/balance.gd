@@ -2856,6 +2856,9 @@ const POLICY_UPKEEP := [0.7, 0.85, 1.0, 1.2, 1.4]
 ## ...and how far they reach, how much they serve and how many trucks they
 ## run. A lean department stretches thin; a generous one has slack.
 const POLICY_EFFECT := [0.8, 0.9, 1.0, 1.1, 1.2]
+## Police cruisers on the road per station per shift, by Funding step
+## (times PATROL_CARS): Lean keeps one car out, Generous three.
+const POLICY_CARS := [0.5, 0.75, 1.0, 1.25, 1.5]
 ## Homes, shops and factories: what the town spends on each building a month
 ## for street care, trees and inspections (negative: it saves that much)...
 const POLICY_CARE_PER_BUILDING := [-12, -6, 0, 15, 30]
@@ -3141,3 +3144,23 @@ const LAW_IMPACT_PACE := 0.9
 ## The plan commission asks for an impact fee after this many new homes in a
 ## year.
 const LAW_IMPACT_ASK_HOMES := 40
+
+# --- Police patrols (Patrols) ---------------------------------------------------
+# A small-town department keeps one or two cars on the road a shift, round
+# the clock, over three 8-hour shifts (BJS Local Police Departments: towns of
+# 2,500-10,000 average about 2 sworn officers per 1,000 residents).
+const PATROL_CARS := 2
+const PATROL_SHIFT_HOURS := 8
+## The day shift starts at 6 AM; then 2 PM and 10 PM.
+const PATROL_FIRST_SHIFT := 6
+## A street counts as patrolled for a week after a cruiser drove it: a game
+## day goes by far faster than the cars drive (a tick is a game minute but
+## a tenth of a second on the road), so a real day's beat takes a week here.
+const PATROL_FRESH_TICKS := 7 * 24 * 60
+## Streets driven within this many hours of each other count as equally
+## stale, so a car works through the stale ones near it.
+const PATROL_BUNCH_HOURS := 4
+## Streets a car tries for its next leg before giving up and heading in.
+const PATROL_TRIES := 4
+## With cars switched off: the streets one car covers in a shift.
+const PATROL_STREETS_PER_SHIFT := 40

@@ -27,6 +27,12 @@ var show_area := "":
 		show_area = v
 		_draw_coverage()
 
+## The Police view: the streets cruisers drove lately (Patrols), not reach.
+var show_patrols := false:
+	set(v):
+		show_patrols = v
+		_draw_coverage()
+
 ## The same, for the parks tool in hand: "parks" or "".
 var tool_area := "":
 	set(v):
@@ -124,6 +130,8 @@ func _draw_coverage() -> void:
 	var any := false
 	if not focus.is_empty():
 		any = _draw_focus(st)
+	elif show_patrols and show_kind == Services.Kind.POLICE and preview.is_empty():
+		any = _draw_patrols(st)
 	elif show_kind == Mail.TOOL_KIND:
 		any = _draw_mail(st, true)
 	elif CivicHubs.TOOL_KINDS.has(show_kind) or show_area == "hubs":
@@ -303,6 +311,27 @@ func _draw_mail(st: SurfaceTool, gaps: bool) -> bool:
 		var pts := Terrain.densify(sim.network.sample_segment(id), COVER_STEP)
 		for i in range(1, pts.size()):
 			_piece(st, s, pts[i - 1], pts[i], COVER_COLOR if served else GAP_COLOR)
+			any = true
+	return any
+
+
+## The streets police cruisers drove lately, brightest where one just went
+## by and fading over a week; lined streets none has driven that long are red.
+func _draw_patrols(st: SurfaceTool) -> bool:
+	var lined := _lined_streets()
+	var police := false
+	for b in sim.services.buildings.values():
+		police = police or int(b.kind) == Services.Kind.POLICE
+	var any := false
+	for id in sim.network.segments:
+		var f := sim.patrols.freshness(sim, id)
+		if f < 0.0 and not (police and lined.has(id)):
+			continue
+		var color := GAP_COLOR if f < 0.0 else Color(COVER_COLOR, COVER_COLOR.a * (0.3 + 0.7 * f))
+		var s: Dictionary = sim.network.segments[id]
+		var pts := Terrain.densify(sim.network.sample_segment(id), COVER_STEP)
+		for i in range(1, pts.size()):
+			_piece(st, s, pts[i - 1], pts[i], color)
 			any = true
 	return any
 
