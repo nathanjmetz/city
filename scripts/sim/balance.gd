@@ -262,6 +262,12 @@ const DEVELOP_CHANCE := 0.35
 ## days) drops a level. The gap between the two keeps it from flickering.
 const LEVEL_UP_MET := 50
 const LEVEL_DOWN_AFTER := 2880
+## Out of 100, how many owners whose building grows a stage on its own lot
+## add floors on top of it rather than tear it down and build new (its
+## frame carries them, as many prewar blocks' did), for these types. The
+## rest rebuild. A guess at a real mix; no survey counts additions.
+const ADD_ON_PERCENT := 50
+const ADD_ON_TYPES := ["office"]
 ## Share of owners keen to build on: DEVELOP_KEEN plus DEVELOP_KEEN_WEALTH
 ## times the neighborhood's wealth (0 to 1), so about half at 0.5.
 const DEVELOP_KEEN := 0.25

@@ -5116,6 +5116,8 @@ func from_dict(d: Dictionary) -> void:
 			buildings[key].fabric = int(b.fabric)
 		if b.has("short"):
 			buildings[key].short = int(b.short)
+		if b.has("added_from"):
+			buildings[key].added_from = int(b.added_from)
 		if z == ZoneMap.Zone.INDUSTRIAL and b.has("chain"):
 			buildings[key].chain = str(b.chain)
 	if postcard:

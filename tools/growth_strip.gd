@@ -19,6 +19,9 @@ const LADDERS := {
 	# One prewar office on a storefront lot and on sites bought up next door.
 	# The five-storey apartment stage on lots of different widths.
 	"midrise": [["apartments", 2, 4.4, "", 20.0], ["apartments", 2, 4.4, "", 24.0], ["apartments", 2, 4.4, "", 28.0], ["apartments", 2, 4.4, "", 40.0]],
+	# A prewar office block added on to (the same block each time): built
+	# three storeys, then five and eight storeys with floors added on top.
+	"added": [["office", 0, 7.0, "", 30.0], ["office", 1, 7.0, "", 30.0, 3], ["office", 2, 7.0, "", 30.0, 5], ["office", 2, 7.0, "", 30.0, 3]],
 	# Modernist glass towers on bought-up sites (their plazas).
 	"plazas": [["office", 3, 12.0, "glass", 50.0], ["office", 4, 16.0, "glass", 64.0], ["office", 4, 16.0, "glass", 72.0]],
 	"sites": [["office", 3, 12.0, "chicago", 30.0], ["office", 3, 12.0, "chicago", 62.0], ["office", 4, 16.0, "deco", 36.0], ["office", 4, 16.0, "deco", 66.0]],
@@ -83,10 +86,13 @@ func _init() -> void:
 		var spec := {}
 		if OS.get_environment("SIGN") == "1":
 			spec = {"text": "Overman Mutual", "style": "franklin", "panel": Color("#1f4e8a"), "letter": Color("#f3efe4"), "since": -1}
+		var fit := {"width": w, "depth": DEPTH, "era": era}
+		if st.size() > 5:
+			fit.added_from = st[5]  # floors added on top of a block this tall
 		if st.size() > 3 and st[3] != "":
-			meshes = TowerBuilder.build_tower(seed * 100 + i, 3.9, {"width": w, "depth": DEPTH, "era": era}, storeys, spec, st[3], st[0] == "apartments")
+			meshes = TowerBuilder.build_tower(seed * 100 + i, 3.9, fit, storeys, spec, st[3], st[0] == "apartments")
 		else:
-			meshes = BuildingView.build_for(st[0], storeys, seed * 100, 3.9, {"width": w, "depth": DEPTH, "era": era}, spec, units, "general", st[1])
+			meshes = BuildingView.build_for(st[0], storeys, seed * 100, 3.9, fit, spec, units, "general", st[1])
 		# FAR=1 draws each as the game's far version of its drawing.
 		if OS.get_environment("FAR") == "1":
 			var fm := BuildingView.far_version(meshes[0], HouseBuilder.last_masses, false, Color("#b8b2a6"), Color("#6f6c66"), meshes[1])
