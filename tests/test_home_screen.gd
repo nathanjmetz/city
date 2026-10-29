@@ -80,7 +80,9 @@ func _menu() -> void:
 	_check(not _has(menu, BuildingView), "the town isn't built in the first frame")
 	var start := Time.get_ticks_msec()
 	var worst_step := 0.0
-	while _reveal(menu) != null and Time.get_ticks_msec() - start < DRAWN_S * 1000.0:
+	# On a slow machine the picture gives up first (BackdropReveal.CAP_S) and
+	# the town carries on being built behind the menu: wait for both.
+	while (_reveal(menu) != null or not menu._steps.is_empty()) and Time.get_ticks_msec() - start < DRAWN_S * 1000.0:
 		var f := Time.get_ticks_usec()
 		await process_frame
 		worst_step = maxf(worst_step, (Time.get_ticks_usec() - f) / 1000.0)
