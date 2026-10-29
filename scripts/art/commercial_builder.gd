@@ -703,6 +703,8 @@ const TRADE_WORDS := [
 	"CELLULAR", "FITNESS", "SEWING",
 	# Big stores' departments, named by the builders, never drawn at random.
 	"GROCERY", "FOODS", "DISCOUNT", "PHARMACY", "SUPERCENTER", "OUTLET",
+	# What banks, plants and drive-through pads letter (also never at random).
+	"SAVINGS", "TRUST", "MFG", "MACHINE", "PLASTICS", "TOOLING", "BURGERS", "CHICKEN", "FOUNDRY",
 ]
 
 
@@ -1452,8 +1454,11 @@ func _cc_parking(to_curb: float, w: float, zw: float, xg0: float, cr: RandomNumb
 		Vector3(pc.x + 6.0, 4.22, pc.y + 5.5), Vector3(pc.x - 6.0, 4.22, pc.y + 5.5), Color("#9a9790"), [], Vector3.UP)
 	var accent := Color(AWNING[cr.randi() % AWNING.size()])
 	_box("paint", Vector3(12.3, 0.55, 9.3), Vector3(pc.x, 4.45, pc.y + 1.0), accent)
+	var food: int = [62, 63, 11, 8, 2][posmod(hash([rng.seed, 59]), 5)]  # BURGERS, CHICKEN, TACOS, SUBS, PIZZA
+	diner_room = 7.0 if fine_parts else 0.0  # its dining room's booths
 	_glass(Vector3(pc.x, 1.6, pc.y - 3.53), Vector3(-1, 0, 0), 8.0, 2.0, 0.1)
-	_sign(Vector3(pc.x, 3.0, pc.y - 3.6), 5.0, 0.8)
+	diner_room = 0.0
+	_sign(Vector3(pc.x, 3.0, pc.y - 3.6), 5.0, 0.8, food)
 	# The drive-through: a 3.5 m lane down the east side, cars heading for
 	# the road with the building on the driver's side; the pickup window
 	# under a slim canopy, and behind the building the menu board and
@@ -1974,7 +1979,7 @@ func _bank(to_curb: float) -> void:
 		_glass(Vector3(sx, 1.9, zf - 0.17), Vector3(-1, 0, 0), 0.7, 2.0, 0.0)
 	_glass(Vector3(0, 3.2, zf - 0.17), Vector3(-1, 0, 0), 1.7, 0.55, 0.0)
 	site.door = Vector2(0.0, zf - 3.0)
-	_sign(Vector3(0, 4.3, zf - 0.08), 4.0, 0.5)
+	_sign(Vector3(0, 4.3, zf - 0.08), 4.0, 0.5, [3, 3, 56, 57][posmod(hash([rng.seed, 47]), 4)])  # BANK, SAVINGS, TRUST
 	# Drive-up lane and canopy beside the building.
 	var lx := w * 0.5 + 3.0
 	_box("paint", Vector3(4.0, 0.6, 7.0), Vector3(lx, 4.3, cz), stone)
@@ -2234,7 +2239,7 @@ func _factory(to_curb: float) -> void:
 	for i in 2:
 		_glass(Vector3(ox - ow * 0.25 + i * ow * 0.5, 1.75, zf - od - 0.02), Vector3(-1, 0, 0), ow * 0.4, 1.5, 0.3)
 	_box("paint", Vector3(1.0, 2.2, 0.06), Vector3(ox + ow * 0.5 + 0.9, 1.4, zf - 0.03), Color("#5a5e60"))
-	_sign(Vector3(ox, 2.6, zf - od - 0.05), ow * 0.7, 0.55)
+	_sign(Vector3(ox, 2.6, zf - od - 0.05), ow * 0.7, 0.55, [58, 59, 60, 61, 64][posmod(hash([rng.seed, 53]), 5)])  # MFG, MACHINE...
 	# Silos or a stack out back.
 	var extra := rng.randf()
 	if extra < 0.35:
