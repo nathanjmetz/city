@@ -75,6 +75,14 @@ func _init() -> void:
 			_traffic.walkers[i].x = float(lead.x) + (0.0 if i % 3 == 0 else (0.45 if i % 3 == 1 else -0.2))
 			_traffic.walkers[i].side = lead.side
 			_traffic.walkers[i].v = lead.v
+		# Every other family's grown-up has a baby at home and is out on an
+		# errand: pushing the stroller.
+		for i in range(0, n, 6):
+			var pid := 1000 + i * 7919
+			sim.people.people[pid].home = "home%d" % i
+			sim.people.people[-pid] = {"id": -pid, "age": 1, "home": "home%d" % i}
+			sim.people._homes["home%d" % i] = [pid, -pid]
+			_traffic.walkers[i].then = {"enter": "lot:shop"}
 		_traffic._sim = sim
 	var frac := func() -> float: return 0.0
 	var wv := WalkerView.new()

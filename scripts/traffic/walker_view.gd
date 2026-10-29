@@ -37,6 +37,8 @@ var _insts := []
 ## Person -> [top, outfit, month] (dress), kept while the month holds.
 var _worn := {}
 const _NONE := [Color.WHITE, 0, -1]
+var _strollers: MultiMesh
+var _pushes := {}  # person -> [whether they've a baby at home, the town's people count then]
 
 
 func setup(t: TrafficSim, fraction: Callable) -> void:
@@ -168,6 +170,17 @@ void fragment() { ALBEDO = tint; ROUGHNESS = 0.9; }
 	mi2.material_override = mat
 	mi2.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(mi2)
+	_strollers = MultiMesh.new()
+	_strollers.transform_format = MultiMesh.TRANSFORM_3D
+	_strollers.mesh = stroller_mesh()
+	var smi := MultiMeshInstance3D.new()
+	smi.multimesh = _strollers
+	var smat := StandardMaterial3D.new()
+	smat.vertex_color_use_as_albedo = true
+	smat.roughness = 0.8
+	smi.material_override = smat
+	smi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(smi)
 	for kind in 2:
 		for lod in 5:
 			if lod == 2:
@@ -216,11 +229,21 @@ func _draw_walkers() -> void:
 	# the browser's renderer keeps everyone in the plain outfit.
 	var month := month_of(traffic)
 	var desktop := RenderingServer.get_current_rendering_method() != "gl_compatibility"
+	var prams := 0
 	for w in traffic.walkers:
 		var pose := traffic.walker_pose(w, frac)
 		var p: Vector3 = Terrain.stand(pose[0])
 		if p.distance_to(eye) > _reach:
 			continue
+		if _with_stroller(w, people):
+			var ahead: Vector3 = pose[1]
+			if ahead.length() > 0.5:
+				ahead = Vector3(ahead.x, 0.0, ahead.z).normalized()
+				if prams >= _strollers.instance_count:
+					_strollers.instance_count = maxi(prams * 2, 16)
+				_strollers.set_instance_transform(prams, Transform3D(Basis.looking_at(ahead, Vector3.UP),
+					Terrain.stand(pose[0] + ahead * 0.75)))
+				prams += 1
 		if NearPeople.drawn.has(int(w.id)):
 			continue  # a ready-made person stands in for this one up close
 		var d := p.distance_to(eye)
@@ -263,6 +286,7 @@ func _draw_walkers() -> void:
 	# On a full desktop (High and up) the nearer figures cast a shadow, as
 	# people on a sunny sidewalk do: from above, the shadow reads as much
 	# as the person. The far, simplest figures and the browser go without.
+	_strollers.visible_instance_count = prams
 	var shade: bool = bool(GraphicsQuality.knob("photo", false)) and not OS.has_feature("web")
 	for i in _insts.size():
 		(_insts[i] as GeometryInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON \
@@ -272,6 +296,68 @@ func _draw_walkers() -> void:
 		(mms[i] as MultiMesh).visible_instance_count = counts[i]
 		total += int(counts[i])
 	_reach = GraphicsQuality.fit_reach(_reach, total, int(GraphicsQuality.knob("people", GraphicsQuality.NO_CAP)), full)
+
+
+## Whether a walker pushes a stroller: a parent (18 to 45) with a baby
+## under 2 at home, out on foot all the way (an errand or a walk; never to
+## their job, nor to the car), who brings the baby along.
+func _with_stroller(w: Dictionary, people: Dictionary) -> bool:
+	var then: Dictionary = w.get("then", {})
+	if not then.has("enter"):
+		return false
+	var who: Dictionary = people.get(int(w.person), {})
+	if who.is_empty() or int(who.age) < 18 or int(who.age) > 45 or str(then.enter) == str(who.get("job", "")):
+		return false
+	var known: Array = _pushes.get(int(w.person), [])
+	if known.is_empty() or int(known[1]) != people.size():
+		var baby := false
+		for pid in traffic._sim.people.residents(str(who.home)):
+			if int(people.get(pid, {}).get("age", 99)) < 2:
+				baby = true
+		known = [baby, people.size()]
+		if _pushes.size() > 50000:
+			_pushes.clear()
+		_pushes[int(w.person)] = known
+	return known[0]
+
+
+## A baby's stroller, about a metre long with its handle back to the one
+## pushing it (it faces -Z, the way it's pushed): a fabric seat and
+## canopy on a dark frame and four small wheels.
+static func stroller_mesh() -> Mesh:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var frame := Color(0.06, 0.06, 0.07)
+	var cloth := Color(0.16, 0.2, 0.28)
+	for x in [-0.22, 0.22]:
+		for z in [-0.3, 0.25]:
+			_cube(st, Vector3(x, 0.08, z), Vector3(0.04, 0.16, 0.16), frame)
+		_cube(st, Vector3(x, 0.57, 0.075), Vector3(0.025, 0.025, 1.11), frame, -0.83)  # front wheel up to the handle
+	_cube(st, Vector3(0, 0.98, 0.45), Vector3(0.48, 0.035, 0.035), frame)  # handle
+	_cube(st, Vector3(0, 0.42, -0.08), Vector3(0.4, 0.2, 0.55), cloth)  # the seat
+	_cube(st, Vector3(0, 0.62, 0.1), Vector3(0.4, 0.38, 0.06), cloth, 0.3)  # its back
+	_cube(st, Vector3(0, 0.78, -0.05), Vector3(0.42, 0.05, 0.4), cloth, -0.25)  # the canopy
+	st.generate_normals()
+	return st.commit()
+
+
+## A box, centred at c, turned `tilt` radians about X.
+static func _cube(st: SurfaceTool, c: Vector3, size: Vector3, col: Color, tilt := 0.0) -> void:
+	var b := Basis(Vector3.RIGHT, tilt)
+	var h := size * 0.5
+	var faces := [[Vector3.RIGHT, Vector3.UP, Vector3.BACK], [Vector3.LEFT, Vector3.UP, Vector3.FORWARD],
+		[Vector3.UP, Vector3.BACK, Vector3.RIGHT], [Vector3.DOWN, Vector3.FORWARD, Vector3.RIGHT],
+		[Vector3.BACK, Vector3.UP, Vector3.LEFT], [Vector3.FORWARD, Vector3.UP, Vector3.RIGHT]]
+	for f in faces:
+		var n: Vector3 = f[0]
+		var u: Vector3 = f[1]
+		var v: Vector3 = f[2]
+		var q := []
+		for k in [[-1, -1], [1, -1], [1, 1], [-1, 1]]:
+			q.append(c + b * ((n + u * k[0] + v * k[1]) * h))
+		for i in [0, 2, 1, 0, 3, 2]:
+			st.set_color(col)
+			st.add_vertex(q[i])
 
 
 ## Tops in the colours a Midwestern crowd wears (sRGB, as picked from
