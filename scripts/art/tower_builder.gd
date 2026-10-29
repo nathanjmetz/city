@@ -77,6 +77,9 @@ static func _tw_start(seed: int, to_curb: float, lot: Dictionary, storeys: int, 
 			var pr := RandomNumberGenerator.new()
 			pr.seed = hash([seed, "prewar form"])
 			kind = "deco" if storeys >= 14 or pr.randf() < 0.3 else "chicago"
+			# On a single storefront lot a 1920s bank often built up instead.
+			if kind == "chicago" and storeys >= 8 and b.half * 2.0 <= 34.0 and pr.randf() < 0.45:
+				kind = "bank"
 			# Flats on an old street are a 1920s apartment tower, not an
 			# office block with flats in it.
 			if homes:
@@ -90,6 +93,7 @@ static func _tw_start(seed: int, to_curb: float, lot: Dictionary, storeys: int, 
 		"podium": b._tw_podium(to_curb, b.half * 2.0, storeys)
 		"tubes": b._tw_tubes(to_curb, b.half * 2.0, storeys)
 		"flats": b._tw_flats(to_curb, b.half * 2.0, storeys)
+		"bank": b._tw_bank(to_curb, b.half * 2.0, storeys)
 		"balcony": b._tw_balcony(to_curb, b.half * 2.0, storeys)
 		_:
 			if homes:
@@ -115,6 +119,95 @@ static func _tw_form(seed: int, width: float, homes: bool) -> String:
 	if x < 0.3:
 		return "glass"
 	return "pomo" if x < (0.55 if wide else 0.72) else "podium"
+
+
+# ---------------------------------------------------------------- bank tower
+
+## A 1910s-20s county-seat bank tower (the eight-to-twelve-storey bank and
+## office buildings of Indiana's county seats, after Sullivan's and Burnham's
+## "base, shaft and capital"): built to the sidewalk on one storefront lot,
+## a two-storey limestone banking hall with three tall arched windows
+## between columns, the bank's door in the middle arch, a brick shaft of
+## paired windows, a limestone attic under a deep cornice, and the bank's
+## name on a rooftop sign. Its own random numbers, so the builder's don't move.
+func _tw_bank(to_curb: float, width: float, storeys: int) -> void:
+	if _far:
+		_tw_chicago(to_curb, width, storeys)
+		return
+	var r := RandomNumberGenerator.new()
+	r.seed = hash([rng.seed, "bank tower"])
+	var w := minf(width - 1.0, r.randf_range(20.0, 28.0))
+	var d := minf(depth - 4.0, r.randf_range(22.0, 30.0))
+	var zf := 0.4
+	var cz := zf + d * 0.5
+	var hall := 10.0  # the two-storey banking hall
+	var floor_h := 3.7
+	var top := hall + floor_h * (storeys - 2)
+	var lime := Color(["#d8d0bf", "#cfc6b2", "#e0d9c8"][r.randi() % 3])
+	var shaft := Color(["#8a4a38", "#9b5a42", "#b89b72", "#c9b48a"][r.randi() % 4])
+	_downtown_walk(to_curb, width, zf)
+	# The banking hall: limestone, three arched windows between columns.
+	_box("brick", Vector3(w, hall, d), Vector3(0, hall * 0.5, cz), lime)
+	var aw := (w - 4.0) / 3.0
+	for i in 3:
+		var x := -w * 0.5 + 2.0 + (i + 0.5) * aw
+		_tw_arch(Vector3(x, 0.6, zf), aw - 1.2, hall - 1.6, lime, Color("#2a3036"))
+		if i == 1:
+			# Bronze doors in the middle arch, under a transom.
+			_box("paint", Vector3(2.6, 3.2, 0.1), Vector3(x, 1.6 + 0.6, zf - 0.78), Color("#5a4a32"))
+			_box("paint", Vector3(0.06, 3.2, 0.12), Vector3(x, 2.2, zf - 0.84), Color("#3a2f20"))
+	for i in 4:
+		var x := -w * 0.5 + 2.0 + i * aw
+		_box("paint", Vector3(1.1, hall - 1.4, 1.1), Vector3(x, (hall - 1.4) * 0.5 + 0.6, zf - 0.55), lime.lightened(0.06))  # column
+		_box("paint", Vector3(1.5, 0.6, 1.5), Vector3(x, hall - 0.5, zf - 0.55), lime.lightened(0.1))  # capital
+		_box("paint", Vector3(1.5, 0.6, 1.5), Vector3(x, 0.3, zf - 0.55), lime.darkened(0.08))  # base
+	_box("paint", Vector3(w + 0.6, 0.9, 1.2), Vector3(0, hall + 0.25, zf - 0.2), lime.lightened(0.08))  # entablature
+	_box("paint", Vector3(w + 0.6, 0.6, d + 0.6), Vector3(0, 0.3, cz), lime.darkened(0.1))  # water table
+	# The shaft: brick with paired windows in every bay, on all four sides.
+	var y_attic := top - floor_h
+	_box("brick", Vector3(w, y_attic - hall, d), Vector3(0, (hall + y_attic) * 0.5, cz), shaft)
+	for face in _tw_faces(w, d, cz):
+		var n := maxi(3, roundi(face[2] / 4.2))
+		var len_b: float = face[2] / n
+		var out: Vector3 = face[1].cross(Vector3.UP)
+		for f in range(2, storeys - 1):
+			var y := hall + floor_h * (f - 2) + 1.9
+			for i in n:
+				var c: Vector3 = face[0] + face[1] * (-face[2] * 0.5 + (i + 0.5) * len_b)
+				c.y = y
+				for k in [-1.0, 1.0]:
+					_glass(c + face[1] * k * 0.75, face[1], 1.15, 2.0, r.randf_range(0.0, 0.6))
+				_box("paint", Vector3(len_b * 0.8, 0.12, 0.25), c + out * 0.1 + Vector3(0, -1.08, 0), lime, _tw_yaw(face[1]))  # sill
+	# The attic storey in limestone, a deep cornice and a balustraded parapet.
+	_box("brick", Vector3(w, floor_h, d), Vector3(0, y_attic + floor_h * 0.5, cz), lime)
+	_box("paint", Vector3(w + 0.3, 0.4, d + 0.3), Vector3(0, y_attic, cz), lime.lightened(0.08))  # belt
+	for face in _tw_faces(w, d, cz):
+		var n := maxi(4, roundi(face[2] / 2.4))
+		for i in n:
+			var c: Vector3 = face[0] + face[1] * (-face[2] * 0.5 + (i + 0.5) * face[2] / n)
+			c.y = y_attic + floor_h * 0.5
+			_glass(c, face[1], 1.0, 1.2, 0.3)
+	_box("paint", Vector3(w + 2.2, 0.9, d + 2.2), Vector3(0, top + 0.45, cz), lime.lightened(0.1))  # cornice
+	_box("paint", Vector3(w + 1.4, 0.3, d + 1.4), Vector3(0, top + 0.05, cz), lime.darkened(0.05))  # bed mould
+	_box("brick", Vector3(w, 1.2, d), Vector3(0, top + 1.5, cz), lime)  # parapet
+	_tw_roof(w, d, cz, top + 2.1)
+	if fine:
+		for face in _tw_faces(w, d, cz):
+			var out: Vector3 = face[1].cross(Vector3.UP)
+			var n := maxi(6, roundi(face[2] / 0.6))
+			for i in n:
+				var c: Vector3 = face[0] + face[1] * (-face[2] * 0.5 + (i + 0.5) * face[2] / n) + out * 0.12
+				c.y = top + 1.45
+				_box("paint", Vector3(0.18, 0.8, 0.18), c, lime.lightened(0.14))  # balusters
+	_box("brick", Vector3(4.5, 3.4, 5.5), Vector3(w * 0.25, top + 2.1 + 1.7, cz + d * 0.2), shaft.darkened(0.1))  # elevator penthouse
+	_tw_roof(4.5, 5.5, cz + d * 0.2, top + 2.1 + 3.4, w * 0.25)
+	if not _homes:
+		_sign(Vector3(0, hall + 0.75, zf - 0.85), w * 0.5, 0.6)  # carved in the frieze
+		_tw_roof_sign(Vector3(-w * 0.1, top + 2.1, zf + 1.6), minf(w * 0.7, 16.0))
+	if width - w > 6.0:
+		# The rest of the lot: a side lawn with a tree.
+		var pick := TreeField.pick(rng)
+		trees.append([Vector3(-(w * 0.5 + (width - w) * 0.25), 0, zf + 3.0), pick[0], pick[1], rng.randf_range(0.7, 0.9)])
 
 
 # ---------------------------------------------------------------- Chicago School
