@@ -40,8 +40,9 @@ func _done() -> Array:
 ## a gas station on a corner, a strip center on a wide lot or a church,
 ## picked for the street's era (Main Street blocks are the mixed-use type
 ## now, chosen by the street rather than by chance).
-static func build_retail(seed: int, to_curb: float, lot := {}, spec := {}) -> Array:
+static func build_retail(seed: int, to_curb: float, lot := {}, spec := {}, level := 1) -> Array:
 	var b := _start(seed, lot, spec)
+	b.small_store = level == 0
 	b._shop(to_curb, lot, false)
 	b._service_yard(b.era == "prewar")
 	return b._done()
@@ -50,9 +51,10 @@ static func build_retail(seed: int, to_curb: float, lot := {}, spec := {}) -> Ar
 ## The parking and entrance of the shop DenseBuilder.build_retail draws for
 ## this seed and lot (or the strip center a shopping center forces), from a
 ## dry run that draws nothing: see `site`.
-static func site_plan(seed: int, lot: Dictionary, strip := false) -> Dictionary:
+static func site_plan(seed: int, lot: Dictionary, strip := false, level := 1) -> Dictionary:
 	var b := DenseBuilder._start(seed, lot)
 	b._dry = true
+	b.small_store = level == 0 and not strip
 	if strip:
 		force_shop = "strip"
 	b._shop(3.9, lot, false)
@@ -204,7 +206,10 @@ func _apartments(to_curb: float, width: float, storeys: int) -> void:
 
 static func build_mixed(seed: int, to_curb: float, lot: Dictionary, storeys: int, spec := {}) -> Array:
 	var b := _start(seed, lot, spec)
-	b._mixed(to_curb, b.half * 2.0, storeys)
+	if MainInfill.wanted(b, storeys):
+		MainInfill.draw(b, to_curb, storeys)
+	else:
+		b._mixed(to_curb, b.half * 2.0, storeys)
 	b._service_yard(b.era == "prewar")
 	return b._done()
 

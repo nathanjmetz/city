@@ -2770,8 +2770,14 @@ func _place_seed(ref: String) -> int:
 		return 0
 	var b = _sim.buildings.get(ref.substr(4))
 	# The layout depends on the storeys too (a house that grows a storey
-	# lays its drive out again), so a copy loaded after it grew agrees.
-	return 0 if b == null else hash([int(b.seed), int(b.zone), BuildingTypes.storeys(b), BuildingTypes.type_of(b)])
+	# lays its drive out again), so a copy loaded after it grew agrees; and
+	# a corner store grown into a retail store has a lot of its own.
+	if b == null:
+		return 0
+	var sig := [int(b.seed), int(b.zone), BuildingTypes.storeys(b), BuildingTypes.type_of(b)]
+	if sig[3] == "shop":
+		sig.append(mini(int(b.get("level", 0)), 1))
+	return hash(sig)
 
 
 func _lot_place(ref: String) -> Dictionary:
@@ -2780,7 +2786,7 @@ func _lot_place(ref: String) -> Dictionary:
 	var lot: Dictionary = _sim.lots[ref.substr(4)]
 	var b = _sim.buildings.get(ref.substr(4))
 	var lay := SiteLayout.empty_lot() if b == null else SiteLayout.for_building(int(b.zone), int(b.seed), lot,
-		BuildingTypes.storeys(b), BuildingTypes.type_of(b), int(b.get("level", 0)))
+		BuildingTypes.storeys(b), BuildingTypes.type_of(b), int(b.get("level", 0)), _sim.network)
 	var spots := []
 	for s in lay.spots:
 		spots.append({"pos": SiteLayout.world(lot, s.pos), "face": SiteLayout.world_dir(lot, s.face),
@@ -3137,7 +3143,7 @@ func parking_need(at: Vector3) -> Dictionary:
 				var need := ceili(float(b.get("cap", 0)) * rate)
 				var own := int(float(lot.get("width", 0.0)) / CURB_SPACE)
 				for sp in SiteLayout.for_building(int(b.zone), int(b.seed), lot, BuildingTypes.storeys(b),
-						BuildingTypes.type_of(b), int(b.get("level", 0))).spots:
+						BuildingTypes.type_of(b), int(b.get("level", 0)), _sim.network).spots:
 					if sp.kind == "stall":
 						own += 1
 				if need > own:

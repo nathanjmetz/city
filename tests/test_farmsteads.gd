@@ -230,7 +230,7 @@ func _pinned(places: Array, plans: Array, kinds: Dictionary) -> void:
 	for p in plans:
 		parts += p.parts.size()
 		trees += p.trees.size()
-	_check(kinds == {"home": 3406, "hog": 129, "grain": 626, "retired": 926, "dairy": 11} and parts == 12257 and trees == 122476,
+	_check(kinds == {"home": 3406, "hog": 129, "grain": 626, "retired": 926, "dairy": 11} and parts == 12257 and trees == 121780,  # 696 fewer since windbreaks keep out of ponds
 		"and so do all %d together (%s, %d buildings, %d trees)" % [places.size(), kinds, parts, trees])
 	_check(CropCalendar.hash32(0, 0, 0) == 946720379 and CropCalendar.hash32(123, -456, 789) == 1989847715,
 		"the hash behind them is the crops' own")

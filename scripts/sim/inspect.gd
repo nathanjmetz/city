@@ -283,7 +283,8 @@ static func _service(sim: CitySim, id: int) -> Dictionary:
 				homes += 1
 				if sim.services.served.get(key, {}).get(b.kind, false):
 					covered += 1
-		rows.append(["Reach by road", "%.1f miles" % (float(k.reach) * sim.services.funding(id, Balance.POLICY_EFFECT) / 1609.0)])
+		rows.append(["Reach by road", "%.1f miles" % (float(k.reach) * sim.services.funding(id, Balance.POLICY_EFFECT)
+			* float(sim.services.boosts.get(id, 1.0)) / 1609.0)])
 		rows.append(["Homes covered", "%d of %d" % [covered, homes]])
 		if b.kind == Services.Kind.CLINIC and sim.healthcare.mutual_note() != "":
 			rows.append(["Ambulances", sim.healthcare.mutual_note()])
@@ -291,6 +292,7 @@ static func _service(sim: CitySim, id: int) -> Dictionary:
 			problems.append("Not beside a road, so it can't respond.")
 		status = "Working: covering %d homes" % covered if ok else "Not working"
 		rows.append_array(sim.buses.school_rows(id))
+		rows.append_array(sim.stations.rows(sim, id))
 	rows.append(["Upkeep", "$%s / day" % CitySim.money_text(sim.services.upkeep_of(id))])
 	rows.append(["Built for", "$%s" % CitySim.money_text(int(k.cost))])
 	var going_up := sim.construction.describe("svc:%d" % id, sim.tick_count)
@@ -568,6 +570,12 @@ static func _park(sim: CitySim, id: int) -> Dictionary:
 		status = _venue(sim, id, rows)
 	if s.kind == "trailhead":
 		status = _trails(sim, id, rows)
+	if FarmersMarket.find_venue(sim) == id:
+		var fm := sim.farmers_market
+		var on := "On now, %d stalls" % fm.stalls_at(id) if fm.open else "Saturdays, May to October"
+		if not fm.last.is_empty() and not fm.open:
+			on += "; %d farms came last time" % int(fm.last.vendors)
+		rows.append(["Farmers' market", on])
 	var going_up := sim.construction.describe("park:%d" % id, sim.tick_count)
 	if going_up != "":
 		status = going_up
@@ -709,7 +717,12 @@ static func _development(sim: CitySim, hub: Dictionary, tree: Array, at: Vector3
 	var next := []
 	for node in Agency.open(sim, hub, tree, at, profit):
 		next.append(node.name)
-	rows.append(["Could build next", ", ".join(next) if not next.is_empty() else "Nothing yet: needs more profit, schooling or neighbours"])
+	if not next.is_empty():
+		rows.append(["Could build next", ", ".join(next)])
+	else:
+		# What holds it back, in words, rather than a shrug.
+		var why := Agency.held_back(sim, hub, tree, at, profit)
+		rows.append(["Held back", why if why != "" else "Nothing left to build"])
 	return rows
 
 
@@ -1129,4 +1142,4 @@ static func _purpose_words(purpose: String) -> String:
 	return {"commute": "Going to work", "shopping": "Shopping", "home": "Going home", "return": "Heading back",
 		"grain": "Hauling grain", "raw": "Hauling raw goods", "fuel": "Hauling fuel", "goods": "Delivering goods",
 		"delivery": "Making a delivery", "export": "Shipping out of town", "import": "Bringing goods in",
-		"visit": "Visiting", "bus": "Bus route"}.get(purpose, purpose.capitalize())
+		"visit": "Visiting", "bus": "Bus route", "market": "Taking produce to the farmers' market"}.get(purpose, purpose.capitalize())

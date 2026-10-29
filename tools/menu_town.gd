@@ -18,8 +18,6 @@ func _initialize() -> void:
 	sim.apply({"type": "build_road", "start": [-540, 0], "ctrl": [0, 0], "end": [540, 0], "road": 2})
 	sim.apply({"type": "build_grid", "a": [-420, -40], "b": [420, -40], "c": [-420, -376], "block": 84})
 	sim.apply({"type": "build_grid", "a": [-420, 40], "b": [420, 40], "c": [-420, 376], "block": 84})
-	for x in range(-420, 421, 84):
-		sim.apply({"type": "build_road", "start": [x, -40], "ctrl": [x, 0], "end": [x, 40]})
 	for id in sim.network.segments.keys():
 		var c := sim.network.curve_of(id)
 		var mid := RoadNetwork.bezier(c[0], c[1], c[2], 0.5)
@@ -76,11 +74,13 @@ func _initialize() -> void:
 	# speed (minutes a block), so the days skip ahead to each evening and
 	# the nights are lived through until the last walker is in.
 	var guard := 0
-	while guard < 30000 and not (int(sim.clock().hour) == 3 and sim.traffic.walkers.size() == 0
+	# People keep the sky's hours (CitySim.sky_hour: a game day is a month),
+	# so the skip and the 3 am are on the sky's clock.
+	while guard < 30000 and not (int(sim.sky_hour()) == 3 and sim.traffic.walkers.size() == 0
 			and sim.traffic.cars.size() <= 6):
-		var hour := int(sim.clock().hour)
-		if hour >= 5 and hour < 21:
-			sim.tick_count += (21 - hour) * 60 - int(sim.clock().minute)
+		var hour := sim.sky_hour()
+		if hour >= 5.0 and hour < 21.0:
+			sim.tick_count += maxi(int((21.0 - hour) * sim.sky_ticks_per_hour()), 1)
 		sim.tick()
 		guard += 1
 	print("quiet after ", guard, " ticks: ", sim.traffic.cars.size(), " cars, ", sim.traffic.walkers.size(), " walkers")
