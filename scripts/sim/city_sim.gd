@@ -4137,11 +4137,12 @@ func _develop_one() -> void:
 	for i in mini(keys.size(), 6):
 		var key: String = keys[rng.randi() % keys.size()]
 		var opts := BuildingTypes.options(self, key)
-		if opts.is_empty():
+		if opts.is_empty() or BuildingTypes.wants_site(self, key):
 			# Room to go up but not on this lot: buy the lot next door.
 			if BuildingTypes.assemble(self, key) != "":
 				return
-			continue
+			if opts.is_empty():
+				continue
 		var o: Array = opts[rng.randi() % opts.size()]
 		# Up a level only with its needs mostly met (Nathan, 2026-10-25:
 		# "the level goes up or down based on whether it has what it needs").

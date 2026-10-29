@@ -77,7 +77,11 @@ func _lineup() -> void:
 				if k is Node3D:
 					k.visible = false
 		if c is CityCamera:
+			# Close-ups below the play floor, for judging detail.
+			c.ignore_floor = true
 			c.look_at_point(Vector3(cx, Terrain.ground_y(cx, cz), cz))
 			c.set_view(deg_to_rad(float(args[1]) if args.size() > 1 else 30.0),
 				deg_to_rad(float(args[2]) if args.size() > 2 else 30.0), float(args[3]) if args.size() > 3 else 70.0)
 	_main.set_speed(0)
+	for c in _main.find_children("*", "CanvasLayer", true, false):
+		c.visible = false

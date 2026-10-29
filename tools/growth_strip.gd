@@ -22,9 +22,12 @@ const LADDERS := {
 	"retail": [["shop", 0, 2.2], ["shop", 1, 2.2], ["shopping_center", 0, 2.2, "", 70.0], ["shopping_center", 1, 2.2, "", 150.0]],
 	"homes": [["house", 0, 0.9], ["house", 1, 0.9], ["row_home", 0, 1.2], ["row_home", 1, 1.2], ["apartments", 0, 2.0]],
 	# A house building on, then turned into a duplex and a fourplex.
+	# A corner store to shop with flats, then bought out next door: a
+	# commercial block across both storefronts.
+	"block": [["shop", 0, 2.2], ["mixed_use", 0, 3.0], ["mixed_use", 1, 3.0], ["commercial_block", 0, 3.0], ["commercial_block", 1, 5.0]],
 	"house": [["house", 0, 0.9], ["house", 1, 0.9], ["house", 2, 0.9], ["duplex", 0, 0.9], ["duplex", 1, 0.9]],
 }
-const BASE_W := {"shopping_center": 60.0, "office": 30.0, "apartments": 30.0, "mixed_use": 20.0, "shop": 20.0, "house": 20.0, "duplex": 22.0, "row_home": 24.0}
+const BASE_W := {"shopping_center": 60.0, "office": 30.0, "apartments": 30.0, "mixed_use": 20.0, "shop": 20.0, "house": 20.0, "duplex": 22.0, "commercial_block": 28.0, "row_home": 24.0}
 const DEPTH := 55.0
 
 var _frames := 0

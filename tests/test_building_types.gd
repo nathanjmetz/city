@@ -139,6 +139,7 @@ func _init() -> void:
 		sim.tick()
 	_check(int(sim.buildings[face[3]].focc) > 0, "people move into the flats (%d of %d)" % [sim.buildings[face[3]].focc, flats])
 
+
 	# Growing up the path: a house adds a storey, keeping its family.
 	var home := ""
 	for k in sim.buildings:
@@ -158,6 +159,7 @@ func _init() -> void:
 	copy.simulate_traffic = false
 	_check(copy.buildings[face[3]].type == "mixed_use" and copy.buildings[home].level == 1
 		and copy.buildings[face[3]].flats == flats, "save keeps building types and stages")
+
 	for i in 2000:
 		sim.tick()
 		copy.tick()
@@ -168,6 +170,22 @@ func _init() -> void:
 		if JSON.stringify(da[k]) != JSON.stringify(db.get(k)):
 			diff.append(k)
 	_check(diff.is_empty(), "copies stay in sync %s" % str(diff))
+
+	# In a county-seat market, a Main Street owner buys out the one-storey
+	# shop next door and builds one commercial block across both lots.
+	sim.market.regional = 20_000
+	var packed := _crowd(sim, face[3], 70)
+	sim.buildings[face[3]] = BuildingTypes.make(sim, face[3], sim.buildings[face[3]], "mixed_use", 1)
+	var before_w: float = sim.lots[face[3]].width
+	var wants := BuildingTypes.wider_stage(sim, face[3])
+	_check(wants == ["commercial_block", 0], "a busy Main Street block wants a wider front (%s, %.1f m)" % [str(wants), before_w])
+	var front := BuildingTypes.assemble(sim, face[3])
+	_check(front != "" and sim.lots[face[3]].width > before_w,
+		"its owner buys the lot next door (%s, %.1f -> %.1f m)" % [front, before_w, sim.lots[face[3]].width])
+	_check(BuildingTypes.options(sim, face[3]).has(["commercial_block", 0]), "and can build one block across both")
+	sim.market.regional = 0
+	for k in packed:
+		sim.buildings.erase(k)
 
 
 	# Old saves: buildings without a type are the plain type of their zone.
@@ -202,6 +220,7 @@ func _init() -> void:
 		grown += int(grow.buildings[k].level)
 	_check(grown > 0, "buildings grow along their paths over time (%d stages up)" % grown)
 	_test_far()
+	_test_factory()
 	print("ALL TESTS PASSED" if not failed else "TESTS FAILED")
 	quit(1 if failed else 0)
 
@@ -281,6 +300,44 @@ func _test_far() -> void:
 	_check(BuildingTypes.assemble(sim, key) == "", "no tower sites outside a city's core")
 	for k in crowd:
 		sim.buildings.erase(k)
+
+
+## A small factory that does well buys the empty lot next door and grows
+## into a plant, once the town has the people to hire and the market for it.
+func _test_factory() -> void:
+	var sim := CitySim.new()
+	sim.simulate_traffic = false
+	sim.apply({"type": "build_road", "start": [0, 0], "ctrl": [200, 0], "end": [400, 0]})
+	var seg: int = sim.network.find_segment_near(Vector3(200, 0, 0), 5.0).seg
+	sim.apply({"type": "zone_frontage", "seg": seg, "side": 1, "zone": ZoneMap.Zone.INDUSTRIAL})
+	sim.tick()
+	var keys := sim.lots.keys()
+	keys.sort_custom(func(a, b): return sim.lots[a].pos.x < sim.lots[b].pos.x)
+	_check(keys.size() >= 6, "an industrial street plats lots (%d)" % keys.size())
+	var key: String = keys[keys.size() / 2]
+	sim.buildings.clear()
+	sim.buildings[key] = BuildingTypes.make(sim, key,
+		{"zone": ZoneMap.Zone.INDUSTRIAL, "seed": 9, "built": 0, "occ": 30}, "factory", 0)
+	sim.market.regional = 0
+	sim.stats.population = 800
+	sim.stats.workers = 400
+	sim.stats.employed = 390
+	_check(BuildingTypes.assemble(sim, key) == "", "a hamlet's shop doesn't grow into a plant")
+	sim.stats.population = 3_000
+	sim.stats.workers = 1_500
+	sim.stats.employed = 1_480
+	_check(BuildingTypes.assemble(sim, key) == "", "nor with nobody free to hire")
+	sim.stats.employed = 1_000
+	var area: float = sim.lots[key].area
+	for i in 6:
+		if BuildingTypes.options(sim, key).has(["factory", 1]):
+			break
+		BuildingTypes.assemble(sim, key)
+	_check(BuildingTypes.options(sim, key).has(["factory", 1]) and sim.lots[key].area >= 6000.0,
+		"it buys the lots next door for an addition (%.0f to %.0f m²)" % [area, sim.lots[key].area])
+	sim.redevelop(key, "factory", 1)
+	_check(int(sim.buildings[key].cap) >= 32, "and hires (%d jobs)" % int(sim.buildings[key].cap))
+	_check(BuildingTypes.assemble(sim, key) == "", "a plant waits for a county-sized market")
 
 
 ## How often each type comes up for a lot, over many owners.

@@ -335,6 +335,7 @@ static func build_for(type: String, storeys: int, s: int, to_curb: float, fit: D
 			built = DenseBuilder.build_retail(s, to_curb, fit, spec)
 			CommercialBuilder.force_shop = ""
 		"mixed_use": built = DenseBuilder.build_mixed(s, to_curb, fit, storeys, spec)
+		"commercial_block": built = MainBlock.build(s, to_curb, fit, storeys, spec)
 		"office":
 			# Eight storeys and up is a downtown tower, built for its era.
 			if storeys >= 8:
