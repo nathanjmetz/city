@@ -186,6 +186,72 @@ func _retail(to_curb: float) -> void:
 	_box("paint", Vector3(0.6, 0.5, 0.6), Vector3(lx, 0.25, 0.8), FOUNDATION)
 	_box("paint", Vector3(0.16, 7.5, 0.16), Vector3(lx, 4.0, 0.8), Color("#3a3c3e"))
 	_box("paint", Vector3(0.5, 0.18, 0.9), Vector3(lx, 7.7, 0.8 + 0.3), Color("#3a3c3e"))
+	if not small_store:
+		_rt_grown(w, d, h, zf, site.door.x, sw)
+
+
+## A freestanding store grown into its second stage (BuildingTypes "shop"
+## level 1, "Retail store"): the same store with a stockroom built on the
+## back in painted split-face block, a little lower than the store, with
+## its own roll-up door, and the front walk dressed as a busy small-town
+## store's is (an ice chest, a propane exchange cage, pallets of bagged
+## salt or mulch), as Indiana's dollar and hardware stores add on and
+## spill out front once trade picks up. Its own dice, so the first stage
+## draws as it did.
+func _rt_grown(w: float, d: float, h: float, zf: float, door_x: float, sw: float) -> void:
+	var r := RandomNumberGenerator.new()
+	r.seed = hash([rng.seed, "retail grown"])
+	var back := zf + d
+	var ad := minf(r.randf_range(6.0, 9.0), depth - back - 5.0)
+	if ad >= 3.5:
+		var aw := w - r.randf_range(0.0, 2.0)
+		var ax := (w - aw) * 0.5 * (1.0 if r.randf() < 0.5 else -1.0)
+		var ah := h - r.randf_range(0.4, 0.9)
+		var block := Color(BLOCK[r.randi() % BLOCK.size()])
+		var cz := back + ad * 0.5
+		_box("paint", Vector3(aw + 0.1, 0.3, ad), Vector3(ax, 0.15, cz), FOUNDATION)
+		_box("paint", Vector3(aw, ah, ad), Vector3(ax, ah * 0.5, cz), block)
+		# Split-face courses read as fine bands up the block wall.
+		for k in int(ah / 0.6):
+			_box("paint", Vector3(aw + 0.04, 0.04, ad + 0.04), Vector3(ax, 0.6 * (k + 1), cz), block.darkened(0.08))
+		var y := ah + 0.02
+		_quad("membrane", Vector3(ax - aw * 0.5, y, back), Vector3(ax + aw * 0.5, y, back),
+			Vector3(ax + aw * 0.5, y, back + ad), Vector3(ax - aw * 0.5, y, back + ad), Color("#d9d8d2"), [], Vector3.UP)
+		_box("paint", Vector3(aw + 0.1, 0.3, 0.25), Vector3(ax, ah + 0.15, back + ad - 0.1), Color("#6e6a63"))
+		for s in [-1.0, 1.0]:
+			_box("paint", Vector3(0.25, 0.3, ad), Vector3(ax + s * (aw * 0.5 - 0.1), ah + 0.15, cz), Color("#6e6a63"))
+		# A roll-up door for deliveries and a man door beside it.
+		var rx := ax + r.randf_range(-aw * 0.2, aw * 0.2)
+		_box("metal", Vector3(3.0, 3.0, 0.08), Vector3(rx, 1.5, back + ad + 0.04), Color("#c9c9c4"))
+		for k in 10:
+			_box("paint", Vector3(3.0, 0.03, 0.1), Vector3(rx, 0.3 * (k + 0.5), back + ad + 0.06), Color("#a9a9a4"))
+		_box("paint", Vector3(3.3, 0.35, 0.3), Vector3(rx, 3.2, back + ad + 0.15), Color("#5a5e60"))
+		var mx := rx + (2.6 if rx < ax else -2.6)
+		if absf(mx - ax) < aw * 0.5 - 0.8:
+			_steel_door(Vector3(mx, 1.35, back + ad + 0.03), 1.0)
+		_flat_rect("asphalt", rx - 2.0, rx + 2.0, back + ad, minf(back + ad + 6.0, depth - 0.5), 0.07)
+	# Out front: an ice chest and a propane cage one side of the door,
+	# pallets of bags the other, on the walk against the glass.
+	var walk_z := zf - 0.75
+	var left := door_x - 1.8
+	var right := door_x + 1.8
+	var edge := sw * 0.5
+	if left - 1.6 > -edge:
+		_box("paint", Vector3(1.55, 1.25, 0.8), Vector3(left - 0.8, 0.63, walk_z), Color("#f2f4f5"))
+		_box("paint", Vector3(1.4, 0.35, 0.02), Vector3(left - 0.8, 0.9, walk_z - 0.41), Color("#2a6db5"))
+		if left - 3.2 > -edge:
+			var cx := left - 2.5
+			_box("paint", Vector3(1.2, 1.5, 0.7), Vector3(cx, 0.75, walk_z), Color("#c2c5c6"))
+			for k in 3:
+				_cylinder("metal", Vector3(cx - 0.38 + k * 0.38, 0.05, walk_z - 0.05), 0.15, 0.55, Color("#e9ecee"))
+				_cylinder("metal", Vector3(cx - 0.38 + k * 0.38, 0.75, walk_z - 0.05), 0.15, 0.55, Color("#e9ecee"))
+	if right + 1.4 < edge:
+		var bag := Color(["#7a5a3a", "#3b6e3a", "#d8d4c8"][r.randi() % 3])
+		for k in mini(2, int((edge - right) / 1.3)):
+			var px := right + 0.65 + k * 1.3
+			_box("paint", Vector3(1.1, 0.14, 1.1), Vector3(px, 0.07, walk_z), Color("#a88a5e"))
+			var bh := r.randf_range(0.5, 0.9)
+			_box("paint", Vector3(1.05, bh, 1.0), Vector3(px, 0.14 + bh * 0.5, walk_z), bag)
 
 
 func _main_street(to_curb: float) -> void:

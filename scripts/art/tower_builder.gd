@@ -607,9 +607,13 @@ func _tw_deco(to_curb: float, width: float, storeys: int) -> void:
 				c.y = y
 				_glass(c, face[1], face[2] - 0.6, 2.0, rng.randf_range(0.0, 0.5))
 				var r: Vector3 = face[1] * (face[2] - 0.6) * 0.5
-				var o: Vector3 = face[1].cross(Vector3.UP) * 0.02 + Vector3(0, -1.65, 0)
-				_quad("paint", c + o - r - Vector3(0, 0.55, 0), c + o + r - Vector3(0, 0.55, 0), c + o + r + Vector3(0, 0.55, 0),
-					c + o - r + Vector3(0, 0.55, 0), spandrel, [], face[1].cross(Vector3.UP))
+				# The spandrel fills the wall from this window down to the one
+				# below, so between the piers the window bays read as
+				# unbroken dark strips (the deco skyscraper's verticality:
+				# Chicago's Board of Trade, Indianapolis's Indiana Bell).
+				var o: Vector3 = face[1].cross(Vector3.UP) * 0.02 + Vector3(0, -1.85, 0)
+				_quad("paint", c + o - r - Vector3(0, 0.85, 0), c + o + r - Vector3(0, 0.85, 0), c + o + r + Vector3(0, 0.85, 0),
+					c + o - r + Vector3(0, 0.85, 0), spandrel, [], face[1].cross(Vector3.UP))
 		# Piers run unbroken to the top of each tier and stand above it.
 		for face in _tw_faces(tw, td, cz):
 			var n := maxi(3, roundi(face[2] / 2.4))
@@ -619,7 +623,9 @@ func _tw_deco(to_curb: float, width: float, storeys: int) -> void:
 				var c: Vector3 = face[0] + face[1] * (-face[2] * 0.5 + i * len_b) + out * 0.15
 				var ph := (y1 - maxf(y0, ground_h)) + (1.2 if i % 2 == 0 else 0.6)
 				c.y = maxf(y0, ground_h) + ph * 0.5
-				_box("brick", Vector3(0.6, ph, 0.6), c, stone.lightened(0.05), _tw_yaw(face[1]))
+				# Major piers at the bay lines, slimmer minor ones between.
+				var pw := 0.85 if i % 2 == 0 else 0.4
+				_box("brick", Vector3(pw, ph, 0.6 if i % 2 == 0 else 0.45), c, stone.lightened(0.05), _tw_yaw(face[1]))
 		_box("paint", Vector3(tw + 0.2, 0.6, td + 0.2), Vector3(0, y1 + 0.3, cz), stone.darkened(0.08))  # coping
 		_tw_roof(tw, td, cz, y1)  # each setback's roof (the far version steps with them)
 		y0 = y1
