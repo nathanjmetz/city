@@ -166,7 +166,7 @@ func _retail(to_curb: float) -> void:
 	var lot0 := -half + 0.6
 	var lot1 := half - 0.6
 	_flat_rect("asphalt", lot0, lot1, 0.0, zf - 2.2, 0.06)
-	_flat_rect("asphalt", -3.6, 3.6, -to_curb, 0.0, 0.1)
+	_curb_cut(0.0, 3.6, -to_curb, 0.0)
 	var stall := 2.75  # 9 ft
 	var x := lot0
 	while x <= lot1 + 0.01:
@@ -997,7 +997,7 @@ func _cc_parking(to_curb: float, w: float, zw: float, xg0: float, cr: RandomNumb
 	_flat_rect("drive", -w * 0.5 - 0.5, w * 0.5 + 0.5, zw - 2.0, zw, 0.08)
 	_flat_rect("asphalt", lot0, lot1, 0.0, zw - 2.0, 0.06)
 	var cut_x := clampf((-w * 0.5 + xg0) * 0.5, lot0 + 6.0, lot1 - 26.0)
-	_flat_rect("asphalt", cut_x - 4.2, cut_x + 4.2, -to_curb, 0.0, 0.1)
+	_curb_cut(cut_x, 4.2, -to_curb, 0.0)
 	site.cut_x = cut_x
 	site.main_street = false
 	# The pad: a small brick box by the road with its drive-through lane.
@@ -1305,7 +1305,7 @@ func _shop_gas_station(to_curb: float) -> void:
 	_flat_rect("drive", -cw * 0.5 - 1.0, cw * 0.5 + 1.0, ccz - cd * 0.5 - 1.0, ccz + cd * 0.5 + 1.0, 0.09)
 	_flat_rect("asphalt", -half + 0.6, half - 0.6, 0.0, zf, 0.06)
 	for x in [-half * 0.55, half * 0.55]:
-		_flat_rect("asphalt", x - 3.6, x + 3.6, -to_curb, 0.0, 0.1)
+		_curb_cut(x, 3.6, -to_curb, 0.0)
 	_steel_door(Vector3(sw * 0.3, 1.35, zf + sd + 0.03), 1.0)
 	# By the front door: the ice chest and the propane exchange cage.
 	_box("paint", Vector3(1.8, 1.7, 0.8), Vector3(sw * 0.5 - 1.4, 1.15, zf - 0.6), Color("#eef2f4"))
@@ -1550,7 +1550,7 @@ func _shop_parking(to_curb: float, w: float, zw: float, cut_x: float) -> void:
 	var lot0 := -half + 0.6
 	var lot1 := half - 0.6
 	_flat_rect("asphalt", lot0, lot1, 0.0, zw - 2.0, 0.06)
-	_flat_rect("asphalt", cut_x - 3.6, cut_x + 3.6, -to_curb, 0.0, 0.1)
+	_curb_cut(cut_x, 3.6, -to_curb, 0.0)
 	site.cut_x = cut_x
 	site.main_street = false
 	if zw - 2.0 > 6.0:
@@ -1626,7 +1626,7 @@ func _factory(to_curb: float) -> void:
 	_flat_rect("asphalt", -half + 0.6, -w * 0.5 + ow + 0.5, 0.0, zf - od - 0.5, 0.06)
 	if depth > zf + d + 1.0:
 		_flat_rect("gravel", -half + 0.4, half - 0.4, zf + d, depth - 0.5, 0.04, GRAVEL)
-	_flat_rect("asphalt", w * 0.12 - 3.6, w * 0.12 + 3.6, -to_curb, zf - 6.0, 0.1)
+	_curb_cut(w * 0.12, 3.6, -to_curb, zf - 6.0)
 	var x := -half + 0.6
 	while x <= -w * 0.5 + ow + 0.51:
 		_flat_rect("line", x - 0.06, x + 0.06, 0.0, 5.5, 0.07, LINE)

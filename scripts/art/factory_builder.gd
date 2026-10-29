@@ -74,7 +74,7 @@ func _front(zf: float, x0: float, dx: float, to_curb: float) -> void:
 	while x <= x0 + ow + 6.0:
 		_flat_rect("line", x - 0.06, x + 0.06, 0.0, 5.5, 0.07, LINE)
 		x += 2.75
-	_flat_rect("asphalt", dx - 3.6, dx + 3.6, -to_curb, zf, 0.1)
+	_curb_cut(dx, 3.6, -to_curb, zf)
 
 
 ## Gravel over the working yard behind the street setback.
@@ -586,6 +586,18 @@ func _sawtooth(to_curb: float) -> void:
 			Vector3(cx + w * 0.5, top, z0 + 0.05), Vector3(cx - w * 0.5, top, z0 + 0.05), Color(0.55, 0.6, 0.62, 0.3), [], Vector3(0, 0, -1))
 		_quad("metal", Vector3(cx - w * 0.5, top + 0.05, z0), Vector3(cx + w * 0.5, top + 0.05, z0),
 			Vector3(cx + w * 0.5, h + 0.45, z1), Vector3(cx - w * 0.5, h + 0.45, z1), roof, [], Vector3(0, 1, 0.4))
+		# Each tooth's brick end walls (the saw profile on the side walls),
+		# the steel mullions across its glazing and the valley gutter.
+		for e in [-1.0, 1.0]:
+			var ex: float = cx + e * w * 0.5
+			_tri("brick", Vector3(ex, h + 0.4, z0), Vector3(ex, top, z0), Vector3(ex, h + 0.4, z1), brick.darkened(0.05), [],
+				Vector3(e, 0, 0))
+		var m := cx - w * 0.5 + 1.5
+		while m < cx + w * 0.5 - 0.5:
+			_box("paint", Vector3(0.08, top - h - 0.4, 0.08), Vector3(m, (top + h + 0.4) * 0.5, z0 + 0.02), Color("#2b2f33"))
+			m += 1.5
+		_box("paint", Vector3(w, 0.06, 0.08), Vector3(cx, (top + h + 0.4) * 0.5, z0 + 0.02), Color("#2b2f33"))
+		_box("metal", Vector3(w, 0.18, 0.3), Vector3(cx, h + 0.5, z0 + 0.15), roof.darkened(0.15))
 	for i in 2:
 		_door(cx - w * 0.25 + i * w * 0.5, zf)
 
