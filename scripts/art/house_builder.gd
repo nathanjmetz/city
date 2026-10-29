@@ -155,6 +155,10 @@ var _reach := 0.0
 var _improved := Rect2()
 ## A backyard cottage (_cottage), once built: yard things keep off it.
 var _cottage_at := Rect2()
+## The outside stair of a house cut into flats (_cf_flats), and how many
+## flats it now holds (0 while it is one home).
+var _cf_stair := Rect2()
+var _cf_units := 0
 ## Trees this lot plants: [local position, TreeField species, tint, scale].
 var trees := []
 ## Where the home's curbside mailbox stands across the lot (local x), or INF.
@@ -242,6 +246,8 @@ func _house(to_curb: float, storeys := 0) -> Array:
 		_addition(info, body.paint)
 	if grown >= 2:
 		_cottage(info, body.paint)
+	if grown >= 3:
+		_cf_flats(info, body.paint)
 	_yard(info, to_curb)
 	if owner_care >= 1:
 		_improve()
@@ -252,6 +258,88 @@ func _house(to_curb: float, storeys := 0) -> Array:
 	_front_yard(info)
 	_drive_hoop(info)
 	return [_commit_house(), _commit_flat(), trees]
+
+
+## House cut into flats (HouseBuilder.grown 3): a landlord splits the house
+## into an up and a down flat, the way so many older houses in Marion,
+## Muncie and Indianapolis's near-east side were in the 1940s-70s. The
+## upstairs flat needs its own way out (the building code's second exit):
+## on a full two-storey house an open wooden stair up the side away from
+## the drive to a landing and door at the back corner; on a cape or
+## bungalow, whose upstairs is under the roof, its own side door at the
+## ground up an inside stair. Mailboxes by the front door and a meter for
+## each flat on the side wall. Its own random numbers.
+func _cf_flats(h: Dictionary, paint: Dictionary) -> void:
+	if outline.size() >= 3 or pad > 0.0:
+		return
+	var own := RandomNumberGenerator.new()
+	own.seed = hash([rng.seed, "cut into flats"])
+	var dx: float = h.drive_x
+	var away := -1.0 if dx >= (float(h.x0) + float(h.x1)) * 0.5 else 1.0
+	var zf: float = h.front_z
+	# The house's side wall away from the drive, and how far back it runs.
+	var wall_x := INF if away < 0.0 else -INF
+	var span := Vector2.ZERO
+	for m: Rect2 in _masses:
+		if m.position.y > zf + 2.0 or m.end.y < zf + 4.0 or _cottage_at.intersects(m):
+			continue
+		var edge := m.position.x if away < 0.0 else m.end.x
+		if (away < 0.0 and edge < wall_x) or (away > 0.0 and edge > wall_x):
+			wall_x = edge
+			span = Vector2(m.position.y, m.end.y)
+	if absf(wall_x) == INF or half - absf(wall_x) < 1.5:
+		return
+	_cf_units = 2
+	var wood := Color(["#8d7b5f", "#7d7f7c", "#a8977a"][own.randi() % 3])
+	var post := wood.darkened(0.12)
+	var door_col := Color(_pick(["#4d5254", "#6b2e2a", "#2f3f52", "#e8e4da"]))
+	var kind: String = h.get("kind", "")
+	var up := 3.0  # the upstairs floor
+	var run := ceilf(up / 0.19) * 0.25
+	if kind in ["cape", "bungalow"] or span.y - span.x < run + 2.6:
+		# Its own side door at the ground by the back corner (clear of a
+		# gable-end chimney and the side windows), under a little hood.
+		var z := maxf(span.y - 0.95, span.x + 1.2)
+		var x := wall_x + away * 0.03
+		_box("paint", Vector3(0.06, 2.05, 0.9), Vector3(x, 0.45 + 1.02, z), door_col)
+		_box("paint", Vector3(0.1, 0.12, 1.15), Vector3(x + away * 0.03, 0.45 + 2.12, z), TRIM)
+		_box("concrete", Vector3(1.0, 0.45, 1.3), Vector3(wall_x + away * 0.5, 0.22, z), FOUNDATION)
+		_box("paint", Vector3(0.8, 0.06, 1.4), Vector3(wall_x + away * 0.4, 0.45 + 2.5, z), paint.roof)
+		_cf_stair = Rect2(minf(wall_x, wall_x + away * 1.0), z - 0.7, 1.0, 1.4)
+	else:
+		# The landing at the back corner, the stair down toward the street.
+		var sw := 1.0
+		var sx := wall_x + away * (sw * 0.5 + 0.05)
+		var z1 := span.y - 0.15
+		var z0 := z1 - 1.4
+		var zb := z0 - run
+		_box("paint", Vector3(sw + 0.1, 0.08, 1.4), Vector3(sx, up - 0.04, (z0 + z1) * 0.5), wood)
+		_box("paint", Vector3(0.06, 2.05, 0.9), Vector3(wall_x + away * 0.03, up + 1.02, (z0 + z1) * 0.5), door_col)
+		_box("paint", Vector3(0.1, 0.12, 1.1), Vector3(wall_x + away * 0.06, up + 2.12, (z0 + z1) * 0.5), TRIM)
+		for pz in [z0 + 0.06, z1 - 0.06]:
+			_box("paint", Vector3(0.12, up + 1.07, 0.12), Vector3(wall_x + away * (sw + 0.04), (up + 1.07) * 0.5, pz), post)
+		var n := ceili(up / 0.19)
+		for j in range(1, n):
+			var t := float(j) / n
+			_box("paint", Vector3(sw - 0.06, 0.04, 0.3), Vector3(sx, up * t, lerpf(zb, z0, t)), wood)
+		var length := Vector2(run, up).length()
+		var tilt := Basis(Vector3.RIGHT, -atan2(up, run))
+		for side in [-1.0, 1.0]:
+			_box("paint", Vector3(0.05, 0.24, length), Vector3(sx + side * (sw * 0.5 - 0.03), up * 0.5 - 0.1, (zb + z0) * 0.5), post, tilt)
+		# Rails: up the outer side of the stair and round the landing.
+		_box("paint", Vector3(0.05, 0.05, length), Vector3(sx + away * (sw * 0.5 - 0.03), up * 0.5 + 0.9, (zb + z0) * 0.5), wood, tilt)
+		var ry := up + 1.07
+		_box("paint", Vector3(0.08, 0.05, 1.4), Vector3(wall_x + away * (sw + 0.04), ry, (z0 + z1) * 0.5), wood)
+		_box("paint", Vector3(sw, 0.05, 0.08), Vector3(sx, ry, z1 - 0.06), wood)
+		for k in 6:
+			_box("paint", Vector3(0.04, 0.97, 0.04), Vector3(wall_x + away * (sw + 0.04), up + 0.5, z0 + 0.15 + k * 0.22), wood)
+		_box("concrete", Vector3(sw + 0.2, 0.06, 1.0), Vector3(sx, 0.03, zb - 0.4), FOUNDATION)
+		_cf_stair = Rect2(minf(wall_x, wall_x + away * (sw + 0.1)), zb - 0.9, sw + 0.1, z1 - zb + 0.9)
+		_cf_units = 2 if own.randf() < 0.6 else 3  # some split the downstairs too
+	# Mailboxes for each flat on the front wall by the door.
+	var mx: float = float(h.door_x) - away * 0.75
+	for k in _cf_units:
+		_box("metal", Vector3(0.32, 0.4, 0.1), Vector3(mx + (k - (_cf_units - 1) * 0.5) * 0.36, 1.35, zf - 0.07), Color("#2a2b2c"))
 
 
 ## Home with backyard cottage (HouseBuilder.grown 2): a one-storey cottage
@@ -595,7 +683,7 @@ func _utilities(h: Dictionary) -> void:
 	if span != Vector2.INF and rng.randf() < 0.88:
 		var zc := maxf(span.x + 2.0, span.y - 1.5)
 		var unit := Vector3(wall_x + away * 0.85, 0.0, zc)
-		if _in_lot(unit, 0.6) and not _hits_mass(unit, 0.5):
+		if _in_lot(unit, 0.6) and not _hits_mass(unit, 0.5) and not _cf_stair.grow(0.5).has_point(Vector2(unit.x, unit.z)):
 			var shell := Color(_pick(["#c9c5b9", "#b4b6b3", "#8c8f8e", "#c2beb2"]))
 			_box("paint", Vector3(0.95, 0.08, 0.95), unit + Vector3(0, 0.04, 0), Color("#a7a59e"))
 			_box("paint", Vector3(0.76, 0.74, 0.76), unit + Vector3(0, 0.45, 0), shell)
@@ -606,6 +694,9 @@ func _utilities(h: Dictionary) -> void:
 			# height, gas low with its regulator.
 			var mz := maxf(span.x + 0.8, zc - 2.2)
 			_box("paint", Vector3(0.3, 0.38, 0.26), Vector3(wall_x + away * 0.06, 1.55, mz), Color("#9fa3a6"))
+			# A house cut into flats has a meter for each (a bank on the wall).
+			for k in range(1, _cf_units):
+				_box("paint", Vector3(0.3, 0.38, 0.26), Vector3(wall_x + away * 0.06, 1.55, mz + k * 0.42), Color("#9fa3a6"))
 			_box("paint", Vector3(0.36, 0.42, 0.34), Vector3(wall_x + away * 0.1, 0.55, mz - 0.9), Color("#b8b9b4"))
 			_box("paint", Vector3(0.06, 0.5, 0.06), Vector3(wall_x + away * 0.12, 0.25, mz - 0.9), Color("#d9b02a"))
 	# Trash and recycling carts (96 gal: 0.74 x 0.86 m, 1.1 m tall) beside

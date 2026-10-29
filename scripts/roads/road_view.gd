@@ -86,6 +86,7 @@ var _mats := {
 	"domes": Surfaces.concrete(Junction.DOMES_COLOR),
 	"iron": _iron(Color(0.17, 0.16, 0.15)),  # grates and manhole covers
 	"drain": RoadStyle.material(Color(0.03, 0.03, 0.03)),  # the dark under them
+	"wear": Surfaces.lane_wear(),  # oil down the middle of each lane
 	"barricade": _vertex_colour(),
 	"galvanized": _galvanized(),
 	"marker": RoadStyle.material(Color(0.95, 0.76, 0.1)),  # end terminal object marker

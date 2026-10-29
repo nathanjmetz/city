@@ -1177,10 +1177,24 @@ func _downtown_walk(to_curb: float, width: float, zf: float) -> void:
 	if rng.randf() < 0.4:
 		var lx := (width * 0.5 - 0.4) * (-1.0 if rng.randf() < 0.5 else 1.0)
 		var black := Color("#1f2224")
-		_box("paint", Vector3(0.45, 0.5, 0.45), Vector3(lx, 0.25, tz), black)
-		_box("paint", Vector3(0.14, 3.6, 0.14), Vector3(lx, 2.3, tz), black)
-		_box("paint", Vector3(0.42, 0.55, 0.42), Vector3(lx, 4.35, tz), Color("#efe9d8"))  # the acorn globe
-		_box("paint", Vector3(0.3, 0.12, 0.3), Vector3(lx, 4.7, tz), black)
+		if fine:
+			# Desktop: a cast-iron post (fluted base, slim shaft, a collar) and
+			# a ribbed acorn globe that lights after dark, with its pool of
+			# warm light on the walk.
+			_cylinder("paint", Vector3(lx, 0.0, tz), 0.24, 0.9, black, 8)
+			_cylinder("paint", Vector3(lx, 0.9, tz), 0.15, 0.15, black, 8)
+			_cylinder("paint", Vector3(lx, 1.05, tz), 0.08, 2.95, black, 8)
+			_cylinder("paint", Vector3(lx, 3.95, tz), 0.16, 0.12, black, 8)
+			_cylinder("sign", Vector3(lx, 4.07, tz), 0.2, 0.32, Color(1.0, 0.9, 0.72, 1.0), 8)
+			_cylinder("sign", Vector3(lx, 4.39, tz), 0.15, 0.2, Color(1.0, 0.9, 0.72, 1.0), 8)
+			_cylinder("paint", Vector3(lx, 4.59, tz), 0.17, 0.06, black, 8)
+			_cylinder("paint", Vector3(lx, 4.65, tz), 0.04, 0.22, black, 6)  # the finial
+			_light_pool(Vector3(lx, 0.09, tz + 1.2), 7.0, 6.0, Color(1.0, 0.86, 0.62))
+		else:
+			_box("paint", Vector3(0.45, 0.5, 0.45), Vector3(lx, 0.25, tz), black)
+			_box("paint", Vector3(0.14, 3.6, 0.14), Vector3(lx, 2.3, tz), black)
+			_box("paint", Vector3(0.42, 0.55, 0.42), Vector3(lx, 4.35, tz), Color("#efe9d8"))  # the acorn globe
+			_box("paint", Vector3(0.3, 0.12, 0.3), Vector3(lx, 4.7, tz), black)
 	_street_furniture(width, tz)
 
 
