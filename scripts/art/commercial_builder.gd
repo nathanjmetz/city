@@ -547,7 +547,11 @@ func _strip_lot_dress(to_curb: float, back: float, n: int, wall: Color) -> void:
 		for s in [-1.0, 1.0]:
 			_box("paint", Vector3(0.08, 0.08, 0.7), Vector3(px, 9.1, 0.7 + s * 0.35), dark)
 			_box("paint", Vector3(0.55, 0.16, 0.75), Vector3(px, 9.1, 0.7 + s * 1.0), dark)
-			_box("paint", Vector3(0.45, 0.02, 0.6), Vector3(px, 9.01, 0.7 + s * 1.0), Color("#efeee6"))
+			# 4000 K LED lens, lit after dark.
+			_box("sign", Vector3(0.45, 0.02, 0.6), Vector3(px, 9.01, 0.7 + s * 1.0), Color(0.95, 0.96, 1.0, 1.0))
+		# Its light on the lot (kept inside the lot's lines).
+		var pw := minf(24.0, 2.0 * (half - absf(px)) + 8.0)
+		_light_pool(Vector3(px, 0.13, 0.7 + 10.0), pw, 22.0, Color(0.95, 0.96, 1.0))
 	# Pylon sign at the curb cut's side, set back from the right of way.
 	var sx := 6.5 if r.randf() < 0.5 else -6.5
 	var sz := -to_curb + 3.0
@@ -568,8 +572,12 @@ func _strip_lot_dress(to_curb: float, back: float, n: int, wall: Color) -> void:
 		for t in tenants:
 			var y := base + 0.3 + t * ph
 			var col := Color(AWNING[r.randi() % AWNING.size()]).lightened(r.randf_range(0.0, 0.15))
-			_box("paint", Vector3(2.3, ph - 0.08, 0.02), Vector3(sx, y, sz + side * 0.21), col)
-			_box("paint", Vector3(r.randf_range(0.9, 1.7), 0.14, 0.01), Vector3(sx, y, sz + side * 0.225), Color("#f4f2ea"))
+			# Backlit tenant panels, as on a real centre's pylon.
+			col.a = 2.3 / 30.0
+			var pz: float = sz + side * 0.215
+			_quad("sign", Vector3(sx - 1.15, y - ph * 0.5 + 0.04, pz), Vector3(sx + 1.15, y - ph * 0.5 + 0.04, pz),
+				Vector3(sx + 1.15, y + ph * 0.5 - 0.04, pz), Vector3(sx - 1.15, y + ph * 0.5 - 0.04, pz), col,
+				[Vector2(0, 0), Vector2(2.3, 0), Vector2(2.3, 1), Vector2(0, 1)], Vector3(0, 0, side))
 	_box("concrete", Vector3(4.2, 0.25, 1.2), Vector3(sx, 0.125, sz), FOUNDATION)
 
 

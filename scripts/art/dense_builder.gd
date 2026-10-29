@@ -420,6 +420,8 @@ func _front_signs(w: float, zf: float, fronts: int, fw: float, shop_h: float, st
 		# Goosenecks over the board: barn-style shades on curved arms.
 		if r.randf() < 0.45:
 			var lamps := 2 if sw < 6.0 else 3
+			# Their light washing down the board.
+			_light_pool(Vector3(fx, 3.85, zf - 0.16), sw * 0.95, 1.4, Color(1.0, 0.86, 0.6), Vector3.FORWARD)
 			for q in lamps:
 				var lx := fx + (float(q) - (lamps - 1) * 0.5) * sw * 0.8 / lamps
 				_box("paint", Vector3(0.04, 0.04, 0.42), Vector3(lx, 4.45, zf - 0.52), iron)
