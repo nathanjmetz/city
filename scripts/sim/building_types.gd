@@ -95,8 +95,17 @@ const TYPES := {
 		{"name": "Strip shopping center", "storeys": 1, "cap": [25, 45], "load": 3},
 		{"name": "Neighborhood shopping center", "storeys": 1, "cap": [80, 140], "load": 8},
 	]},
+	# A small plant that does well buys the empty parcel next door and adds
+	# a wing and more truck docks, the way Indiana's small-town plants grew
+	# (a 10,000 sq ft shop to a 40,000-80,000 sq ft plant). "lot" is the
+	# land (m²) each stage needs. Jobs at about 500-700 sq ft of plant each
+	# (ULI/NAIOP employment densities for light manufacturing): ~1.5 acres
+	# for a 30-60 job plant, ~4 acres for 80-140 (Census County Business
+	# Patterns: most Indiana manufacturing plants have 20-99 workers).
 	"factory": {"zone": IND, "name": "Factory", "cover": 0.5, "stages": [
 		{"name": "Factory", "storeys": 1, "cap": [18, 36]},
+		{"name": "Factory with an addition", "storeys": 1, "cap": [32, 60], "lot": 6000.0},
+		{"name": "Plant", "storeys": 1, "cap": [80, 140], "lot": 16000.0},
 	]},
 }
 
@@ -236,6 +245,8 @@ static func far_of(type: String, level: int, area: float) -> float:
 	if st.has("plate"):
 		# A tower may cover its whole lot (the Loop's do), but not more.
 		return float(st.storeys) * float(st.plate) / area if area >= float(st.plate) else INF
+	if st.has("lot") and area < float(st.lot):
+		return INF
 	return float(st.storeys) * float(TYPES[type].cover)
 
 
@@ -245,6 +256,8 @@ static func area_for(type: String, level: int, far: float) -> float:
 	var st: Dictionary = TYPES[type].stages[level]
 	if st.has("plate"):
 		return maxf(float(st.plate), float(st.storeys) * float(st.plate) / far)
+	if st.has("lot"):
+		return float(st.lot) if float(st.storeys) * float(TYPES[type].cover) <= far else INF
 	return 0.0 if float(st.storeys) * float(TYPES[type].cover) <= far else INF
 
 
@@ -354,7 +367,7 @@ static func assemble(sim, key: String) -> String:
 	var b: Dictionary = sim.buildings[key]
 	var t := type_of(b)
 	var lvl := int(b.get("level", 0)) + 1
-	if lvl >= TYPES[t].stages.size() or not TYPES[t].stages[lvl].has("plate"):
+	if lvl >= TYPES[t].stages.size() or not (TYPES[t].stages[lvl].has("plate") or TYPES[t].stages[lvl].has("lot")):
 		return ""
 	var c := context(sim, key)
 	if not _stage_ok(sim, b, t, lvl, c):
@@ -423,6 +436,11 @@ static func _stage_ok(sim, b: Dictionary, type: String, level: int, c: Dictionar
 				return false
 			var more := int(TYPES.office.stages[level].cap[1]) - (int(b.cap) if type_of(b) == "office" else 0)
 			return c.graduates_free >= more
+		["factory", _]:
+			# Hiring needs people to hire: the town's workers not yet in a
+			# job here or in Marion.
+			var more := int(TYPES.factory.stages[level].cap[1]) - int(b.cap)
+			return int(sim.stats.workers) - int(sim.stats.employed) - int(sim.stats.get("commuting", 0)) >= more
 	return false
 
 

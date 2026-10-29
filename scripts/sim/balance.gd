@@ -221,6 +221,9 @@ const MARKET_MIN := {
 	"mixed_use": [0, 5000, 15_000],
 	"office": [10_000, 25_000, 50_000, 150_000, 1_000_000],
 	"shopping_center": [5000, 10_000],
+	# A town of 1,500-2,000 (Upland, Fairmount) keeps a few 30-60 job shops;
+	# a 100-job plant wants a county's labor shed of 5,000 or more.
+	"factory": [0, 1500, 5000],
 }
 ## Commuting reach (metres): a neighbor town within MARKET_FULL counts in
 ## full, fading to nothing at MARKET_REACH (Census: the median US commute
