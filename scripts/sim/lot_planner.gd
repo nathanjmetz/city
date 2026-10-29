@@ -78,6 +78,9 @@ const MAX_LOT := {
 	"apartments": [60.0, 6000.0],
 	"main_street": [30.0, 1500.0],
 	"highway_shop": [120.0, 20000.0],  # a big box, about 5 acres
+	# A power center's row of boxes along a highway (Marion's Baldwin Avenue
+	# runs about 250 m of frontage), about 7 acres: only its own ask makes one.
+	"power_center": [240.0, 30000.0],
 	"industry": [200.0, 80000.0],  # about 20 acres
 	# A tower site in a core zoned for towers (Balance.ASSEMBLE_FAR): up to
 	# about half a Chicago Loop block (100 by 60 m).

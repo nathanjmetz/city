@@ -67,6 +67,7 @@ func _shop(to_curb: float, lot: Dictionary, main_street := true) -> void:
 		"strip": _strip_center(to_curb)
 		"center": _strip_center(to_curb, true)
 		"community": _community_center(to_curb)
+		"power": _power_center(to_curb)
 		"gas": _shop_gas_station(to_curb)
 		"diner": _shop_diner(to_curb)
 		"bank": _bank(to_curb)
@@ -684,6 +685,17 @@ func _sign(c: Vector3, w: float, h: float) -> void:
 	_box("paint", Vector3(w + 0.1, h + 0.1, 0.06), c + Vector3(0, h * 0.5, 0.04), col.darkened(0.3))
 
 
+## Trades lettered on signs with no business name yet (the sign shader's
+## stand-in words are the same list).
+const TRADE_WORDS := [
+	"DINER", "CAFE", "PIZZA", "BANK", "SALON", "NAILS", "TAX", "DELI", "SUBS", "LIQUOR", "PAWN", "TACOS", "DRUGS",
+	"HARDWARE", "VIDEO", "SHOES", "FLOWERS", "BAKERY", "BOOKS", "TOYS", "GIFTS", "MUSIC", "PETS", "TIRES", "LOANS",
+	"DENTAL", "INSURANCE", "MARKET", "GRILL", "DONUTS", "FURNITURE", "OPTICAL", "CLEANERS", "BARBER", "THRIFT", "TAVERN",
+	"ANTIQUES", "BIKES", "CANDY", "SPORTS", "HOBBY", "REALTY", "PAINT", "QUILTS", "APPLIANCE", "JEWELRY", "FABRIC",
+	"CELLULAR", "FITNESS", "SEWING",
+]
+
+
 ## Desktop: a strip tenant's name in channel letters, the way strip-centre
 ## leases require them: separate lit letters about 13 cm deep on a raceway
 ## along the fascia, red most often, then white, blue or green; they glow
@@ -696,29 +708,31 @@ func _channel_letters(c: Vector3, w: float, h: float) -> void:
 	var col: Color = tints[r.randi() % tints.size()]
 	col.a = 1.0
 	var lh := h * r.randf_range(0.7, 0.95)
-	var lw := lh * 0.62
-	var gap := lh * 0.14
-	var n := maxi(3, int(w / (lw + gap)))
-	var x0 := c.x - (n * (lw + gap) - gap) * 0.5
+	# A trade word (no names) in block capitals built up from strokes.
+	var word: String = TRADE_WORDS[r.randi() % TRADE_WORDS.size()]
+	var px := minf(lh / 5.0, w * 0.85 / (word.length() * 4.0 - 1.0))
+	lh = px * 5.0
+	var span := word.length() * 4.0 * px - px
 	var y0 := c.y + (h - lh) * 0.5
 	var z := c.z - 0.08
 	# The raceway the letters hang on, painted to match the fascia.
-	_box("paint", Vector3(n * (lw + gap), 0.12, 0.1), Vector3(c.x, y0 + lh * 0.45, c.z - 0.03), Color("#5b5d5f"))
-	var t := lh * 0.18
-	for i in n:
-		if r.randf() < 0.1 and i > 0 and i < n - 1:
-			continue  # a space between words
-		var lx := x0 + i * (lw + gap) + lw * 0.5
-		# A block letter from a few strokes: stems, then bars across.
-		var stems := r.randi_range(1, 2)
-		if stems == 1:
-			_box("sign", Vector3(t, lh, 0.13), Vector3(lx + r.randf_range(-0.3, 0.3) * lw, y0 + lh * 0.5, z), col)
-		else:
-			for sx in [-1.0, 1.0]:
-				_box("sign", Vector3(t, lh, 0.13), Vector3(lx + sx * (lw - t) * 0.5, y0 + lh * 0.5, z), col)
-		for k in 3:
-			if r.randf() < 0.55:
-				_box("sign", Vector3(lw, t, 0.13), Vector3(lx, y0 + t * 0.5 + k * (lh - t) * 0.5, z - 0.005), col)
+	_box("paint", Vector3(span + px * 2.0, 0.12, 0.1), Vector3(c.x, y0 + lh * 0.45, c.z - 0.03), Color("#5b5d5f"))
+	var x0 := c.x + span * 0.5  # +x is the viewer's left
+	for i in word.length():
+		var rows: Array = DenseBuilder.PIXEL_FONT.get(word[i], [])
+		for ry in rows.size():
+			var row: String = rows[ry]
+			var cx := 0
+			while cx < 3:
+				if row[cx] != "#":
+					cx += 1
+					continue
+				var run := 0
+				while cx + run < 3 and row[cx + run] == "#":
+					run += 1
+				var lx := x0 - i * 4.0 * px - (cx + run * 0.5) * px
+				_box("sign", Vector3(run * px, px, 0.13), Vector3(lx, y0 + (4.5 - ry) * px, z), col)
+				cx += run
 
 
 func _awning(cx: float, w: float, zf: float, y: float, col: Color) -> void:
@@ -1042,6 +1056,164 @@ func _community_center(to_curb: float) -> void:
 		_box("paint", Vector3(2.4, 2.2, 5.0), Vector3(sx0 + 4.0, 1.1, dz + 2.8), Color("#3d5a7a"))  # baler/compactor
 	_rooftop(w * 0.8, dd * 0.6, zf + dd * 0.5, hd, 6)
 	_cc_parking(to_curb, w, zf - 2.6, xg0, cr)
+
+
+## A power center (ICSC: 250,000-600,000 sq ft, three or more "category
+## killers" beside a discount store, few small shops; Marion's Baldwin
+## Avenue and Fort Wayne's Apple Glen): along the back of a big parking
+## field, a home improvement store with its fenced lumber and garden yard on
+## the outer end, a row of junior boxes (electronics, sporting goods, pets,
+## crafts) each with its own entry tower, and the discount store at the
+## other end; docks behind them all, pads along the road. Its own random
+## numbers.
+func _power_center(to_curb: float) -> void:
+	var cr := RandomNumberGenerator.new()
+	cr.seed = hash([rng.seed, "power"])
+	var w := half * 2.0 - 2.0
+	var back := clampf(depth - 80.0, 6.0, 18.0)
+	var dd := clampf(depth - back - 36.0, 24.0, 56.0)
+	var zf := maxf(depth - back - dd, 22.0)
+	dd = minf(dd, depth - zf - 4.0)
+	var yard := 14.0
+	var wh := clampf(w * 0.34, 34.0, 64.0)
+	var wd := clampf(w * 0.28, 28.0, 56.0)
+	var xh0 := -w * 0.5 + yard
+	var xh1 := xh0 + wh
+	var xd0 := w * 0.5 - wd
+	if xd0 - xh1 < 18.0:
+		wd = maxf(w * 0.5 - xh1 - 18.0, 22.0)
+		xd0 = w * 0.5 - wd
+	var spec := sign_spec
+	sign_spec = {}
+	var boxes := []  # [x0, x1, deck] for the docks
+	# The home improvement store: a tall gray or tan box, a stripe in the
+	# chain's colour, the name on a raised front over two entries (the
+	# lumber end and the main one).
+	var hh := cr.randf_range(9.6, 10.8)
+	var hw := Color(["#8d8f91", "#a7a49c", "#c4b79f", "#9a9fa3"][cr.randi() % 4])
+	var hb := Color(["#1f4e8a", "#2f6a3e", "#b0262b", "#e0a31f"][cr.randi() % 4])
+	_cc_box("paint", xh0, xh1, zf, zf + dd, hh, hh + 0.9, hw)
+	_box("paint", Vector3(wh + 0.12, 0.6, 0.34), Vector3((xh0 + xh1) * 0.5, hh - 1.0, zf - 0.13), hb)
+	_box("paint", Vector3(wh + 0.08, 1.3, 0.2), Vector3((xh0 + xh1) * 0.5, 0.65, zf - 0.08), hw.darkened(0.2))
+	var hx := (xh0 + xh1) * 0.5 + wh * 0.08
+	var th := hh + 3.0
+	_box("paint", Vector3(20.0, th, 1.6), Vector3(hx, th * 0.5, zf - 0.8), hw.lightened(0.06))
+	_box("paint", Vector3(20.6, 0.6, 2.0), Vector3(hx, th + 0.1, zf - 0.8), hb)
+	sign_spec = spec
+	_sign(Vector3(hx, th - 2.8, zf - 1.62), 15.0, 2.0)
+	sign_spec = {}
+	var doors := [hx - 6.0, hx + 6.0]
+	for vx: float in doors:
+		_box("paint", Vector3(5.0, 3.4, 3.0), Vector3(vx, 1.7, zf - 2.9), hw.lightened(0.03))  # vestibule
+		_box("paint", Vector3(5.4, 0.3, 3.4), Vector3(vx, 3.5, zf - 2.9), hb)
+		_glass(Vector3(vx, 1.35, zf - 4.42), Vector3(-1, 0, 0), 4.2, 2.5, 0.0)
+		_box("paint", Vector3(2.4, 2.2, 0.06), Vector3(vx, 1.1, zf - 4.46), Color("#2b2d2f"))
+		if fine_parts:
+			_cc_entry(vx, zf - 4.4, hb, false, 6, -1.0 if vx < hx else 1.0, true, 1.5)
+	boxes.append([xh0, xh1, hh])
+	# The yard on the outer end: block knee wall and black fence, a shed roof
+	# over the lumber racks along the store's wall, the drive-in gate.
+	var yz0 := zf - 4.0
+	var yz1 := zf + dd - 2.0
+	var x0y := -w * 0.5 + 0.3
+	_flat_rect("drive", x0y, xh0, yz0, yz1, 0.08)
+	var fence := Color("#2a2c2e")
+	for e in [[Vector2(x0y, yz0), Vector2(xh0, yz0)], [Vector2(x0y, yz0), Vector2(x0y, yz1)], [Vector2(x0y, yz1), Vector2(xh0, yz1)]]:
+		var a: Vector2 = e[0]
+		var b: Vector2 = e[1]
+		var mid := (a + b) * 0.5
+		var size := Vector3(maxf(absf(b.x - a.x), 0.2), 0.0, maxf(absf(b.y - a.y), 0.2))
+		if size.x > 0.2:
+			# The gate: the front fence leaves a truck-wide opening.
+			for k in [-1.0, 1.0]:
+				var gx: float = mid.x + k * (size.x * 0.25 + 1.0)
+				_box("paint", Vector3(size.x * 0.5 - 2.0, 0.8, 0.2), Vector3(gx, 0.4, a.y), hw.darkened(0.15))
+				_box("metal", Vector3(size.x * 0.5 - 2.0, 2.6, 0.06), Vector3(gx, 2.1, a.y), fence)
+		else:
+			_box("paint", Vector3(0.2, 0.8, size.z), Vector3(mid.x, 0.4, mid.y), hw.darkened(0.15))
+			_box("metal", Vector3(0.06, 2.6, size.z), Vector3(mid.x, 2.1, mid.y), fence)
+	_box("paint", Vector3(6.0, 0.25, yz1 - zf), Vector3(xh0 - 3.0, 5.4, (zf + yz1) * 0.5), Color("#c9c6bd"))  # shed roof
+	for i in 3:
+		_box("metal", Vector3(0.18, 5.3, 0.18), Vector3(xh0 - 5.8, 2.65, zf + 1.0 + i * (yz1 - zf - 2.0) * 0.5), fence)
+	if fine_parts:
+		var lumber := Color("#c8a46e")
+		for i in maxi(2, int((yz1 - zf - 2.0) / 3.2)):
+			var lz := zf + 2.0 + i * 3.2
+			_box("paint", Vector3(4.6, 1.2, 1.3), Vector3(xh0 - 3.0, 0.6, lz), lumber)
+			_box("paint", Vector3(4.6, 0.9, 1.3), Vector3(xh0 - 3.0, 1.9, lz), lumber.darkened(0.08))
+		for i in 4:  # pallets of mulch and bagged soil in the open yard
+			_box("paint", Vector3(1.2, 1.0, 1.2), Vector3(x0y + 2.0, 0.5, yz0 + 2.0 + i * 1.8), Color("#6a4a32") if i % 2 == 0 else Color("#4f4a40"))
+	# The junior boxes: each its own wall colour, an entry tower and sign.
+	var nj := clampi(int((xd0 - xh1) / 22.0), 1, 4)
+	var jw := (xd0 - xh1) / nj
+	var jcols := ["#c9b48f", "#5d6670", "#b7b1a5", "#d6cbb3", "#8a8378", "#a8b0b4"]
+	var jbands := ["#1f4e8a", "#b0262b", "#2f6a3e", "#e0a31f", "#5a3f7a", "#2a2c2e"]
+	var jc0 := cr.randi() % jcols.size()
+	var jb0 := cr.randi() % jbands.size()
+	for j in nj:
+		var x0 := xh1 + j * jw
+		var x1 := x0 + jw
+		var jh := cr.randf_range(7.4, 8.8)
+		var jd := minf(dd, cr.randf_range(30.0, 42.0))
+		var jc := Color(jcols[(jc0 + j * 2) % jcols.size()])  # no two neighbours alike
+		var jb := Color(jbands[(jb0 + j * 5) % jbands.size()])
+		_cc_box("paint", x0, x1, zf + 1.0, zf + 1.0 + jd, jh, jh + 0.8, jc)
+		_box("paint", Vector3(jw + 0.1, 0.4, 0.3), Vector3((x0 + x1) * 0.5, jh - 0.7, zf + 0.88), jb)
+		var jx := (x0 + x1) * 0.5 + (jw * 0.18 if j % 2 == 0 else -jw * 0.18)
+		var tw := minf(jw * 0.45, 11.0)
+		var jt := jh + 1.8
+		_box("paint", Vector3(tw, jt, 1.2), Vector3(jx, jt * 0.5, zf + 0.4), jc.lightened(0.08))
+		_box("paint", Vector3(tw + 0.4, 0.45, 1.5), Vector3(jx, jt + 0.1, zf + 0.4), jb)
+		_sign(Vector3(jx, jt - 2.4, zf - 0.22), tw * 0.8, 1.3)
+		_glass(Vector3(jx, 1.6, zf - 0.23), Vector3(-1, 0, 0), tw - 1.4, 2.8, 0.0)
+		_box("paint", Vector3(tw + 0.6, 0.25, 2.2), Vector3(jx, 3.3, zf - 1.1), jb)  # entry canopy
+		if fine_parts:
+			_cc_entry(jx, zf - 0.2, jb, false, 3, -1.0 if jx > (x0 + x1) * 0.5 else 1.0, false, -0.9)
+		# Display windows either side of the entry.
+		for k in [-1.0, 1.0]:
+			var wx: float = jx + k * (tw * 0.5 + 3.0)
+			if wx > x0 + 2.0 and wx < x1 - 2.0:
+				_glass(Vector3(wx, 2.0, zf + 0.97), Vector3(-1, 0, 0), 3.4, 2.2, cr.randf_range(0.2, 0.5))
+		boxes.append([x0, x1, jh])
+	# The discount store at the other end.
+	var dh := cr.randf_range(8.4, 9.4)
+	var dw := Color(["#b8b2a4", "#c9c1ae", "#d6c4a0", "#a49d8f"][cr.randi() % 4])
+	var db := Color(["#1f4e8a", "#b0262b", "#2f6a3e", "#5a5e62"][cr.randi() % 4])
+	_cc_box("paint", xd0, w * 0.5, zf, zf + dd, dh, dh + 0.9, dw)
+	_box("paint", Vector3(wd + 0.12, 0.45, 0.34), Vector3(xd0 + wd * 0.5, dh - 1.35, zf - 0.13), db)
+	_box("paint", Vector3(wd + 0.08, 1.3, 0.2), Vector3(xd0 + wd * 0.5, 0.65, zf - 0.08), dw.darkened(0.22))
+	var ex := xd0 + wd * 0.5
+	var ew := minf(wd * 0.5, 22.0)
+	_box("paint", Vector3(ew, dh + 2.4, 1.4), Vector3(ex, (dh + 2.4) * 0.5, zf - 0.7), dw.lightened(0.06))
+	_box("paint", Vector3(ew + 0.4, 0.4, 1.7), Vector3(ex, dh + 2.6, zf - 0.7), db)
+	_sign(Vector3(ex, dh + 0.1, zf - 1.42), ew * 0.75, 1.7)
+	for vx: float in [ex - ew * 0.3, ex + ew * 0.3]:
+		_box("paint", Vector3(5.0, 3.4, 3.0), Vector3(vx, 1.7, zf - 2.9), dw.lightened(0.03))
+		_box("paint", Vector3(5.4, 0.3, 3.4), Vector3(vx, 3.5, zf - 2.9), db)
+		_glass(Vector3(vx, 1.35, zf - 4.42), Vector3(-1, 0, 0), 4.2, 2.5, 0.0)
+		_box("paint", Vector3(2.4, 2.2, 0.06), Vector3(vx, 1.1, zf - 4.46), Color("#2b2d2f"))
+		if fine_parts:
+			_cc_entry(vx, zf - 4.4, db, vx < ex, 6, 1.0 if vx < ex else -1.0, true, 1.5)
+	boxes.append([xd0, w * 0.5, dh])
+	sign_spec = spec
+	site.door = Vector2(hx + 6.0, zf - 4.5)
+	# The truck court: each box's docks, a trailer at some.
+	var dz := zf + dd
+	if depth - dz > 5.0:
+		_flat_rect("asphalt", -half + 0.6, half - 0.6, dz, depth - 0.6, 0.06)
+		for bx in boxes:
+			var bz: float = zf + dd if float(bx[1]) - float(bx[0]) > 30.0 else zf + 1.0 + minf(dd, 36.0)
+			var nk := 2 if float(bx[1]) - float(bx[0]) > 30.0 else 1
+			for k in nk:
+				var kx: float = float(bx[1]) - 5.0 - k * 5.0
+				_box("paint", Vector3(3.0, 3.2, 0.1), Vector3(kx, 1.6, bz + 0.06), Color("#5a5c5e"))
+				_box("paint", Vector3(3.4, 1.2, 0.5), Vector3(kx, 1.2, bz + 0.3), Color("#1e1f20"))
+				if k == 0 and depth - bz > 15.0 and cr.randf() < 0.6:
+					_box("paint", Vector3(2.6, 2.4, 14.6), Vector3(kx, 2.4, bz + 7.9), Color("#e6e4de"))
+					_box("paint", Vector3(2.6, 0.5, 14.6), Vector3(kx, 3.85, bz + 7.9), Color("#e6e4de"))
+					_box("paint", Vector3(2.4, 1.0, 0.4), Vector3(kx, 0.6, bz + 13.5), Color("#2a2a2a"))
+	_rooftop(w * 0.8, dd * 0.6, zf + dd * 0.5, hh, 8)
+	_cc_parking(to_curb, w, zf - 2.6, xd0, cr)
 
 
 ## A flat-roofed box between x0 and x1: walls, a membrane roof, a parapet
