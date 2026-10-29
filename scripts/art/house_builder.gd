@@ -222,7 +222,64 @@ func _house(to_curb: float, storeys := 0) -> Array:
 	_yard_trees(info, to_curb)
 	_street_trees(info, to_curb)
 	_back_yard(info)
+	_utilities(info)
 	return [_commit_house(), _commit_flat(), trees]
+
+
+## The working side of a real house: the air conditioner's condenser on its
+## pad by the back corner of the side away from the drive, the electric and
+## gas meters on that wall, and the trash and recycling carts by the garage.
+## Drawn last, so its dice never shift anything the lot drew before.
+func _utilities(h: Dictionary) -> void:
+	var dx: float = h.drive_x
+	var away := -1.0 if dx >= (float(h.x0) + float(h.x1)) * 0.5 else 1.0
+	var wall_x: float = h.x0 if away < 0.0 else h.x1
+	# The side wall's own stretch: the mass whose side is that wall.
+	var span := Vector2.INF
+	for r: Rect2 in _masses:
+		var edge := r.position.x if away < 0.0 else r.end.x
+		if absf(edge - wall_x) < 0.4 and r.size.y > 4.0:
+			span = Vector2(r.position.y, r.end.y)
+			break
+	if span != Vector2.INF and rng.randf() < 0.88:
+		var zc := maxf(span.x + 2.0, span.y - 1.5)
+		var unit := Vector3(wall_x + away * 0.85, 0.0, zc)
+		if _in_lot(unit, 0.6) and not _hits_mass(unit, 0.5):
+			var shell := Color(_pick(["#c9c5b9", "#b4b6b3", "#8c8f8e", "#c2beb2"]))
+			_box("paint", Vector3(0.95, 0.08, 0.95), unit + Vector3(0, 0.04, 0), Color("#a7a59e"))
+			_box("paint", Vector3(0.76, 0.74, 0.76), unit + Vector3(0, 0.45, 0), shell)
+			_box("paint", Vector3(0.6, 0.03, 0.6), unit + Vector3(0, 0.83, 0), Color("#2a2b2c"))
+			# Line set into the wall.
+			_box("paint", Vector3(absf(unit.x - wall_x), 0.05, 0.05), Vector3((unit.x + wall_x) * 0.5, 0.55, zc), Color("#2b2b2b"))
+			# The meters, a few feet toward the street: electric at eye
+			# height, gas low with its regulator.
+			var mz := maxf(span.x + 0.8, zc - 2.2)
+			_box("paint", Vector3(0.3, 0.38, 0.26), Vector3(wall_x + away * 0.06, 1.55, mz), Color("#9fa3a6"))
+			_box("paint", Vector3(0.36, 0.42, 0.34), Vector3(wall_x + away * 0.1, 0.55, mz - 0.9), Color("#b8b9b4"))
+			_box("paint", Vector3(0.06, 0.5, 0.06), Vector3(wall_x + away * 0.12, 0.25, mz - 0.9), Color("#d9b02a"))
+	# Trash and recycling carts (96 gal: 0.74 x 0.86 m, 1.1 m tall) beside
+	# the garage door, on its outer side.
+	if h.has("garage_z") and rng.randf() < 0.8:
+		var s := 1.0 if dx >= 0.0 else -1.0
+		var dw: float = h.drive_w
+		var gz: float = h.garage_z
+		var lids := [Color(_pick(["#2a2b2c", "#2f4a35", "#3a3d40"])), Color(_pick(["#2f4f8a", "#2f4f8a", "#2f4a35"]))]
+		for k in 2:
+			var c := Vector3(dx + s * (dw * 0.5 + 0.55 + k * 0.82), 0.0, gz - 0.6)
+			if not _in_lot(c, 0.4) or _hits_mass(c, 0.45):
+				continue
+			var body: Color = lids[k].darkened(0.08)
+			var lid: Color = Color("#d9b02a") if k == 1 and rng.randf() < 0.4 else lids[k]
+			_box("paint", Vector3(0.66, 1.0, 0.72), c + Vector3(0, 0.5, 0), body)
+			_box("paint", Vector3(0.72, 0.06, 0.8), c + Vector3(0, 1.04, 0.02), lid)
+
+
+## Whether a part at `p` (radius `r`) would stand in one of the building's masses.
+func _hits_mass(p: Vector3, r: float) -> bool:
+	for m: Rect2 in _masses:
+		if m.grow(r).has_point(Vector2(p.x, p.z)):
+			return true
+	return false
 
 
 ## The plan this lot gets from its block's builder, drawn or from the
