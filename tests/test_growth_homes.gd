@@ -109,7 +109,7 @@ func _init() -> void:
 			# (A colonial adds a room over its garage, a foursquare closes in
 			# its porch: no new footprint either way.)
 			var same: bool = m2.slice(0, m0.size()) == m0 and first.door_x == grown.door_x and first.drive_x == grown.drive_x
-			if kind in ["colonial", "foursquare", "farmhouse"] and (out2[0] as ArrayMesh).get_faces().size() > (out0[0] as ArrayMesh).get_faces().size():
+			if kind in ["colonial", "foursquare", "farmhouse", "i_house", "split"] and (out2[0] as ArrayMesh).get_faces().size() > (out0[0] as ArrayMesh).get_faces().size():
 				bonus += 1
 			_check(same, "a %s %s grown to two storeys keeps its walls and drive (%d)" % [era, kind, s])
 			if kind in ["cape", "bungalow"]:
@@ -117,7 +117,7 @@ func _init() -> void:
 			else:
 				kept += 1
 	_check(kept > 10 and raised > 10, "two-storey houses stay and capes and bungalows raise dormers (%d, %d)" % [kept, raised])
-	_check(bonus > 3, "colonials and foursquares grown to the two-storey stage finish a bonus room or sun porch (%d)" % bonus)
+	_check(bonus > 8, "two-storey houses grown to the two-storey stage add a bonus room, sun porch or front porch (%d)" % bonus)
 	# Corner stores, a shop's first stage: on a corner (either side) and
 	# mid-block, prewar at the sidewalk with no lot, postwar with stalls;
 	# what SiteLayout reads from its dry run is what's drawn.
