@@ -1469,7 +1469,7 @@ func _back_yard(h: Dictionary) -> void:
 			var inward := Vector2(-along.y, along.x)
 			if inward.dot(mid - (a + b) * 0.5) < 0.0:
 				inward = -inward
-			_lot_fence(a + inward * 0.12, b + inward * 0.12, kind)
+			_lot_fence(a + inward * 0.12, b + inward * 0.12, kind, inward)
 	# One thing out back, clear of the house, garage and trees.
 	var spot := Vector3(rng.randf_range(-half + 3.0, half - 3.0), 0, rng.randf_range(z0 + 3.0, depth - 3.0))
 	var thing := rng.randf()
@@ -1499,7 +1499,7 @@ func _back_yard(h: Dictionary) -> void:
 
 
 ## A fence along one lot line, `kind` chain, wood or vinyl.
-func _lot_fence(a: Vector2, b: Vector2, kind: String) -> void:
+func _lot_fence(a: Vector2, b: Vector2, kind: String, inward := Vector2.ZERO) -> void:
 	var p := Vector3(a.x, 0, a.y)
 	var q := Vector3(b.x, 0, b.y)
 	var len := p.distance_to(q)
@@ -1515,12 +1515,29 @@ func _lot_fence(a: Vector2, b: Vector2, kind: String) -> void:
 		_box("metal", Vector3(0.015, 0.015, len), (p + q) * 0.5 + Vector3(0, 0.08, 0), galv, yaw)
 		_box("chain", Vector3(0.006, 1.12, len), (p + q) * 0.5 + Vector3(0, 0.64, 0), galv, yaw)
 		return
-	# 6 ft privacy: boards between 4x4 posts every 8 ft.
-	var board := Color("#f0eee8") if kind == "vinyl" else Color("#8f7a60")
-	_box("paint", Vector3(0.03, 1.83, len), (p + q) * 0.5 + Vector3(0, 0.95, 0), board, yaw)
+	# 6 ft privacy: upright boards (the siding shader's laps, turned on
+	# end) between 4x4 posts every 8 ft, three 2x4 rails on the owner's
+	# side. Wood is new cedar, or greyed after a few Indiana winters.
+	var woods := ["#9a7b5a", "#8f7a60", "#8a8378", "#a08868"]
+	var board := Color("#f0eee8") if kind == "vinyl" else Color(woods[absi(int(a.x * 7.0 + a.y * 3.0)) % woods.size()])
+	var side := Vector3(inward.x, 0, inward.y)
+	var lo := Vector3(0, 0.07, 0)
+	var hi := Vector3(0, 1.88, 0)
+	var u := 2.0 + absf(a.x + a.y)  # boards don't line up from fence to fence
+	# Both faces, each facing out (2.4 cm apart, so they never share a plane).
+	var face_dirs := [side, -side] if side != Vector3.ZERO else [Vector3(-dir.z, 0, dir.x), Vector3(dir.z, 0, -dir.x)]
+	for f in face_dirs:
+		var o: Vector3 = f * 0.012
+		_quad("siding", p + lo + o, q + lo + o, q + hi + o, p + hi + o, board,
+			[Vector2(1.81, u), Vector2(1.81, u + len), Vector2(0.0, u + len), Vector2(0.0, u)], f)
 	var n := maxi(1, int(len / 2.44))
 	for k in n + 1:
-		_box("paint", Vector3(0.1, 1.95, 0.1), p + dir * (len * k / n) + Vector3(0, 0.975, 0), board.darkened(0.12))
+		_box("paint", Vector3(0.09, 1.95, 0.09), p + dir * (len * k / n) + Vector3(0, 0.975, 0) + side * 0.065, board.darkened(0.12))
+	if kind == "vinyl":
+		_box("paint", Vector3(0.12, 0.08, len), (p + q) * 0.5 + Vector3(0, 1.9, 0), board, yaw)
+		return
+	for y in [0.3, 1.0, 1.65]:
+		_box("paint", Vector3(0.04, 0.09, len), (p + q) * 0.5 + Vector3(0, y, 0) + side * 0.04, board.darkened(0.08), yaw)
 
 
 ## An 8 x 10 ft garden shed: a gable roof of shingles, T1-11 siding, double doors.

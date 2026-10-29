@@ -109,10 +109,15 @@ void fragment() {
 	float edge = mix(0.62, 1.0, smoothstep(0.0, 0.16, fy));
 	float slot = 1.0 - (1.0 - smoothstep(0.0, 0.025, min(fx, 1.0 - fx))) * 0.35;
 	float s = mix(tint * edge * slot, 0.93, aa);
-	// Weathering: big soft patches and the odd dark algae streak.
+	// Weathering: big soft patches and the odd dark algae streak. Streaks
+	// run down the slope (UV.y climbs from the eave), wander a little, and
+	// only show on some stretches of roof, as real ones do; drawn in world
+	// x/y they read as metal-roof seams or bands along the ridge.
 	float w = texture(noise_soft, world_pos.xz / 14.0).r;
-	float streak = smoothstep(0.62, 0.8, texture(noise_soft, vec2(world_pos.x / 2.0, world_pos.y / 30.0)).r);
-	vec3 col = vcol(COLOR.rgb) * s * (0.9 + w * 0.2) * (1.0 - streak * 0.18);
+	float wander = texture(noise_soft, vec2(UV.y / 9.0, UV.x / 23.0)).r;
+	float streak = smoothstep(0.66, 0.86, texture(noise_soft, vec2(UV.x / 1.4 + wander * 0.6, UV.y / 22.0)).r);
+	streak *= smoothstep(0.45, 0.7, texture(noise_soft, world_pos.xz / 31.0 + 0.37).r);
+	vec3 col = vcol(COLOR.rgb) * s * (0.9 + w * 0.2) * (1.0 - streak * 0.14);
 	col *= 0.94 + texture(noise_grain, UV * 3.0).r * 0.12 * (1.0 - aa);
 	// Winter: snow on the roof, with the tab lines showing faintly through.
 	float cover = snow_cover(0.35, 0.6);
