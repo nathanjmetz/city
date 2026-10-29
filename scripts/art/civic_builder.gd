@@ -29,6 +29,9 @@ const CONCRETE := Color("#b9b5ab")
 const DARK := Color("#2e3032")
 const POLE := Color("#5b4a38")
 const DIRT := Color("#9a7a58")
+## How deep a fire or police station's first lot is: what a grown station
+## adds (Stations) goes on the land behind it.
+const FIRST_D := 36.0
 
 
 static func build_service(kind: int, seed: int, size: Vector2, to_curb: float, built := []) -> Array:
@@ -38,8 +41,12 @@ static func build_service(kind: int, seed: int, size: Vector2, to_curb: float, b
 	b._flat.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var front := -size.y * 0.5
 	match kind:
-		Services.Kind.FIRE: b._fire(front, to_curb)
-		Services.Kind.POLICE: b._police(front, to_curb)
+		Services.Kind.FIRE:
+			b._fire(front, to_curb)
+			b._station_upgrades(kind, size, front, built)
+		Services.Kind.POLICE:
+			b._police(front, to_curb)
+			b._station_upgrades(kind, size, front, built)
 		Services.Kind.CLINIC: b._clinic(front, to_curb)
 		Services.Kind.SCHOOL: b._school(front, to_curb)
 		Services.Kind.SUBSTATION: b._substation(front, to_curb)
@@ -106,7 +113,7 @@ func _fire(front: float, to_curb: float) -> void:
 	# Parking for the volunteers, and the flag.
 	_parking(ox - ow * 0.5 + 0.3, ox + ow * 0.5 - 0.3, front + 0.3, oz - 2.0, to_curb, ox)
 	_flagpole(Vector3(ox - ow * 0.5 + 1.2, 0, front + 1.5))
-	_flat_rect("drive", ax - aw * 0.5, ax + aw * 0.5, zf + ad, -front, 0.08)
+	_flat_rect("drive", ax - aw * 0.5, ax + aw * 0.5, zf + ad, front + FIRST_D, 0.08)
 
 
 # ---------------------------------------------------------------- police
@@ -129,12 +136,218 @@ func _police(front: float, to_curb: float) -> void:
 	for s in [-1.0, 1.0]:
 		_window_row(s * w * 0.5, zf + d * 0.5, d * 0.6, 1.7, 1.2, 3, trim, Vector3(s, 0, 0))
 	# A fenced lot for the cruisers out back.
-	_flat_rect("asphalt", -14.5, 14.5, zf + d, 17.8, 0.06)
-	_fence(Vector2(-14.5, zf + d + 1.0), Vector2(14.5, 17.8), 2.0)
+	_flat_rect("asphalt", -14.5, 14.5, zf + d, front + FIRST_D - 0.2, 0.06)
+	# The fence takes in any yard the station has grown behind (Stations).
+	_fence(Vector2(-14.5, zf + d + 1.0), Vector2(14.5, -front - 0.2), 2.0)
 	_parking(-14.5, 14.5, front + 0.3, zf - 3.0, to_curb, -9.0)
 	_flat_rect("drive", -w * 0.5, w * 0.5, zf - 3.0, zf, 0.08)
 	_flagpole(Vector3(ex - 4.5, 0, zf - 4.0))
 	_bed(ex + 3.2, zf - 2.0, 3.0)
+
+
+# ---------------------------------------------------------------- station growth
+
+## What a fire or police station has added as its town grew (Stations), in
+## the order built: a piece that bought land stands on its own strip behind
+## the first lot, the strips one after another; the rest fit on the lot.
+func _station_upgrades(kind: int, size: Vector2, front: float, built: Array) -> void:
+	if built.is_empty():
+		return
+	var w := size.x
+	var z := front + FIRST_D
+	var back := -front
+	var brick := Color(_pick(["#8a4a38", "#9b5a42", "#a8775c", "#b59a7c"]))
+	var trim := Color(_pick(["#d9d3c3", "#cfc8b6", "#efede6"]))
+	for key in built:
+		var g := float(Stations.node(kind, key).get("grow", 0.0))
+		if z + g > back + 0.01:
+			break  # a lot drawn smaller than what was built (an old copy)
+		match key:
+			"drill_tower": _drill_tower(w, z, g)
+			"ladder": _ladder_bay(w, z, g, brick, trim)
+			"quarters": _crew_quarters(w, z, g, brick, trim)
+			"eoc": _eoc(w, z, g, brick, trim)
+			"generator": _generator(Vector3(-w * 0.5 + 3.0, 0, front + FIRST_D - 3.2))
+			"sally_port": _sally_port(w, z, g, brick, trim)
+			"evidence": _evidence(w, z, g)
+			"k9": _kennel(Vector3(-w * 0.5 + 1.5, 0, front + FIRST_D - 5.6))
+			"dispatch": _dispatch_tower(Vector3(w * 0.5 - 3.5, 0, front + FIRST_D - 3.5))
+		z += g
+
+
+## A fire training tower (ISO credits a department's own): a four-storey
+## steel tower in tan and red with open window bays on each floor, a stair
+## landing up one side and a guardrail on the roof, a low burn room beside
+## it (soot over its door), on an asphalt drill ground with a hydrant.
+func _drill_tower(w: float, z: float, g: float) -> void:
+	_flat_rect("asphalt", -w * 0.5 + 0.5, w * 0.5 - 0.5, z, z + g - 0.3, 0.06)
+	var c := Vector3(-w * 0.5 + 6.0, 0, z + g * 0.5 + 0.5)
+	var tan := Color("#c9b08a")
+	var red := Color("#9b3328")
+	var fl := 3.2
+	_box("paint", Vector3(6.4, 0.3, 6.4), c + Vector3(0, 0.15, 0), CONCRETE)
+	_box("paint", Vector3(6.0, fl * 4.0, 6.0), c + Vector3(0, fl * 2.0 + 0.3, 0), tan)
+	for f in 4:
+		var y := 0.3 + f * fl
+		_box("paint", Vector3(6.08, 0.25, 6.08), c + Vector3(0, y + fl - 0.1, 0), red)  # floor bands
+		# Open window bays, dark inside, on the front and the drill-ground side.
+		for k in 2:
+			_box("paint", Vector3(1.1, 1.3, 0.06), c + Vector3(-1.4 + k * 2.8, y + 1.6, -3.03), Color("#2b2522"))
+			_box("paint", Vector3(0.06, 1.3, 1.1), c + Vector3(3.03, y + 1.6, -1.4 + k * 2.8), Color("#2b2522"))
+	# The stair landing up the back, a standpipe and the roof rail.
+	_box("paint", Vector3(2.4, fl * 4.0 + 1.0, 2.6), c + Vector3(-1.6, fl * 2.0 + 0.8, 4.3), red.darkened(0.1))
+	_box("paint", Vector3(0.16, fl * 4.0, 0.16), c + Vector3(3.15, fl * 2.0 + 0.3, 2.6), Color("#b8322a"))
+	var top := 0.3 + fl * 4.0
+	for e in [-1.0, 1.0]:
+		_box("paint", Vector3(6.0, 0.06, 0.06), c + Vector3(0, top + 1.05, e * 2.97), GALV)
+		_box("paint", Vector3(0.06, 0.06, 6.0), c + Vector3(e * 2.97, top + 1.05, 0), GALV)
+	for e in [Vector2(-1, -1), Vector2(1, -1), Vector2(-1, 1), Vector2(1, 1)]:
+		_box("paint", Vector3(0.06, 1.05, 0.06), c + Vector3(e.x * 2.97, top + 0.52, e.y * 2.97), GALV)
+	# The burn room: a concrete box, its door blackened.
+	var br := c + Vector3(6.2, 0, 0.5)
+	_box("paint", Vector3(5.0, 3.0, 4.6), br + Vector3(0, 1.5, 0), Color("#9d9a92"))
+	_box("paint", Vector3(1.0, 2.1, 0.06), br + Vector3(0, 1.05, -2.33), Color("#2f2a28"))
+	_box("paint", Vector3(1.8, 0.9, 0.05), br + Vector3(0, 2.6, -2.33), Color("#3b3532"))
+	# Hydrant and a line of cones for pump practice.
+	_cyl_y(Vector3(w * 0.5 - 2.0, 0.4, z + 1.2), 0.15, 0.8, Color("#c8a52a"))
+	for i in 5:
+		_box("paint", Vector3(0.3, 0.45, 0.3), Vector3(2.0 + i * 2.4, 0.23, z + g - 2.5), Color("#e06a1f"))
+
+
+## A raised bay for a ladder truck, built on behind the apparatus bays:
+## taller brick walls, a 14 ft door at each end so the truck drives through.
+func _ladder_bay(w: float, z: float, g: float, brick: Color, trim: Color) -> void:
+	var x := w * 0.5 - 4.6
+	var bw := 7.4
+	var h := 9.4
+	_slab(x, bw, z, g - 1.0)
+	_flat_roofed_at("brick", x, bw, g - 1.0, z + (g - 1.0) * 0.5, h, h + 0.8, brick)
+	_box("paint", Vector3(bw + 0.1, 0.3, 0.18), Vector3(x, h - 1.2, z - 0.09), trim)
+	_overhead_door(x, z, 4.3, 4.6, WHITE)
+	_overhead_door(x, z + g - 1.0, 4.3, 4.6, WHITE, true)
+	_flat_rect("drive", x - bw * 0.5, x + bw * 0.5, z + g - 1.0, z + g, 0.08)
+	_flat_rect("drive", -w * 0.5 + 0.5, x - bw * 0.5, z, z + g - 0.3, 0.08)
+
+
+## Living quarters for a paid crew on 24-hour shifts: a one-storey brick wing
+## of bunk rooms and a kitchen, a patio with the grill and picnic table, and
+## the crew's parking.
+func _crew_quarters(w: float, z: float, g: float, brick: Color, trim: Color) -> void:
+	var qw := w * 0.6
+	var qd := g - 4.0
+	var x := -w * 0.5 + 1.0 + qw * 0.5
+	var zf := z + 1.0
+	_slab(x, qw, zf, qd)
+	_flat_roofed_at("brick", x, qw, qd, zf + qd * 0.5, 3.6, 4.2, brick)
+	_window_row(x, zf, qw - 2.0, 1.6, 1.2, 5, trim)
+	_window_row(x, zf + qd, qw - 2.0, 1.6, 1.2, 5, trim, Vector3.BACK)
+	_entry(x + qw * 0.5 - 1.8, zf, trim)
+	_rooftop_units(x, qw, zf, qd, 3.6, 2)
+	# The patio by the back door.
+	var px := x + qw * 0.5 + 3.0
+	_flat_rect("drive", px - 2.6, px + 2.6, zf, zf + 5.0, 0.07)
+	_box("paint", Vector3(1.8, 0.75, 0.8), Vector3(px, 0.4, zf + 2.6), Color("#7a5a3a"))
+	_box("paint", Vector3(0.6, 0.9, 0.5), Vector3(px + 1.8, 0.45, zf + 1.0), Color("#2a2a2a"))
+	# Crew cars park along the back.
+	_flat_rect("asphalt", -w * 0.5 + 0.5, w * 0.5 - 0.5, z + g - 3.2, z + g - 0.3, 0.06)
+
+
+## A city's emergency operations center: a two-storey precast office with
+## a long window band to the command room, an antenna mast on the roof and
+## the backup generator beside it.
+func _eoc(w: float, z: float, g: float, brick: Color, trim: Color) -> void:
+	var ew := w - 8.0
+	var ed := g - 5.0
+	var x := -4.0 + 0.0
+	var zf := z + 1.5
+	var precast := Color("#c9c4b6")
+	_slab(x, ew, zf, ed)
+	_flat_roofed_at("brick", x, ew, ed, zf + ed * 0.5, 7.4, 8.1, precast)
+	_box("brick", Vector3(ew + 0.06, 1.2, ed + 0.06), Vector3(x, 0.6, zf + ed * 0.5), brick)
+	_window_row(x, zf, ew - 2.0, 1.8, 1.3, 5, trim)
+	_window_row(x, zf, ew - 2.0, 5.3, 1.6, 7, trim)
+	_entry(x - ew * 0.3, zf, trim)
+	var m := Vector3(x + ew * 0.3, 8.1, zf + ed * 0.6)
+	_box("paint", Vector3(0.12, 9.0, 0.12), m + Vector3(0, 4.5, 0), GALV)
+	for a in [3.0, 6.0, 8.5]:
+		_box("paint", Vector3(0.9, 0.06, 0.06), m + Vector3(0, a, 0), GALV)
+	_generator(Vector3(w * 0.5 - 4.0, 0, zf + ed * 0.5))
+	_flat_rect("asphalt", -w * 0.5 + 0.5, w * 0.5 - 0.5, z + 0.2, zf - 0.2, 0.06)
+
+
+## A standby diesel generator in its weather enclosure on a pad, a fuel
+## tank under it (critical facilities keep 24-72 hours of fuel).
+func _generator(p: Vector3) -> void:
+	_box("paint", Vector3(4.2, 0.25, 2.2), p + Vector3(0, 0.12, 0), CONCRETE)
+	_box("paint", Vector3(3.8, 0.6, 1.8), p + Vector3(0, 0.55, 0), Color("#3a3c3e"))  # belly tank
+	_box("paint", Vector3(3.6, 1.7, 1.6), p + Vector3(0, 1.7, 0), Color("#d6d2c4"))
+	_box("paint", Vector3(0.25, 0.6, 0.25), p + Vector3(1.4, 2.85, 0.3), Color("#3a3c3e"))  # exhaust
+	for k in 3:
+		_box("paint", Vector3(0.7, 1.0, 0.04), p + Vector3(-1.0 + k * 0.9, 1.8, -0.82), Color("#a9a597"))
+
+
+## A sally port: the secure garage a patrol car drives into to bring
+## someone in, its door to the yard and a man door to the booking room.
+func _sally_port(w: float, z: float, g: float, brick: Color, trim: Color) -> void:
+	var x := 3.0
+	var sw := 9.0
+	var sd := g - 2.0
+	var zf := z + 1.0
+	_slab(x, sw, zf, sd)
+	_flat_roofed_at("brick", x, sw, sd, zf + sd * 0.5, 4.8, 5.4, brick)
+	_overhead_door(x - 1.0, zf, 3.7, 3.4, Color("#9aa0a4"))
+	_box("paint", Vector3(0.95, 2.1, 0.06), Vector3(x + 3.2, 1.35, zf - 0.03), Color("#5a5f66"))
+	_box("paint", Vector3(sw + 0.1, 0.2, 0.14), Vector3(x, 4.5, zf - 0.07), trim)
+	_flat_rect("asphalt", -14.5, 14.5, z, z + g - 0.2, 0.06)
+
+
+## The evidence garage and impound lot: a steel building with an overhead
+## door for towed cars to be searched in, and a gravel lot behind a tall
+## fence with barbed wire.
+func _evidence(w: float, z: float, g: float) -> void:
+	var x := -w * 0.5 + 8.5
+	var bw := 14.0
+	var bd := 8.0
+	var zf := z + 1.5
+	_slab(x, bw, zf, bd)
+	_flat_roofed_at("metal", x, bw, bd, zf + bd * 0.5, 4.6, 5.0, Color("#a9adb0"))
+	_overhead_door(x - 3.0, zf, 3.7, 3.7, Color("#8f9599"))
+	_box("paint", Vector3(0.95, 2.1, 0.06), Vector3(x + 4.0, 1.35, zf - 0.03), Color("#5a5f66"))
+	_flat_rect("asphalt", -14.5, 14.5, z, zf, 0.06)
+	var ix := x + bw * 0.5 + 1.5
+	_flat_rect("gravel", ix, w * 0.5 - 0.8, z + 1.0, z + g - 0.6, 0.06, Color("#a49c8d"))
+	_fence(Vector2(ix, z + 1.0), Vector2(w * 0.5 - 0.8, z + g - 0.6), 2.4, true)
+
+
+## A K-9 kennel: a small block building with chain-link runs under a roof.
+func _kennel(p: Vector3) -> void:
+	_box("paint", Vector3(3.0, 2.6, 2.6), p + Vector3(1.5, 1.3, 1.3), Color("#c9c1ae"))
+	_box("paint", Vector3(3.2, 0.12, 2.8), p + Vector3(1.5, 2.66, 1.3), Color("#6b6f73"))
+	for k in 3:
+		var r := p + Vector3(3.2 + k * 1.6, 0, 0)
+		_flat_rect("drive", r.x, r.x + 1.5, r.z, r.z + 3.6, 0.07)
+		_fence(Vector2(r.x, r.z), Vector2(r.x + 1.5, r.z + 3.6), 1.8)
+		_box("paint", Vector3(1.6, 0.05, 1.6), r + Vector3(0.75, 1.9, 2.8), Color("#6b6f73"))
+
+
+## The 911 center's radio tower: a self-supporting lattice about 45 m high,
+## its equipment shelter and generator at the foot.
+func _dispatch_tower(p: Vector3) -> void:
+	var steel := Color("#9a9d9f")
+	var tall := 45.0
+	var parts := 12
+	_box("paint", Vector3(3.2, 0.4, 3.2), p + Vector3(0, 0.2, 0), CONCRETE)
+	for k in parts:
+		var y0 := tall * k / parts
+		var y1 := tall * (k + 1) / parts
+		var half := lerpf(1.3, 0.3, (y0 + y1) * 0.5 / tall)
+		for c in [Vector2(-1, -1), Vector2(1, -1), Vector2(0, 1)]:
+			_box("paint", Vector3(0.1, y1 - y0, 0.1), p + Vector3(c.x * half, (y0 + y1) * 0.5, c.y * half), steel)
+		_box("paint", Vector3(half * 2.0, 0.07, 0.07), p + Vector3(0, y1, -half), steel)
+	for a in [14.0, 28.0, 38.0]:
+		_box("paint", Vector3(0.6, 1.6, 0.2), p + Vector3(0, a, -0.6), Color("#e8e8e2"))
+	_box("paint", Vector3(0.25, 0.5, 0.25), p + Vector3(0, tall + 0.25, 0), Color("#c43b2f"))
+	_box("paint", Vector3(2.4, 2.6, 3.0), p + Vector3(-3.4, 1.3, -0.5), Color("#c9c1ae"))
 
 
 # ---------------------------------------------------------------- traffic center
@@ -1040,21 +1253,24 @@ func _rooftop_units(cx: float, w: float, zf: float, d: float, h: float, n: int) 
 func _fence(a: Vector2, b: Vector2, h: float, barbed := false) -> void:
 	var corners := [Vector3(a.x, 0, a.y), Vector3(b.x, 0, a.y), Vector3(b.x, 0, b.y), Vector3(a.x, 0, b.y)]
 	for i in 4:
-		var p: Vector3 = corners[i]
-		var q: Vector3 = corners[(i + 1) % 4]
-		var len := p.distance_to(q)
-		if len < 0.01:
-			continue  # a zero-length side would put NaNs in the mesh and hide all of it
-		var dir := (q - p) / len
-		var yaw := Basis(Vector3.UP, atan2(dir.x, dir.z))
-		var n := maxi(1, int(len / 3.0))
-		for k in n:
-			_box("paint", Vector3(0.07, h, 0.07), p + dir * (len * k / n) + Vector3(0, h * 0.5, 0), GALV)
-		_box("paint", Vector3(0.05, 0.05, len), (p + q) * 0.5 + Vector3(0, h, 0), GALV, yaw)
-		_box("paint", Vector3(0.03, 0.03, len), (p + q) * 0.5 + Vector3(0, 0.1, 0), GALV, yaw)
-		if barbed:
-			for k in 3:
-				_box("paint", Vector3(0.02, 0.02, len), (p + q) * 0.5 + Vector3(0, h + 0.15 + k * 0.15, 0), DARK, yaw)
+		_fence_run(corners[i], corners[(i + 1) % 4], h, barbed)
+
+
+## One straight run of chain-link fence from p to q.
+func _fence_run(p: Vector3, q: Vector3, h: float, barbed := false) -> void:
+	var len := p.distance_to(q)
+	if len < 0.01:
+		return  # a zero-length side would put NaNs in the mesh and hide all of it
+	var dir := (q - p) / len
+	var yaw := Basis(Vector3.UP, atan2(dir.x, dir.z))
+	var n := maxi(1, int(len / 3.0))
+	for k in n:
+		_box("paint", Vector3(0.07, h, 0.07), p + dir * (len * k / n) + Vector3(0, h * 0.5, 0), GALV)
+	_box("paint", Vector3(0.05, 0.05, len), (p + q) * 0.5 + Vector3(0, h, 0), GALV, yaw)
+	_box("paint", Vector3(0.03, 0.03, len), (p + q) * 0.5 + Vector3(0, 0.1, 0), GALV, yaw)
+	if barbed:
+		for k in 3:
+			_box("paint", Vector3(0.02, 0.02, len), (p + q) * 0.5 + Vector3(0, h + 0.15 + k * 0.15, 0), DARK, yaw)
 
 
 ## A horizontal pressure tank lying along z on two concrete saddles, with

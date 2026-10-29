@@ -64,7 +64,12 @@ func _init() -> void:
 		var size := Vector2(30, 30)
 		if SVC.has(name):
 			size = Services.KINDS[SVC[name]].size
-			built = CivicBuilder.build_service(SVC[name], sd, size, to_curb)
+			# DEV=a,b: a grown fire or police station's pieces (Stations), its
+			# lot reaching back for each.
+			var dev := Array(OS.get_environment("DEV").split(",", false))
+			for key in dev:
+				size.y += float(Stations.node(SVC[name], key).get("grow", 0.0))
+			built = CivicBuilder.build_service(SVC[name], sd, size, to_curb, dev)
 		elif name == "campus":
 			# A county hospital grown into a regional campus: every piece of
 			# its development tree on its own strip, as Healthcare lays them.

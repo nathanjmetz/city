@@ -2093,6 +2093,67 @@ const BIG_FACTORY_CONTRACT_SHARE := 0.85
 # a second site. Graduates who stay make the town better educated, and
 # office and tech jobs open only for the graduates the town has.
 
+## Fire and police stations grow with their town (Stations). The chief
+## pays from the department's cumulative fund, a separate levy Indiana
+## towns may charge (cumulative fire fund, IC 36-8-14, and cumulative
+## capital development fund, IC 36-9-14.5, each up to about 3.3 cents per
+## $100 of assessed value): about $16 a resident a year at a typical
+## $120,000 home, here dollars a resident a month.
+const STATION_LEVY_PER_PERSON := 1.3
+## A piece is built once this share of its cost is in the fund; the rest is
+## a bond the levy pays back (Indiana towns bond fire stations and their
+## additions over 10-20 years).
+const STATION_BOND_DOWN := 0.25
+## Each piece: `cost` dollars from the fund, `grow` metres the lot reaches
+## further back from the street (0 builds on what it has), `needs` from the
+## town (population; tall = buildings of 3+ storeys; city = a city charter),
+## `requires` pieces first, effects reach* (a longer reach by road: quicker
+## turnout and dispatch). Real references:
+##   - Drill tower: ISO's Fire Suppression Rating Schedule credits a
+##     department's own training facility; a 4-storey steel tower runs
+##     about $300-400k. Small Indiana departments add one around 2-5,000.
+##   - Ladder company: ISO expects a ladder truck where 5 or more buildings
+##     are 3 storeys (35 ft) or taller; stations build a taller drive-through
+##     bay on for it.
+##   - Living quarters: towns past about 5,000 move from volunteers to paid
+##     crews on 24-hour shifts; a staffed station turns out in about a
+##     minute against 4-6 for volunteers (NFPA 1710 vs 1720).
+##   - Standby generator: NFPA 1221 and FEMA's critical facility guidance
+##     put backup power at every station; a 100 kW diesel set ~$100-150k.
+##   - Emergency operations center: a city's EOC, often at the main station.
+##   - Sally port: a secure garage to bring prisoners in, standard once a
+##     department holds anyone (about 2,000 people and up).
+##   - Evidence and impound garage: a property room and a fenced impound
+##     lot, a mid-size department's need.
+##   - K-9 unit: one dog team for a department of about 10+ officers.
+##   - 911 dispatch center: a town's own public safety answering point with
+##     its radio tower (Indiana consolidated many into county centers; a
+##     city keeps its own).
+const STATION_TREES := {
+	"fire": [
+		{"id": "drill_tower", "name": "Drill tower", "cost": 350_000, "grow": 14.0,
+			"needs": {"population": 2000}, "effects": {"reach*": 0.05}, "note": "crews train at home"},
+		{"id": "ladder", "name": "Ladder truck bay", "cost": 1_400_000, "grow": 16.0,
+			"needs": {"tall": 5}, "effects": {"reach*": 0.05}, "note": "a taller bay for an aerial ladder"},
+		{"id": "generator", "name": "Standby generator", "cost": 120_000, "grow": 0.0,
+			"needs": {"population": 3000}, "effects": {"reach*": 0.02}, "note": "the station keeps running in a storm"},
+		{"id": "quarters", "name": "Crew quarters", "cost": 900_000, "grow": 12.0,
+			"needs": {"population": 5000}, "effects": {"reach*": 0.15}, "note": "a paid crew sleeps at the station"},
+		{"id": "eoc", "name": "Emergency operations center", "cost": 1_800_000, "grow": 16.0, "requires": ["quarters"],
+			"needs": {"population": 10_000, "city": 1}, "effects": {"reach*": 0.05}, "note": "the city's command room"},
+	],
+	"police": [
+		{"id": "sally_port", "name": "Sally port", "cost": 300_000, "grow": 10.0,
+			"needs": {"population": 2000}, "effects": {"reach*": 0.03}, "note": "a secure garage to bring people in"},
+		{"id": "k9", "name": "K-9 kennel", "cost": 90_000, "grow": 0.0,
+			"needs": {"population": 4000}, "effects": {"reach*": 0.03}, "note": "a dog team for searches"},
+		{"id": "evidence", "name": "Evidence and impound garage", "cost": 450_000, "grow": 14.0, "requires": ["sally_port"],
+			"needs": {"population": 3500}, "effects": {"reach*": 0.04}, "note": "a property room and impound lot"},
+		{"id": "dispatch", "name": "911 dispatch center", "cost": 1_200_000, "grow": 0.0,
+			"needs": {"population": 6000, "city": 1}, "effects": {"reach*": 0.1}, "note": "calls answered in town, a radio tower out back"},
+	],
+}
+
 ## Each kind of campus. `cost` is what the player pays for the first
 ## building; `funding` is the city's standard monthly contribution (the
 ## player can set it from half to one and a half times). Per student a

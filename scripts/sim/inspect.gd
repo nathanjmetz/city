@@ -283,7 +283,8 @@ static func _service(sim: CitySim, id: int) -> Dictionary:
 				homes += 1
 				if sim.services.served.get(key, {}).get(b.kind, false):
 					covered += 1
-		rows.append(["Reach by road", "%.1f miles" % (float(k.reach) * sim.services.funding(id, Balance.POLICY_EFFECT) / 1609.0)])
+		rows.append(["Reach by road", "%.1f miles" % (float(k.reach) * sim.services.funding(id, Balance.POLICY_EFFECT)
+			* float(sim.services.boosts.get(id, 1.0)) / 1609.0)])
 		rows.append(["Homes covered", "%d of %d" % [covered, homes]])
 		if b.kind == Services.Kind.CLINIC and sim.healthcare.mutual_note() != "":
 			rows.append(["Ambulances", sim.healthcare.mutual_note()])
@@ -291,6 +292,7 @@ static func _service(sim: CitySim, id: int) -> Dictionary:
 			problems.append("Not beside a road, so it can't respond.")
 		status = "Working: covering %d homes" % covered if ok else "Not working"
 		rows.append_array(sim.buses.school_rows(id))
+		rows.append_array(sim.stations.rows(sim, id))
 	rows.append(["Upkeep", "$%s / day" % CitySim.money_text(sim.services.upkeep_of(id))])
 	rows.append(["Built for", "$%s" % CitySim.money_text(int(k.cost))])
 	var going_up := sim.construction.describe("svc:%d" % id, sim.tick_count)
