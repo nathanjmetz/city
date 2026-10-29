@@ -697,12 +697,34 @@ func _props_look(stage: String) -> void:
 			Vector3(b.end.x, 0, b.end.z), Vector3(b.end.x, 0, front + 2.0)]
 		for i in 3:
 			_fence(st, corners[i], corners[i + 1])
+	if stage in ["clear", "foundation", "frame"]:
+		# Straw wattles along the street edge either side of the entrance,
+		# where the silt fence would block the walk (inlet protection).
+		var wz := b.position.z + 0.45
+		var e0 := _drive_x - _drive_w * 0.5 - 0.3
+		var e1 := _drive_x + _drive_w * 0.5 + 0.3
+		for run in [[b.position.x + 0.3, e0], [e1, b.end.x - 0.3]]:
+			if run[1] - run[0] > 1.0:
+				_cs_wattle(st, Vector3((run[0] + run[1]) * 0.5, 0.0, wz), run[1] - run[0], fine)
+	if stage in ["foundation", "frame", "dry_in", "exterior"]:
+		# The concrete washout every pour's trucks rinse their chutes into.
+		# Off the stone on the open side, clear of the building and its stoop.
+		var wx := _drive_x - _drive_w * 0.5 - 2.0
+		var wz := minf(b.position.z + minf(_drive_len, 8.0) - 1.0, _core.position.z - 3.6)
+		var spot := AABB(Vector3(wx - 1.5, 0, wz - 1.5), Vector3(3.0, 1.0, 3.0))
+		if wx - 1.6 > b.position.x + 4.0 and wz - 1.5 > b.position.z + 0.9 and not spot.intersects(_core.grow(1.5)):
+			_cs_washout(st, Vector3(wx, 0.0, wz), fine)
 	if stage in ["clear", "foundation"]:
 		# Spoil from digging the footings, heaped at the back; the topsoil
 		# stripped off the lot in its own darker pile beside it.
 		var back := b.end.z - 3.0
-		_cs_mound(st, Vector3(right - 3.2, 0.0, back), 2.6, 2.0, 1.5, DIRT.lightened(0.05), k)
-		_cs_mound(st, Vector3(right - 7.4, 0.0, back + 0.4), 1.9, 1.6, 1.0, Color("#3f3326"), k + 1)
+		var keep := _core.grow(0.5)
+		for m in [[Vector3(right - 3.2, 0.0, back), 2.6, 2.0, 1.5, DIRT.lightened(0.05)],
+				[Vector3(right - 7.4, 0.0, back + 0.4), 1.9, 1.6, 1.0, Color("#3f3326")]]:
+			var at: Vector3 = m[0]
+			# Heaped where the building isn't going.
+			if not AABB(at - Vector3(m[1], 0, m[2]), Vector3(m[1] * 2.0, 1.0, m[2] * 2.0)).intersects(keep):
+				_cs_mound(st, at, m[1], m[2], m[3], m[4], k)
 	if stage in ["frame", "dry_in", "exterior", "interior"]:
 		# A 20-yard roll-off dumpster along the side, nose to the street.
 		_cs_dumpster(st, Vector3(right - 1.3, 0.0, front + 7.85), k, fine, stage != "frame")
@@ -1013,6 +1035,36 @@ func _cs_scaffold(st: SurfaceTool, k: int, fine: bool) -> void:
 	_prop(st, Vector3(0.1, 0.5, 0.1), Vector3(mx, 0.25, gz - 0.5), Color("#2a2a2a"))
 	SiteMachines._wheel(st, Transform3D.IDENTITY, Vector3(mx - 0.6, 0.3, gz + 0.3), 0.3, 0.18, Color("#232323"), 10)
 	SiteMachines._wheel(st, Transform3D.IDENTITY, Vector3(mx + 0.6, 0.3, gz + 0.3), 0.3, 0.18, Color("#232323"), 10)
+
+
+## A straw wattle (a 9 in fiber roll in its netting) staked along a
+## line `len` long across x, to slow muddy water before the street.
+func _cs_wattle(st: SurfaceTool, c: Vector3, len: float, fine: bool) -> void:
+	SiteMachines._wheel(st, Transform3D.IDENTITY, c + Vector3(0, 0.1, 0), 0.115, len, Color("#b49a5e"), 8 if fine else 5)
+	if fine:
+		var x := -len * 0.5 + 0.6
+		while x < len * 0.5:
+			_prop(st, Vector3(0.04, 0.45, 0.04), c + Vector3(x, 0.2, -0.13), Color("#8a6b45"))
+			x += 1.2
+
+
+## A concrete washout (EPA SWPPP / Indiana Rule 5 practice): a pit ringed
+## with straw bales and lined in black plastic, its floor grey with the
+## slurry rinsed off the trucks' chutes.
+func _cs_washout(st: SurfaceTool, c: Vector3, fine: bool) -> void:
+	var w := 2.8
+	var straw := Color("#c2a764")
+	for sz in [-1.0, 1.0]:
+		_prop(st, Vector3(w, 0.45, 0.46), c + Vector3(0, 0.225, sz * (w * 0.5 - 0.23)), straw)
+		_prop(st, Vector3(0.46, 0.45, w - 0.92), c + Vector3(sz * (w * 0.5 - 0.23), 0.225, 0), straw)
+	_prop(st, Vector3(w - 0.9, 0.06, w - 0.9), c + Vector3(0, 0.12, 0), Color("#8f8c86"))  # slurry
+	if fine:
+		# The liner lapped over the bales, and the sign on its stake.
+		for sz in [-1.0, 1.0]:
+			_prop(st, Vector3(w - 0.4, 0.02, 0.3), c + Vector3(0, 0.46, sz * (w * 0.5 - 0.45)), Color("#1b1b1c"))
+			_prop(st, Vector3(0.3, 0.02, w - 0.9), c + Vector3(sz * (w * 0.5 - 0.45), 0.46, 0), Color("#1b1b1c"))
+		_prop(st, Vector3(0.05, 1.1, 0.05), c + Vector3(w * 0.5 + 0.2, 0.55, -w * 0.5), Color("#8a6b45"))
+		_prop(st, Vector3(0.6, 0.4, 0.03), c + Vector3(w * 0.5 + 0.2, 1.0, -w * 0.5 - 0.03), Color("#e9e6dc"))
 
 
 ## A molded-plastic portable toilet (about 44 x 44 in, 7.5 ft tall): skid
