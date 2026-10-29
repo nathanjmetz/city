@@ -93,25 +93,31 @@ func _init() -> void:
 	# dormer on the same walls; only a ranch owner builds new.
 	var kept := 0
 	var raised := 0
+	var bonus := 0
 	for era in ["prewar", "postwar", "recent"]:
 		for s in 30:
 			var lot := {"width": [14.0, 18.0, 22.0][s % 3], "depth": 40.0, "era": era}
 			var first := HouseBuilder.plan_info(500 + s, lot, 0)
-			HouseBuilder.build(500 + s, 3.9, lot, 0)
+			var out0 := HouseBuilder.build(500 + s, 3.9, lot, 0)
 			var m0: Array = HouseBuilder.last_masses.duplicate()
 			var grown := HouseBuilder.plan_info(500 + s, lot, 2)
-			HouseBuilder.build(500 + s, 3.9, lot, 2)
+			var out2 := HouseBuilder.build(500 + s, 3.9, lot, 2)
 			var m2: Array = HouseBuilder.last_masses.duplicate()
 			var kind: String = first.get("kind", "")
 			if kind in ["ranch", "midcentury"]:
 				continue
-			var same: bool = m0 == m2 and first.door_x == grown.door_x and first.drive_x == grown.drive_x
+			# (A colonial adds a room over its garage, a foursquare closes in
+			# its porch: no new footprint either way.)
+			var same: bool = m2.slice(0, m0.size()) == m0 and first.door_x == grown.door_x and first.drive_x == grown.drive_x
+			if kind in ["colonial", "foursquare"] and (out2[0] as ArrayMesh).get_faces().size() > (out0[0] as ArrayMesh).get_faces().size():
+				bonus += 1
 			_check(same, "a %s %s grown to two storeys keeps its walls and drive (%d)" % [era, kind, s])
 			if kind in ["cape", "bungalow"]:
 				raised += 1
 			else:
 				kept += 1
 	_check(kept > 10 and raised > 10, "two-storey houses stay and capes and bungalows raise dormers (%d, %d)" % [kept, raised])
+	_check(bonus > 3, "colonials and foursquares grown to the two-storey stage finish a bonus room or sun porch (%d)" % bonus)
 	# Corner stores, a shop's first stage: on a corner (either side) and
 	# mid-block, prewar at the sidewalk with no lot, postwar with stalls;
 	# what SiteLayout reads from its dry run is what's drawn.
