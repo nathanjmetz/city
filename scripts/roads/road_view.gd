@@ -61,6 +61,8 @@ static func _remesh_ms() -> float:
 ## frame instead of in one long freeze (RegionView).
 var sliced := false
 
+## Bridge parts by material key in _mats (BridgeMesh).
+const BRIDGE_MATS := {"concrete": "concrete", "steel": "galvanized", "marker": "marker"}
 var _mats := {
 	"asphalt": Surfaces.asphalt(),
 	"curb": Surfaces.concrete(RoadStyle.CURB_COLOR),
@@ -82,7 +84,11 @@ var _mats := {
 	"apron": RoadStyle.material(Color(0.5, 0.44, 0.38)),  # tinted, textured-look concrete
 	"tunnel": RoadStyle.material(Color(0.1, 0.1, 0.12, 0.45), true),
 	"domes": Surfaces.concrete(Junction.DOMES_COLOR),
+	"iron": _iron(Color(0.17, 0.16, 0.15)),  # grates and manhole covers
+	"drain": RoadStyle.material(Color(0.03, 0.03, 0.03)),  # the dark under them
 	"barricade": _vertex_colour(),
+	"galvanized": _galvanized(),
+	"marker": RoadStyle.material(Color(0.95, 0.76, 0.1)),  # end terminal object marker
 }
 
 
@@ -107,6 +113,16 @@ func setup(net: RoadNetwork, s: CitySim = null) -> void:
 ## (the loading screen waits for this; LoadGate).
 ## Curbs stand up off the street on the desktop's High tier and up (the
 ## same tiers that show the pavement's photo grain).
+## Weathered galvanized steel: guardrail and its posts.
+static func _galvanized() -> StandardMaterial3D:
+	var m := StandardMaterial3D.new()
+	m.albedo_color = Color(0.6, 0.62, 0.63)
+	m.metallic = 0.6
+	m.roughness = 0.55
+	m.cull_mode = BaseMaterial3D.CULL_DISABLED
+	return m
+
+
 static func curbs_wanted() -> bool:
 	return Surfaces.photo_level() > 0.0
 
@@ -504,14 +520,22 @@ func _rebuild_all(gen: int) -> void:
 			if spec.get("trees", false):
 				median_trees.append_array(_median_trees(id, pts, type))
 			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-			var bkey := [pts, type, Terrain.shift]
+			var bkey := [pts, type, Terrain.shift, RoadMesh.raised_curbs]
 			var span: Array = _bridge_cache.get(id, [])
 			if span.is_empty() or span[0] != bkey:
-				var pst := SurfaceTool.new()
-				pst.begin(Mesh.PRIMITIVE_TRIANGLES)
-				var any := RoadMesh.bridge(Terrain.lift_all(pts), RoadStyle.right_of_way_half(type), pst,
-					Terrain.ground_y)
-				span = [bkey, pst.commit() if any else null]
+				var bparts := {}
+				for k in BRIDGE_MATS:
+					bparts[k] = SurfaceTool.new()
+					bparts[k].begin(Mesh.PRIMITIVE_TRIANGLES)
+				# Desktop detail (High and up, as with raised curbs): girders,
+				# round columns and approach guardrail.
+				var any := BridgeMesh.build(Terrain.lift_all(pts), RoadStyle.right_of_way_half(type), bparts,
+					Terrain.ground_y, RoadMesh.raised_curbs)
+				var meshes := {}
+				if any:
+					for k in bparts:
+						meshes[k] = bparts[k].commit()
+				span = [bkey, meshes if any else null]
 			bridge_cache[id] = span
 			if span[1] != null:
 				piers.append(span[1])
@@ -543,10 +567,15 @@ func _rebuild_all(gen: int) -> void:
 			wood.append(poles[1])
 			wire.append(poles[2])
 	_add_poles(wood, wire)
-	if not piers.is_empty():
+	for k in BRIDGE_MATS:
+		var parts := []
+		for p in piers:
+			parts.append(p[k])
+		if parts.is_empty():
+			continue
 		var mi := MeshInstance3D.new()
-		mi.mesh = _merge(piers, true)
-		mi.material_override = _mats.concrete
+		mi.mesh = _merge(parts)
+		mi.material_override = _mats[BRIDGE_MATS[k]]
 		add_child(mi)
 	_street_cache = street_cache
 	_pole_cache = pole_cache
@@ -1055,6 +1084,14 @@ func _median_trees(id: int, pts: PackedVector3Array, type: int) -> Array:
 
 ## Post, white rail and orange rail of a Type III barricade.
 const BARRICADE := [Color(0.52, 0.53, 0.52), Color(0.9, 0.9, 0.88), Color(0.93, 0.42, 0.08)]
+
+
+## Cast iron worn smooth by tyres: dark, a little metallic, with a dull sheen.
+static func _iron(color: Color) -> StandardMaterial3D:
+	var m := RoadStyle.material(color)
+	m.metallic = 0.45
+	m.roughness = 0.55
+	return m
 
 
 static func _vertex_colour() -> StandardMaterial3D:

@@ -93,6 +93,10 @@ func _ready() -> void:
 	var farmsteads := FarmsteadView.new()
 	add_child(farmsteads)
 	farmsteads.setup(sim)
+	# The county's real railroads, out in the country (desktop).
+	var county_rail := CountyRailView.new()
+	add_child(county_rail)
+	county_rail.setup(sim)
 
 	var lot_alerts := LotAlerts.new()
 	lot_alerts.setup(sim)
@@ -105,6 +109,10 @@ func _ready() -> void:
 	var park_view := ParkView.new()
 	add_child(park_view)
 	park_view.setup(sim)
+	# Dirt paths worn beside roads people walk with no sidewalk.
+	var worn_view := WornPathView.new()
+	add_child(worn_view)
+	worn_view.setup(sim)
 	var works_view := SubdivisionWorksView.new()
 	add_child(works_view)
 	works_view.setup(sim)
@@ -340,8 +348,10 @@ func _ready() -> void:
 			return {"source": industry_tool.kind}
 		if zone_tool.zone == ZoneMap.Zone.INDUSTRIAL:
 			return {"source": "factory"}
-		if zone_tool.zone == ZoneMap.Zone.RESIDENTIAL or zone_tool.zone == ZoneMap.Zone.COMMERCIAL:
+		if zone_tool.zone == ZoneMap.Zone.RESIDENTIAL:
 			return {"spot": true}
+		if zone_tool.zone == ZoneMap.Zone.COMMERCIAL:
+			return {"spot": true, "shops": true}
 		if Balance.POLLUTION_SOURCES.has(CivicHubs.TOOL_KINDS.get(service_tool.kind, "")):
 			return {"source": CivicHubs.TOOL_KINDS[service_tool.kind]}
 		if info_view.mode == InfoView.Mode.SMOKE:

@@ -63,6 +63,7 @@ func _shop(to_curb: float, lot: Dictionary, main_street := true) -> void:
 		"main_street": _main_street(to_curb)
 		"strip": _strip_center(to_curb)
 		"center": _strip_center(to_curb, true)
+		"community": _community_center(to_curb)
 		"gas": _shop_gas_station(to_curb)
 		"diner": _shop_diner(to_curb)
 		"bank": _bank(to_curb)
@@ -440,13 +441,50 @@ func _sign(c: Vector3, w: float, h: float) -> void:
 		# sign shader there's real lettering, so it paints no stand-in.
 		col = sign_spec.panel
 		col.a = 0.0
-		labels.append_array(SignText.on_panel(sign_spec, c + Vector3(0, 0, -0.01), w, h, Vector3.FORWARD))
+		labels.append_array(SignText.on_panel(sign_spec, c + Vector3(0, 0, -0.01), w, h, Vector3.FORWARD, true))
 	var r := Vector3(-w * 0.5, 0, 0)
 	var u := Vector3(0, h, 0)
 	# Faces the street (-z); x runs right to left as seen from the street.
 	_quad("sign", c + r, c - r, c - r + u, c + r + u, col,
 		[Vector2(0, 0), Vector2(w, 0), Vector2(w, 1), Vector2(0, 1)], Vector3.FORWARD)
 	_box("paint", Vector3(w + 0.1, h + 0.1, 0.06), c + Vector3(0, h * 0.5, 0.04), col.darkened(0.3))
+
+
+## Desktop: a strip tenant's name in channel letters, the way strip-centre
+## leases require them: separate lit letters about 13 cm deep on a raceway
+## along the fascia, red most often, then white, blue or green; they glow
+## after dark (sign alpha 1). Takes the same one draw from rng as _sign.
+func _channel_letters(c: Vector3, w: float, h: float) -> void:
+	_pick(SIGNS)  # the same one draw as _sign
+	var r := RandomNumberGenerator.new()
+	r.seed = hash([rng.seed, 37, snappedf(c.x, 0.1)])
+	var tints := [Color("#e0262e"), Color("#e0262e"), Color("#f4f1ea"), Color("#1f5fbf"), Color("#1f8a4a"), Color("#f2b632")]
+	var col: Color = tints[r.randi() % tints.size()]
+	col.a = 1.0
+	var lh := h * r.randf_range(0.7, 0.95)
+	var lw := lh * 0.62
+	var gap := lh * 0.14
+	var n := maxi(3, int(w / (lw + gap)))
+	var x0 := c.x - (n * (lw + gap) - gap) * 0.5
+	var y0 := c.y + (h - lh) * 0.5
+	var z := c.z - 0.08
+	# The raceway the letters hang on, painted to match the fascia.
+	_box("paint", Vector3(n * (lw + gap), 0.12, 0.1), Vector3(c.x, y0 + lh * 0.45, c.z - 0.03), Color("#5b5d5f"))
+	var t := lh * 0.18
+	for i in n:
+		if r.randf() < 0.1 and i > 0 and i < n - 1:
+			continue  # a space between words
+		var lx := x0 + i * (lw + gap) + lw * 0.5
+		# A block letter from a few strokes: stems, then bars across.
+		var stems := r.randi_range(1, 2)
+		if stems == 1:
+			_box("sign", Vector3(t, lh, 0.13), Vector3(lx + r.randf_range(-0.3, 0.3) * lw, y0 + lh * 0.5, z), col)
+		else:
+			for sx in [-1.0, 1.0]:
+				_box("sign", Vector3(t, lh, 0.13), Vector3(lx + sx * (lw - t) * 0.5, y0 + lh * 0.5, z), col)
+		for k in 3:
+			if r.randf() < 0.55:
+				_box("sign", Vector3(lw, t, 0.13), Vector3(lx, y0 + t * 0.5 + k * (lh - t) * 0.5, z - 0.005), col)
 
 
 func _awning(cx: float, w: float, zf: float, y: float, col: Color) -> void:
@@ -541,7 +579,11 @@ func _strip_center(to_curb: float, anchor := false) -> void:
 		var spec := sign_spec
 		if i > 0:
 			sign_spec = {}
-		_sign(Vector3(x, 3.9, zf - 2.55), sw * rng.randf_range(0.5, 0.8), 0.7)
+		var sgw := sw * rng.randf_range(0.5, 0.8)
+		if fine_parts and sign_spec.is_empty():
+			_channel_letters(Vector3(x, 3.9, zf - 2.55), sgw, 0.7)
+		else:
+			_sign(Vector3(x, 3.9, zf - 2.55), sgw, 0.7)
 		sign_spec = spec
 	# Canopy over the walk on square columns (a mansard's slope instead).
 	var x1 := w * 0.5 - aw if style == "mansard" and aw > 0.0 else w * 0.5
@@ -626,6 +668,232 @@ func _strip_towers(w: float, bay: float, n: int, stop: float, zf: float, top: fl
 			_tri("roof", b, c, p, seam, [], Vector3(1, 1, 0))
 			_tri("roof", c, d, p, seam, [], Vector3(0, 1, 1))
 			_tri("roof", d, a, p, seam, [], Vector3(-1, 1, 0))
+
+
+## A community shopping center (ICSC: 125,000 to 400,000 sq ft on 10 to 30
+## acres, anchored by a discount department store and a supermarket),
+## scaled to the 5-acre site the game allows: the small-town kind Indiana
+## got in the 1980s-90s, when discount chains built 40,000-90,000 sq ft
+## stores in towns of 5,000-25,000 (Kmart, Walmart, Pamida). A discount
+## store with its fenced garden center at one end, a supermarket at the
+## other, a line of shops between, and in front a parking field of
+## double-loaded rows (ULI: 18.3 m modules, 4-5 stalls per 1,000 sq ft)
+## off one main drive, with a pad building by the road (a bank or a burger
+## place, as every such center leases its outparcel) and a truck court
+## behind. Its own random numbers, so the builder's don't move.
+func _community_center(to_curb: float) -> void:
+	var cr := RandomNumberGenerator.new()
+	cr.seed = hash([rng.seed, "community"])
+	var w := half * 2.0 - 2.0
+	var back := clampf(depth - 70.0, 6.0, 18.0)  # truck court behind
+	var dd := clampf(depth - back - 32.0, 22.0, 50.0)
+	var zf := maxf(depth - back - dd, 20.0)
+	dd = minf(dd, depth - zf - 4.0)
+	var wd := clampf(w * 0.5, 34.0, 66.0)
+	var wg := clampf(w * 0.22, 22.0, 32.0)
+	if w - wd - wg < 14.0:
+		wd = maxf(w - wg - 14.0, 24.0)
+	var xd0 := -w * 0.5
+	var xd1 := xd0 + wd
+	var xg0 := w * 0.5 - wg
+	var mull: Color = MULLION[cr.randi() % 2]
+	var wall := Color(["#b8b2a4", "#c9c1ae", "#a49d8f", "#d2c8b2"][cr.randi() % 4])
+	var band := Color(["#1f4e8a", "#b0262b", "#2f6a3e", "#5a5e62"][cr.randi() % 4])
+	# The discount store: a long block box with an EIFS band and a stripe in
+	# the chain's colour, two entries (in and out) under a raised front.
+	var gw := 13.0  # garden center along its outer end
+	var hd := cr.randf_range(8.4, 9.4)
+	var sx0 := xd0 + gw
+	_cc_box("paint", sx0, xd1, zf, zf + dd, hd, hd + 0.9, wall)
+	_box("paint", Vector3(xd1 - sx0 + 0.1, 1.5, 0.3), Vector3((sx0 + xd1) * 0.5, hd - 0.4, zf - 0.12), wall.lightened(0.1))
+	_box("paint", Vector3(xd1 - sx0 + 0.12, 0.45, 0.34), Vector3((sx0 + xd1) * 0.5, hd - 1.35, zf - 0.13), band)
+	# Split-face block wainscot a shade darker, as the chains built them.
+	_box("paint", Vector3(xd1 - sx0 + 0.08, 1.3, 0.2), Vector3((sx0 + xd1) * 0.5, 0.65, zf - 0.08), wall.darkened(0.22))
+	var ex := (sx0 + xd1) * 0.5
+	var ew := minf((xd1 - sx0) * 0.5, 22.0)
+	var eh := hd + 2.4
+	_box("paint", Vector3(ew, eh, 1.4), Vector3(ex, eh * 0.5, zf - 0.7), wall.lightened(0.06))
+	_box("paint", Vector3(ew + 0.4, 0.4, 1.7), Vector3(ex, eh + 0.2, zf - 0.7), band)
+	var spec := sign_spec
+	_sign(Vector3(ex, eh - 2.3, zf - 1.42), ew * 0.75, 1.7)
+	sign_spec = {}
+	for s in [-1.0, 1.0]:
+		var vx: float = ex + s * ew * 0.3
+		_box("paint", Vector3(5.0, 3.4, 3.0), Vector3(vx, 1.7, zf - 2.9), wall.lightened(0.03))  # vestibule
+		_box("paint", Vector3(5.4, 0.3, 3.4), Vector3(vx, 3.5, zf - 2.9), band)
+		_glass(Vector3(vx, 1.35, zf - 4.42), Vector3(-1, 0, 0), 4.2, 2.5, 0.0)
+		_box("paint", Vector3(2.4, 2.2, 0.06), Vector3(vx, 1.1, zf - 4.46), Color("#2b2d2f"))
+	# The garden center: a fenced yard in front of the end wall (black
+	# picket panels on a block knee wall), a shade roof over its back half.
+	var gz1 := zf + minf(dd * 0.6, 24.0)
+	var gz0 := zf - 6.0
+	var fence := Color("#2a2c2e")
+	_flat_rect("drive", xd0 + 0.3, sx0, gz0, gz1, 0.08)
+	for e in [[Vector2(xd0 + 0.3, gz0), Vector2(sx0, gz0)], [Vector2(xd0 + 0.3, gz0), Vector2(xd0 + 0.3, gz1)],
+			[Vector2(xd0 + 0.3, gz1), Vector2(sx0, gz1)], [Vector2(sx0, gz0), Vector2(sx0, zf)]]:
+		var a: Vector2 = e[0]
+		var b: Vector2 = e[1]
+		var mid := (a + b) * 0.5
+		var size := Vector3(maxf(absf(b.x - a.x), 0.2), 0.0, maxf(absf(b.y - a.y), 0.2))
+		_box("paint", Vector3(size.x, 0.8, size.z), Vector3(mid.x, 0.4, mid.y), wall.darkened(0.1))
+		_box("metal", Vector3(size.x if size.x > 0.2 else 0.06, 2.6, size.z if size.z > 0.2 else 0.06), Vector3(mid.x, 2.1, mid.y), fence)
+	_box("paint", Vector3(gw - 0.4, 0.25, gz1 - zf - 4.0), Vector3(xd0 + gw * 0.5 + 0.1, 4.6, (zf + 4.0 + gz1) * 0.5), Color("#e9e6dc"))
+	for i in 3:
+		_box("metal", Vector3(0.15, 4.5, 0.15), Vector3(xd0 + 1.0 + i * (gw - 2.0) * 0.5, 2.25, zf + 4.2), fence)
+	if fine_parts:
+		for i in 6:  # nursery tables and pallets of mulch
+			_box("paint", Vector3(gw - 4.0, 0.9, 1.2), Vector3(xd0 + gw * 0.5, 0.45, gz0 + 2.0 + i * 2.6), Color("#5c6b3a") if i % 2 == 0 else Color("#6a4a32"))
+	# The supermarket at the other end, the shops between.
+	var hs := cr.randf_range(5.3, 6.0)
+	var ds := minf(18.0, dd)
+	var x0s := xd1
+	var x1s := xg0
+	_cc_box("paint", x0s, x1s, zf, zf + ds, hs, hs + 1.0, wall.darkened(0.04))
+	var n := maxi(2, int((x1s - x0s) / 7.5))
+	var bay := (x1s - x0s) / n
+	for i in n:
+		var x := x0s + (i + 0.5) * bay
+		shopfront = fine_parts
+		_glass(Vector3(x - 0.4, 1.7, zf - 0.03), Vector3(-1, 0, 0), bay - 2.8, 2.3, cr.randf_range(0.0, 0.2))
+		shopfront = false
+		_glass(Vector3(x + (bay - 1.4) * 0.5 - 0.5, 1.45, zf - 0.03), Vector3(-1, 0, 0), 0.95, 2.4, 0.0)
+		_box("paint", Vector3(0.5, 3.0, 0.2), Vector3(x - bay * 0.5, 1.8, zf - 0.1), wall.darkened(0.12))
+		if fine_parts:
+			_channel_letters(Vector3(x, 4.0, zf - 2.55), (bay - 1.4) * 0.65, 0.7)
+		else:
+			_sign(Vector3(x, 4.0, zf - 2.55), (bay - 1.4) * 0.65, 0.7)
+	_box("paint", Vector3(x1s - x0s, 0.5, 2.6), Vector3((x0s + x1s) * 0.5, 3.65, zf - 1.3), wall.lightened(0.1))
+	var px := x0s
+	while px <= x1s + 0.01:
+		_box("paint", Vector3(0.45, 3.0, 0.45), Vector3(clampf(px, x0s + 0.3, x1s - 0.3), 1.9, zf - 2.3), wall.lightened(0.1))
+		px += bay
+	_grocery_anchor(xg0, w * 0.5, zf, zf + ds * 0.5, ds, wall, mull)
+	sign_spec = spec
+	site.door = Vector2(ex, zf - 4.5)
+	# The truck court: the discount store's docks and trailers at the back.
+	var dz := zf + dd
+	if depth - dz > 5.0:
+		_flat_rect("asphalt", -half + 0.6, half - 0.6, dz, depth - 0.6, 0.06)
+		for k in 3:
+			var kx := xd1 - 6.0 - k * 5.0
+			_box("paint", Vector3(3.0, 3.2, 0.1), Vector3(kx, 1.6, dz + 0.06), Color("#5a5c5e"))
+			_box("paint", Vector3(3.4, 1.2, 0.5), Vector3(kx, 1.2, dz + 0.3), Color("#1e1f20"))
+			if k < 2 and depth - dz > 15.0:  # a trailer backed in
+				_box("paint", Vector3(2.6, 2.4, 14.6), Vector3(kx, 2.4, dz + 7.9), Color("#e6e4de"))
+				_box("paint", Vector3(2.6, 0.5, 14.6), Vector3(kx, 3.85, dz + 7.9), Color("#e6e4de"))
+				_box("paint", Vector3(2.4, 1.0, 0.4), Vector3(kx, 0.6, dz + 13.5), Color("#2a2a2a"))
+		_box("paint", Vector3(2.4, 2.2, 5.0), Vector3(sx0 + 4.0, 1.1, dz + 2.8), Color("#3d5a7a"))  # baler/compactor
+	_rooftop(w * 0.8, dd * 0.6, zf + dd * 0.5, hd, 6)
+	_cc_parking(to_curb, w, zf - 2.6, xg0, cr)
+
+
+## A flat-roofed box between x0 and x1: walls, a membrane roof, a parapet
+## and coping (_flat_roofed, off centre).
+func _cc_box(mat: String, x0: float, x1: float, z0: float, z1: float, deck: float, top: float, wall: Color) -> void:
+	var w := x1 - x0
+	var d := z1 - z0
+	var cx := (x0 + x1) * 0.5
+	var cz := (z0 + z1) * 0.5
+	_box(mat, Vector3(w + 0.1, 0.3, d + 0.1), Vector3(cx, 0.15, cz), FOUNDATION)
+	_box(mat, Vector3(w, deck, d), Vector3(cx, deck * 0.5, cz), wall)
+	var y := deck + 0.02
+	_quad("membrane", Vector3(x0, y, z0), Vector3(x1, y, z0), Vector3(x1, y, z1), Vector3(x0, y, z1),
+		_low_slope(w, d, cz), [], Vector3.UP)
+	_roof_bits(cx, w, d, cz, y, false)
+	var ph := top - deck
+	var t := 0.25
+	var col := _coping_color(false)
+	for s in [-1.0, 1.0]:
+		_box(mat, Vector3(w, ph, t), Vector3(cx, deck + ph * 0.5, cz + s * (d * 0.5 - t * 0.5)), wall)
+		_box(mat, Vector3(t, ph, d), Vector3(cx + s * (w * 0.5 - t * 0.5), deck + ph * 0.5, cz), wall)
+		_box("paint", Vector3(w + 0.1, 0.1, 0.35), Vector3(cx, top, cz + s * d * 0.5), col)
+		_box("paint", Vector3(0.35, 0.1, d), Vector3(cx + s * w * 0.5, top, cz), col)
+
+
+## The community center's parking field: a walk and fire lane along the
+## stores, then double-loaded rows (5.5 m stalls either side of a 7.3 m
+## aisle, head to head between modules) down to the street, off a main
+## drive from the curb cut; the pad building in the front corner by the
+## supermarket. Notes every stall with the aisle it's reached from.
+func _cc_parking(to_curb: float, w: float, zw: float, xg0: float, cr: RandomNumberGenerator) -> void:
+	var lot0 := -half + 0.6
+	var lot1 := half - 0.6
+	_flat_rect("drive", -w * 0.5 - 0.5, w * 0.5 + 0.5, zw - 2.0, zw, 0.08)
+	_flat_rect("asphalt", lot0, lot1, 0.0, zw - 2.0, 0.06)
+	var cut_x := clampf((-w * 0.5 + xg0) * 0.5, lot0 + 6.0, lot1 - 26.0)
+	_flat_rect("asphalt", cut_x - 4.2, cut_x + 4.2, -to_curb, 0.0, 0.1)
+	site.cut_x = cut_x
+	site.main_street = false
+	# The pad: a small brick box by the road with its drive-through lane.
+	var pad := Rect2(lot1 - 20.0, 2.0, 19.0, 15.0)
+	var pc := pad.get_center()
+	var brick := Color(FACADE_BRICK[cr.randi() % FACADE_BRICK.size()])
+	# EIFS over a brick wainscot, the 1990s pad restaurant's dress (painted,
+	# so its far version takes the center's own wall colour).
+	_box("paint", Vector3(12.0, 4.2, 9.0), Vector3(pc.x, 2.1, pc.y + 1.0), Color(["#d9c7a6", "#cbb894", "#e2d6bd"][cr.randi() % 3]))
+	_box("paint", Vector3(12.06, 1.1, 9.06), Vector3(pc.x, 0.55, pc.y + 1.0), brick)
+	_quad("membrane", Vector3(pc.x - 6.0, 4.22, pc.y - 3.5), Vector3(pc.x + 6.0, 4.22, pc.y - 3.5),
+		Vector3(pc.x + 6.0, 4.22, pc.y + 5.5), Vector3(pc.x - 6.0, 4.22, pc.y + 5.5), Color("#9a9790"), [], Vector3.UP)
+	var accent := Color(AWNING[cr.randi() % AWNING.size()])
+	_box("paint", Vector3(12.3, 0.55, 9.3), Vector3(pc.x, 4.45, pc.y + 1.0), accent)
+	_glass(Vector3(pc.x, 1.6, pc.y - 3.53), Vector3(-1, 0, 0), 8.0, 2.0, 0.1)
+	_sign(Vector3(pc.x, 3.0, pc.y - 3.6), 5.0, 0.8)
+	_box("paint", Vector3(2.0, 2.4, 6.0), Vector3(pc.x + 6.9, 2.6, pc.y + 1.0), accent.darkened(0.2))  # pickup window canopy
+	for i in 3:
+		_shrub(Vector3(pad.position.x + 2.0 + i * 3.0, 0, pad.position.y + 0.6), 0.7)
+	# Rows: the fire lane is the first aisle, then 18.3 m modules.
+	var stall := 2.75
+	var rows := []  # [z of the stall's middle, face z, aisle z]
+	var az := zw - 2.0 - 3.65
+	while true:
+		var zb := az - 3.65
+		if zb - 5.5 < 1.0:
+			break
+		rows.append([zb - 2.75, -1.0, az])
+		var az2 := az - 18.3
+		if az2 - 3.65 < 1.0:
+			break
+		rows.append([az2 + 3.65 + 2.75, 1.0, az2])
+		az = az2
+	for row in rows:
+		var zc: float = row[0]
+		var x := lot0 + 2.0
+		while x + stall <= lot1 - 2.0 + 0.01:
+			var mx := x + stall * 0.5
+			x += stall
+			if absf(mx - cut_x) < 7.0 or pad.grow(1.0).has_point(Vector2(mx, zc)):
+				continue
+			_flat_rect("line", mx - stall * 0.5 - 0.06, mx - stall * 0.5 + 0.06, zc - 2.75, zc + 2.75, 0.07, LINE)
+			site.stalls.append([Vector2(mx, zc), Vector2(0, row[1]), row[2]])
+	site.aisle_z = zw - 2.0 - 3.65
+	if not fine_parts:
+		return
+	# Light poles on the head-to-head seams, cart corrals, islands' trees.
+	for row in rows:
+		if float(row[1]) > 0.0:
+			var sz: float = float(row[0]) - 2.75
+			var x := lot0 + 14.0
+			while x < lot1 - 8.0:
+				if absf(x - cut_x) > 7.0 and not pad.grow(2.0).has_point(Vector2(x, sz)):
+					_box("concrete", Vector3(0.6, 0.9, 0.6), Vector3(x, 0.45, sz), FOUNDATION)
+					_box("paint", Vector3(0.16, 10.0, 0.16), Vector3(x, 5.9, sz), Color("#2e3032"))
+					_box("paint", Vector3(0.6, 0.18, 0.8), Vector3(x, 10.9, sz), Color("#2e3032"))
+					_light_pool(Vector3(x, 0.13, sz), 26.0, 26.0, Color(0.95, 0.96, 1.0))
+				x += 30.0
+	for k in [-1.0, 1.0]:
+		var p := Vector3(cut_x + k * 4.4, 0, 1.2)
+		var pick := TreeField.pick(cr, true)
+		trees.append([p, pick[0], pick[1], cr.randf_range(0.9, 1.1)])
+	# Planted islands at the ends of the rows and either side of the main
+	# drive (a shade tree in each, as Indiana towns' parking codes ask).
+	for row in rows:
+		var zc: float = row[0]
+		for x in [lot0 + 1.0, lot1 - 1.0, cut_x - 5.4, cut_x + 5.4]:
+			if pad.grow(1.5).has_point(Vector2(x, zc)):
+				continue
+			_flat_rect("mulch", x - 0.9, x + 0.9, zc - 2.5, zc + 2.5, 0.09)
+			var pick := TreeField.pick(cr, true)
+			trees.append([Vector3(x, 0, zc), pick[0], pick[1], cr.randf_range(0.7, 0.95)])
 
 
 ## The supermarket that anchors a neighborhood center (ICSC: 30,000 to

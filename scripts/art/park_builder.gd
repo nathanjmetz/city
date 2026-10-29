@@ -1209,6 +1209,34 @@ func _skate_park(c: Vector3, size: Vector2) -> void:
 	_box("paint", Vector3(4.0, 0.05, 0.05), fbar + Vector3(0, 0.35, 0), GALV)
 	for x in [-1.8, 1.8]:
 		_box("paint", Vector3(0.05, 0.35, 0.05), fbar + Vector3(x, 0.17, 0), GALV)
+	# A pyramid out front: a flat top with a bank on each side, the
+	# centrepiece of most town street plazas (Grind Line, Spohn Ranch).
+	var py := c + Vector3(0, 0, -size.y * 0.5 + 5.5)
+	var t := 1.3
+	var b := 3.6
+	var ph := 0.75
+	_box("paint", Vector3(t * 2.0, ph, t * 2.0), py + Vector3(0, ph * 0.5, 0), pad.darkened(0.03))
+	for k in 4:
+		var r := Basis(Vector3.UP, k * PI * 0.5)
+		var a: Vector3 = py + r * Vector3(-t, ph, t)
+		var bb: Vector3 = py + r * Vector3(t, ph, t)
+		var cc: Vector3 = py + r * Vector3(b, 0.07, b)
+		var dd: Vector3 = py + r * Vector3(-b, 0.07, b)
+		_quad("paint", dd, cc, bb, a, pad.darkened(0.02 + k * 0.015), [], r * Vector3(0, 1, 0.3))
+	_box("paint", Vector3(t * 2.0, 0.05, 0.08), py + Vector3(0, ph + 0.02, -t), GALV)
+	# A three-stair with a handrail down it, its landing behind.
+	var st := c + Vector3(size.x * 0.5 - 7.5, 0, size.y * 0.5 - 4.0)
+	_box("paint", Vector3(4.0, 0.54, 2.4), st + Vector3(0, 0.27, 1.2), pad.darkened(0.05))
+	for k in 3:
+		_box("paint", Vector3(4.0, 0.18 * (3 - k), 0.32), st + Vector3(0, 0.09 * (3 - k), -0.16 - k * 0.32), pad.darkened(0.05))
+	_strut(st + Vector3(-1.6, 1.4, 0.2), st + Vector3(-1.6, 0.86, -1.1), 0.05, GALV)
+	for z in [0.2, -1.1]:
+		_box("paint", Vector3(0.05, 0.86, 0.05), st + Vector3(-1.6, (1.4 if z > 0.0 else 0.86) * 0.5, z), GALV)
+	# Painted coping wear and lights for evening sessions.
+	for s in [-1.0, 1.0]:
+		var lp := c + Vector3(s * (size.x * 0.5 + 0.8), 0, -size.y * 0.5 + 1.0)
+		_box("paint", Vector3(0.18, 7.0, 0.18), lp + Vector3(0, 3.5, 0), Color("#2b2f33"))
+		_box("paint", Vector3(0.5, 0.16, 0.8), lp + Vector3(-s * 0.3, 7.0, 0.3), Color("#2b2f33"))
 	for i in 2:
 		_bench(c + Vector3(-size.x * 0.25 + i * size.x * 0.5, 0, -size.y * 0.5 - 1.2), PI)
 

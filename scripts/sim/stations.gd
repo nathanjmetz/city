@@ -13,13 +13,22 @@ extends RefCounted
 ## as towns do: with part of its cost in the fund, the rest is borrowed and
 ## the levy pays it back (the fund runs below zero until then). A piece that needs land
 ## grows the station's lot back from the street, onto free land only:
-## nothing the player built is taken.
+## nothing the player built is taken. When homes or shops stand there, the
+## chief asks the player through the permits bell to buy them out, as a
+## real town buys the lots next to its station; a yes clears them, a no
+## leaves the station as it is (Permits waits before it asks again).
 
 ## The chief looks at the fund and the town once a game day (a month).
 const DECIDE_EVERY := 1440
-const TREE_OF := {Services.Kind.FIRE: "fire", Services.Kind.POLICE: "police", Services.Kind.CLINIC: "clinic"}
+const TREE_OF := {Services.Kind.FIRE: "fire", Services.Kind.POLICE: "police", Services.Kind.CLINIC: "clinic",
+	Services.Kind.SCHOOL: "school", Services.Kind.NURSING_HOME: "nursing", Services.Kind.DAYCARE: "daycare"}
 
-var depts := {}  # service id -> {built: [ids, in the order built], fund, why}
+## The permits bell's name for these hubs.
+const PERMIT_KIND := "station"
+
+## service id -> {built: [ids, in the order built], fund, why, ask}. `ask`
+## is a land request out to the player: {req, node, pos: [x, z], size: [w, d]}.
+var depts := {}
 
 
 static func tree(kind: int) -> Array:
@@ -36,6 +45,10 @@ static func node(kind: int, id: String) -> Dictionary:
 ## Steps the departments. Returns the ids of stations whose lots grew, so
 ## the city can clear zoning under them.
 func tick(sim: CitySim) -> Array:
+	if not sim.permits.locators.has(PERMIT_KIND):
+		sim.permits.locators[PERMIT_KIND] = func(s: CitySim, id: int) -> Vector2:
+			var b: Dictionary = s.services.buildings.get(id, {})
+			return Vector2(b.pos.x, b.pos.z) if not b.is_empty() else Vector2.ZERO
 	_sync(sim)
 	if sim.tick_count % DECIDE_EVERY != 0 or depts.is_empty():
 		return []
@@ -54,7 +67,7 @@ func tick(sim: CitySim) -> Array:
 func _sync(sim: CitySim) -> void:
 	for id in sim.services.buildings:
 		if TREE_OF.has(int(sim.services.buildings[id].kind)) and not depts.has(id):
-			depts[id] = {"built": [], "fund": 0.0, "why": ""}
+			depts[id] = {"built": [], "fund": 0.0, "why": "", "ask": {}}
 	for id in depts.keys():
 		if not sim.services.buildings.has(id) or not TREE_OF.has(int(sim.services.buildings[id].kind)):
 			depts.erase(id)
@@ -75,20 +88,106 @@ static func _facts(sim: CitySim) -> Dictionary:
 func _decide(sim: CitySim, id: int, facts: Dictionary) -> bool:
 	var d: Dictionary = depts[id]
 	var b: Dictionary = sim.services.buildings[id]
-	d.fund = roundf(float(d.fund) + float(facts.population) * Balance.STATION_LEVY_PER_PERSON)
+	d.fund = roundf(float(d.fund) + float(facts.population)
+		* float(Balance.STATION_LEVY_OF.get(TREE_OF[int(b.kind)], Balance.STATION_LEVY_PER_PERSON)))
+	if not d.ask.is_empty():
+		return _answer(sim, id)
 	for n in open(int(b.kind), d.built, facts):
 		if float(n.cost) * Balance.STATION_BOND_DOWN > float(d.fund):
 			continue  # saving up for it
 		var grow := float(n.get("grow", 0.0))
 		if grow > 0.0 and not _grow(sim, id, grow):
+			if _ask(sim, id, n):
+				return false
 			d.why = "No free land behind the station for the %s." % str(n.name).to_lower()
 			continue
-		d.fund = float(d.fund) - float(n.cost)
-		d.built.append(n.id)
-		d.why = "The chief added the %s: %s." % [str(n.name).to_lower(), n.note]
-		sim.buildings_changed.emit()
+		_add(sim, id, n, 0.0)
 		return grow > 0.0
 	return false
+
+
+func _add(sim: CitySim, id: int, n: Dictionary, land: float) -> void:
+	var d: Dictionary = depts[id]
+	d.fund = float(d.fund) - float(n.cost) - land
+	d.built.append(n.id)
+	d.why = "The chief added the %s: %s." % [str(n.name).to_lower(), n.note]
+	sim.buildings_changed.emit()
+
+
+## The lot `metres` deeper: [pos, size].
+static func _deeper(b: Dictionary, metres: float) -> Array:
+	return [b.pos - b.dir * metres * 0.5, Services.size_of(b) + Vector2(0.0, metres)]
+
+
+## Only homes or shops stand behind the station: ask the player to let the
+## department buy them (true if a request went out).
+func _ask(sim: CitySim, id: int, n: Dictionary) -> bool:
+	var b: Dictionary = sim.services.buildings[id]
+	var to := _deeper(b, float(n.grow))
+	if BusNet.land_free(sim, id, to[0], b.dir, to[1]) != "built" or not sim.permits.can_file(sim, PERMIT_KIND, id):
+		return false
+	var area := []
+	for p in Services.corners(int(b.kind), to[0], b.dir, to[1]):
+		area.append([p.x, p.z])
+	var homes := 0
+	for h in sim.permits.check(sim, area, 0.0, true).get("buildings", []):
+		if h.what == "lot":
+			homes += 1
+	var kind_name := str(Services.KINDS[int(b.kind)].name).to_lower()
+	var req: int = sim.permits.file(sim, {"hub": PERMIT_KIND, "hub_id": id, "leader": _head(int(b.kind)),
+		"title": "Buy %d building%s behind the %s" % [homes, "" if homes == 1 else "s", kind_name],
+		"why": "The %s needs room for the %s: %s." % [kind_name, str(n.name).to_lower(), n.note],
+		"area": area, "change": "Homes and shops to %s" % kind_name,
+		"per_m2": roundi(Balance.STATION_LAND_PER_M2), "base": int(n.cost), "budget": roundi(maxf(float(depts[id].fund), 0.0))})
+	if req == -1:
+		return false
+	depts[id].ask = {"req": req, "node": n.id, "pos": [to[0].x, to[0].z], "size": [to[1].x, to[1].y]}
+	depts[id].why = "Asked to buy the land behind the station for the %s." % str(n.name).to_lower()
+	return true
+
+
+## The player answered (or not yet): on a yes, the buildings on the land
+## they agreed to are bought and cleared and the piece goes up there.
+func _answer(sim: CitySim, id: int) -> bool:
+	var d: Dictionary = depts[id]
+	var state: int = sim.permits.state_of(int(d.ask.req))
+	if state == Permits.State.OPEN:
+		return false
+	var n := node(int(sim.services.buildings[id].kind), str(d.ask.node))
+	if state != Permits.State.APPROVED or n.is_empty() or n.id in d.built:
+		d.why = "Was told no on the land behind the station." if state == Permits.State.DENIED else d.why
+		d.ask = {}
+		return false
+	var req: Dictionary = sim.permits.requests[int(d.ask.req)]
+	var outline := PackedVector2Array()
+	for p in req.route:
+		outline.append(Vector2(float(p[0]), float(p[1])))
+	for key in sim.buildings.keys():
+		if sim.parcel_under(key, outline):
+			sim.buildings.erase(key)
+	var b: Dictionary = sim.services.buildings[id]
+	var pos := Vector3(float(d.ask.pos[0]), 0.0, float(d.ask.pos[1]))
+	var size := Vector2(float(d.ask.size[0]), float(d.ask.size[1]))
+	sim.permits.done(int(d.ask.req))
+	d.ask = {}
+	if BusNet.land_free(sim, id, pos, b.dir, size) != "":
+		d.why = "The land agreed to wasn't enough for the %s." % str(n.name).to_lower()
+		return false
+	b.pos = pos
+	b.size = size
+	_add(sim, id, n, float(n.grow) * size.x * Balance.STATION_LAND_PER_M2)
+	return true
+
+
+## Who runs it, for the bell.
+static func _head(kind: int) -> String:
+	match kind:
+		Services.Kind.FIRE: return "The fire chief"
+		Services.Kind.POLICE: return "The police chief"
+		Services.Kind.SCHOOL: return "The principal"
+		Services.Kind.NURSING_HOME: return "The administrator"
+		Services.Kind.DAYCARE: return "The director"
+	return "The clinic manager"
 
 
 ## Nodes whose needs the town meets, in tree order.
@@ -111,12 +210,11 @@ static func open(kind: int, built: Array, facts: Dictionary) -> Array:
 ## free (an empty lot or open ground, never a home or shop).
 static func _grow(sim: CitySim, id: int, metres: float) -> bool:
 	var b: Dictionary = sim.services.buildings[id]
-	var size := Services.size_of(b) + Vector2(0.0, metres)
-	var pos: Vector3 = b.pos - b.dir * metres * 0.5
-	if BusNet.land_free(sim, id, pos, b.dir, size) != "":
+	var to := _deeper(b, metres)
+	if BusNet.land_free(sim, id, to[0], b.dir, to[1]) != "":
 		return false
-	b.pos = pos
-	b.size = size
+	b.pos = to[0]
+	b.size = to[1]
 	return true
 
 
@@ -162,7 +260,7 @@ func rows(sim: CitySim, id: int) -> Array:
 func to_dict() -> Dictionary:
 	var out := {}
 	for id in depts:
-		out[str(id)] = {"built": depts[id].built, "fund": depts[id].fund, "why": depts[id].why}
+		out[str(id)] = {"built": depts[id].built, "fund": depts[id].fund, "why": depts[id].why, "ask": depts[id].ask}
 	return out
 
 
@@ -170,5 +268,5 @@ func from_dict(sim: CitySim, d: Dictionary) -> void:
 	depts = {}
 	for k in d:
 		depts[int(k)] = {"built": Array(d[k].get("built", [])), "fund": float(d[k].get("fund", 0.0)),
-			"why": str(d[k].get("why", ""))}
+			"why": str(d[k].get("why", "")), "ask": Dictionary(d[k].get("ask", {}))}
 	_boost(sim)

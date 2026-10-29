@@ -144,7 +144,8 @@ func _services() -> void:
 			"" if missing.is_empty() else ": missing " + str(missing)])
 	# Fire and police stations (Stations): each piece on its own strip of
 	# land behind the first lot, or on the lot.
-	for kind in [Services.Kind.FIRE, Services.Kind.POLICE, Services.Kind.CLINIC]:
+	for kind in [Services.Kind.FIRE, Services.Kind.POLICE, Services.Kind.CLINIC, Services.Kind.SCHOOL,
+		Services.Kind.NURSING_HOME, Services.Kind.DAYCARE]:
 		var tree := Stations.tree(kind)
 		var missing := []
 		for node in tree:
@@ -302,7 +303,8 @@ func _mesh_verts(parts: Array) -> int:
 
 
 func _svc_verts(kind: int, size: Vector2, built: Array) -> int:
-	var parts := CivicBuilder.build_service(kind, 7, size, 3.9, built)
+	var parts := HealthBuilder.build_care(kind, 7, size, 3.9, {}, built) \
+		if kind in [Services.Kind.NURSING_HOME, Services.Kind.DAYCARE] else CivicBuilder.build_service(kind, 7, size, 3.9, built)
 	var n := 0
 	for k in 2:
 		var mesh: ArrayMesh = parts[k]

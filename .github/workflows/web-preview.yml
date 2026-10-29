@@ -85,8 +85,11 @@ jobs:
           run_test tests/test_junction_marks.gd
           run_test tests/test_curbs.gd
           run_test tests/test_country_roads.gd
+          run_test tests/test_county_rail.gd
           run_test tests/test_sim.gd
           run_test tests/test_town_laws.gd
+          run_test tests/test_clusters.gd
+          run_test tests/test_worn_paths.gd
           run_test tests/test_water.gd
           run_test tests/test_advisor.gd
           run_test tests/test_build_menus.gd
@@ -98,13 +101,16 @@ jobs:
           run_test tests/test_hud_quick.gd
           run_test tests/test_connections.gd
           run_test tests/test_road_tools.gd
+          run_test tests/test_bridges.gd
           run_test tests/test_route_lines.gd
+          run_test tests/test_lane_rules.gd
           run_test tests/test_detail_floor.gd
           run_test tests/test_grid_fill.gd
           run_test tests/test_move_it.gd
           run_test tests/test_road_variants.gd
           run_test tests/test_road_over_itself.gd
           run_test tests/test_traffic.gd
+          run_test tests/test_wide_turns.gd
           run_test tests/test_signal_timing.gd
           run_test tests/test_money_exact.gd
           run_test tests/test_green_light.gd
@@ -152,6 +158,7 @@ jobs:
           run_test tests/test_boxed_mail.gd
           run_test tests/test_warehouses.gd
           run_test tests/test_big_factories.gd
+          run_test tests/test_work_modes.gd
           run_test tests/test_parks.gd
           run_test tests/test_boxed_parks.gd
           run_test tests/test_tourism.gd

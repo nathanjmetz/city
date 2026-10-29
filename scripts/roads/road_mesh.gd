@@ -159,6 +159,8 @@ static func _town(pts: PackedVector3Array, type: int, mats: Dictionary, cuts := 
 			add_curb(pan, edge, back, rises)
 		pan.commit(mesh)
 		mesh.surface_set_material(mesh.get_surface_count() - 1, mats.curb)
+		if mats.has("iron"):
+			_castings(mesh, pts, length, hw, lane_edge, mats)
 	# Downtown stall marks: T marks every 22 ft along parallel parking, and
 	# 45-degree stall lines 9 ft wide for angled parking.
 	var stalls := SurfaceTool.new()
@@ -198,6 +200,67 @@ static func _town(pts: PackedVector3Array, type: int, mats: Dictionary, cuts := 
 		stalls.commit(mesh)
 		mesh.surface_set_material(mesh.get_surface_count() - 1, mats.white)
 	return mesh
+
+
+## Iron in the street, as the desktop's raised curbs draw it: a curb inlet
+## in the gutter pan at each corner, just short of the curb ramp, where the
+## water runs to (INDOT standard E 720 type J: a cast grate with its bars
+## along the gutter, 2 by 3 ft), and a sanitary manhole cover down the
+## middle of a lane every block or so (Neenah R-1642 style, 27 in round).
+static func _castings(mesh: ArrayMesh, pts: PackedVector3Array, length: float, hw: float, lane_edge: float,
+		mats: Dictionary) -> void:
+	var iron := SurfaceTool.new()
+	iron.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var slots := SurfaceTool.new()
+	slots.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var y := RoadStyle.Y_ASPHALT + 0.006
+	var gw := 0.6
+	var gl := 0.9
+	if length > 2.0 * (RAMP_TO + RAMP_EASE + gl + 4.0):
+		for side in [-1.0, 1.0]:
+			for end in [0, 1]:
+				var d0 := RAMP_TO + RAMP_EASE + 0.8
+				var d := d0 if end == 0 else length - d0 - gl
+				var a0 := hw - gw - 0.02
+				var a1 := hw - 0.02
+				_patch(iron, pts, d, d + gl, side, a0, a1, y)
+				# Bars along the flow, with the dark between.
+				var k := 0
+				while k < 5:
+					var b0 := a0 + 0.07 + k * 0.1
+					_patch(slots, pts, d + 0.06, d + gl - 0.06, side, b0, b0 + 0.05, y + 0.002)
+					k += 1
+	# Manholes: down the sewer under the middle of the right-hand lane,
+	# mid-block and every 90 m on a long street (Ten States Standards
+	# space them no more than 400 ft apart).
+	var lane_mid := maxf(lane_edge - 1.8, 1.2)
+	var n := maxi(1, int(length / 90.0))
+	for i in n:
+		var d := length * (i + 0.5) / n
+		if d < hw + 6.0 or d > length - hw - 6.0:
+			continue
+		var at: Array = LotPlanner.point_at(pts, d)
+		var side := 1.0 if i % 2 == 0 else -1.0
+		var c: Vector3 = at[0] + Vector3(-at[1].z, 0.0, at[1].x).normalized() * lane_mid * side
+		add_disc(slots, c, 0.43, RoadStyle.Y_ASPHALT + 0.005, 20)
+		add_disc(iron, c, 0.37, RoadStyle.Y_ASPHALT + 0.007, 20)
+	iron.commit(mesh)
+	mesh.surface_set_material(mesh.get_surface_count() - 1, mats.iron)
+	slots.commit(mesh)
+	mesh.surface_set_material(mesh.get_surface_count() - 1, mats.drain)
+
+
+## A flat patch from `d0` to `d1` metres along, `a0` to `a1` out on `side`.
+static func _patch(st: SurfaceTool, pts: PackedVector3Array, d0: float, d1: float, side: float,
+		a0: float, a1: float, y: float) -> void:
+	var p0: Array = LotPlanner.point_at(pts, d0)
+	var p1: Array = LotPlanner.point_at(pts, d1)
+	var n0: Vector3 = Vector3(-p0[1].z, 0.0, p0[1].x).normalized() * side
+	var n1: Vector3 = Vector3(-p1[1].z, 0.0, p1[1].x).normalized() * side
+	var up := Vector3(0.0, y, 0.0)
+	var q := [p0[0] + n0 * a0 + up, p0[0] + n0 * a1 + up, p1[0] + n1 * a1 + up, p1[0] + n1 * a0 + up]
+	_tri(st, [q[0], Vector2.ZERO], [q[1], Vector2(0.25, 0.0)], [q[2], Vector2(0.25, 0.25)])
+	_tri(st, [q[0], Vector2.ZERO], [q[2], Vector2(0.25, 0.25)], [q[3], Vector2(0.0, 0.25)])
 
 
 ## Distances along a street to sample its curb at: every 3 m or closer,

@@ -110,6 +110,9 @@ var _deck := Rect2()  # while a plan is drawn: its back deck or patio and steps 
 ## While a plan is drawn: its owner has raised the roof (a "Two-storey home"
 ## grown from a cape or bungalow) with a full shed dormer.
 var _raised := false
+## True when a house grown to two storeys kept a plan that had them already
+## (see _grown_key): its owner finishes a room over the garage instead.
+var _kept := false
 var pad := 0.0
 var era := "recent"
 var _cell_seed := 0  # the street block this lot is in (its builder)
@@ -160,6 +163,8 @@ var rng: RandomNumberGenerator
 ## Set around a shop's display windows on the desktop: the glass shows a
 ## lit sales floor behind it (HouseMaterials GLASS, UV.x 2..3).
 var shopfront := false
+## Desktop: office windows (GLASS shader UV.x 4..5) go dark a floor at a time.
+var office_glass := false
 
 
 ## `lot` (optional): width, depth, outline (local x/z points) and pad.
@@ -229,6 +234,10 @@ func _house(to_curb: float, storeys := 0) -> Array:
 	var info: Dictionary = body.info.duplicate()
 	if owner_care <= -2:
 		_board_up(body.arrays.get("glass", []))
+	if _kept:
+		_bonus_room(info, body.paint)
+		_sun_porch(info, body.paint)
+		_full_porch(info, body.paint)
 	if grown >= 1:
 		_addition(info, body.paint)
 	if grown >= 2:
@@ -619,6 +628,7 @@ func _plan(storeys: int, info_only := false) -> Dictionary:
 	if storeys >= 2 and outline.size() < 3:
 		key = _grown_key(key)
 		storeys = key[4]
+		_kept = storeys == 0 and key.size() == 6
 	if info_only and not _plans.has(key):
 		return {"info": _placed_info(_shape(key).info, gs, zf, dx)}
 	var body: Dictionary = _plans.get(key, {})
@@ -635,6 +645,125 @@ func _plan(storeys: int, info_only := false) -> Dictionary:
 	if info_only:
 		return {"info": _placed_info(body.info, gs, zf, dx)}
 	return _placed(body, gs, zf, paint, dx)
+
+
+## A porch across the front, added by an owner growing an I-house or a
+## split-level: the full-width porch that Indiana's I-houses gained in the
+## 1890s-1920s in place of a small entry porch, or the covered porch
+## across a split-level's raised wing, the most common update to a
+## 1960s-70s split (Indianapolis's Lawrence and Castleton subdivisions).
+## Square posts, a rail, a shed roof off the wall; new steps to the door
+## when the old ones would be under the deck.
+func _full_porch(h: Dictionary, paint: Dictionary) -> void:
+	if not h.get("kind", "") in ["i_house", "split"] or not h.has("porch_add") or outline.size() >= 3:
+		return
+	var pr: Rect2 = h.porch_add
+	var px0 := pr.position.x
+	var px1 := pr.end.x
+	var z0 := pr.position.y  # the porch's front edge
+	var zw := pr.end.y  # the house wall
+	var floor_y: float = h.porch_floor
+	var roof_y: float = h.porch_roof
+	var cx := (px0 + px1) * 0.5
+	var pw := px1 - px0
+	var door_x: float = h.door_x
+	_box("concrete", Vector3(pw, floor_y, zw - z0), Vector3(cx, floor_y * 0.5, (z0 + zw) * 0.5), FOUNDATION)
+	_box("paint", Vector3(pw + 0.04, 0.05, zw - z0 + 0.04), Vector3(cx, floor_y + 0.02, (z0 + zw) * 0.5), Color("#8f8b84"))
+	if h.get("porch_steps", false):
+		_stoop(door_x, zw, 1.4, zw - z0, floor_y)
+	var beam_y := roof_y - 0.15
+	var n := maxi(3, roundi(pw / 2.6) + 1)
+	var post_z := z0 + 0.2
+	for i in n:
+		var x := px0 + 0.15 + i * (pw - 0.3) / (n - 1)
+		_box("paint", Vector3(0.18, beam_y - floor_y, 0.18), Vector3(x, (floor_y + beam_y) * 0.5, post_z), TRIM)
+	_box("paint", Vector3(pw, 0.22, 0.22), Vector3(cx, beam_y, post_z), TRIM)
+	# The rail, open where the steps come up.
+	var gap := door_x if h.get("porch_steps", false) else (cx if absf(door_x - cx) < 1.0 else door_x)
+	for span in [[px0 + 0.15, gap - 0.8], [gap + 0.8, px1 - 0.15]]:
+		if span[1] - span[0] > 0.3:
+			var mx: float = (span[0] + span[1]) * 0.5
+			_box("paint", Vector3(span[1] - span[0], 0.07, 0.1), Vector3(mx, floor_y + 0.9, post_z), TRIM)
+			_box("paint", Vector3(span[1] - span[0], 0.05, 0.08), Vector3(mx, floor_y + 0.12, post_z), TRIM)
+			for k in maxi(2, int((span[1] - span[0]) / 0.14)):
+				_box("paint", Vector3(0.03, 0.78, 0.03), Vector3(span[0] + 0.07 + k * 0.14, floor_y + 0.51, post_z), TRIM)
+	# (Parallel to and just over the I-house's old entry porch roof.)
+	_shed_roof(cx, pw + 0.3, zw, zw - z0 + 0.25, roof_y, h.get("porch_drop", 0.35), paint.roof)
+
+
+## A foursquare's front porch (or an ell farmhouse's, in the crook of the L)
+## closed in as a sun porch, the way so many of Indiana's 1900s-1920s
+## foursquares and farmhouses (Marion, Muncie, Kokomo) gained a room:
+## a sided knee wall where the rail was, a band of windows between the
+## posts up to the porch beam, and a door at the top of the steps.
+func _sun_porch(h: Dictionary, paint: Dictionary) -> void:
+	if not h.get("kind", "") in ["foursquare", "farmhouse"] or not h.has("porch") or outline.size() >= 3:
+		return
+	var pr: Rect2 = h.porch
+	var fz: float = pr.position.y + float(h.get("porch_post", 0.3))  # the post line
+	var px0 := pr.position.x + 0.25
+	var px1 := pr.end.x - 0.25
+	var zb := pr.end.y
+	var floor_y: float = h.get("porch_floor", 0.65)
+	var knee := 0.9
+	var gy0 := floor_y + knee + 0.05
+	var gh: float = float(h.get("porch_beam", 3.45)) - gy0 - 0.05
+	var door_x: float = h.get("porch_door_x", h.door_x)  # at the head of the steps
+	var siding: Color = paint.siding
+	# The knee wall, broken for the door.
+	for span in [[px0, door_x - 0.6], [door_x + 0.6, px1]]:
+		if span[1] - span[0] > 0.2:
+			_box("siding", Vector3(span[1] - span[0], knee, 0.14), Vector3((span[0] + span[1]) * 0.5, floor_y + knee * 0.5, fz), siding)
+			_box("paint", Vector3(span[1] - span[0] + 0.04, 0.07, 0.24), Vector3((span[0] + span[1]) * 0.5, floor_y + knee + 0.03, fz), TRIM)
+	for x in [px0, px1]:
+		_box("siding", Vector3(0.14, knee, zb - fz), Vector3(x, floor_y + knee * 0.5, (fz + zb) * 0.5), siding)
+		_box("paint", Vector3(0.24, 0.07, zb - fz), Vector3(x, floor_y + knee + 0.03, (fz + zb) * 0.5), TRIM)
+	# Windows all round between the posts.
+	var n := maxi(3, roundi((px1 - px0) / 1.0))
+	var pw := (px1 - px0) / n
+	for i in n:
+		var x := px0 + (i + 0.5) * pw
+		if absf(x - door_x) < 0.7:
+			continue
+		_glass(Vector3(x, gy0 + gh * 0.5, fz - 0.02), Vector3(-1, 0, 0), pw - 0.1, gh - 0.08, 0.0)
+		_box("paint", Vector3(0.07, gh, 0.08), Vector3(x - pw * 0.5, gy0 + gh * 0.5, fz - 0.03), TRIM)
+	for x in [px0, px1]:
+		var sn := maxi(1, roundi((zb - fz) / 1.0))
+		for i in sn:
+			var z := fz + (i + 0.5) * (zb - fz) / sn
+			_glass(Vector3(x, gy0 + gh * 0.5, z), Vector3(0, 0, 1.0 if x < door_x else -1.0), (zb - fz) / sn - 0.1, gh - 0.08, 0.0)
+	# The door: a half-glass storm door at the head of the steps.
+	_box("paint", Vector3(0.95, 2.05, 0.06), Vector3(door_x, floor_y + 1.03, fz), TRIM)
+	_glass(Vector3(door_x, floor_y + 1.45, fz - 0.04), Vector3(-1, 0, 0), 0.7, 0.9, 0.0)
+	_box("paint", Vector3(1.2, gh + knee, 0.06), Vector3(door_x, floor_y + (gh + knee) * 0.5, fz + 0.02), TRIM)
+
+
+## A colonial's "bonus room" over its attached garage, how owners of the
+## 1990s-2010s two-storey colonials in Indiana subdivisions (Fishers,
+## Carmel, Avon) finish more space when they grow: the garage wing's walls
+## go up a half storey, a steep front-facing gable over them with a pair of
+## windows in it, and a window in each side. Its own random numbers.
+func _bonus_room(h: Dictionary, paint: Dictionary) -> void:
+	if h.get("kind", "") != "colonial" or float(h.get("drive_w", 0.0)) < 5.0 or outline.size() >= 3:
+		return
+	var own := RandomNumberGenerator.new()
+	own.seed = hash([rng.seed, "bonus room"])
+	var gx: float = h.drive_x
+	var gw: float = float(h.drive_w) + 0.8
+	var gz0: float = h.garage_z
+	var gd := 8.2  # the colonial's garage wing (see _colonial)
+	var gcz := gz0 + gd * 0.5
+	var siding: Color = paint.siding
+	var roof: Color = paint.roof
+	var y0 := 3.15
+	var top := y0 + own.randf_range(2.2, 2.5)  # over the old roof's ridge
+	_box("siding", Vector3(gw, top - y0 + 0.02, gd), Vector3(gx, (y0 + top) * 0.5, gcz), siding)
+	_corners(gx - gw * 0.5, gx + gw * 0.5, gz0, gz0 + gd, y0, top)
+	_gable_roof(gx, gcz, top, gw, gw * 0.5 * own.randf_range(0.75, 0.95), gd, false, roof, siding)
+	var wy := top + 0.35
+	for e in [-1.0, 1.0]:
+		_window(Vector3(gx + e * 0.62, wy, gz0), Vector3(-1, 0, 0), 0.8, 1.25, true, false, TRIM)
+		_window(Vector3(gx + e * gw * 0.5, (y0 + top) * 0.5 + 0.2, gcz + 1.2), Vector3(0, 0, -e), 0.8, 1.0, true, false, TRIM)
 
 
 ## The plan a house grown to two storeys (BuildingTypes "Two-storey home")
@@ -850,7 +979,7 @@ static func _placed_info(info: Dictionary, gs: float, zf: float, dx := 0.0) -> D
 			"x0": v = (-info.x1 if gs < 0.0 else v) + dx
 			"x1": v = (-info.x0 if gs < 0.0 else v) + dx
 			"bed": v = [-v[1] + dx, -v[0] + dx] if gs < 0.0 else [v[0] + dx, v[1] + dx]
-			"keep_out", "deck":
+			"keep_out", "deck", "porch", "porch_add":
 				var r: Rect2 = v
 				v = Rect2((-r.end.x if gs < 0.0 else r.position.x) + dx, r.position.y + zf, r.size.x, r.size.y)
 		out[k] = v
@@ -1281,7 +1410,9 @@ func _split_level(zf: float, gs: float, siding: Color, roof: Color, shutters: bo
 		_window(Vector3(tx + (i - 0.5) * tw * 0.45, 4.3, zf + d), Vector3(1, 0, 0), 0.9, 1.3, true, false, TRIM)
 	var x0 := -total * 0.5
 	return {"drive_x": tx, "drive_w": gdw + 0.8, "garage_z": zf, "door_x": door_x,
-		"walk_z": zf - 2.6, "front_z": zf, "x0": x0, "x1": x0 + total, "gs": gs}
+		"walk_z": zf - 2.6, "front_z": zf, "x0": x0, "x1": x0 + total, "gs": gs,
+		"porch_add": Rect2(wx - ww * 0.5 + 0.1, zf - 1.8, ww - 0.2, 1.8), "porch_floor": w_floor - 0.15, "porch_roof": w_top - 0.3,
+		"porch_steps": true}
 
 
 # ---------------------------------------------------------------- older and postwar types
@@ -1381,7 +1512,8 @@ func _foursquare(zf: float, gs: float, siding: Color, roof: Color, shutter: Colo
 	var g := _back_garage(at[1], zf + d, siding, roof)
 	return {"drive_x": at[1], "drive_w": 2.8, "garage_z": g.garage_z, "door_x": door_x,
 		"walk_z": zf - pd - 0.9, "front_z": zf - pd, "x0": x0, "x1": x1, "gs": gs,
-		"bed": [x0 + 0.3, x1 - 0.3], "keep_out": g.keep_out, "garage_x": g.garage_x, "garage_w": g.garage_w}
+		"bed": [x0 + 0.3, x1 - 0.3], "keep_out": g.keep_out, "garage_x": g.garage_x, "garage_w": g.garage_w,
+		"porch": Rect2(x0, zf - pd, w, pd)}
 
 
 ## Craftsman bungalow, 1910-1930: one and a half storeys with the gable to
@@ -1482,7 +1614,8 @@ func _i_house(zf: float, gs: float, roof: Color, shutter: Color, door: Color, br
 	var g := _back_garage(at[1], zf + d + ed, wall, roof)
 	return {"drive_x": at[1], "drive_w": 2.8, "garage_z": g.garage_z, "door_x": cx,
 		"walk_z": zf - 2.6, "front_z": zf, "x0": x0, "x1": x1, "gs": gs,
-		"bed": [x0 + 0.3, x1 - 0.3], "keep_out": g.keep_out, "garage_x": g.garage_x, "garage_w": g.garage_w}
+		"bed": [x0 + 0.3, x1 - 0.3], "keep_out": g.keep_out, "garage_x": g.garage_x, "garage_w": g.garage_w,
+		"porch_add": Rect2(x0 + 0.2, zf - 1.95, w - 0.4, 1.95), "porch_floor": 0.6, "porch_roof": 3.68, "porch_drop": 0.4}
 
 
 ## Gabled-ell (upright-and-wing) farmhouse, 1870-1920: a two-storey wing with
@@ -1530,7 +1663,8 @@ func _ell_farmhouse(zf: float, gs: float, roof: Color, door: Color) -> Dictionar
 	var x0 := cx - total * 0.5
 	return {"drive_x": at[1], "drive_w": 2.8, "garage_z": g.garage_z, "door_x": door_x,
 		"walk_z": wz0 - 2.8, "front_z": zf, "x0": x0, "x1": x0 + total, "gs": gs,
-		"bed": [ux - uw * 0.5 + 0.3, ux + uw * 0.5 - 0.3], "keep_out": g.keep_out, "garage_x": g.garage_x, "garage_w": g.garage_w}
+		"bed": [ux - uw * 0.5 + 0.3, ux + uw * 0.5 - 0.3], "keep_out": g.keep_out, "garage_x": g.garage_x, "garage_w": g.garage_w,
+		"porch": Rect2(wx - ww * 0.5, wz0 - 2.0, ww, 2.0), "porch_post": 0.2, "porch_floor": 0.6, "porch_beam": 3.33, "porch_door_x": wx}
 
 
 ## Cape Cod, 1935-1955: one and a half storeys, steep side gables, two gabled
@@ -2634,7 +2768,7 @@ func _glass(c: Vector3, right: Vector3, w: float, h: float, blinds: float) -> vo
 	if owner_care <= -2 and c.y < 3.6:
 		var out := right.cross(Vector3.UP).normalized()
 		_box("paint", Vector3(w + 0.12, h + 0.12, 0.05), c + out * 0.07, PLYWOOD, Basis(right.normalized(), Vector3.UP, out))
-	var o := 2.0 if shopfront else 0.0
+	var o := 2.0 if shopfront else (4.0 if office_glass else 0.0)
 	_quad("glass", c - r - u, c + r - u, c + r + u, c - r + u, Color(0.85, 0.82, 0.74, blinds),
 		[Vector2(o, 0), Vector2(o + 1, 0), Vector2(o + 1, 1), Vector2(o, 1)])
 

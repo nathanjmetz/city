@@ -93,25 +93,31 @@ func _init() -> void:
 	# dormer on the same walls; only a ranch owner builds new.
 	var kept := 0
 	var raised := 0
+	var bonus := 0
 	for era in ["prewar", "postwar", "recent"]:
 		for s in 30:
 			var lot := {"width": [14.0, 18.0, 22.0][s % 3], "depth": 40.0, "era": era}
 			var first := HouseBuilder.plan_info(500 + s, lot, 0)
-			HouseBuilder.build(500 + s, 3.9, lot, 0)
+			var out0 := HouseBuilder.build(500 + s, 3.9, lot, 0)
 			var m0: Array = HouseBuilder.last_masses.duplicate()
 			var grown := HouseBuilder.plan_info(500 + s, lot, 2)
-			HouseBuilder.build(500 + s, 3.9, lot, 2)
+			var out2 := HouseBuilder.build(500 + s, 3.9, lot, 2)
 			var m2: Array = HouseBuilder.last_masses.duplicate()
 			var kind: String = first.get("kind", "")
 			if kind in ["ranch", "midcentury"]:
 				continue
-			var same: bool = m0 == m2 and first.door_x == grown.door_x and first.drive_x == grown.drive_x
+			# (A colonial adds a room over its garage, a foursquare closes in
+			# its porch: no new footprint either way.)
+			var same: bool = m2.slice(0, m0.size()) == m0 and first.door_x == grown.door_x and first.drive_x == grown.drive_x
+			if kind in ["colonial", "foursquare", "farmhouse", "i_house", "split"] and (out2[0] as ArrayMesh).get_faces().size() > (out0[0] as ArrayMesh).get_faces().size():
+				bonus += 1
 			_check(same, "a %s %s grown to two storeys keeps its walls and drive (%d)" % [era, kind, s])
 			if kind in ["cape", "bungalow"]:
 				raised += 1
 			else:
 				kept += 1
 	_check(kept > 10 and raised > 10, "two-storey houses stay and capes and bungalows raise dormers (%d, %d)" % [kept, raised])
+	_check(bonus > 8, "two-storey houses grown to the two-storey stage add a bonus room, sun porch or front porch (%d)" % bonus)
 	# Corner stores, a shop's first stage: on a corner (either side) and
 	# mid-block, prewar at the sidewalk with no lot, postwar with stalls;
 	# what SiteLayout reads from its dry run is what's drawn.
@@ -176,7 +182,7 @@ func _init() -> void:
 	_check(styles.size() == 5, "every kind of duplex and the fourplex come up (%s)" % str(styles.keys()))
 	# Postwar walk-ups: the split-entry and mansard kinds fit their lots,
 	# and a third each of the low ones take them.
-	for kind in ["split", "walkmansard"]:
+	for kind in ["split", "walkmansard", "walkmodern"]:
 		for w in [24.0, 28.0, 36.0]:
 			for st in [2, 3]:
 				MetroBuilder.force_row = kind
@@ -184,6 +190,33 @@ func _init() -> void:
 				MetroBuilder.force_row = ""
 				_check(out.size() >= 3 and _inside(HouseBuilder.last_masses, w * 0.5, 45.0),
 					"a %d-storey %s walk-up fits its %d m lot" % [st, kind, w])
+	# Shops with flats built new on postwar and recent streets: their own
+	# era's fronts, wall to wall on the lot; prewar streets keep the old ones.
+	var infill := {"prewar": 0, "postwar": 0, "recent": 0}
+	for era in ["prewar", "postwar", "recent"]:
+		for s in 100:
+			var w: float = [14.0, 18.0, 24.0][s % 3]
+			var lot := {"width": w, "depth": 40.0, "era": era}
+			if MainInfill.wanted(DenseBuilder._start(s, lot), 2 + s % 3):
+				infill[era] += 1
+				var out := DenseBuilder.build_mixed(s, 3.9, lot, 2 + s % 3)
+				_check(out.size() >= 3 and _inside(HouseBuilder.last_masses, w * 0.5, 40.0),
+					"a %s shop with flats (%d) fits its %d m lot" % [era, s, w])
+	_check(infill.prewar == 0 and infill.postwar > 30 and infill.postwar < 70 and infill.recent > 60,
+		"postwar and recent streets build shops with flats of their own era (%s)" % str(infill))
+	_check(not MainInfill.wanted(DenseBuilder._start(3, {"width": 20.0, "depth": 40.0, "era": "recent"}), 5),
+		"five storeys and up stay the towers' job")
+	# Recent rows that aren't front-garage townhomes are rear-loaded urban ones.
+	# Postwar rows that aren't mansard rows are colonial townhouses.
+	for kind in ["urban", "colonial"]:
+		for units in [2, 3, 4]:
+			for st in [2, 3]:
+				var w: float = units * 7.5 + 1.0
+				MetroBuilder.force_row = kind
+				var out := MetroBuilder.build_row(units * 10 + st, 3.9, {"width": w, "depth": 40.0, "era": "recent"}, units, st)
+				MetroBuilder.force_row = ""
+				_check(out.size() >= 3 and _inside(HouseBuilder.last_masses, w * 0.5, 40.0),
+					"%d %s townhomes of %d storeys fit their %d m lot" % [units, kind, st, w])
 	var kinds := [0, 0, 0]
 	for s in 300:
 		kinds[absi(hash([s, "walkup kind"])) % 3] += 1
