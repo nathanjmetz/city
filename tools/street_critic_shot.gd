@@ -14,6 +14,11 @@ const SPOTS := [
 	["side_street", Vector3(168, 0, 120), 10.0, 22.0, 45.0],
 	["lot_60", Vector3(-120, 0, 70), 140.0, 40.0, 60.0],
 	["town_150", Vector3(0, 0, 60), 200.0, 38.0, 150.0],
+	["curb_low", Vector3(170, 0, 100), 300.0, 12.0, 30.0],
+	["homes_40", Vector3(126, 0, 210), 150.0, 30.0, 40.0],
+	["homes_low", Vector3(84, 0, 250), 20.0, 14.0, 42.0],
+	["homes_100", Vector3(200, 0, 240), 230.0, 35.0, 100.0],
+	["junction_top", Vector3(84, 0, 0), 180.0, 89.0, 40.0],
 ]
 
 var _main: Node
@@ -58,7 +63,7 @@ func _process(_delta: float) -> bool:
 					if k is Node3D:
 						k.visible = false
 	# Let the traffic get going before the first picture.
-	var warm := int(OS.get_environment("WARM")) if OS.get_environment("WARM") != "" else 60
+	var warm := int(OS.get_environment("WARM")) if OS.get_environment("WARM") != "" else 250
 	if _frames < warm:
 		return false
 	if _spot < 0 or _frames == _at:
