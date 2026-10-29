@@ -92,6 +92,7 @@ static func build_factory(seed: int, to_curb: float, lot := {}, spec := {}) -> A
 	b._fit(lot)
 	b._flat.begin(Mesh.PRIMITIVE_TRIANGLES)
 	b._factory(to_curb)
+	b._dress()
 	return [b._commit_house(), b._commit_flat(), b.trees, b.labels]
 
 
@@ -674,6 +675,7 @@ func _factory(to_curb: float) -> void:
 	_box("metal", Vector3(w, h - 0.3, d), Vector3(0, 0.3 + (h - 0.3) * 0.5, cz), wall)
 	_box("metal", Vector3(w + 0.04, 1.1, d + 0.04), Vector3(0, 0.85, cz), band)
 	_metal_roof(0.0, cz, h, w, d, band if rng.randf() < 0.4 else wall.darkened(0.08))
+	_dr_note(0.0, cz, w, d, h, "gable")
 	# Overhead doors on the front, a man door, and a concrete apron.
 	var n := 1 if w < 16.5 else 2
 	for i in n:
@@ -754,3 +756,328 @@ func _cylinder(mat: String, base: Vector3, r: float, h: float, col: Color, segs 
 		_quad(mat, p0, p1, p1 + Vector3(0, h, 0), p0 + Vector3(0, h, 0), col,
 			[Vector2(u0, 0), Vector2(u1, 0), Vector2(u1, h), Vector2(u0, h)], (p0 + p1) * 0.5 - base)
 		_tri("paint", base + Vector3(0, h, 0), p0 + Vector3(0, h, 0), p1 + Vector3(0, h, 0), col.darkened(0.15), [], Vector3.UP)
+
+
+# ------------------------------------------------------------ plant dressing
+
+## The working details every real plant and public building carries, after
+## photos of Indiana industrial parks (Marion, Anderson, Kokomo, Muncie) and
+## Butler / Varco Pruden metal building catalogs:
+##   - gutters with downspouts and splash blocks, or scuppers with conductor
+##     heads on a flat roof
+##   - bronze LED wall packs about 6 m up, a steel man door with a light at
+##     each end wall, translucent wall-light panels under a metal eave
+##   - round gravity ridge ventilators and translucent skylight panels in
+##     a metal roof; packaged rooftop units, mushroom exhaust fans and a roof
+##     hatch on a flat one
+##   - the utility corner: the meter bank and disconnects with conduit up
+##     the wall, a gas meter on its yellow riser, and the utility's green
+##     pad-mount transformer with yellow bollards (ANSI C57.12.34)
+##   - the fire department connection and a Knox box by the front door
+##   - the yard: pallet stacks, a forklift propane cage, a roll-off
+##     container, a parked 53 ft trailer, and a 6 ft chain-link fence with
+##     barbed wire round the back
+## It draws from its own random sequence, so the building it dresses comes
+## out the same as before. Each building calls _dr_note for each hall.
+var _dr_halls := []  # [cx, cz, w, d, h, roof, busy end] with roof "gable", "flat" or "none"
+
+
+## Notes a hall to dress: centre, width along x, depth along z, eave height.
+## `busy` is an end wall (-1 or 1 along x) already taken by docks or doors.
+func _dr_note(cx: float, cz: float, w: float, d: float, h: float, roof: String, busy := 0.0) -> void:
+	_dr_halls.append([cx, cz, w, d, h, roof, busy])
+
+
+## Dresses every noted hall, then the site's yard (`yard` false: no fence,
+## trailer or pallets, for public buildings).
+func _dress(yard := true) -> void:
+	if _dry or _dr_halls.is_empty():
+		return
+	var main := rng
+	rng = RandomNumberGenerator.new()
+	rng.seed = main.seed * 31 + 7
+	var big: Array = _dr_halls[0]
+	for hall in _dr_halls:
+		if hall[2] * hall[3] > big[2] * big[3]:
+			big = hall
+		_dr_walls(hall)
+		if hall[5] == "gable":
+			_dr_roof_gable(hall)
+		elif hall[5] == "flat":
+			_dr_roof_flat(hall)
+	_dr_utility(big)
+	if yard:
+		_dr_yard(big)
+	rng = main
+
+
+func _dr_walls(hall: Array) -> void:
+	var cx: float = hall[0]
+	var cz: float = hall[1]
+	var w: float = hall[2]
+	var d: float = hall[3]
+	var h: float = hall[4]
+	var flat: bool = hall[5] != "gable"
+	var spout := Color("#d9d6cc") if rng.randf() < 0.6 else Color("#6b6f72")
+	# Downspouts: at the corners of the eave walls (front and back on a
+	# gable), every 12 m along the back, and on the end walls of a flat roof.
+	for side in [-1.0, 1.0]:
+		var z: float = cz + side * (d * 0.5 + 0.1)
+		var xs := [cx - w * 0.5 + 0.4, cx + w * 0.5 - 0.4]
+		if side > 0.0:
+			var x := cx - w * 0.5 + 12.0
+			while x < cx + w * 0.5 - 6.0:
+				xs.append(x)
+				x += 12.0
+		for x in xs:
+			_dr_spout(Vector3(x, 0, z), h, spout, Vector3(0, 0, side), flat)
+	if flat and d > 20.0:
+		for end in [-1.0, 1.0]:
+			_dr_spout(Vector3(cx + end * (w * 0.5 + 0.1), 0, cz + d * 0.2), h, spout, Vector3(end, 0, 0), true)
+	# Wall packs along the back and both ends, about every 15 m.
+	var y := minf(h - 0.8, 6.0)
+	var n := maxi(1, int(w / 15.0))
+	for i in n:
+		_dr_wallpack(Vector3(cx - w * 0.5 + (i + 0.5) * w / n, y, cz + d * 0.5 + 0.18), Vector3(0, 0, 1))
+	for end in [-1.0, 1.0]:
+		if end == hall[6]:
+			continue
+		var m := maxi(1, int(d / 15.0))
+		for i in m:
+			_dr_wallpack(Vector3(cx + end * (w * 0.5 + 0.18), y, cz - d * 0.5 + (i + 0.5) * d / m), Vector3(end, 0, 0))
+		# A man door near the front of each end wall, its light over it.
+		if d > 8.0:
+			_dr_side_door(Vector3(cx + end * (w * 0.5 + 0.03), 1.05, cz - d * 0.5 + 3.0), end)
+	# Translucent wall lights under a metal eave, along the back.
+	if not flat and h > 6.0:
+		_box("paint", Vector3(w - 1.0, 0.9, 0.04), Vector3(cx, h - 0.9, cz + d * 0.5 + 0.12), Color("#dfe0d6"))
+
+
+func _dr_spout(foot: Vector3, h: float, col: Color, out: Vector3, scupper: bool) -> void:
+	var o := out * 0.1
+	_box("paint", Vector3(0.12, h, 0.12), foot + o + Vector3(0, h * 0.5, 0), col)
+	if scupper:
+		# The conductor head under its scupper.
+		_box("paint", Vector3(0.36, 0.42, 0.3), foot + o * 1.6 + Vector3(0, h - 0.5, 0), col)
+	# The shoe and splash block at the foot.
+	_box("paint", Vector3(0.14, 0.14, 0.14) + out.abs() * 0.22, foot + out * 0.28 + Vector3(0, 0.12, 0), col)
+	_box("concrete", Vector3(0.36, 0.05, 0.36) + out.abs() * 0.3, foot + out * 0.55 + Vector3(0, 0.11, 0), FOUNDATION)
+
+
+## A bronze LED wall pack on a wall facing `out`.
+func _dr_wallpack(c: Vector3, out: Vector3) -> void:
+	var across := Vector3(absf(out.z), 0, absf(out.x))
+	_box("metal", across * 0.36 + out.abs() * 0.2 + Vector3(0, 0.3, 0), c + out * 0.04, Color("#3a3128"))
+	_box("paint", across * 0.3 + out.abs() * 0.14 + Vector3(0, 0.04, 0), c + out * 0.08 + Vector3(0, -0.16, 0), Color("#f1eedf"))
+
+
+## A steel man door on an end wall facing `end` along x, with its light.
+func _dr_side_door(c: Vector3, end: float) -> void:
+	var col := Color(_pick(["#5a5e60", "#6b6f72", "#7a2a24", "#2f3b4a"]))
+	# Each layer 5 cm proud of the one behind (two-sided materials flicker).
+	_box("paint", Vector3(0.06, 2.2, 1.12), c + Vector3(end * 0.07, 0.05, 0), col.darkened(0.3))
+	_box("paint", Vector3(0.06, 2.1, 0.92), c + Vector3(end * 0.15, 0, 0), col)
+	_box("metal", Vector3(0.05, 0.03, 0.14), c + Vector3(end * 0.21, -0.08, 0.3), Color("#a9acae"))
+	_dr_wallpack(c + Vector3(end * 0.15, 1.55, 0), Vector3(end, 0, 0))
+	# A concrete stoop.
+	_box("concrete", Vector3(1.2, 0.12, 1.5), c + Vector3(end * 0.62, -1.0, 0), FOUNDATION)
+
+
+## Gravity ridge ventilators and translucent skylight panels in a metal
+## roof drawn by _metal_roof (ridge along x, rise d / 24).
+func _dr_roof_gable(hall: Array) -> void:
+	var cx: float = hall[0]
+	var cz: float = hall[1]
+	var w: float = hall[2]
+	var d: float = hall[3]
+	var h: float = hall[4]
+	var rise := d * 0.5 / 12.0
+	var vent := Color("#b9bcbc")
+	var x := cx - w * 0.5 + 4.0
+	while x < cx + w * 0.5 - 3.0:
+		var top := Vector3(x, h + rise + 0.05, cz)
+		_cylinder("metal", top, 0.32, 0.55, vent, 10)
+		_cylinder("metal", top + Vector3(0, 0.55, 0), 0.62, 0.22, vent.lightened(0.05), 12)
+		x += rng.randf_range(6.0, 9.0)
+	# Skylight panels, two to a bay, on both slopes.
+	if d < 10.0:
+		return
+	var hd := d * 0.5 + 0.3
+	var drop := rise * 0.3 / (d * 0.5)
+	var lite := Color("#e2e4d8")
+	for side in [-1.0, 1.0]:
+		var e := Vector3(0, h - drop, cz + side * hd)
+		var r := Vector3(0, h + rise, cz)
+		var a: Vector3 = e.lerp(r, 0.25) + Vector3(0, 0.13, 0)
+		var b: Vector3 = e.lerp(r, 0.7) + Vector3(0, 0.13, 0)
+		x = cx - w * 0.5 + 3.0
+		while x < cx + w * 0.5 - 2.0:
+			_quad("paint", Vector3(x, a.y, a.z), Vector3(x + 1.0, a.y, a.z), Vector3(x + 1.0, b.y, b.z), Vector3(x, b.y, b.z),
+				lite, [], Vector3(0, 1, side * 0.1))
+			x += 7.5
+
+
+## Rooftop units, exhaust fans and a hatch on a flat roof.
+func _dr_roof_flat(hall: Array) -> void:
+	var cx: float = hall[0]
+	var cz: float = hall[1]
+	var w: float = hall[2]
+	var d: float = hall[3]
+	var h: float = hall[4]
+	var area := w * d
+	var unit := Color("#c3c5c2")
+	var units := clampi(int(area / 260.0), 1, 10)
+	for i in units:
+		var p := Vector3(cx + rng.randf_range(-w * 0.38, w * 0.38), h, cz + rng.randf_range(-d * 0.3, d * 0.35))
+		_box("metal", Vector3(2.6, 0.25, 1.7), p + Vector3(0, 0.13, 0), Color("#8a8c8a"))  # curb
+		_box("metal", Vector3(2.4, 1.15, 1.5), p + Vector3(0, 0.82, 0), unit)
+		_cylinder("paint", p + Vector3(0.6, 1.4, 0), 0.42, 0.06, Color("#2c2e30"), 12)
+		_box("metal", Vector3(0.8, 0.4, 0.06), p + Vector3(-0.6, 0.8, 0.77), unit.darkened(0.2))  # its louvres
+	for i in clampi(int(area / 320.0), 1, 8):
+		var p := Vector3(cx + rng.randf_range(-w * 0.42, w * 0.42), h, cz + rng.randf_range(-d * 0.42, d * 0.42))
+		_cylinder("metal", p, 0.3, 0.55, Color("#aeb1b0"), 10)
+		_cylinder("metal", p + Vector3(0, 0.55, 0), 0.55, 0.28, Color("#b9bcbc"), 12)
+	_box("metal", Vector3(0.95, 0.35, 0.95), Vector3(cx + w * 0.5 - 2.0, h + 0.18, cz + d * 0.5 - 2.0), Color("#9fa3a2"))
+	# Plumbing vents.
+	for i in 3:
+		_cylinder("paint", Vector3(cx + rng.randf_range(-w * 0.4, w * 0.4), h, cz + rng.randf_range(-d * 0.4, d * 0.4)),
+			0.06, 0.45, Color("#2c2e30"), 6)
+
+
+## The meters, disconnects, gas riser and transformer, on whichever end wall
+## has more room, and the FDC and Knox box by the front.
+func _dr_utility(hall: Array) -> void:
+	var cx: float = hall[0]
+	var cz: float = hall[1]
+	var w: float = hall[2]
+	var d: float = hall[3]
+	var h: float = hall[4]
+	var end := 1.0 if half - (cx + w * 0.5) >= (cx - w * 0.5) + half else -1.0
+	if end == hall[6]:
+		end = -end
+	var wx := cx + end * (w * 0.5 + 0.1)
+	var z := cz + d * 0.5 - 3.0
+	var panel := Color("#b5b8b6")
+	for k in 3:
+		_box("metal", Vector3(0.22, 0.9 if k else 1.4, 0.7), Vector3(wx + end * 0.16, 1.5, z - k * 0.85), panel.darkened(0.04 * k))
+	_box("metal", Vector3(0.08, h - 2.0, 0.1), Vector3(wx + end * 0.12, 1.0 + (h - 2.0) * 0.5 + 0.9, z), panel.darkened(0.1))  # conduit
+	_box("metal", Vector3(0.06, 0.06, 2.2), Vector3(wx + end * 0.12, 0.6, z - 0.9), panel.darkened(0.1))
+	# The gas meter on its riser.
+	var gz := z - 3.4
+	_box("paint", Vector3(0.08, 1.0, 0.08), Vector3(wx + end * 0.15, 0.5, gz), Color("#d7b42a"))
+	_box("paint", Vector3(0.3, 0.08, 0.08), Vector3(wx + end * 0.15, 0.95, gz + 0.15), Color("#d7b42a"))
+	_box("metal", Vector3(0.32, 0.4, 0.3), Vector3(wx + end * 0.22, 0.9, gz + 0.35), Color("#9ea2a0"))
+	# The pad-mount transformer out from the wall, with bollards.
+	var t := Vector3(wx + end * 3.2, 0, z - 1.2)
+	if _in_lot(t, 1.6):
+		_box("concrete", Vector3(2.4, 0.15, 2.6), t + Vector3(0, 0.08, 0), FOUNDATION)
+		_box("metal", Vector3(1.8, 1.45, 1.9), t + Vector3(0, 0.88, 0), Color("#55704f"))
+		_box("metal", Vector3(1.9, 0.06, 2.0), t + Vector3(0, 1.62, 0), Color("#4b6446"))
+		for p in [Vector3(-1.5, 0, -1.5), Vector3(1.5, 0, -1.5), Vector3(-1.5, 0, 1.5), Vector3(1.5, 0, 1.5)]:
+			_dr_bollard(t + p)
+	# The FDC (brass Siamese on a red plate) and the Knox box by the front corner.
+	var fx := cx - end * (w * 0.5 - 1.2)
+	var fz := cz - d * 0.5 - 0.06
+	for r: Rect2 in _masses:
+		if r.grow(0.3).has_point(Vector2(fx, fz - 0.3)):
+			fx = cx + end * (w * 0.5 - 2.2)  # an office in front: the other corner
+	_box("paint", Vector3(0.45, 0.35, 0.05), Vector3(fx, 0.6, fz - 0.12), Color("#a42a22"))
+	_box("metal", Vector3(0.32, 0.14, 0.16), Vector3(fx, 0.6, fz - 0.22), Color("#b8952e"))
+	_box("metal", Vector3(0.2, 0.25, 0.1), Vector3(fx + 0.8, 1.8, fz - 0.12), Color("#1f2224"))
+
+
+func _dr_bollard(p: Vector3) -> void:
+	_cylinder("paint", p, 0.11, 1.1, Color("#e0b81e"), 8)
+
+
+## Pallets, a propane cage, a roll-off and a trailer behind the main hall,
+## and a chain-link fence round the back of the lot.
+func _dr_yard(hall: Array) -> void:
+	var cx: float = hall[0]
+	var cz: float = hall[1]
+	var w: float = hall[2]
+	var d: float = hall[3]
+	var back := cz + d * 0.5
+	var room := depth - back
+	# Pallet stacks along the back wall.
+	var wood := Color("#9c8463")
+	var stacks := rng.randi_range(2, 5)
+	for i in stacks:
+		var p := Vector3(cx - w * 0.5 + 2.0 + i * 1.6, 0, back + 1.4)
+		if not _in_lot(p, 1.0) or room < 3.0:
+			break
+		var n := rng.randi_range(4, 14)
+		for k in n:
+			_box("paint", Vector3(1.2, 0.13, 1.0), p + Vector3(0, 0.07 + k * 0.145, 0), wood.darkened(0.06 * (k % 2)))
+	# The forklift propane cage: steel mesh round racked 33 lb cylinders.
+	var pc := Vector3(cx + w * 0.5 - 2.5, 0, back + 1.1)
+	if _in_lot(pc, 1.0) and room > 2.5:
+		_box("chain", Vector3(1.6, 1.8, 0.9), pc + Vector3(0, 0.9, 0), Color("#a9acae"))
+		_box("metal", Vector3(1.66, 0.05, 0.96), pc + Vector3(0, 1.82, 0), Color("#8a8c8e"))
+		for k in 4:
+			_cylinder("paint", pc + Vector3(-0.55 + k * 0.37, 0.2 + (k % 2) * 0.85, 0), 0.16, 0.7, Color("#d0d2d0"), 8)
+	# A roll-off container.
+	if room > 6.0:
+		var ro := Vector3(cx + rng.randf_range(-w * 0.2, w * 0.2), 0, minf(back + 4.5, depth - 2.0))
+		if _in_lot(ro, 3.6):
+			var col := Color(_pick(["#2a3a5a", "#2f4a3a", "#7a2a24", "#5a5e60"]))
+			_box("metal", Vector3(6.6, 1.7, 2.4), ro + Vector3(0, 1.0, 0), col)
+			_box("metal", Vector3(6.7, 0.12, 2.5), ro + Vector3(0, 1.88, 0), col.darkened(0.2))
+			for s in [-1.0, 1.0]:
+				_box("metal", Vector3(6.6, 0.15, 0.12), ro + Vector3(0, 0.12, s * 1.0), Color("#2a2b2c"))
+	# A 53 ft trailer parked down the widest side yard.
+	var left := (cx - w * 0.5) + half
+	var right := half - (cx + w * 0.5)
+	var side := 1.0 if right >= left else -1.0
+	if side == hall[6]:
+		side = -side
+	if maxf(left, right) > 5.0 and d > 17.0:
+		var tx := cx + side * (w * 0.5 + 2.6)
+		var tz := cz + 0.5
+		if _in_lot(Vector3(tx, 0, tz), 1.5):
+			_dr_trailer(Vector3(tx, 0, tz))
+	# 6 ft chain link with barbed wire from the hall back round the yard.
+	if room > 4.0:
+		var z0 := cz - d * 0.5 + 2.0
+		var zb := depth - 0.6
+		_dr_fence(Vector2(-half + 0.4, z0), Vector2(-half + 0.4, zb))
+		_dr_fence(Vector2(-half + 0.4, zb), Vector2(half - 0.4, zb))
+		_dr_fence(Vector2(half - 0.4, zb), Vector2(half - 0.4, z0))
+
+
+## A 53 ft dry van (16.2 x 2.6 x 4.1 m) standing on its landing gear, its
+## length along z, nose to the street.
+func _dr_trailer(at: Vector3) -> void:
+	var body := Color(_pick(["#eeeeea", "#e6e6e0", "#d9dcdc", "#c8ccd0"]))
+	# In two lifts, so it isn't taken for a building mass (_box).
+	for k in 2:
+		_box("metal", Vector3(2.6, 1.375, 16.2), at + Vector3(0, 1.32 + 0.6875 + k * 1.375, 0), body)
+	_box("metal", Vector3(2.62, 0.12, 16.22), at + Vector3(0, 4.12, 0), body.darkened(0.08))
+	# Rear doors, the bogie and the landing gear.
+	_box("metal", Vector3(2.5, 2.6, 0.06), at + Vector3(0, 2.7, 8.16), body.darkened(0.12))
+	for z in [5.6, 6.9]:
+		for s in [-1.0, 1.0]:
+			_box("paint", Vector3(0.62, 1.0, 1.0), at + Vector3(s * 0.95, 0.5, z), Color("#1c1d1f"))
+	for s in [-1.0, 1.0]:
+		_box("metal", Vector3(0.12, 1.25, 0.12), at + Vector3(s * 0.9, 0.62, -4.8), Color("#3a3c3e"))
+	_box("paint", Vector3(2.4, 0.3, 14.0), at + Vector3(0, 1.17, 0.6), Color("#2a2b2c"))  # frame rails
+
+
+func _dr_fence(a: Vector2, b: Vector2) -> void:
+	var p := Vector3(a.x, 0, a.y)
+	var q := Vector3(b.x, 0, b.y)
+	var len := p.distance_to(q)
+	if len < 0.5:
+		return
+	var dir := (q - p) / len
+	var yaw := Basis(Vector3.UP, atan2(dir.x, dir.z))
+	var galv := Color("#a9acae")
+	var n := maxi(1, int(len / 3.0))
+	for k in n + 1:
+		_box("metal", Vector3(0.06, 2.1, 0.06), p + dir * (len * k / n) + Vector3(0, 1.05, 0), galv)
+	_box("metal", Vector3(0.045, 0.045, len), (p + q) * 0.5 + Vector3(0, 1.85, 0), galv, yaw)
+	# The fabric hangs on the outside of the posts, clear of them.
+	var out := Vector3(dir.z, 0, -dir.x) * 0.06
+	_box("chain", Vector3(0.006, 1.8, len), (p + q) * 0.5 + out + Vector3(0, 0.95, 0), galv, yaw)
+	for k in 3:
+		_box("metal", Vector3(0.015, 0.015, len), (p + q) * 0.5 - out * 0.5 + Vector3(0, 1.95 + k * 0.1, 0), Color("#55585a"), yaw)
