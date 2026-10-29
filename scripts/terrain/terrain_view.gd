@@ -122,6 +122,8 @@ uniform float far_cut = 0.0;
 // far sheet is only cut away over a built chunk, so land still being built
 // shows the far sheet instead of a hole.
 uniform sampler2D chunk_built : hint_default_white, filter_nearest, repeat_enable;
+// The desktop's photographed ground (PhotoGround.glsl() goes here):
+// PHOTO_GROUND
 // CUSTOM0: (height, normal x, normal z) on the next coarser level, and w the
 // reach of this chunk's level (0 for the coarsest): vertices slide to the
 // coarser level between MORPH_START and MORPH_END of that reach.
@@ -235,6 +237,15 @@ void fragment() {
 	float mowed = smoothstep(0.2, 0.6, max(town.x, town.y));
 	float dryness = smoothstep(0.42, 0.78, big * 0.55 + mid * 0.45);
 	vec3 col = mix(lush.rgb, dry.rgb, dryness * mix(0.55, 0.4, mowed));
+	// The desktop's photographed ground (PhotoGround): `pr` its detail over
+	// the painted colour, `ps` its slope, blended in step with the colours.
+	float pk = ph_on(dist);
+	vec3 pr = vec3(1.0);
+	vec2 ps = vec2(0.0);
+	if (pk > 0.0) {
+		pr = ph_grass(p);
+		ps = ph_grass_s(p);
+	}
 	// Darker, lusher clumps; in a lawn only where it's green, since a dry
 	// patch goes straw-light, and dark clumps in tan read as bare dirt.
 	col = mix(col, dark.rgb, smoothstep(0.35, 0.95, clump) * mix(0.3, 0.14 * (1.0 - dryness), mowed));
@@ -265,10 +276,17 @@ void fragment() {
 	float aw = fld.z == 1 ? rw.x : rw.y;
 	vec3 to_eye = (INV_VIEW_MATRIX * vec4(VIEW, 0.0)).xyz;
 	float tilt = length(to_eye.xz) / max(abs(to_eye.y), 0.05);
-	vec3 crop = crop_look(slot, p, across, aw, tilt, mid);
+	float bare;
+	vec3 crop = crop_look_bare(slot, p, across, aw, tilt, mid, bare);
 	// Each field a shade different (soil, variety, how it was sprayed).
 	crop *= (0.93 + 0.14 * pick) * (0.92 + 0.16 * mid);
-	col = mix(col, crop, smoothstep(0.3, 0.7, cover.b) * 0.92);
+	float in_crop = smoothstep(0.3, 0.7, cover.b) * 0.92;
+	col = mix(col, crop, in_crop);
+	if (pk > 0.0 && in_crop > 0.0) {
+		// Worked soil between the rows; the crop's own leaves over it.
+		pr = mix(pr, mix(ph_grass(p * 1.6), ph_soil(p), bare), in_crop);
+		ps = mix(ps, mix(ph_grass_s(p * 1.6) * 0.7, ph_soil_s(p) * 0.35, bare), in_crop);
+	}
 
 	// Woods: leaf litter under the trees up close; from far off, where the
 	// trees aren't drawn, the canopy itself, lumpy with crowns.
@@ -329,6 +347,15 @@ void fragment() {
 	// A ragged edge, as real woods have, not the straight line between samples.
 	float in_woods = smoothstep(0.3, 0.65, cover.r + (clump - 0.5) * 0.45 + (mid - 0.5) * 0.25);
 	col = mix(col, woods, in_woods);
+	if (pk > 0.0 && in_woods > 0.0) {
+		// Leaf litter on the floor, more of it deeper in; none on the
+		// painted canopy (its crowns carry their own relief).
+		float floor_k = in_woods * (1.0 - painted) * (1.0 - yard) * (0.4 + 0.6 * smoothstep(0.4, 0.9, cover.r));
+		pr = mix(pr, ph_litter(p), floor_k);
+		ps = mix(ps, ph_litter_s(p), floor_k);
+		pr = mix(pr, vec3(1.0), in_woods * painted);
+		ps = mix(ps, vec2(0.0), in_woods * painted);
+	}
 	// The dome of each painted crown, leaning the ground normal toward its edge.
 	float dome = in_woods * painted * relief * (1.0 - gap) * (1.0 - season_look.y * 0.7);
 	vec3 up_n = (INV_VIEW_MATRIX * vec4(NORMAL, 0.0)).xyz;
@@ -340,6 +367,7 @@ void fragment() {
 	up_n = normalize(mix(up_n, shell_n, smoothstep(0.02, 0.2, lift)));
 	col *= 1.0 - side * 0.45;
 	vec3 crown_n = normalize(up_n + vec3(slope.x, 0.0, slope.y) * 1.1 * dome);
+	crown_n = ph_lean(crown_n, ps, pk * 0.9);
 	NORMAL = normalize((VIEW_MATRIX * vec4(crown_n, 0.0)).xyz);
 
 	// County roads on the section lines of the PLSS mile grid (CR 100 N,
@@ -358,6 +386,10 @@ void fragment() {
 	ditch = mix(ditch, dormant.rgb, brown);
 	col = mix(col, ditch * (0.92 + 0.16 * clump), verge * 0.65);
 	col = mix(col, gravel.rgb * (0.88 + 0.24 * grain) * (0.95 + 0.1 * clump), county);
+	if (pk > 0.0 && county > 0.0) {
+		pr = mix(pr, ph_gravel(p), county);
+		ps = mix(ps, ph_gravel_s(p) * 0.6, county);
+	}
 	// State highways (SR 57, SR 61, SR 56; Highways): two 12 ft lanes and
 	// 8 ft paved shoulders (INDOT), white edge lines and a yellow centre line
 	// in a mowed right of way. Cut through the bluffs, so only the water
@@ -380,14 +412,23 @@ void fragment() {
 	hw_col = mix(hw_col, vec3(0.82, 0.82, 0.78), edge_line * 0.9);
 	hw_col = mix(hw_col, vec3(0.80, 0.62, 0.12), mid_line * 0.9);
 	col = mix(col, hw_col, hw_paved);
+	pr = mix(pr, vec3(1.0), hw_paved);
+	ps = mix(ps, vec2(0.0), hw_paved);
 	// Strip mine spoil and gravel.
 	col = mix(col, spoil.rgb * (0.85 + 0.3 * clump), smoothstep(0.3, 0.7, cover.a));
 	// Muddy, sandy banks by the water.
-	col = mix(col, mud.rgb * (0.9 + 0.2 * grain), smoothstep(0.03, 0.3, cover.g));
+	float banks = smoothstep(0.03, 0.3, cover.g);
+	col = mix(col, mud.rgb * (0.9 + 0.2 * grain), banks);
+	if (pk > 0.0 && banks > 0.0) {
+		pr = mix(pr, ph_mud(p), banks);
+		ps = mix(ps, ph_mud_s(p), banks);
+	}
 	// Worn, bare soil on steep banks.
 	col = mix(col, soil.rgb * 0.9, smoothstep(0.2, 0.45, steep) * 0.6);
 
-	col *= 1.0 + (grain - 0.5) * mix(0.4, 0.22, mowed) * fade + (blades - 0.5) * 0.3 * fade * fade;
+	// The painted grain stands in for the photo's detail where there is none.
+	col *= 1.0 + ((grain - 0.5) * mix(0.4, 0.22, mowed) * fade + (blades - 0.5) * 0.3 * fade * fade) * (1.0 - pk * 0.8);
+	col *= mix(vec3(1.0), pr, pk);
 	// Snow lies thinner under the woods and on steep banks, and drifts in
 	// patches before it covers everything.
 	float under = smoothstep(0.3, 0.65, cover.r) * (1.0 - painted) * 0.45 + smoothstep(0.2, 0.45, steep) * 0.4;
@@ -406,6 +447,9 @@ void fragment() {
 	// From the air bare woods read grey-brown against snowy fields, with the
 	// snow showing in the gaps between crowns.
 	snowy = mix(snowy, twigs.rgb * 1.05 * (0.85 + 0.3 * crown_hash), in_woods * painted * mix(0.8, 0.55, gap * relief));
+	if (pk > 0.0 && lies > 0.0) {
+		snowy *= mix(vec3(1.0), ph_snowy(p * 1.7), pk * 0.7);
+	}
 	col = mix(col, snowy, lies);
 	ALBEDO = col;
 	ROUGHNESS = mix(0.93, 0.75, lies);
@@ -421,11 +465,19 @@ uniform sampler2D noise_soft : filter_linear_mipmap, repeat_enable;
 // A Midwest river: silty, green-brown, darker where deep.
 uniform vec4 shallow : source_color = vec4(0.30, 0.31, 0.21, 1.0);
 uniform vec4 deep : source_color = vec4(0.12, 0.16, 0.12, 1.0);
+// The silt and mud of the bottom where it's shallow by the bank.
+uniform vec4 shore : source_color = vec4(0.36, 0.33, 0.24, 1.0);
+global uniform float snow;
 
 varying vec3 world_pos;
+// Metres of water under this point, over 3. TerrainView._water_mesh puts
+// 1 - that in UV2.x (not a colour, which the browser converts), so a sheet
+// with no UV2 (a strip mine's pit pond) reads as deep.
+varying float depth3;
 
 void vertex() {
 	world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+	depth3 = 1.0 - UV2.x;
 }
 
 void fragment() {
@@ -440,9 +492,22 @@ void fragment() {
 	float calm = 0.45 * (1.0 - smoothstep(0.15, 1.2, length(fwidth(p))));
 	vec3 n = normalize(vec3(((a - 0.5) * 0.35 + (b - 0.5) * 0.2) * calm, 1.0, ((b - 0.5) * 0.35 - (a - 0.5) * 0.2) * calm));
 	NORMAL = normalize((VIEW_MATRIX * vec4(n, 0.0)).xyz);
-	ALBEDO = mix(shallow.rgb, deep.rgb, 0.45 + 0.4 * c);
-	ROUGHNESS = 0.16;
-	SPECULAR = 0.55;
+	// Real ponds and the Mississinewa from above: the brown bottom shows
+	// through the first half metre by the bank, then green-brown, darker
+	// over the deep water (aerial photos of Grant County pit ponds), so the
+	// shore is a soft band, not a hard line of dark water against grass.
+	float d = depth3 * 3.0 + (b - 0.5) * 0.4;
+	vec3 col = mix(shallow.rgb, deep.rgb, clamp(0.25 + 0.4 * c + 0.45 * smoothstep(0.8, 3.0, d), 0.0, 1.0));
+	col = mix(col, shore.rgb * (0.85 + 0.3 * a), 1.0 - smoothstep(0.05, 0.7, d));
+	// Ice in a hard winter: still, shallow water freezes first, from the
+	// banks out (Indiana ponds usually skin over by mid-January, the river
+	// channel rarely), grey and smooth with the snow drifted over it.
+	float ice = smoothstep(0.5, 0.85, snow + (1.0 - smoothstep(0.3, 2.5, d)) * 0.25 - (c - 0.5) * 0.2);
+	vec3 frozen = mix(vec3(0.52, 0.56, 0.58), vec3(0.80, 0.83, 0.88), smoothstep(0.3, 0.7, snow * (0.8 + 0.4 * a)));
+	ALBEDO = mix(col, frozen, ice);
+	NORMAL = normalize(mix(NORMAL, (VIEW_MATRIX * vec4(0.0, 1.0, 0.0, 0.0)).xyz, ice));
+	ROUGHNESS = mix(mix(0.3, 0.16, smoothstep(0.1, 0.8, d)), 0.55, ice);
+	SPECULAR = mix(0.55, 0.35, ice);
 	METALLIC = 0.0;
 }
 """
@@ -500,7 +565,7 @@ static func ground_material() -> ShaderMaterial:
 	if _ground_mat == null:
 		_ground_mat = ShaderMaterial.new()
 		var sh := Shader.new()
-		sh.code = SHADER
+		sh.code = SHADER.replace("// PHOTO_GROUND", PhotoGround.glsl())
 		_ground_mat.shader = sh
 		_ground_mat.set_shader_parameter("noise_soft", Ground.noise(512, 0.012, 4, 11))
 		_ground_mat.set_shader_parameter("noise_grain", Ground.noise(256, 0.09, 2, 23))
@@ -508,6 +573,7 @@ static func ground_material() -> ShaderMaterial:
 		_ground_mat.set_shader_parameter("county_miles", CountyGrid.texture())
 		_ground_mat.set_shader_parameter("map_centre", Terrain.CENTRE)
 		_ground_mat.set_shader_parameter("crop_table", CropCalendar.texture())
+		PhotoGround.apply(_ground_mat)
 	return _ground_mat
 
 
@@ -1225,6 +1291,7 @@ static func _water_mesh(d: Dictionary) -> ArrayMesh:
 	var verts: PackedVector3Array = d.verts
 	var wet: PackedFloat32Array = d.wet
 	var wverts := PackedVector3Array()
+	var wdepth := PackedVector2Array()
 	var widx := PackedInt32Array()
 	var index := {}
 	for j in n:
@@ -1247,6 +1314,8 @@ static func _water_mesh(d: Dictionary) -> ArrayMesh:
 			var base := wverts.size()
 			for c in corners:
 				wverts.append(Vector3(verts[c].x, level, verts[c].z))
+				# How deep the water is here, for the shore's shading.
+				wdepth.append(Vector2(1.0 - clampf((level - verts[c].y) / 3.0, 0.0, 1.0), 0.0))
 			widx.append_array([base, base + 1, base + 2, base, base + 2, base + 3])
 	if widx.is_empty():
 		return null
@@ -1257,6 +1326,7 @@ static func _water_mesh(d: Dictionary) -> ArrayMesh:
 	warrays.resize(Mesh.ARRAY_MAX)
 	warrays[Mesh.ARRAY_VERTEX] = wverts
 	warrays[Mesh.ARRAY_NORMAL] = wn
+	warrays[Mesh.ARRAY_TEX_UV2] = wdepth
 	warrays[Mesh.ARRAY_INDEX] = widx
 	var water := ArrayMesh.new()
 	water.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, warrays)
