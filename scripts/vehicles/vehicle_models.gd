@@ -1077,6 +1077,58 @@ func _md_cab(W: float, paint := PAINT) -> float:
 	return 3.0
 
 
+## Ultra: the Class 8 vocational cab mixers and tandem dumps really ride
+## on (Kenworth T880, Mack Granite, Peterbilt 567): a tall narrow hood up
+## near 2 m with a big square chrome grille, separate squared fenders
+## carrying the headlamps, a heavy steel bumper, a day cab roof at 3.1 m,
+## an air cleaner and exhaust stack behind it and big West Coast mirrors.
+## Ends at 3.0 like the medium cab, so the bodies behind fit as before.
+func _vocational_cab(W: float) -> float:
+	var hw := W * 0.5
+	_loft([
+		[0.0, 0.8, 1.8, 1.92, 0.56, 0.58, 0.5],
+		[0.2, 0.75, 1.86, 2.0, 0.6, 0.62, 0.54],
+		[1.75, 0.75, 1.92, 2.06, 0.64, 0.66, 0.58],
+	], [_edges(PAINT, TRIM)], PAINT, PAINT)
+	_loft([
+		[1.7, 0.95, 2.04, 2.1, hw - 0.1, hw - 0.06, hw - 0.1],
+		[3.0, 0.95, 2.04, 2.1, hw - 0.1, hw - 0.06, hw - 0.1],
+	], [_edges(PAINT, PAINT)], PAINT, PAINT)
+	_loft([
+		[1.75, 2.08, 2.12, 2.13, hw - 0.12, hw - 0.12, hw - 0.14],
+		[2.3, 2.08, 2.16, 3.1, hw - 0.12, hw - 0.12, hw - 0.2],
+		[3.0, 2.08, 2.16, 3.1, hw - 0.12, hw - 0.12, hw - 0.2],
+	], [_edges(GLASS, PAINT, PAINT, GLASS), _edges(PAINT, PAINT, GLASS, PAINT)], PAINT, PAINT)
+	# Grille: chrome surround, dark bars, the badge on top.
+	_box(Vector3(0, 1.32, -0.03), Vector3(1.08, 1.0, 0.06), CHROME)
+	for i in range(1, 9):
+		_box(Vector3(0, 0.86 + i * 0.1, -0.066), Vector3(0.96, 0.04, 0.02), Color(0.05, 0.05, 0.05, 0.3))
+	_box(Vector3(0, 1.88, -0.01), Vector3(0.3, 0.06, 0.04), CHROME)
+	# Fenders over the steer tyres, headlamps and markers in their noses.
+	for s in [-1.0, 1.0]:
+		_box(Vector3(s * (hw - 0.31), 1.25, 1.1), Vector3(0.58, 0.32, 1.7), PAINT)
+		_box(Vector3(s * (hw - 0.31), 1.1, 1.1), Vector3(0.6, 0.04, 1.72), TRIM)
+		_box(Vector3(s * (hw - 0.34), 1.28, 0.236), Vector3(0.38, 0.2, 0.04), TRIM)
+		_box(Vector3(s * (hw - 0.36), 1.29, 0.21), Vector3(0.26, 0.13, 0.04), HEAD)
+		_box(Vector3(s * (hw - 0.1), 1.29, 0.214), Vector3(0.07, 0.07, 0.03), Color(1.0, 0.55, 0.05, 0.5))
+		# Cab steps over the fuel and battery boxes.
+		_box(Vector3(s * (hw - 0.22), 0.72, 2.45), Vector3(0.44, 0.04, 0.9), STEEL)
+		_box(Vector3(s * (hw - 0.22), 0.45, 2.45), Vector3(0.44, 0.04, 0.9), STEEL)
+		# West Coast mirror on its frame, a convex mirror below.
+		_beam(Vector3(s * (hw - 0.06), 2.2, 1.85), Vector3(s * (hw + 0.28), 2.25, 1.85), 0.03, TRIM)
+		_box(Vector3(s * (hw + 0.3), 2.25, 1.85), Vector3(0.07, 0.48, 0.2), TRIM)
+		_box(Vector3(s * (hw + 0.3), 1.9, 1.85), Vector3(0.12, 0.16, 0.12), TRIM)
+	# Steel bumper with tow hooks, amber roof markers.
+	_box(Vector3(0, 0.62, -0.1), Vector3(W, 0.32, 0.24), STEEL)
+	_box(Vector3(0.45, 0.62, -0.23), Vector3(0.08, 0.1, 0.04), Color(0.7, 0.1, 0.05, 0.4), true)
+	for x in [-0.6, -0.3, 0.0, 0.3, 0.6]:
+		_box(Vector3(x, 3.12, 2.32), Vector3(0.1, 0.05, 0.06), Color(1.0, 0.55, 0.05, 0.5))
+	# Air cleaner canister and the stack behind the cab.
+	_cyl(Vector3(hw - 0.25, 1.9, 2.25), Vector3(hw - 0.25, 2.6, 2.25), 0.2, Color(0.1, 0.1, 0.1, 0.3), 10)
+	_cyl(Vector3(-(hw - 0.2), 1.2, 3.12), Vector3(-(hw - 0.2), 3.7, 3.12), 0.065, CHROME, 8)
+	return 3.0
+
+
 ## Ultra: a truck cab's face (Freightliner M2 and Cascadia, Peterbilt): the
 ## headlamps on the nose in dark housings with an amber marker, and dark
 ## bars across the chrome grille (gw wide, gh high, centred at gy), each
@@ -1117,7 +1169,10 @@ func _box_truck() -> void:  # 26 ft box truck
 
 func _dump_truck() -> void:  # tandem dump on a conventional chassis
 	var L := 9.0
-	_md_cab(2.5)
+	if _hi:
+		_vocational_cab(2.5)
+	else:
+		_md_cab(2.5)
 	_box(Vector3(0, 0.75, 5.5), Vector3(1.0, 0.3, 6.5), TRIM)
 	if _hi:
 		_dump_bed(L)
@@ -1153,7 +1208,8 @@ func _dump_bed(L: float) -> void:
 			z += 0.9
 	_box(Vector3(0, 2.3, 3.34), Vector3(2.5, 1.4, 0.08), PAINT)
 	_box(Vector3(0, 2.3, L - 0.04), Vector3(2.5, 1.4, 0.08), PAINT)
-	_box(Vector3(0, 2.98, 2.98), Vector3(2.0, 0.06, 0.72), PAINT)
+	_box(Vector3(0, 3.11, 3.34), Vector3(2.5, 0.22, 0.08), PAINT)
+	_box(Vector3(0, 3.2, 3.0), Vector3(2.0, 0.06, 0.72), PAINT)
 	# Inside, the paint is scraped back to dull steel by the loads.
 	var worn := Color(0.3, 0.28, 0.26, 0.4)
 	_box(Vector3(0, 1.62, mid), Vector3(2.34, 0.04, len), worn)
@@ -1168,7 +1224,10 @@ func _dump_bed(L: float) -> void:
 ## tridem axles. The cab takes the fleet colour.
 func _concrete_mixer() -> void:
 	var L := 10.4
-	_md_cab(2.5)
+	if _hi:
+		_vocational_cab(2.5)
+	else:
+		_md_cab(2.5)
 	_box(Vector3(0, 0.8, 6.0), Vector3(1.0, 0.3, 7.6), TRIM)
 	# The drum: wide in the middle, narrow at both ends, rising to the rear.
 	var drum := [[3.4, 1.7, 0.55], [4.3, 1.95, 1.05], [6.4, 2.3, 1.2], [8.6, 2.75, 0.85], [9.6, 3.05, 0.45]]
@@ -1190,7 +1249,10 @@ func _concrete_mixer() -> void:
 				for dz in [-0.12, 0.12]:
 					band.append([z + dz, y - r, y - r * 0.1, y + r, r * 0.7, r, r * 0.7])
 				_loft(band, [_edges(PAINT, PAINT)], PAINT, PAINT)
-		_cyl(Vector3(0, 2.0, 3.1), Vector3(0, 2.9, 3.1), 0.35, STEEL, 10)
+		if _hi:
+			_cyl(Vector3(0.25, 2.3, 3.3), Vector3(0.25, 3.0, 3.3), 0.3, STEEL, 12)
+		else:
+			_cyl(Vector3(0, 2.0, 3.1), Vector3(0, 2.9, 3.1), 0.35, STEEL, 10)
 		_beam(Vector3(0, 2.4, 9.7), Vector3(0, 1.6, 10.3), 0.35, TRIM)
 		_box(Vector3(0, 1.4, 9.9), Vector3(0.9, 0.5, 0.5), STEEL)
 		_box(Vector3(0, 1.15, 10.38), Vector3(0.5, 0.06, 0.6), STEEL)  # the fold-down discharge chute
