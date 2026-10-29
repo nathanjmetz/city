@@ -87,7 +87,7 @@ func _load() -> void:
 	var n := data.decode_u32(4)
 	var at := 8
 	for i in n:
-		var p := Vector2(data.decode_s16(at), data.decode_s16(at + 2))
+		var p := FarmsteadPlan.off_rail(Vector2(data.decode_s16(at), data.decode_s16(at + 2)))
 		var b := _block(p)
 		if not _places.has(b):
 			_places[b] = []

@@ -496,7 +496,7 @@ static func _near_farmstead(r: Vector2, reach: float) -> bool:
 			var count := data.decode_u32(4)
 			for i in count:
 				var at := 8 + i * 7
-				var p := Vector2(data.decode_s16(at), data.decode_s16(at + 2))
+				var p := FarmsteadPlan.off_rail(Vector2(data.decode_s16(at), data.decode_s16(at + 2)))
 				var b := Vector2i(floori(p.x / 256.0), floori(p.y / 256.0))
 				if not _steads.has(b):
 					_steads[b] = []

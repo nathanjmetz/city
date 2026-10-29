@@ -717,6 +717,8 @@ func _tw_glass(to_curb: float, width: float, storeys: int) -> void:
 	_box("paint", Vector3(w - 6.0, ground_h, d - 6.0), Vector3(0, ground_h * 0.5, cz), Color("#2a2c2e"))
 	for face in _tw_faces(w - 6.0, d - 6.0, cz):
 		_glass(face[0] + Vector3(0, ground_h * 0.5, 0), face[1], face[2] - 0.6, ground_h - 0.6, 0.0)
+	if fine_parts:
+		_tw_glass_lobby(w, d, cz, ground_h)
 	var cols := maxi(3, roundi(w / 9.0))
 	for i in cols + 1:
 		for zz in [zf + 0.5, zf + d - 0.5]:
@@ -832,6 +834,57 @@ func _tw_glass_box(w: float, d: float, cz: float, ground_h: float, floor_h: floa
 
 ## Desktop: a mechanical floor's louvre blades, horizontal fins about
 ## 45 cm apart round a w by d band from `y`, `h` tall.
+## Desktop: a glass tower's lobby as you walk up to it (Mies's IBM
+## Building in Chicago, Indianapolis's Chase Tower and One America lobbies):
+## the glass wall hung on slim steel mullions with a head rail, a pair of
+## stainless revolving doors in the middle of the street face with a swing
+## door between, downlights in the soffit under the overhang, and a steel
+## service door at the back. Draws no random numbers.
+func _tw_glass_lobby(w: float, d: float, cz: float, ground_h: float) -> void:
+	var lw := w - 6.0
+	var ld := d - 6.0
+	var steel := Color("#3a3d40")
+	var stainless := Color("#b8bcbf")
+	for face in _tw_faces(lw, ld, cz):
+		var along: Vector3 = face[1]
+		var out := along.cross(Vector3.UP)
+		var len: float = face[2]
+		var n := maxi(2, roundi(len / 1.6))
+		for i in range(1, n):
+			var c: Vector3 = face[0] + along * (-len * 0.5 + i * len / n) + out * 0.04
+			_box("metal", Vector3(0.07, ground_h - 0.3, 0.1), c + Vector3(0, (ground_h - 0.3) * 0.5, 0), steel, _tw_yaw(along))
+		_box("metal", Vector3(len - 0.6, 0.12, 0.1), face[0] + out * 0.04 + Vector3(0, 3.0, 0), steel, _tw_yaw(along))
+	var fz := cz - ld * 0.5 - 0.03
+	for sx in [-2.6, 2.6]:
+		var dc := Vector3(sx, 0, fz)
+		_cylinder("metal", dc + Vector3(0, 2.4, 0), 1.3, 0.35, stainless)
+		_cylinder("metal", dc, 1.3, 0.05, stainless)
+		_box("metal", Vector3(0.08, 2.4, 0.08), dc + Vector3(0, 1.2, 0), stainless)
+		for k in 7:  # the drum's posts round its curved glass
+			var a := TAU * (k + 0.5) / 7.0
+			_box("metal", Vector3(0.06, 2.4, 0.06), dc + Vector3(cos(a) * 1.27, 1.2, sin(a) * 1.27), stainless)
+		for k in 4:
+			var a := TAU * k / 4.0 + 0.3
+			_box("metal", Vector3(1.1, 2.3, 0.05), dc + Vector3(cos(a) * 0.55, 1.2, sin(a) * 0.55), Color("#9fb3bd"),
+				Basis(Vector3.UP, -a))
+	_box("metal", Vector3(1.0, 2.4, 0.06), Vector3(0, 1.2, fz - 0.05), stainless)  # the swing door's frame
+	_box("metal", Vector3(0.9, 0.06, 0.08), Vector3(0, 1.0, fz - 0.1), stainless)  # its push bar
+	# Downlights in the soffit round the overhang.
+	var lamp := Color("#f4f0e2")
+	var y := ground_h - 0.03
+	var nx := maxi(2, roundi(w / 3.0))
+	for i in nx:
+		var x := -w * 0.5 + (i + 0.5) * w / nx
+		for z in [cz - d * 0.5 + 1.5, cz + d * 0.5 - 1.5]:
+			_box("paint", Vector3(0.35, 0.03, 0.35), Vector3(x, y, z), lamp)
+	var nz := maxi(1, roundi((ld - 0.0) / 3.0))
+	for i in nz:
+		var z := cz - ld * 0.5 + (i + 0.5) * ld / nz
+		for x in [-w * 0.5 + 1.5, w * 0.5 - 1.5]:
+			_box("paint", Vector3(0.35, 0.03, 0.35), Vector3(x, y, z), lamp)
+	_box("metal", Vector3(1.0, 2.2, 0.08), Vector3(lw * 0.3, 1.1, cz + ld * 0.5 + 0.06), Color("#6d7174"))  # service door
+
+
 func _tw_louvres(w: float, d: float, cz: float, y: float, h: float, x := 0.0) -> void:
 	if not fine_parts:
 		return
