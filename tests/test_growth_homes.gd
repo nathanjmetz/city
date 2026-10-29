@@ -223,11 +223,12 @@ func _init() -> void:
 	_check(kinds.min() > 70, "the three postwar walk-up kinds share the low apartments (%s)" % str(kinds))
 	# A store's second stage keeps the first and builds a stockroom on the
 	# back, inside its lot.
-	for kind in ["retail", "diner", "bank"]:
+	for kind in ["retail", "diner", "bank", "gas"]:
 		var stockrooms := 0
 		CommercialBuilder.force_shop = kind
 		for s in 40:
-			var w: float = [16.0, 20.0, 26.0][s % 3]
+			# A car wash wants a wide lot.
+			var w: float = ([34.0, 36.0, 40.0] if kind == "gas" else [16.0, 20.0, 26.0])[s % 3]
 			var lot := {"width": w, "depth": [32.0, 40.0, 50.0][s % 3], "era": ["postwar", "recent"][s % 2]}
 			DenseBuilder.build_retail(s, 3.9, lot, {}, 0)
 			var m0 := HouseBuilder.last_masses.duplicate()
@@ -238,7 +239,7 @@ func _init() -> void:
 			if m1.size() > m0.size():
 				stockrooms += 1
 		CommercialBuilder.force_shop = ""
-		_check(stockrooms > 20, "most grown %s shops build on the back (%d of 40)" % [kind, stockrooms])
+		_check(stockrooms > 20, "most grown %s shops build on (%d of 40)" % [kind, stockrooms])
 	print("FAILED" if failed else "ALL PASSED")
 	quit(1 if failed else 0)
 
