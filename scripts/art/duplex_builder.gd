@@ -371,6 +371,8 @@ func _dx_fourplex(p: Dictionary) -> Dictionary:
 	var zf: float = p.zf
 	var zb := zf + d
 	var cz := zf + d * 0.5
+	if era == "recent" and not p.has("narrow"):
+		return _dx_bighouse(p, r, paint)
 	var sill := 0.9  # a garden-level half basement under the first floor
 	var fh := 2.8
 	var top := sill + fh * 2.0
@@ -414,4 +416,76 @@ func _dx_fourplex(p: Dictionary) -> Dictionary:
 		_box("paint", Vector3(0.95, 2.05, 0.06), Vector3(bx, sill + fh + 1.1, zb + 0.02), Color("#5a5e60"))
 		_window(Vector3(cx + s * w * 0.42, sill + 1.5, zb), Vector3(1, 0, 0), 0.9, 1.35, false, false, TRIM)
 		_window(Vector3(cx + s * w * 0.42, sill + fh + 1.5, zb), Vector3(1, 0, 0), 0.9, 1.35, false, false, TRIM)
+	return _dx_info(p)
+
+
+## A fourplex built new on a recent street: the "big house" plex of the
+## missing-middle infill Indiana cities allow again (Bloomington's and
+## Indianapolis's near-east-side plexes since 2020), four flats that look
+## like one large house: two storeys of lap siding under a side gable, a
+## wide front gable in board-and-batten over the middle, a full-width
+## porch on square craftsman columns with two doors (each to a stair), and
+## black-framed windows. The footprint, door and parking are the fourplex
+## plan's, so the site plan is unchanged.
+func _dx_bighouse(p: Dictionary, r: RandomNumberGenerator, paint: Dictionary) -> Dictionary:
+	var w: float = p.w
+	var d: float = p.d
+	var cx: float = p.cx
+	var zf: float = p.zf
+	var zb := zf + d
+	var cz := zf + d * 0.5
+	var sill := 0.6
+	var fh := 2.9
+	var top := sill + fh * 2.0
+	var siding: Color = paint.siding
+	var accent := siding.darkened(0.25) if r.randf() < 0.5 else Color(["#2f3a32", "#3b3f42", "#e8e4d8"][r.randi() % 3])
+	var black := Color("#1f2224")
+	_box("concrete", Vector3(w + 0.1, sill, d + 0.1), Vector3(cx, sill * 0.5, cz), FOUNDATION)
+	_box("siding", Vector3(w, top - sill, d), Vector3(cx, (sill + top) * 0.5, cz), siding)
+	_gable_roof(cx, cz, top, d, d * 0.5 * 0.5, w, true, paint.roof, siding)
+	# The front gable over the middle, board-and-batten.
+	var gw := minf(w * 0.55, 7.5)
+	_box("siding", Vector3(gw, 0.6, 0.6), Vector3(cx, top + 0.3, zf + 0.1), accent)
+	_gable_roof(cx, zf + 1.6, top + 0.6, gw, gw * 0.5 * 0.75, 3.6, false, paint.roof, accent)
+	for i in maxi(4, int(gw / 0.4)):
+		_box("paint", Vector3(0.05, 0.5, 0.04), Vector3(cx - gw * 0.5 + 0.2 + i * 0.4, top + 0.3, zf - 0.22), accent.darkened(0.1))
+	# The porch: a deck, square columns on brick-clad piers, a shed roof.
+	var pd := 1.8
+	var pw := w - 0.6
+	_box("concrete", Vector3(pw, sill, pd), Vector3(cx, sill * 0.5, zf - pd * 0.5), FOUNDATION)
+	_box("paint", Vector3(pw, 0.06, pd), Vector3(cx, sill + 0.03, zf - pd * 0.5), Color("#8d7b5f"))
+	var cols := 4 if pw > 10.0 else 3
+	for i in cols:
+		var x := cx - pw * 0.5 + 0.25 + i * (pw - 0.5) / (cols - 1)
+		_box("brick", Vector3(0.5, 0.9, 0.5), Vector3(x, sill + 0.45, zf - pd + 0.3), paint.brick)
+		_box("paint", Vector3(0.3, 1.75, 0.3), Vector3(x, sill + 0.9 + 0.87, zf - pd + 0.3), TRIM)
+	_box("paint", Vector3(pw + 0.3, 0.3, 0.3), Vector3(cx, sill + 2.75, zf - pd + 0.3), TRIM)
+	var a := Vector3(cx - pw * 0.5 - 0.15, sill + 3.3, zf)
+	var b := Vector3(cx + pw * 0.5 + 0.15, sill + 3.3, zf)
+	_quad("roof", Vector3(b.x, sill + 2.9, zf - pd - 0.3), Vector3(a.x, sill + 2.9, zf - pd - 0.3), a, b, paint.roof, [], Vector3(0, 1, -0.4).normalized())
+	_quad("paint", Vector3(a.x, sill + 2.9, zf - pd - 0.3), Vector3(b.x, sill + 2.9, zf - pd - 0.3), b - Vector3(0, 0.02, 0), a - Vector3(0, 0.02, 0), SOFFIT, [], Vector3.DOWN)
+	# Two doors under the porch, one to each stair; the steps at the middle.
+	var door_x: float = p.doors[0]
+	for e in [-1.0, 1.0]:
+		_front_door(door_x + e * 0.9, zf, sill, paint.door)
+	_stoop(door_x, zf - pd, 2.0, 1.0, sill)
+	# Black-framed windows, two pairs a floor either side of the doors.
+	for s in [-1.0, 1.0]:
+		for f in 2:
+			var y := sill + f * fh + 1.45
+			for x in [door_x + s * w * 0.22, door_x + s * w * 0.38]:
+				_box("metal", Vector3(1.1, 1.6, 0.04), Vector3(x, y, zf - 0.01), black)
+				_glass(Vector3(x, y, zf - 0.04), Vector3(-1, 0, 0), 0.95, 1.45, r.randf_range(0.0, 0.6))
+			for i in 2:
+				_window(Vector3(cx + s * w * 0.5, y, zf + d * (i + 0.7) / 2.4), Vector3(0, 0, -s), 0.9, 1.35, false, false, black)
+	_glass(Vector3(door_x, top + 0.9, zf + 0.05 - 0.3), Vector3(-1, 0, 0), 1.2, 0.6, 0.0)
+	# Out back: a door and a stacked deck for each side.
+	for s in [-1.0, 1.0]:
+		var bx: float = cx + s * w * 0.25
+		_box("paint", Vector3(0.95, 2.05, 0.06), Vector3(bx, sill + 1.02, zb + 0.02), black)
+		_box("paint", Vector3(2.6, 0.15, 1.6), Vector3(bx, sill + fh, zb + 0.8), Color("#8d7b5f"))
+		_box("paint", Vector3(2.6, 0.9, 0.05), Vector3(bx, sill + fh + 0.5, zb + 1.58), black)
+		_box("paint", Vector3(0.95, 2.05, 0.06), Vector3(bx, sill + fh + 1.1, zb + 0.02), black)
+		_window(Vector3(cx + s * w * 0.42, sill + 1.5, zb), Vector3(1, 0, 0), 0.9, 1.35, false, false, black)
+		_window(Vector3(cx + s * w * 0.42, sill + fh + 1.5, zb), Vector3(1, 0, 0), 0.9, 1.35, false, false, black)
 	return _dx_info(p)
