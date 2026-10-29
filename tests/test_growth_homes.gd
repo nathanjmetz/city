@@ -174,6 +174,20 @@ func _init() -> void:
 	corner_lot.corner = false
 	_check(SiteLayout.corner_side(net, corner_lot) == 0.0, "a lot mid-block has no side street")
 	_check(styles.size() == 5, "every kind of duplex and the fourplex come up (%s)" % str(styles.keys()))
+	# Postwar walk-ups: the split-entry and mansard kinds fit their lots,
+	# and a third each of the low ones take them.
+	for kind in ["split", "walkmansard"]:
+		for w in [24.0, 28.0, 36.0]:
+			for st in [2, 3]:
+				MetroBuilder.force_row = kind
+				var out := MetroBuilder.build_apartments(7 + st, 3.9, {"width": w, "depth": 45.0, "era": "postwar"}, st)
+				MetroBuilder.force_row = ""
+				_check(out.size() >= 3 and _inside(HouseBuilder.last_masses, w * 0.5, 45.0),
+					"a %d-storey %s walk-up fits its %d m lot" % [st, kind, w])
+	var kinds := [0, 0, 0]
+	for s in 300:
+		kinds[absi(hash([s, "walkup kind"])) % 3] += 1
+	_check(kinds.min() > 70, "the three postwar walk-up kinds share the low apartments (%s)" % str(kinds))
 	print("FAILED" if failed else "ALL PASSED")
 	quit(1 if failed else 0)
 

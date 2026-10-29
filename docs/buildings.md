@@ -71,7 +71,7 @@ type at the top of theirs:
   duplex after it, a two-storey one lately), then a fourplex. It can make
   way for row homes or apartments.
 - Row homes: two storeys, then three.
-- Apartments: walk-up, three storeys, mid-rise (5).
+- Apartments: walk-up, three storeys, mid-rise (5). Postwar walk-ups are garden apartments, the plain brick block, the split-entry eight-plex or the 1970s mansard walk-up, and keep their kind as they grow a floor.
 - Shop: corner store, then retail store. On a Main Street it gains flats
   upstairs and becomes a Main Street block.
 - Shop with flats: two, three, then four storeys. On a busy Main Street its
