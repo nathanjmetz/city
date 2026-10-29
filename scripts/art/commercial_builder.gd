@@ -709,6 +709,8 @@ func _word_slot(x: float) -> float:
 ## after dark (sign alpha 1). Takes the same one draw from rng as _sign.
 func _channel_letters(c: Vector3, w: float, h: float) -> void:
 	_pick(SIGNS)  # the same one draw as _sign
+	if w < 1.0:
+		return  # no room for a name (a sliver of shops beside an anchor)
 	var r := RandomNumberGenerator.new()
 	r.seed = hash([rng.seed, 37, snappedf(c.x, 0.1)])
 	var tints := [Color("#e0262e"), Color("#e0262e"), Color("#f4f1ea"), Color("#1f5fbf"), Color("#1f8a4a"), Color("#f2b632")]
@@ -1414,6 +1416,7 @@ func _cc_parking(to_curb: float, w: float, zw: float, xg0: float, cr: RandomNumb
 					_box("concrete", Vector3(0.6, 0.9, 0.6), Vector3(x, 0.45, sz), FOUNDATION)
 					_box("paint", Vector3(0.16, 10.0, 0.16), Vector3(x, 5.9, sz), Color("#2e3032"))
 					_box("paint", Vector3(0.6, 0.18, 0.8), Vector3(x, 10.9, sz), Color("#2e3032"))
+					_box("sign", Vector3(0.5, 0.02, 0.7), Vector3(x, 10.8, sz), Color(0.95, 0.96, 1.0, 1.0))  # LED lens
 					_light_pool(Vector3(x, 0.13, sz), 26.0, 26.0, Color(0.95, 0.96, 1.0))
 				x += 30.0
 	for k in [-1.0, 1.0]:
@@ -1428,6 +1431,10 @@ func _cc_parking(to_curb: float, w: float, zw: float, xg0: float, cr: RandomNumb
 			if pad.grow(1.5).has_point(Vector2(x, zc)):
 				continue
 			_flat_rect("mulch", x - 0.9, x + 0.9, zc - 2.5, zc + 2.5, 0.09)
+			# Its curb: 15 cm of concrete all round.
+			for e in [[Vector3(2.0, 0.15, 0.15), Vector3(x, 0.075, zc - 2.55)], [Vector3(2.0, 0.15, 0.15), Vector3(x, 0.075, zc + 2.55)],
+					[Vector3(0.15, 0.15, 4.95), Vector3(x - 0.95, 0.075, zc)], [Vector3(0.15, 0.15, 4.95), Vector3(x + 0.95, 0.075, zc)]]:
+				_box("concrete", e[0], e[1], Color("#cfcac0"))
 			var pick := TreeField.pick(cr, true)
 			trees.append([Vector3(x, 0, zc), pick[0], pick[1], cr.randf_range(0.7, 0.95)])
 
