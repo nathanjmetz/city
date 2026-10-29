@@ -65,12 +65,13 @@ func after(sim: CitySim, snap: Dictionary) -> void:
 		e.rev_before = snap.rev
 		e.rev = sim.network.revision
 		e.took = took(sim, snap.held)
-		# Car-free streets the build cut in two: whole again on undo.
+		# Car-free streets the build cut in two or made an avenue: car-free
+		# again on undo.
 		e.closed = {}
 		for seg in snap.closed:
-			if not sim.network.segments.has(int(seg)):
+			if not sim.traffic.closed.has(seg):
 				e.closed[seg] = snap.closed[seg]
-		e.plazas = snap.plazas.filter(func(seg): return not sim.network.segments.has(int(seg)))
+		e.plazas = snap.plazas.filter(func(seg): return not seg in sim.parks.trails.plazas)
 	else:
 		var added: Array = things(sim, snap.type).keys().filter(func(k): return not k in snap.ids)
 		if added.size() != 1:
@@ -112,14 +113,7 @@ func undo(sim: CitySim) -> bool:
 	if e.has("roads"):
 		sim.network.restore(e.roads)
 		put_back(sim, e.took)
-		for seg in e.get("closed", {}):
-			sim.traffic.close_segment(int(seg), true, str(e.closed[seg]))
-		for seg in e.get("plazas", []):
-			if not seg in sim.parks.trails.plazas:
-				sim.parks.trails.plazas.append(seg)
-				sim.parks.trails._rev = ""
-		if not e.get("plazas", []).is_empty():
-			sim.parks_changed.emit()
+		sim.put_back_closures({"closed": e.get("closed", {}), "plazas": e.get("plazas", [])})
 		# The road built before this one is current again if no road change
 		# came between; something placed between (a park, a tower) doesn't
 		# count (reviewer 2026-10-27: three undos left the first street in).

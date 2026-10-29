@@ -3915,6 +3915,7 @@ func _build_roads(curves: Array, type: int, over: bool, join: bool) -> bool:
 		return false
 	var roads := network.snapshot()
 	var money := economy.money
+	var closures := street_closures()
 	var built := []
 	network.begin_batch()
 	for i in curves.size():
@@ -3932,6 +3933,7 @@ func _build_roads(curves: Array, type: int, over: bool, join: bool) -> bool:
 			network.restore(roads)
 			economy.money = money
 			network.end_batch()
+			put_back_closures(closures)
 			return false
 		built.append_array(pieces)
 	network.end_batch()
@@ -4068,6 +4070,10 @@ func car_free_problem(seg: int) -> String:
 		return "Click a street."
 	if seg in parks.trails.plazas:
 		return "Already car-free."
+	if traffic.closed.has(seg):
+		# Kept apart from car-free: opening a plaza mustn't open what the
+		# engineer was paid to close (second reviewer 2026-10-29).
+		return "The city engineer already closed this street to through traffic."
 	if not network.segments[seg].type in Balance.PLAZA_TYPES:
 		return "Only town streets can be car-free, not %ss." % RoadStyle.TYPES[network.segments[seg].type].name.to_lower()
 	for p in network.curve_of(seg):
@@ -4106,8 +4112,40 @@ func _drop_stale_closures() -> void:
 		if not network.segments.has(int(seg)):
 			plazas.erase(seg)
 			_plazas_moved = true
+		elif not network.segments[int(seg)].type in Balance.PLAZA_TYPES:
+			# Made an avenue (upgraded, or an avenue drawn along it): it's
+			# a road for cars again, and the pavers go with the rebuild
+			# (second reviewer 2026-10-29: car-free avenues).
+			plazas.erase(seg)
+			traffic.close_segment(int(seg), false)
+			_plazas_moved = true
 	if _plazas_moved:
 		_plazas_moved = false
+		parks.trails._rev = ""
+		parks_changed.emit()
+
+
+## The streets closed to cars and the plazas now, to put back when roads
+## taken out for a moment come back (a park closing that didn't let the
+## park grow, an undo). Taking a road out drops them at once.
+func street_closures() -> Dictionary:
+	return {"closed": traffic.closed.duplicate(), "plazas": parks.trails.plazas.duplicate()}
+
+
+## Puts back closures and plazas (street_closures()) on the roads that are
+## there again and are missing them.
+func put_back_closures(k: Dictionary) -> void:
+	for seg in k.get("closed", {}):
+		if network.segments.has(int(seg)) and not traffic.closed.has(int(seg)):
+			traffic.close_segment(int(seg), true, str(k.closed[seg]))
+	var plazas: Array = parks.trails.plazas
+	var moved := false
+	for seg in k.get("plazas", []):
+		if network.segments.has(int(seg)) and not int(seg) in plazas \
+				and network.segments[int(seg)].type in Balance.PLAZA_TYPES:
+			plazas.append(int(seg))
+			moved = true
+	if moved:
 		parks.trails._rev = ""
 		parks_changed.emit()
 

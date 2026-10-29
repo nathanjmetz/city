@@ -66,7 +66,53 @@ func _init() -> void:
 	_check(not sim.apply({"type": "car_free", "seg": rung, "on": true}), "not without the money")
 	_check(not rung in sim.parks.trails.plazas, "and the street stays open")
 	_second_reader()
+	_second_reviewer()
 	quit(1 if _failed else 0)
+
+
+## Cases the second reviewer found (2026-10-29).
+func _second_reviewer() -> void:
+	var sim := CitySim.new()
+	sim.economy.money = 10_000_000
+	sim.apply({"type": "build_road", "start": [0, 0], "ctrl": [200, 0], "end": [400, 0]})
+	sim.apply({"type": "build_road", "start": [0, -150], "ctrl": [200, -150], "end": [400, -150]})
+	for x in [0, 200, 400]:
+		sim.apply({"type": "build_road", "start": [x, 0], "ctrl": [x, -75], "end": [x, -150]})
+	sim.tick()
+	var rung: int = sim.network.find_segment_near(Vector3(200, 0, -75), 1.0).seg
+	var other: int = sim.network.find_segment_near(Vector3(400, 0, -75), 1.0).seg
+	var west: int = sim.network.find_segment_near(Vector3(0, 0, -75), 1.0).seg
+
+	# Upgraded to an avenue: a road for cars again, not a car-free avenue.
+	_check(sim.apply({"type": "car_free", "seg": rung, "on": true}), "a rung is made car-free")
+	_check(sim.apply({"type": "upgrade_road", "seg": rung, "road": RoadStyle.Type.AVENUE}), "then upgraded to an avenue")
+	_check(not rung in sim.parks.trails.plazas and sim.traffic.may_enter(rung, false),
+		"the avenue is open to cars, not a plaza")
+	_check(sim.apply({"type": "undo"}) and int(sim.network.segments[rung].type) != RoadStyle.Type.AVENUE,
+		"undo makes it a street again")
+	_check(rung in sim.parks.trails.plazas and not sim.traffic.may_enter(rung, false), "and car-free again")
+
+	# An avenue drawn along it takes it over the same way.
+	_check(sim.apply({"type": "car_free", "seg": other, "on": true}), "another rung is made car-free")
+	sim.apply({"type": "build_road", "start": [400, 0], "ctrl": [400, -75], "end": [400, -150],
+		"road": RoadStyle.Type.AVENUE})
+	var along: Dictionary = sim.network.find_segment_near(Vector3(400, 0, -75), 1.0)
+	var bad := false
+	for seg in sim.parks.trails.plazas:
+		if sim.network.segments.has(seg) and not int(sim.network.segments[seg].type) in Balance.PLAZA_TYPES:
+			bad = true
+	_check(not along.is_empty() and int(sim.network.segments[along.seg].type) == RoadStyle.Type.AVENUE,
+		"an avenue drawn along it")
+	_check(not bad and sim.traffic.may_enter(along.seg, false), "leaves no car-free avenue")
+
+	# The city engineer's local-traffic closure and car-free stay apart.
+	sim.traffic.close_segment(west, true, "always")  # as CityEngineer's "local" fix does
+	var money := sim.economy.money
+	_check(sim.car_free_problem(west) != "" and not sim.apply({"type": "car_free", "seg": west, "on": true}),
+		"a street the engineer closed can't be made car-free (%s)" % sim.car_free_problem(west))
+	_check(sim.economy.money == money and not west in sim.parks.trails.plazas, "and nothing is charged")
+	_check(not sim.apply({"type": "car_free", "seg": west, "on": false}) and str(sim.traffic.closed.get(west, "")) == "always",
+		"opening car-free there leaves the engineer's closure")
 
 
 ## Cases the second reader found (2026-10-26).
