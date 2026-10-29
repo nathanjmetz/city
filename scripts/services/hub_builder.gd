@@ -201,7 +201,7 @@ func _flat_poly_any(kind: String, poly: PackedVector2Array, y: float, col: Color
 
 ## The landfill's grassed cap, flat, over an outline.
 func _grass_poly(poly: PackedVector2Array) -> void:
-	var st := _tool("paint")
+	var st := _tool("pasture")
 	for tri in _tris(poly):
 		for q in tri:
 			var patch := 0.5 + 0.25 * sin(q.x * 0.045 + 1.3) * sin(q.y * 0.06) + 0.25 * sin((q.x + q.y) * 0.021)
@@ -331,14 +331,19 @@ func _mound(set: Array, top: float, working: bool, face: Vector2i) -> void:
 			var d := INF
 			for e in edges:
 				d = minf(d, Geometry2D.get_closest_point_to_segment(Vector2(x, z), e[0], e[1]).distance_to(Vector2(x, z)))
-			var y := top * smoothstep(0.0, ramp, d)
-			# Flat yard at the gate.
-			y *= smoothstep(10.0, 32.0, z)
-			height[Vector2i(i, j)] = y
+			# The flat yard at the gate (the scale and the scale house) is
+			# an edge too: the 3:1 side slope rises from it.
+			d = minf(d, Vector2(maxf(absf(x) - 18.0, 0.0), maxf(z - 26.0, 0.0)).length())
+			height[Vector2i(i, j)] = top * smoothstep(0.0, ramp, d)
 	# Smooth shading: each corner's normal from the slope around it, and the
 	# grass varies in broad patches, as on a real cap.
 	var hf := func(q: Vector2i) -> float: return height.get(q, 0.0)
-	var st := _tool("paint")
+	# Mowed grass, matte (the pasture ground's look and seasons); the
+	# working face mottled in fresh trash and the day's soil cover.
+	var st := _tool("pasture")
+	var mottle := {}
+	for q in height:
+		mottle[q] = rng.randf_range(-0.22, 0.12)
 	for i in nx:
 		for j in nz:
 			var k := [Vector2i(i, j), Vector2i(i + 1, j), Vector2i(i + 1, j + 1), Vector2i(i, j + 1)]
@@ -358,7 +363,8 @@ func _mound(set: Array, top: float, working: bool, face: Vector2i) -> void:
 				if working:
 					var f := 1.0 - smoothstep(cell * 0.5, cell * 0.9, Vector2(p.x, p.z).distance_to(face_at))
 					f *= smoothstep(top * 0.1, top * 0.3, p.y)
-					col = col.lerp(WORKING, f)
+					var m: float = mottle[q]
+					col = col.lerp(WORKING.darkened(m) if m > 0.0 else WORKING.lightened(-m * 0.6), f)
 				cols.append(col)
 			for t in [0, 1, 2, 0, 2, 3]:
 				st.set_normal(normals[t])
@@ -367,17 +373,7 @@ func _mound(set: Array, top: float, working: bool, face: Vector2i) -> void:
 				st.add_vertex(pts[t])
 	# The haul road up to the working face.
 	if working:
-		var from := Vector2(0.0, 30.0)
-		var n := int(from.distance_to(face_at) / step)
-		var side := Vector2(-(face_at - from).y, (face_at - from).x).normalized() * 3.5
-		for i in n:
-			var a := from.lerp(face_at, float(i) / n)
-			var b := from.lerp(face_at, float(i + 1) / n)
-			var ya := _height_near(height, minx, minz, step, a) + 0.2
-			var yb := _height_near(height, minx, minz, step, b) + 0.2
-			_quad("paint", Vector3(a.x - side.x, ya, a.y - side.y), Vector3(a.x + side.x, ya, a.y + side.y),
-				Vector3(b.x + side.x, yb, b.y + side.y), Vector3(b.x - side.x, yb, b.y - side.y), Color("#6e675b"),
-				[], Vector3.UP)
+		_drape_strip(height, minx, minz, step, Vector2(0.0, 24.0), face_at, 3.5, Color("#6e675b"), 0.15)
 	# A compactor on the working face, and gas vents on the cap.
 	if working:
 		var fy := _height_near(height, minx, minz, step, face_at)
@@ -386,6 +382,9 @@ func _mound(set: Array, top: float, working: bool, face: Vector2i) -> void:
 		_box("paint", Vector3(2.0, 1.6, 2.2), base + Vector3(0, 3.4, -0.8), Color("#2b2c2e"))
 		for zs in [-2.2, 2.2]:
 			_box("metal", Vector3(3.8, 1.4, 1.4), base + Vector3(0, 0.7, zs), Color("#5c5e60"))
+	if working:
+		_working_face(height, minx, minz, step, face_at, top)
+	_downchutes(set, height, minx, minz, step, ramp, face_at if working else Vector2(INF, INF))
 	var k := 0
 	for q in height:
 		k += 1
@@ -396,6 +395,150 @@ func _mound(set: Array, top: float, working: bool, face: Vector2i) -> void:
 			continue
 		_box("paint", Vector3(0.25, 1.4, 0.25), at + Vector3(0, 0.7, 0), Color("#e6e4dc"))
 		_box("paint", Vector3(0.5, 0.15, 0.5), at + Vector3(0, 1.45, 0), Color("#e6e4dc"))
+
+
+## What a working face looks like from the road: the day's trash spread
+## and pushed (white and black bags, cardboard, blue tarps), a dozer
+## spreading it, a tri-axle tipping, and portable litter fences downwind
+## (benchmarked on Indiana county landfills' aerial photos).
+func _working_face(height: Dictionary, minx: float, minz: float, step: float, face_at: Vector2, top: float) -> void:
+	var trash := [Color("#e8e6df"), Color("#d9d6cc"), Color("#2a2b2d"), Color("#3a3b3d"), Color("#a8865a"),
+		Color("#3a6ea8"), Color("#8a8c88"), Color("#c9c2a8")]
+	var reach := cell * 0.42
+	for i in 260:
+		var a := rng.randf() * TAU
+		var r := sqrt(rng.randf()) * reach
+		var at := face_at + Vector2(cos(a), sin(a)) * r
+		var y := _height_at(height, minx, minz, step, at)
+		if y < top * 0.3:
+			continue
+		var sz := rng.randf_range(0.3, 1.1)
+		_box("paint", Vector3(sz, rng.randf_range(0.15, 0.45), sz * rng.randf_range(0.6, 1.4)), Vector3(at.x, y + 0.15, at.y),
+			trash[rng.randi() % trash.size()], Basis(Vector3.UP, rng.randf() * TAU))
+	# A dozer spreading the day's load, blade down.
+	var dz := face_at + Vector2(-9.0, 6.0)
+	var dy := _height_at(height, minx, minz, step, dz)
+	var yaw := Basis(Vector3.UP, 0.6)
+	var d := Vector3(dz.x, dy, dz.y)
+	_box("paint", Vector3(2.6, 1.6, 4.2), d + yaw * Vector3(0, 1.3, 0), Color("#d9a21b"), yaw)
+	_box("paint", Vector3(1.6, 1.4, 1.6), d + yaw * Vector3(0, 2.8, 0.6), Color("#2b2c2e"), yaw)
+	_box("paint", Vector3(3.8, 1.3, 0.3), d + yaw * Vector3(0, 0.75, -2.7), Color("#c99418"), yaw)
+	for sx in [-1.0, 1.0]:
+		_box("metal", Vector3(0.6, 0.9, 4.0), d + yaw * Vector3(sx * 1.4, 0.45, 0), Color("#3a3b3d"), yaw)
+	# A tri-axle dump truck tipping at the edge of the face.
+	var tz := face_at + Vector2(10.0, -8.0)
+	var ty := _height_at(height, minx, minz, step, tz)
+	var tyaw := Basis(Vector3.UP, -0.4)
+	var t := Vector3(tz.x, ty, tz.y)
+	_box("paint", Vector3(2.5, 2.4, 2.4), t + tyaw * Vector3(0, 1.7, -3.6), Color("#e8e6df"), tyaw)
+	_box("paint", Vector3(1.0, 0.5, 7.4), t + tyaw * Vector3(0, 0.8, 0), Color("#2b2c2e"), tyaw)
+	_box("paint", Vector3(2.5, 1.5, 5.4), t + tyaw * Vector3(0, 2.6, 1.6), Color("#a83a2a"), tyaw * Basis(Vector3.RIGHT, -0.45))
+	# Portable litter fences: chain-link panels on skids, 5 m tall.
+	for k in 3:
+		var a := 2.2 + k * 0.35
+		var p0 := face_at + Vector2(cos(a), sin(a)) * (reach + 6.0)
+		var p1 := face_at + Vector2(cos(a + 0.3), sin(a + 0.3)) * (reach + 6.0)
+		var y0 := _height_at(height, minx, minz, step, p0)
+		var y1 := _height_at(height, minx, minz, step, p1)
+		var q0 := Vector3(p0.x, y0, p0.y)
+		var q1 := Vector3(p1.x, y1, p1.y)
+		for q in [q0, q1]:
+			_box("paint", Vector3(0.12, 5.0, 0.12), q + Vector3(0, 2.5, 0), GALV)
+		_quad("chain", q0 + Vector3(0, 0.3, 0), q1 + Vector3(0, 0.3, 0), q1 + Vector3(0, 5.0, 0), q0 + Vector3(0, 5.0, 0), GALV,
+			[Vector2(0, 0), Vector2(q0.distance_to(q1), 0), Vector2(q0.distance_to(q1), 4.7), Vector2(0, 4.7)],
+			Vector3(q1.z - q0.z, 0, q0.x - q1.x))
+
+
+## Rock-lined downchutes carrying the cap's runoff straight down the side
+## slopes to the perimeter ditch, one on each long side.
+func _downchutes(set: Array, height: Dictionary, minx: float, minz: float, step: float, ramp: float, face_at: Vector2) -> void:
+	var mid := Vector2.ZERO
+	for c in set:
+		mid += Vector2(c.x * cell, (c.y + 0.5) * cell)
+	mid /= set.size()
+	var rock := Color("#706d66")
+	for e in _sides(set):
+		var a: Vector2 = e[0]
+		var b: Vector2 = e[1]
+		var m := (a + b) * 0.5
+		if absf(m.y) < 0.5 or m.distance_to(face_at) < cell * 0.6:
+			continue  # the gate side, or the working face
+		var ab := (b - a).normalized()
+		var inward := Vector2(-ab.y, ab.x)
+		if inward.dot(mid - m) < 0.0:
+			inward = -inward
+		var end := m + inward * ramp
+		if not _inside(set, end.x, end.y):
+			continue
+		if Geometry2D.get_closest_point_to_segment(face_at, m, end).distance_to(face_at) < cell * 0.6:
+			continue  # it would run over the working face
+		_drape_strip(height, minx, minz, step, m + inward * 0.3, end, 1.2, rock, 0.1)
+
+
+## A strip laid on the mound from `a` to `b`, `half` wide each side of its
+## middle: every vertex on the surface (2 m along, three across), so it
+## follows the slope instead of floating over it.
+func _drape_strip(height: Dictionary, minx: float, minz: float, step: float, a: Vector2, b: Vector2, half: float,
+		col: Color, lift: float) -> void:
+	var n := maxi(1, int(a.distance_to(b) / 2.0))
+	var side := Vector2(-(b - a).y, (b - a).x).normalized() * half
+	var on := func(q: Vector2) -> Vector3: return Vector3(q.x, _height_at(height, minx, minz, step, q) + lift, q.y)
+	for i in n:
+		var p := a.lerp(b, float(i) / n)
+		var q := a.lerp(b, float(i + 1) / n)
+		var shade := col.darkened(rng.randf_range(0.0, 0.06))
+		for k in [-1.0, 0.0]:
+			var p0: Vector2 = p + side * k
+			var p1: Vector2 = p + side * (k + 1.0)
+			var q0: Vector2 = q + side * k
+			var q1: Vector2 = q + side * (k + 1.0)
+			# The yard shader's loose gravel (alpha 1): rock and haul road grit.
+			_quad("yard", on.call(p0), on.call(p1), on.call(q1), on.call(q0), shade, [], Vector3.UP)
+
+
+## The outside edges of `set` joined into whole straight sides.
+func _sides(set: Array) -> Array:
+	var lines := {}
+	for e in _edges(set):
+		var a: Vector2 = e[0]
+		var b: Vector2 = e[1]
+		var key := "x%d" % roundi(a.x) if absf(a.x - b.x) < 0.01 else "z%d" % roundi(a.y)
+		if not lines.has(key):
+			lines[key] = []
+		lines[key].append(e)
+	var out := []
+	for key in lines:
+		var along_x: bool = str(key).begins_with("z")
+		var segs: Array = lines[key]
+		segs.sort_custom(func(p, q): return (p[0].x if along_x else p[0].y) < (q[0].x if along_x else q[0].y))
+		var cur: Array = [segs[0][0], segs[0][1]]
+		for k in range(1, segs.size()):
+			var s0: Vector2 = segs[k][0]
+			if s0.distance_to(cur[1]) < 0.01:
+				cur[1] = segs[k][1]
+			else:
+				out.append(cur)
+				cur = [segs[k][0], segs[k][1]]
+		out.append(cur)
+	return out
+
+
+## The mound's height at `at`, on the same two triangles per grid square
+## the mesh draws, so things laid on it sit on it.
+func _height_at(height: Dictionary, minx: float, minz: float, step: float, at: Vector2) -> float:
+	var fx := (at.x - minx) / step
+	var fz := (at.y - minz) / step
+	var i := floori(fx)
+	var j := floori(fz)
+	var u := fx - i
+	var v := fz - j
+	var h0: float = height.get(Vector2i(i, j), 0.0)
+	var h1: float = height.get(Vector2i(i + 1, j), 0.0)
+	var h2: float = height.get(Vector2i(i + 1, j + 1), 0.0)
+	var h3: float = height.get(Vector2i(i, j + 1), 0.0)
+	if u >= v:
+		return h0 + u * (h1 - h0) + v * (h2 - h1)
+	return h0 + v * (h3 - h0) + u * (h2 - h3)
 
 
 func _height_near(height: Dictionary, minx: float, minz: float, step: float, at: Vector2) -> float:
