@@ -185,6 +185,9 @@ jobs:
           run_test tests/test_big_factories.gd
           run_test tests/test_work_modes.gd
           run_test tests/test_parks.gd
+          run_test tests/test_park_buyout.gd
+          run_test tests/test_park_street.gd
+          run_test tests/test_stations.gd
           run_test tests/test_boxed_parks.gd
           run_test tests/test_tourism.gd
           run_test tests/test_trails.gd
