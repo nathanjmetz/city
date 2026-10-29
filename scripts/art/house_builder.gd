@@ -223,7 +223,68 @@ func _house(to_curb: float, storeys := 0) -> Array:
 	_street_trees(info, to_curb)
 	_back_yard(info)
 	_utilities(info)
+	_front_yard(info)
 	return [_commit_house(), _commit_flat(), trees]
+
+
+## What an owner adds out front: mulch rings round the yard trees (most
+## newer yards, few old ones), a post lantern by the walk on postwar and
+## newer houses, and the American flag on its bracket by the front door
+## that about one Indiana house in four flies. Drawn after everything else
+## in the lot, like _utilities.
+func _front_yard(h: Dictionary) -> void:
+	var ring_odds: float = {"prewar": 0.2, "postwar": 0.5}.get(era, 0.75)
+	var fz: float = h.front_z
+	for t in trees:
+		var p: Vector3 = t[0]
+		if p.z > 0.5 and p.z < fz and rng.randf() < ring_odds:
+			_mulch_ring(Vector2(p.x, p.z), rng.randf_range(0.8, 1.2), MULCH)
+	var door_x: float = h.door_x
+	var dx: float = h.drive_x
+	var dw: float = h.drive_w
+	if era != "prewar" and rng.randf() < 0.35:
+		var lamp := Vector3(door_x + (0.9 if door_x < dx else -0.9), 0.0, maxf(1.5, fz - 3.2))
+		if absf(lamp.x - dx) > dw * 0.5 + 0.6 and _in_lot(lamp, 0.5):
+			_box("paint", Vector3(0.08, 1.9, 0.08), lamp + Vector3(0, 0.95, 0), Color("#1d1e1f"))
+			_box("paint", Vector3(0.26, 0.34, 0.26), lamp + Vector3(0, 2.05, 0), Color("#e8e2c8"))
+			_box("paint", Vector3(0.34, 0.06, 0.34), lamp + Vector3(0, 2.25, 0), Color("#1d1e1f"))
+	if rng.randf() < 0.25:
+		# A 3 x 5 ft flag on a 5 ft pole, its bracket by the door at 45 degrees.
+		var side := 1.0 if door_x <= dx else -1.0
+		var base := Vector3(door_x - side * 1.1, 2.3, fz - 0.06)
+		var out := Vector3(0, 0.7071, -0.7071)
+		_box("paint", Vector3(0.03, 0.03, 1.5), base + out * 0.75, Color("#c9c3a8"), Basis(Vector3.RIGHT, PI * 0.25))
+		var a := base + out * 0.35
+		var b := base + out * 1.45
+		var drop := Vector3(0, -0.9, 0)
+		for f in [-1.0, 1.0]:
+			var o := Vector3(f * 0.012, 0, 0)
+			# Thirteen stripes read as pink from the street: three bands and the canton.
+			for k in 3:
+				var t0 := drop * (k / 3.0)
+				var t1 := drop * ((k + 1) / 3.0)
+				_quad("paint", a + t0 + o, b + t0 + o, b + t1 + o, a + t1 + o,
+					Color("#b22234") if k != 1 else Color("#f2efe8"), [], Vector3(f, 0, 0))
+			var c0 := a + o * 1.6
+			var c1 := a + (b - a) * 0.4 + o * 1.6
+			_quad("paint", c0, c1, c1 + drop * 0.53, c0 + drop * 0.53, Color("#3c3b6e"), [], Vector3(f, 0, 0))
+
+
+## A round bed of loose ground (mulch) of radius `r`, its edge cut clean.
+func _mulch_ring(c: Vector2, r: float, col: Color) -> void:
+	col.a = 1.0
+	var n := 14
+	var mid := Vector3(c.x, 0.07, c.y)
+	for k in n:
+		var a0 := TAU * k / n
+		var a1 := TAU * (k + 1) / n
+		var p0 := Vector3(c.x + cos(a0) * r, 0.07, c.y + sin(a0) * r)
+		var p1 := Vector3(c.x + cos(a1) * r, 0.07, c.y + sin(a1) * r)
+		for v in [mid, p0, p1]:
+			_flat.set_normal(Vector3.UP)
+			_flat.set_color(col)
+			_flat.set_uv(Vector2(v.x, v.z) * 0.25)
+			_flat.add_vertex(v)
 
 
 ## The working side of a real house: the air conditioner's condenser on its
