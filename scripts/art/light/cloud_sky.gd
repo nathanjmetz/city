@@ -18,15 +18,10 @@ extends RefCounted
 ## Clouds drift (TIME) only from High up: a sky that changes every frame
 ## re-renders the scene's skylight every frame. Below that they stand still.
 
-const CODE := """
-shader_type sky;
+## The clouds' shape, shared by the sky and their shadows on the land, so
+## each shadow lies under its own cloud.
+const COMMON := """
 #MOVING
-
-uniform vec3 top_color : source_color = vec3(0.17, 0.36, 0.70);
-uniform vec3 horizon_color : source_color = vec3(0.74, 0.79, 0.84);
-uniform float curve = 0.12;
-uniform sampler2D stars : source_color, filter_linear;
-uniform float stars_alpha = 0.0;
 uniform float cover = 0.15;
 uniform vec2 drift = vec2(0.0);
 // Cloud base height and wind, in metres and metres per second.
@@ -74,6 +69,23 @@ float cloud(vec2 m, float c) {
 	return cloud2(m, c).x;
 }
 
+
+// Where the cloud field is now (metres), wind and all.
+vec2 cloud_offset(float time) {
+	vec2 off = drift;
+#ifdef MOVING
+	off += wind * time;
+#endif
+	return off;
+}
+"""
+
+const CODE := "shader_type sky;\n" + COMMON + """
+uniform vec3 top_color : source_color = vec3(0.17, 0.36, 0.70);
+uniform vec3 horizon_color : source_color = vec3(0.74, 0.79, 0.84);
+uniform float curve = 0.12;
+uniform sampler2D stars : source_color, filter_linear;
+uniform float stars_alpha = 0.0;
 void sky() {
 	vec3 d = EYEDIR;
 	float up = clamp(d.y, -1.0, 1.0);
@@ -91,13 +103,10 @@ void sky() {
 	vec4 st = texture(stars, SKY_COORDS);
 	col += st.rgb * st.a * stars_alpha;
 	if (up > 0.0) {
-		vec2 off = drift;
-#ifdef MOVING
-		off += wind * TIME;
-#endif
-		// Where this sight line meets the cloud base.
-		float t = base_m / max(up, 0.035);
-		vec2 m = d.xz * t + off;
+		// Where this sight line meets the cloud base: the clouds hang over
+		// the land, so they pass overhead as the camera moves.
+		float t = max(base_m - POSITION.y, 200.0) / max(up, 0.035);
+		vec2 m = POSITION.xz + d.xz * t + cloud_offset(TIME);
 		vec2 cl = cloud2(m, cover);
 		float dens = cl.x;
 		if (dens > 0.001) {
@@ -132,11 +141,8 @@ void sky() {
 		float disc = 1.0 - smoothstep(0.0040, 0.0050, r);
 		float clear = 1.0;
 		if (up > 0.0) {
-			vec2 off = drift;
-#ifdef MOVING
-			off += wind * TIME;
-#endif
-			clear = 1.0 - cloud(d.xz * (base_m / max(up, 0.035)) + off, cover);
+			float t = max(base_m - POSITION.y, 200.0) / max(up, 0.035);
+			clear = 1.0 - cloud(POSITION.xz + d.xz * t + cloud_offset(TIME), cover);
 		}
 		col = mix(col, sun_c * 6.0, disc * clear * day);
 	}
@@ -152,3 +158,67 @@ static func make(moving: bool) -> ShaderMaterial:
 	var m := ShaderMaterial.new()
 	m.shader = sh
 	return m
+
+
+## Cloud shadows on everything below (Forward+ only): a pass over the
+## finished picture that finds where each pixel is in the world, looks
+## up the sun to the cloud base and darkens what lies under a cloud. Real
+## photos from a plane over Indiana farmland show it: dark islands a few
+## hundred metres across drifting over fields and towns, soft at the edge.
+## Under a cloud the sun's direct light goes; the sky's light stays, so a
+## cloud shadow is about as dark as the shade of a house (it isn't a
+## light: the pass multiplies, so already shaded ground darkens a little
+## too, as it does when the sunlit ground around it stops bouncing light
+## in). Haze in front of a far shadow hides it, as it hides the land.
+const SHADOW := "shader_type spatial;\nrender_mode unshaded, blend_mul, depth_draw_never, depth_test_disabled, cull_disabled, fog_disabled, shadows_disabled;\n" + COMMON + """
+uniform sampler2D depth_tex : hint_depth_texture, filter_nearest;
+uniform vec3 to_sun = vec3(0.0, 1.0, 0.0);
+// How much of the light on open ground is the sun's (the rest is sky).
+uniform float sun_share = 0.62;
+uniform float fog_density = 0.00016;
+
+void vertex() {
+	POSITION = vec4(VERTEX.xy, 1.0, 1.0);
+}
+
+void fragment() {
+	float depth = texture(depth_tex, SCREEN_UV).x;
+	vec3 mul = vec3(1.0);
+	if (depth > 0.0 && to_sun.y > 0.02 && cover > 0.01) {
+		vec4 v = INV_PROJECTION_MATRIX * vec4(SCREEN_UV * 2.0 - 1.0, depth, 1.0);
+		v.xyz /= v.w;
+		vec3 w = (INV_VIEW_MATRIX * vec4(v.xyz, 1.0)).xyz;
+		// Up the sun's ray to the cloud base.
+		float s = max(base_m - w.y, 0.0) / to_sun.y;
+		vec2 m = w.xz + to_sun.xz * s + cloud_offset(TIME);
+		float big = noise(m / 5200.0);
+		float n = fbm(m / 1400.0) * 0.8 + big * 0.35;
+		float thr = mix(0.80, 0.28, cover);
+		// Softer than the cloud's own edge: the sun is half a degree across
+		// and thin cloud lets some through.
+		float sh = smoothstep(thr - 0.02, thr + 0.12, n);
+		float clear_air = exp(-fog_density * length(v.xyz));
+		float day = smoothstep(0.02, 0.2, to_sun.y);
+		mul = vec3(1.0 - sun_share * sh * clear_air * day);
+	}
+	ALBEDO = mul;
+}
+"""
+
+
+## The full-screen cloud shadow pass (see SHADOW).
+static func make_shadow(moving: bool) -> MeshInstance3D:
+	var sh := Shader.new()
+	sh.code = SHADOW.replace("#MOVING", "#define MOVING" if moving else "")
+	var mat := ShaderMaterial.new()
+	mat.shader = sh
+	mat.render_priority = -100
+	var quad := QuadMesh.new()
+	quad.size = Vector2(2, 2)
+	var mi := MeshInstance3D.new()
+	mi.mesh = quad
+	mi.material_override = mat
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	mi.extra_cull_margin = 16384.0
+	mi.custom_aabb = AABB(Vector3(-1e6, -1e6, -1e6), Vector3(2e6, 2e6, 2e6))
+	return mi
