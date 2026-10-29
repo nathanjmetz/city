@@ -223,6 +223,7 @@ func _process(_delta: float) -> void:
 	snow = lerpf(snow, float(c[1]) if snowing else 0.0, 0.02)
 	fog = lerpf(fog, float(c[2]), 0.01)
 	sky.weather_haze = 1.0 + (FOG_HAZE - 1.0) * fog
+	sky.set_cover(cover)
 	# Overcast: a flatter, greyer, dimmer picture, but only past broken
 	# cloud: a partly cloudy day keeps the full sun and shadows. Lighter than
 	# it was (an overcast 0.7 lost 15% brightness, 25% colour and half its
