@@ -723,9 +723,14 @@ static func county_row(row: int, year: int) -> Dictionary:
 		"cover_prev": false, "narrow": false}
 
 
-## A farm's tillage habit, from the farm alone (its leader's schooling
-## tilts it toward no-till, as with cover crops in CropPlan).
+## A farm's tillage habit: what its leader picked (CropPlan), else from
+## the farm alone (its leader's schooling tilts it toward no-till).
 static func farm_practice(id: int, f: Dictionary) -> int:
+	# The leader's pick each January (CropPlan.plan_till).
+	match str(f.get("till", "")):
+		"no_till": return NO_TILL
+		"chisel": return CHISEL
+		"beans_no_till": return BEANS_NO_TILL
 	var h := h01(id, 0, 21)
 	var edu := float(f.get("leader", {}).get("edu", 0.5))
 	h = clampf(h - (edu - 0.5) * 0.3, 0.0, 0.999)
