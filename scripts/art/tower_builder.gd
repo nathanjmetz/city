@@ -381,6 +381,40 @@ func _tw_alley(w: float, zb: float, ground_h: float, floor_h: float, storeys: in
 	_box("paint", Vector3(0.5, 2.2, 0.05), Vector3(fx + run * 0.5 + 0.5, ground_h - 1.3, fz + 1.2), steel)
 
 
+## The back of a postwar tower's base, where the building is served: two
+## truck docks with black seals and yellow bumpers off a concrete apron, a
+## steel service door under a small canopy, the trash compactor, and the
+## utility's pad-mounted transformer in its green cabinet behind bollards
+## (a downtown office of this size takes its power at medium voltage).
+## Own random numbers; the small parts are desktop only.
+func _tw_dock(w: float, zb: float) -> void:
+	var r := RandomNumberGenerator.new()
+	r.seed = hash([rng.seed, "dock"])
+	var dx := r.randf_range(-w * 0.3, w * 0.05)
+	var room := depth - zb
+	if room > 3.0:
+		_flat_rect("drive", dx - 6.5, dx + 6.5, zb, zb + minf(room - 0.3, 14.0), 0.075)
+	for k in 2:
+		var x := dx - 3.0 + k * 6.0
+		_box("paint", Vector3(3.0, 3.2, 0.08), Vector3(x, 1.6 + 1.2, zb + 0.04), Color("#7a7d80"))  # dock door
+		_box("paint", Vector3(3.6, 3.6, 0.3), Vector3(x, 2.6, zb + 0.15), Color("#1d1e1f"))  # seal
+		for e in [-1.0, 1.0]:
+			_box("paint", Vector3(0.3, 0.5, 0.15), Vector3(x + e * 1.2, 1.0, zb + 0.35), Color("#d8b024"))  # bumpers
+	var sx := dx + 7.5
+	_box("paint", Vector3(1.0, 2.2, 0.08), Vector3(sx, 1.1, zb + 0.04), Color("#5a5f63"))
+	_box("paint", Vector3(1.8, 0.12, 1.0), Vector3(sx, 2.6, zb + 0.5), Color("#3a3c3e"))
+	if not fine_parts or room < 3.0:
+		return
+	_box("paint", Vector3(2.4, 1.8, 4.5), Vector3(dx - 10.5, 0.9, zb + 2.3), Color(["#2f5a3a", "#3a4a6a", "#5a5c5e"][r.randi() % 3]))  # compactor
+	_box("paint", Vector3(1.2, 1.2, 0.8), Vector3(dx - 10.5, 1.9, zb + 0.4), Color("#4a4c4e"))  # chute
+	if room > 5.0:
+		var tx := sx + 4.0
+		_box("concrete", Vector3(2.6, 0.15, 2.4), Vector3(tx, 0.08, zb + 2.0), Color("#b9b5ac"))
+		_box("paint", Vector3(2.0, 1.6, 1.8), Vector3(tx, 0.95, zb + 2.0), Color("#56705a"))  # transformer
+		for b in [Vector2(-1.5, 3.6), Vector2(1.5, 3.6), Vector2(1.7, 0.6)]:
+			_box("paint", Vector3(0.18, 1.1, 0.18), Vector3(tx + b.x, 0.55, zb + b.y), Color("#e0b020"))  # bollards
+
+
 ## A Chicago block's light court (width along the street, depth from the
 ## back), or zero when it is built solid.
 var _court := Vector2.ZERO
@@ -455,6 +489,7 @@ func _tw_deco(to_curb: float, width: float, storeys: int) -> void:
 		_tw_far_box(Vector3(tiers[-1][0] - 4.0, 3.5, tiers[-1][1] - 4.0), Vector3(0, fy + 1.75, zf + d * 0.5), stone, 0.0)
 		return
 	_downtown_walk(to_curb, width, zf)
+	_tw_dock(w0, zf + d)
 	var y0 := 0.0
 	var f0 := 0
 	for t in tiers:
@@ -1051,6 +1086,7 @@ func _tw_pomo(to_curb: float, width: float, storeys: int) -> void:
 		_tw_far_box(Vector3(tiers[-1][0] * 0.7, 6.0, tiers[-1][1] * 0.7), Vector3(0, fy + 3.0, cz), TW_COPPER if crown != "spires" else granite, 0.0)
 		return
 	_downtown_walk(to_curb, width, zf)
+	_tw_dock(w - minf(w, d) * 0.3, zf + d)
 	# The base: dark polished granite, tall shop windows, the arched entry.
 	_tw_notched("brick", w, d, cz, 0.0, y_base, base_col, minf(w, d) * 0.14)
 	var bays := maxi(3, roundi(w / 7.0))
@@ -1245,6 +1281,7 @@ func _tw_podium(to_curb: float, width: float, storeys: int) -> void:
 		_tw_far_box(Vector3(tw * 0.62, mech, td * 0.62), Vector3(tx, top + mech * 0.5, tz), Color("#3a3f44"), 0.0)
 		return
 	_downtown_walk(to_curb, width, zf)
+	_tw_dock(pw, zf + pd)
 	# The podium: storefronts at the sidewalk, parking decks above.
 	_box("paint", Vector3(pw, ph, pd), Vector3(0, ph * 0.5, pcz), panel)
 	var shops := maxi(2, roundi(pw / 9.0))
