@@ -147,6 +147,72 @@ func _police(front: float, to_curb: float) -> void:
 	_flat_rect("drive", -w * 0.5, w * 0.5, zf - 3.0, zf, 0.08)
 	_flagpole(Vector3(ex - 4.5, 0, zf - 4.0))
 	_bed(ex + 3.2, zf - 2.0, 3.0)
+	_police_details(w, zf, d, h, ex, trim)
+
+
+## What makes a small-town police station read as one, from photos of
+## Indiana town departments: the roof antenna mast for the county radio
+## system, rooftop units, bollards guarding the lobby glass, the
+## "Safe Exchange Zone" stalls under a camera for online-sale meetups and
+## custody swaps, and out back the staff door with its card reader, high
+## security windows and wall packs over the cruiser yard.
+func _police_details(w: float, zf: float, d: float, h: float, ex: float, trim: Color) -> void:
+	var r := RandomNumberGenerator.new()
+	r.seed = hash([rng.seed, "police_details"])
+	var steel := Color("#9a9d9f")
+	var dark := Color("#3a3c3e")
+	# Roof: two packaged units, a hatch, and the antenna mast near a corner.
+	for i in 2:
+		var p := Vector3(-w * 0.25 + i * w * 0.4 + r.randf_range(-1.0, 1.0), h, zf + d * r.randf_range(0.35, 0.65))
+		_box("metal", Vector3(2.2, 1.1, 1.5), p + Vector3(0, 0.55, 0), Color("#b9bcbc"))
+		_box("paint", Vector3(1.0, 0.08, 1.0), p + Vector3(0, 1.14, 0), dark)
+		_box("paint", Vector3(0.5, 0.4, 0.5), p + Vector3(0, 0.2, 1.1), steel)  # duct curb
+	_box("paint", Vector3(0.9, 0.3, 0.9), Vector3(w * 0.3, h + 0.15, zf + d * 0.8), dark)
+	var m := Vector3(w * 0.5 - 2.0, h, zf + d - 2.0)
+	_box("paint", Vector3(1.2, 0.25, 1.2), m + Vector3(0, 0.12, 0), steel)  # non-penetrating sled
+	var mh := r.randf_range(6.0, 8.0)
+	_cylinder("paint", m, 0.06, mh, steel, 8)
+	for k in 3:  # standoff arms with whip antennas (VHF, the 800 MHz system)
+		var y := m.y + mh * (0.55 + k * 0.17)
+		var a := k * TAU / 3.0 + 0.4
+		var out := Vector3(cos(a), 0, sin(a))
+		_box("paint", Vector3(0.9, 0.05, 0.05), m + out * 0.45 + Vector3(0, y - m.y, 0), steel, Basis(Vector3.UP, -a))
+		_cylinder("paint", m + out * 0.9 + Vector3(0, y - m.y, 0), 0.015, r.randf_range(1.2, 2.4), Color("#e8e8e2"), 4)
+	_cylinder("paint", m + Vector3(0, mh, 0), 0.03, 1.8, Color("#e8e8e2"), 4)
+	# Concrete-filled bollards in front of the lobby glass.
+	for i in 4:
+		var x := ex - 2.4 + i * 1.6
+		_cylinder("paint", Vector3(x, 0, zf - 3.4), 0.13, 1.0, Color("#e9e7e0"), 8)
+		_cylinder("paint", Vector3(x, 0.95, zf - 3.4), 0.14, 0.08, Color("#2e4f8a"), 8)
+	# Safe Exchange Zone: two stalls at the end of the row, a sign and a pole camera.
+	var sx := -14.2 if ex > 0.0 else 7.8  # the end two stalls of the row
+	for i in 2:
+		var x0 := sx + i * 2.75
+		_flat_rect("line", x0 + 0.12, x0 + 2.63, zf - 8.3, zf - 3.1, 0.065, Color("#2e5aa8"))
+		for k in 3:  # the stencilled words
+			_flat_rect("line", x0 + 0.6, x0 + 2.15, zf - 6.9 + k * 0.7, zf - 6.6 + k * 0.7, 0.068, LINE)
+	var sp := Vector3(sx + 2.75, 0, zf - 2.7)
+	_box("paint", Vector3(0.07, 2.4, 0.07), sp + Vector3(0, 1.2, 0), steel)
+	_box("paint", Vector3(0.75, 0.9, 0.04), sp + Vector3(0, 2.0, -0.05), Color("#2e5aa8"))
+	_box("paint", Vector3(0.6, 0.25, 0.02), sp + Vector3(0, 2.15, -0.08), Color("#f2f0ea"))
+	var cp := Vector3(sx - 0.6, 0, zf - 2.6)
+	_cylinder("paint", cp, 0.09, 5.0, Color("#5c5f61"), 8)
+	_box("paint", Vector3(0.18, 0.18, 0.42), cp + Vector3(0, 4.7, -0.25), Color("#e8e8e2"))
+	# Back wall: high slit windows, the staff door with its canopy and card
+	# reader, and wall packs lighting the yard.
+	var zb := zf + d
+	_window_row(-w * 0.2, zb, w * 0.45, 2.8, 0.55, 4, trim, Vector3.BACK)
+	var dx := w * 0.5 - 4.0 - r.randf_range(0.0, 3.0)
+	_box("paint", Vector3(1.0, 2.15, 0.06), Vector3(dx, 1.08, zb + 0.03), Color("#5b6a72"))
+	_box("paint", Vector3(0.1, 0.14, 0.02), Vector3(dx + 0.38, 1.05, zb + 0.07), Color("#c9c4b8"))
+	_box("paint", Vector3(1.9, 0.14, 1.2), Vector3(dx, 2.75, zb + 0.6), trim)
+	_box("paint", Vector3(1.8, 0.15, 1.6), Vector3(dx, 0.08, zb + 0.8), CONCRETE)
+	_box("paint", Vector3(0.12, 1.1, 0.12), Vector3(dx - 1.4, 0.55, zb + 1.5), dark)  # reader pedestal
+	_box("paint", Vector3(0.14, 0.2, 0.06), Vector3(dx - 1.4, 1.05, zb + 1.43), Color("#1c1d1f"))
+	for x in [-w * 0.35, 0.0, w * 0.35]:
+		_box("paint", Vector3(0.4, 0.3, 0.25), Vector3(x, h - 0.9, zb + 0.13), dark)
+	_box("paint", Vector3(0.16, 0.16, 0.36), Vector3(w * 0.5 - 0.3, h - 0.6, zb + 0.2), Color("#e8e8e2"))
+	_box("paint", Vector3(0.16, 0.16, 0.36), Vector3(-w * 0.5 + 0.3, h - 0.6, zf - 0.2), Color("#e8e8e2"))
 
 
 # ---------------------------------------------------------------- station growth
