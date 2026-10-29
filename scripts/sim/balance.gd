@@ -277,7 +277,7 @@ const LEVEL_DOWN_AFTER := 2880
 ## frame carries them, as many prewar blocks' did), for these types. The
 ## rest rebuild. A guess at a real mix; no survey counts additions.
 const ADD_ON_PERCENT := 50
-const ADD_ON_TYPES := ["office"]
+const ADD_ON_TYPES := ["office", "mixed_use"]
 ## Share of owners keen to build on: DEVELOP_KEEN plus DEVELOP_KEEN_WEALTH
 ## times the neighborhood's wealth (0 to 1), so about half at 0.5.
 const DEVELOP_KEEN := 0.25
