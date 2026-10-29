@@ -87,6 +87,9 @@ static func material() -> StandardMaterial3D:
 	if _mat == null:
 		_mat = StandardMaterial3D.new()
 		_mat.vertex_color_use_as_albedo = true
+		# The member colours are sRGB hex like every swatch; read as linear
+		# they drew pale (lumber near white, tilt-up panels paper white).
+		_mat.vertex_color_is_srgb = true
 		_mat.roughness = 0.85
 	return _mat
 
