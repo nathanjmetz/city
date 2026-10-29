@@ -3395,3 +3395,22 @@ const PATROL_BUNCH_HOURS := 4
 const PATROL_TRIES := 4
 ## With cars switched off: the streets one car covers in a shift.
 const PATROL_STREETS_PER_SHIFT := 40
+
+# --- Golf carts on town streets (TownLaws golf_carts) ------------------------
+## Carts keep off roads faster than this (Indiana keeps them off state
+## highways; towns allow them on their own streets): a faster road counts
+## CART_FAST_MULT times its drive for a cart, so it only crosses one.
+const CART_MAX_MPH := 35
+const CART_FAST_MULT := 8.0
+## The longest hop an owner takes by cart, metres (about two miles).
+const CART_TRIP_MAX := 3200.0
+## Owners are mostly retirees: someone this old in the home.
+const CART_OWNER_AGE := 55
+## About one such home in eight buys one where a town allows them, a few a
+## month.
+const CART_SHARE := 0.12
+const CART_PER_MONTH := 6
+## Residents petition once the town has this many people, this many of them
+## old enough.
+const CART_ASK_POP := 400
+const CART_ASK_OLDER := 40

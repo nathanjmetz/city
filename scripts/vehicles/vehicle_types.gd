@@ -47,6 +47,9 @@ const SPECS := {
 	"rv":            {"len": 9.40, "width": 2.45, "height": 3.45, "acc": 1.0, "brake": 2.4, "top_speed": 31.0, "pref": 0.93},
 	"motorhome":     {"len": 11.30, "width": 2.55, "height": 3.80, "acc": 0.9, "brake": 2.3, "top_speed": 31.0, "pref": 0.92},
 	"pickup_camper": {"len": 6.70, "width": 2.40, "height": 3.30, "acc": 1.3, "brake": 2.6, "top_speed": 36.0, "pref": 0.95},
+	# A street-legal four-seat golf cart: about 20 mph flat out (Club Car
+	# Onward, E-Z-GO Express S4), driven gently round town.
+	"golf_cart":     {"len": 2.75, "width": 1.25, "height": 1.95, "acc": 1.4, "brake": 2.5, "top_speed": 8.9, "pref": 0.85},
 	# A horse at a trot: about 10 mph, slowest thing on the road.
 	"buggy":         {"len": 5.60, "width": 1.70, "height": 2.40, "acc": 0.8, "brake": 2.0, "top_speed": 4.5, "pref": 0.80},
 	"tow_truck":     {"len": 7.00, "width": 2.40, "height": 2.80, "acc": 1.3, "brake": 2.6, "top_speed": 36.0, "pref": 0.97},
@@ -130,6 +133,9 @@ const LIVERY := {
 	"rv": [[Color(0.38, 0.27, 0.18), 3.0], [Color(0.25, 0.27, 0.30), 3.0], [Color(0.12, 0.22, 0.40), 1.0], [Color(0.50, 0.10, 0.08), 1.0]],
 	"motorhome": [[Color(0.38, 0.27, 0.18), 3.0], [Color(0.25, 0.27, 0.30), 3.0], [Color(0.12, 0.22, 0.40), 1.0]],
 	"buggy": [[Color(0.04, 0.04, 0.05), 1.0]],
+	# Golf carts: white and tan mostly, then the bright ones owners pick.
+	"golf_cart": [[Color(0.93, 0.93, 0.91), 4.0], [Color(0.80, 0.74, 0.60), 2.0], [Color(0.10, 0.30, 0.18), 1.0],
+		[Color(0.70, 0.08, 0.07), 1.0], [Color(0.10, 0.22, 0.50), 1.0], [Color(0.06, 0.06, 0.07), 1.0]],
 	"tow_truck": [[Color(0.92, 0.92, 0.91), 1.0], [Color(0.70, 0.07, 0.07), 1.0], [Color(0.05, 0.05, 0.06), 1.0]],
 	# John Deere green, Case IH red, New Holland blue.
 	"tractor": [[Color(0.21, 0.49, 0.17), 5.0], [Color(0.70, 0.08, 0.07), 3.0], [Color(0.10, 0.28, 0.58), 1.0]],
