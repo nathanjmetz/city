@@ -35,6 +35,8 @@ var sky_mat := ProceduralSkyMaterial.new()
 ## The desktop app's sky with clouds (CloudSky); null in the browser, which
 ## draws sky_mat. sky_mat still holds the colours either way.
 var clouds: ShaderMaterial
+## Their shadows on the land (CloudSky.make_shadow), with them.
+var cloud_shadows: MeshInstance3D
 var _sky: Sky
 var _moving := false
 ## 0 in full daylight, 1 at full night. DayNight reads it.
@@ -306,6 +308,12 @@ func _use_clouds(moving: bool) -> void:
 	clouds.set_shader_parameter("drift", off)
 	_clouds_colors()
 	_sky.sky_material = clouds
+	if cloud_shadows != null:
+		cloud_shadows.queue_free()
+	cloud_shadows = CloudSky.make_shadow(moving)
+	add_child(cloud_shadows)
+	_shadow_param("cover", cov)
+	_shadow_param("drift", off)
 
 
 func _clouds_colors() -> void:
@@ -324,6 +332,12 @@ func set_cover(c: float) -> void:
 		return
 	if absf(float(clouds.get_shader_parameter("cover")) - c) > 0.004:
 		clouds.set_shader_parameter("cover", c)
+		_shadow_param("cover", c)
+
+
+func _shadow_param(key: String, v: Variant) -> void:
+	if cloud_shadows != null:
+		(cloud_shadows.material_override as ShaderMaterial).set_shader_parameter(key, v)
 
 
 static func _near(a: Color, b: Color) -> bool:
@@ -377,3 +391,8 @@ func _fit_haze(cam: Camera3D) -> void:
 	var h := maxf(cam.global_position.y - Terrain.ground_y(cam.global_position.x, cam.global_position.z), 1.0)
 	var share := HAZE_LAYER / h * (1.0 - exp(-h / HAZE_LAYER))
 	env.fog_density = HAZE_DENSITY * share * haze_scale * weather_haze
+	if cloud_shadows != null:
+		_shadow_param("fog_density", env.fog_density)
+		# Toward the sun (a directional light shines down its -Z); the moon
+		# casts no cloud shadows worth drawing.
+		_shadow_param("to_sun", sun.global_basis.z if darkness < 0.5 else Vector3.DOWN)
