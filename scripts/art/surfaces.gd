@@ -539,17 +539,17 @@ const PHOTOS := {
 	"asphalt": ["clean_asphalt", 2.1, 1.6],
 	"concrete": ["brushed_concrete", 2.5, 0.6],
 }
-static var _photo_mats := {}  # material -> photo key
+static var _photo_mats := {}  # material -> {uniform prefix: photo key}
 static var _photo_hooked := false
 
 
 static func asphalt() -> ShaderMaterial:
-	return _photo(_make("asphalt", ASPHALT, {}), "asphalt")
+	return with_photo(_make("asphalt", ASPHALT, {}), "asphalt")
 
 
 ## Sidewalk slabs with joints, or plain cast concrete (curbs, bridges).
 static func concrete(color: Color, slabs := false) -> ShaderMaterial:
-	return _photo(_make("concrete %s %s" % [color, slabs], CONCRETE,
+	return with_photo(_make("concrete %s %s" % [color, slabs], CONCRETE,
 			{"base": color, "joints": 1.0 if slabs else 0.0}), "concrete")
 
 
@@ -562,34 +562,43 @@ static func photo_level() -> float:
 	return 1.0
 
 
-static func _photo(mat: ShaderMaterial, key: String) -> ShaderMaterial:
-	if _photo_mats.has(mat):
+static func with_photo(mat: ShaderMaterial, key: String, prefix := "photo") -> ShaderMaterial:
+	if not _photo_mats.has(mat):
+		_photo_mats[mat] = {}
+	if _photo_mats[mat].has(prefix):
 		return mat
-	_photo_mats[mat] = key
-	_photo_apply(mat, key, photo_level())
+	_photo_mats[mat][prefix] = key
+	_photo_apply(mat, key, photo_level(), prefix)
 	if not _photo_hooked and GraphicsQuality.current:
 		_photo_hooked = true
 		GraphicsQuality.current.changed.connect(func():
 			var level := photo_level()
 			for m in _photo_mats:
-				_photo_apply(m, _photo_mats[m], level))
+				for pre in _photo_mats[m]:
+					_photo_apply(m, _photo_mats[m][pre], level, pre))
 	return mat
+
+
+## The photo block under another name, for a shader that lays two scans
+## (a lot's asphalt beside its concrete walks). Needs turn() defined.
+static func photo_code(prefix: String) -> String:
+	return PHOTO.replace("photo", prefix)
 
 
 ## The scans load the first time a tier shows them, so Low and Medium
 ## machines never hold them in memory.
-static func _photo_apply(mat: ShaderMaterial, key: String, level: float) -> void:
+static func _photo_apply(mat: ShaderMaterial, key: String, level: float, prefix := "photo") -> void:
 	var spec: Array = PHOTOS[key]
 	var base: String = PHOTO_DIR + spec[0]
-	if level > 0.0 and mat.get_shader_parameter("photo_albedo") == null:
+	if level > 0.0 and mat.get_shader_parameter(prefix + "_albedo") == null:
 		if not ResourceLoader.exists(base + "_diff.jpg"):
 			return
-		mat.set_shader_parameter("photo_albedo", load(base + "_diff.jpg"))
-		mat.set_shader_parameter("photo_normal", load(base + "_nor_gl.jpg"))
-		mat.set_shader_parameter("photo_rough", load(base + "_rough.jpg"))
-		mat.set_shader_parameter("photo_size", spec[1])
-		mat.set_shader_parameter("photo_bump", spec[2])
-	mat.set_shader_parameter("photo", level if mat.get_shader_parameter("photo_albedo") != null else 0.0)
+		mat.set_shader_parameter(prefix + "_albedo", load(base + "_diff.jpg"))
+		mat.set_shader_parameter(prefix + "_normal", load(base + "_nor_gl.jpg"))
+		mat.set_shader_parameter(prefix + "_rough", load(base + "_rough.jpg"))
+		mat.set_shader_parameter(prefix + "_size", spec[1])
+		mat.set_shader_parameter(prefix + "_bump", spec[2])
+	mat.set_shader_parameter(prefix, level if mat.get_shader_parameter(prefix + "_albedo") != null else 0.0)
 
 
 static func gravel() -> ShaderMaterial:
