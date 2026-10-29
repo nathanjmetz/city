@@ -1796,6 +1796,8 @@ func _gable_roof(cx: float, cz: float, base: float, span: float, rise: float, le
 		# Underside (soffit) and the fascia board along the eave.
 		_quad("paint", eave_l, eave_r, ridge_r, ridge_l, SOFFIT, [], Vector3.DOWN)
 		_quad("paint", eave_l, eave_r, eave_r + Vector3(0, 0.2, 0), eave_l + Vector3(0, 0.2, 0), TRIM, [], outward)
+	if roofing == "roof" and gutters and span >= 6.0:
+		_roof_kit(cx, cz, base + rise + 0.12, span, rise, length, ridge_x)
 	# Gable-end triangles in siding, and rake boards.
 	for end in [-1.0, 1.0]:
 		var a: float = end * length * 0.5
@@ -1808,6 +1810,43 @@ func _gable_roof(cx: float, cz: float, base: float, span: float, rise: float, le
 			var e: Vector3 = to_world.call(end * hl, s * hs, base - drop)
 			var p: Vector3 = to_world.call(end * hl, 0.0, base + rise)
 			_quad("paint", e, p, p + Vector3(0, 0.14, 0) + up, e + Vector3(0, 0.14, 0) + up, TRIM, [], endward)
+
+
+## What sits on a real house's main roof: a ridge cap of folded shingles
+## (or a continuous ridge vent on newer houses), a pair of square "turtle"
+## attic vents on the back slope of older ones, and the plumbing stack (a
+## 3 in pipe in its lead boot). Picked from where the roof is, not the
+## builder's dice, so plan_info and the drawn plan never drift apart.
+func _roof_kit(cx: float, cz: float, top: float, span: float, rise: float, length: float, ridge_x: bool) -> void:
+	var along := Vector3.RIGHT if ridge_x else Vector3.BACK
+	var back := Vector3.BACK if ridge_x else Vector3.RIGHT  # the slope away from the street
+	var pitch := atan2(rise, span * 0.5)
+	var n := (Vector3.UP * cos(pitch) + back * sin(pitch)).normalized()
+	var on_slope := Basis(along, n, along.cross(n))
+	var h := fposmod(sin(cx * 12.9898 + cz * 78.233 + length) * 43758.5453, 1.0)
+	var ridge := Vector3(cx, top, cz)
+	var cap := Vector3(length, 0.06, 0.34) if ridge_x else Vector3(0.34, 0.06, length)
+	var shingle := Color("#3d3c3a")
+	if era == "recent":
+		# Ridge vent: a raised cap stopping a few feet short of each end.
+		var vent := Vector3(length - 1.2, 0.09, 0.4) if ridge_x else Vector3(0.4, 0.09, length - 1.2)
+		_box("paint", vent, ridge + Vector3(0, 0.035, 0), shingle)
+		_box("paint", cap, ridge + Vector3(0, 0.0, 0), shingle.lightened(0.06))
+	else:
+		_box("paint", cap, ridge + Vector3(0, 0.0, 0), shingle.lightened(0.06))
+		var metal := Color("#2b2c2e") if h < 0.6 else Color("#8d9092")
+		for k in [-0.28, 0.22]:
+			var run := 0.75  # down the slope from the ridge
+			var p: Vector3 = ridge + along * (length * k + (h - 0.5) * 0.8) + back * run * cos(pitch) - Vector3(0, run * sin(pitch), 0)
+			_box("paint", Vector3(0.46, 0.16, 0.46), p + n * 0.05, metal, on_slope)
+	# The plumbing stack, halfway down the back, over the kitchen or bath
+	# (a house's roof, not a garage's).
+	if span < 7.5:
+		return
+	var run2 := span * 0.25
+	var s := ridge + along * (length * (h - 0.5) * 0.5) + back * run2 * cos(pitch) - Vector3(0, run2 * sin(pitch), 0)
+	_box("paint", Vector3(0.36, 0.03, 0.36), s + n * 0.005, Color("#6f7275"), on_slope)
+	_box("paint", Vector3(0.09, 0.42, 0.09), s + Vector3(0, 0.17, 0), Color("#1f1f20"))
 
 
 func _hip_roof(cx: float, cz: float, base: float, w: float, d: float, rise: float, roof: Color) -> void:
@@ -1832,6 +1871,8 @@ func _hip_roof(cx: float, cz: float, base: float, w: float, d: float, rise: floa
 	var tri := [Vector2(-hz, 0), Vector2(hz, 0), Vector2(0, end_slope)]
 	_tri("roof", c[1] + up, c[2] + up, rr + up, roof, tri, Vector3.UP)
 	_tri("roof", c[3] + up, c[0] + up, rl + up, roof, tri, Vector3.UP)
+	if ridge > 1.5:
+		_roof_kit(cx, cz, y1 + 0.12, d, rise, ridge * 2.0, true)
 	var center := Vector3(cx, y0, cz)
 	for i in 4:
 		var a: Vector3 = c[i]
