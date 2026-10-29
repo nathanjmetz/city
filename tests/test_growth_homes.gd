@@ -61,6 +61,13 @@ func _init() -> void:
 				_check(out.size() >= 3 and _inside(HouseBuilder.last_masses, w * 0.5, 50.0),
 					"%s garden apartments on a %d m lot fit it" % [era, w])
 	MetroBuilder.force_row = ""
+	# A commercial block across two storefront lots.
+	for era in ["prewar", "postwar"]:
+		for w in [24.0, 30.0, 34.0]:
+			for storeys in [3, 4]:
+				var out := MainBlock.build(7, 3.9, {"width": w, "depth": 45.0, "era": era}, storeys)
+				_check(out.size() >= 3 and _inside(HouseBuilder.last_masses, w * 0.5, 45.0),
+					"%s commercial block on a %d m lot fits it" % [era, w])
 	_check(styles.size() == 5, "every kind of duplex and the fourplex come up (%s)" % str(styles.keys()))
 	print("FAILED" if failed else "ALL PASSED")
 	quit(1 if failed else 0)

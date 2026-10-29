@@ -139,6 +139,7 @@ func _init() -> void:
 		sim.tick()
 	_check(int(sim.buildings[face[3]].focc) > 0, "people move into the flats (%d of %d)" % [sim.buildings[face[3]].focc, flats])
 
+
 	# Growing up the path: a house adds a storey, keeping its family.
 	var home := ""
 	for k in sim.buildings:
@@ -158,6 +159,7 @@ func _init() -> void:
 	copy.simulate_traffic = false
 	_check(copy.buildings[face[3]].type == "mixed_use" and copy.buildings[home].level == 1
 		and copy.buildings[face[3]].flats == flats, "save keeps building types and stages")
+
 	for i in 2000:
 		sim.tick()
 		copy.tick()
@@ -168,6 +170,22 @@ func _init() -> void:
 		if JSON.stringify(da[k]) != JSON.stringify(db.get(k)):
 			diff.append(k)
 	_check(diff.is_empty(), "copies stay in sync %s" % str(diff))
+
+	# In a county-seat market, a Main Street owner buys out the one-storey
+	# shop next door and builds one commercial block across both lots.
+	sim.market.regional = 20_000
+	var packed := _crowd(sim, face[3], 70)
+	sim.buildings[face[3]] = BuildingTypes.make(sim, face[3], sim.buildings[face[3]], "mixed_use", 1)
+	var before_w: float = sim.lots[face[3]].width
+	var wants := BuildingTypes.wider_stage(sim, face[3])
+	_check(wants == ["commercial_block", 0], "a busy Main Street block wants a wider front (%s, %.1f m)" % [str(wants), before_w])
+	var front := BuildingTypes.assemble(sim, face[3])
+	_check(front != "" and sim.lots[face[3]].width > before_w,
+		"its owner buys the lot next door (%s, %.1f -> %.1f m)" % [front, before_w, sim.lots[face[3]].width])
+	_check(BuildingTypes.options(sim, face[3]).has(["commercial_block", 0]), "and can build one block across both")
+	sim.market.regional = 0
+	for k in packed:
+		sim.buildings.erase(k)
 
 
 	# Old saves: buildings without a type are the plain type of their zone.
@@ -281,6 +299,7 @@ func _test_far() -> void:
 	_check(BuildingTypes.assemble(sim, key) == "", "no tower sites outside a city's core")
 	for k in crowd:
 		sim.buildings.erase(k)
+
 
 
 ## How often each type comes up for a lot, over many owners.
