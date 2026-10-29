@@ -144,6 +144,11 @@ const DASH_PX := 9.0  # dash length on screen
 const SHARP_DEG := 60.0
 var _align_lines := []  # [from, to]: the dotted lines the point lined up on
 var _angle_labels: Array[Label3D] = [Label3D.new(), Label3D.new()]  # at the start and end
+## CS2-style slope readout on the steepest stretch of the road being drawn,
+## amber past the road type's AASHTO maximum grade (RoadStyle "grade").
+var _grade_label := Label3D.new()
+const GRADE_STATION := 30.48  # grades are read over a 100 ft survey station
+const GRADE_AMBER := Color(1.0, 0.72, 0.2)
 var _left_down := false  # the left button went down on the map, not on a panel
 var _press_at := Vector2.ZERO  # where on screen it went down
 ## The last grid plan, kept while the shape and cursor stay put.
@@ -205,6 +210,12 @@ func _ready() -> void:
 		l.no_depth_test = true
 		l.visible = false
 		add_child(l)
+	for prop in ["billboard", "fixed_size", "pixel_size", "outline_size", "font", "outline_modulate", "no_depth_test"]:
+		_grade_label.set(prop, _angle_labels[0].get(prop))
+	_grade_label.font_size = 30
+	_grade_label.offset = Vector2(0, -60)  # under the road, clear of the cursor readout
+	_grade_label.visible = false
+	add_child(_grade_label)
 	set_mode(mode)
 
 
@@ -354,6 +365,7 @@ func _process(_delta: float) -> void:
 	_label.modulate = Color(1, 1, 1)
 	for l in _angle_labels:
 		l.visible = false
+	_grade_label.visible = false
 	_dots.visible = false
 	_centre.visible = false
 	_cursor.visible = hit != null and mode != Mode.NONE
@@ -1227,6 +1239,54 @@ func _dashes(lines: Array) -> void:
 	_guide.visible = true
 
 
+## The road's steepest grade, on the ground as the road is draped on it plus
+## any bridge or overpass height, read over a 100 ft station the way road
+## profiles are (AASHTO). Hidden on level ground (under 1%).
+func _show_grade(pieces: Array) -> void:
+	var g := steepest_grade(pieces, func(p: Vector3) -> float: return Terrain.base_y(p.x, p.z))
+	if g.grade < 0.005:
+		return
+	var steep: bool = g.grade > float(RoadStyle.TYPES[road_type].grade) + 0.0005
+	_grade_label.text = "%d%% grade" % roundi(g.grade * 100.0)
+	_grade_label.modulate = GRADE_AMBER if steep else Color(1, 1, 1)
+	_grade_label.position = Terrain.lift(g.at) + Vector3(0, 2, 0)
+	_grade_label.visible = true
+
+
+## Steepest grade along road pieces ([p0, p1, p2] curves) and where it is:
+## {grade (rise over run), at}. `height` gives the ground (road base) height
+## under a point; a point's own y is its height above that (a bridge).
+static func steepest_grade(pieces: Array, height: Callable) -> Dictionary:
+	var pts: Array[Vector3] = []
+	var raw: Array[Vector3] = []
+	for q in pieces:
+		var line := RoadNetwork.sample_curve(q[0], q[1], q[2], 32)
+		for p in line:
+			if pts.is_empty() or Vector2(p.x - pts[-1].x, p.z - pts[-1].z).length() > 0.5:
+				pts.append(Vector3(p.x, p.y + float(height.call(p)), p.z))
+				raw.append(p)
+	var best := {"grade": 0.0, "at": raw[0] if not raw.is_empty() else Vector3.ZERO}
+	if pts.size() < 2:
+		return best
+	var along := PackedFloat32Array([0.0])
+	for i in range(1, pts.size()):
+		along.append(along[i - 1] + Vector2(pts[i].x - pts[i - 1].x, pts[i].z - pts[i - 1].z).length())
+	var station := minf(GRADE_STATION, along[-1])
+	if station < 1.0:
+		return best
+	var j := 0
+	for i in pts.size():
+		while j < pts.size() - 1 and along[j] - along[i] < station:
+			j += 1
+		var run := along[j] - along[i]
+		if run < station - 0.01:
+			break
+		var g := absf(pts[j].y - pts[i].y) / run
+		if g > best.grade:
+			best = {"grade": g, "at": raw[i].lerp(raw[j], 0.5)}
+	return best
+
+
 ## The angle a new road makes with the roads where it starts and ends, the
 ## smaller side, flagged when sharper than AASHTO's 60°.
 func _show_angles(curve: Array) -> void:
@@ -1301,10 +1361,9 @@ func _show_length(curve: Array) -> void:
 	if r < 2000.0:
 		_label.text += "\nCurve safe at %d mph" % RoadStyle.safe_speed_mph(r)
 	if absf(curve[2].y) > 0.1 or absf(curve[0].y) > 0.1:
-		var flat := Vector2(curve[2].x - curve[0].x, curve[2].z - curve[0].z).length()
-		_label.text += "\nHeight %+d ft, grade %d%%" % [roundi(curve[2].y * FT),
-			roundi(absf(curve[2].y - curve[0].y) / maxf(flat, 0.1) * 100.0)]
+		_label.text += "\nHeight %+d ft" % roundi(curve[2].y * FT)
 	var plan := _plan(curve)
+	_show_grade(plan.pieces if plan.ok else [curve])
 	if plan.ok and plan.crossed > 0:
 		var top := 0.0
 		for q in plan.pieces:
