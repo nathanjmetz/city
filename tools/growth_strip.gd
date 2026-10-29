@@ -5,7 +5,8 @@ extends SceneTree
 ## (BuildingView.build_for). For the growth-stage art loop.
 ## Run: godot -s tools/growth_strip.gd -- out.png <ladder> [seed] [era] [yaw pitch dist]
 ## Ladders: office, apartments, main (shop to Main Street block), homes
-## (house to row homes to walk-up). Era: postwar (default) or prewar.
+## (house to row homes to walk-up), house (a house building on, then a
+## duplex and a fourplex). Era: postwar (default), prewar or recent.
 
 const LADDERS := {
 	# [type, level, FAR it's built under]
@@ -16,8 +17,10 @@ const LADDERS := {
 	"forms": [["office", 4, 16.0, "chicago"], ["office", 4, 16.0, "deco"], ["office", 4, 16.0, "glass"], ["office", 4, 16.0, "pomo"], ["office", 4, 16.0, "podium"]],
 	"homeforms": [["apartments", 4, 6.6, "glass"], ["apartments", 4, 6.6, "podium"], ["apartments", 3, 4.4, "podium"], ["apartments", 3, 4.4, "glass"]],
 	"homes": [["house", 0, 0.9], ["house", 1, 0.9], ["row_home", 0, 1.2], ["row_home", 1, 1.2], ["apartments", 0, 2.0]],
+	# A house building on, then turned into a duplex and a fourplex.
+	"house": [["house", 0, 0.9], ["house", 1, 0.9], ["house", 2, 0.9], ["duplex", 0, 0.9], ["duplex", 1, 0.9]],
 }
-const BASE_W := {"office": 30.0, "apartments": 30.0, "mixed_use": 20.0, "shop": 20.0, "house": 20.0, "row_home": 24.0}
+const BASE_W := {"office": 30.0, "apartments": 30.0, "mixed_use": 20.0, "shop": 20.0, "house": 20.0, "duplex": 22.0, "row_home": 24.0}
 const DEPTH := 55.0
 
 var _frames := 0
@@ -66,7 +69,7 @@ func _init() -> void:
 		if st.size() > 3:
 			meshes = TowerBuilder.build_tower(seed * 100 + i, 3.9, {"width": w, "depth": DEPTH, "era": era}, storeys, {}, st[3], st[0] == "apartments")
 		else:
-			meshes = BuildingView.build_for(st[0], storeys, seed * 100 + i, 3.9, {"width": w, "depth": DEPTH, "era": era}, {}, units)
+			meshes = BuildingView.build_for(st[0], storeys, seed * 100 + i, 3.9, {"width": w, "depth": DEPTH, "era": era}, {}, units, "general", st[1])
 		var at := Vector3(x - w * 0.5, 0, 0)
 		x -= w + 6.0
 		for m in meshes.slice(0, 2):

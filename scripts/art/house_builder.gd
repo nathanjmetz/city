@@ -106,6 +106,7 @@ var _back_z := -INF  # the furthest back anything built so far reaches (for the 
 var _mass_back_z := -INF  # the same for building masses only
 var _masses := []  # the building masses' footprints (Rect2 in lot x/z), for tree spacing
 var _glass_log := []  # [centre, right, width, height] of each pane and opening, so trim can keep off them
+var _deck := Rect2()  # while a plan is drawn: its back deck or patio and steps (lot x/z)
 var pad := 0.0
 var era := "recent"
 var _cell_seed := 0  # the street block this lot is in (its builder)
@@ -125,6 +126,9 @@ static var owner_care := 0
 ## True for a building in a protected historic district (or under an
 ## easement): its front is restored, as the rehab tax credit's standards ask.
 static var restored := false
+## How far the owner has built on (BuildingView sets it around a build from
+## the building's stage): 1 adds a wing out back (Home with addition).
+static var grown := 0
 ## Set by BuildingView around a build: the drawing comes back as its
 ## surfaces' arrays (MeshParts, the mesh's "parts" meta: [[material name,
 ## arrays], ...]) on an empty mesh, never sent to the graphics chip. The view
@@ -220,6 +224,8 @@ func _house(to_curb: float, storeys := 0) -> Array:
 	var info: Dictionary = body.info.duplicate()
 	if owner_care <= -2:
 		_board_up(body.arrays.get("glass", []))
+	if grown >= 1:
+		_addition(info, body.paint)
 	_yard(info, to_curb)
 	if owner_care >= 1:
 		_improve()
@@ -230,6 +236,124 @@ func _house(to_curb: float, storeys := 0) -> Array:
 	_front_yard(info)
 	_drive_hoop(info)
 	return [_commit_house(), _commit_flat(), trees]
+
+
+## Home with addition (HouseBuilder.grown): the owner has built on out back
+## over the old deck or patio, the way most Midwestern additions go up (a
+## rear addition keeps the front yard and setback zoning asks for). One of
+## three, from the lot's own dice so the rest of the lot is drawn as
+## before: a gable-roofed family room, a three-season sunroom of glass on a
+## knee wall under a low shed roof (Patio Enclosures, Four Seasons), or on a
+## two-storey house a two-storey rear wing (a primary suite over a family
+## room). Siding and roofing match the house, as a builder matches them.
+func _addition(h: Dictionary, paint: Dictionary) -> void:
+	if not h.has("deck") or outline.size() >= 3 or pad > 0.0:
+		return
+	var deck: Rect2 = h.deck
+	var z0 := deck.position.y
+	# The house wall it builds on: the mass the deck stands behind.
+	var wall := Rect2()
+	for m: Rect2 in _masses:
+		if absf(m.end.y - z0) < 0.6 and m.position.x <= deck.get_center().x and m.end.x >= deck.get_center().x:
+			wall = m
+	if wall.size.x < 5.0:
+		return
+	var own := RandomNumberGenerator.new()
+	own.seed = hash([rng.seed, "addition"])
+	var was := rng
+	rng = own
+	var kind: String = ["family", "family", "sunroom", "wing"][own.randi() % 4]
+	var aw := clampf(maxf(deck.size.x + 0.6, own.randf_range(4.2, 6.6)), 4.2, wall.size.x - 0.6)
+	var ad := maxf(deck.size.y + 0.3, own.randf_range(3.8, 5.4))
+	if z0 + ad > depth - 5.0:
+		ad = depth - 5.0 - z0
+	if ad < deck.size.y + 0.3 or ad < 3.2:
+		rng = was
+		return
+	var cx := clampf(deck.get_center().x, wall.position.x + aw * 0.5 + 0.3, wall.end.x - aw * 0.5 - 0.3)
+	var x0 := cx - aw * 0.5
+	var x1 := cx + aw * 0.5
+	var z1 := z0 + ad
+	var cz := z0 + ad * 0.5
+	var siding: Color = paint.siding
+	var roof: Color = paint.roof
+	var sill := 0.45
+	_box("concrete", Vector3(aw + 0.1, sill, ad + 0.05), Vector3(cx, sill * 0.5, cz + 0.02), FOUNDATION)
+	match kind:
+		"sunroom":
+			# A knee wall, then glass all round in white aluminium frames.
+			var knee := 0.75
+			var top := sill + 2.45
+			_box("siding", Vector3(aw, knee, ad), Vector3(cx, sill + knee * 0.5, cz), siding)
+			_box("paint", Vector3(aw + 0.08, 0.08, ad + 0.04), Vector3(cx, sill + knee + 0.04, cz + 0.02), TRIM)
+			var gh := top - sill - knee - 0.2
+			var gy := sill + knee + 0.1 + gh * 0.5
+			for face in [[Vector3(cx, gy, z1), Vector3(1, 0, 0), aw], [Vector3(x1, gy, cz), Vector3(0, 0, -1), ad],
+					[Vector3(x0, gy, cz), Vector3(0, 0, 1), ad]]:
+				var c: Vector3 = face[0]
+				var right: Vector3 = face[1]
+				var span: float = face[2]
+				var n := maxi(2, roundi(span / 1.2))
+				var pw := span / n
+				var out := right.cross(Vector3.UP)
+				for i in n:
+					var pc := c + right * (-span * 0.5 + pw * (i + 0.5)) + out * 0.02
+					_glass(pc, right, pw - 0.12, gh - 0.1, 0.0)
+				for i in n + 1:
+					var mc := c + right * (-span * 0.5 + pw * i) + out * 0.05
+					_box("paint", Vector3(0.08, gh, 0.08), mc, TRIM)
+				_box("paint", Vector3(0.1, 0.1, 0.1) + (right.abs() * span), c + Vector3(0, gh * 0.5 + 0.05, 0) + out * 0.05, TRIM)
+			# A low shed roof off the house wall: white insulated panels or
+			# shingles to match.
+			var panel := own.randf() < 0.5
+			_back_shed(cx, aw + 0.5, z0, ad + 0.35, top, 0.7, TRIM.darkened(0.06) if panel else roof)
+			_box("paint", Vector3(0.95, 2.05, 0.06), Vector3(x0 + 0.8, sill + 1.03, z1 + 0.04), TRIM)
+		"wing":
+			var top := sill + 5.25
+			_box("siding", Vector3(aw, top - sill, ad), Vector3(cx, (sill + top) * 0.5, cz), siding)
+			_corners(x0, x1, z0, z1, sill, top)
+			_gable_roof(cx, cz + 0.15, top, aw, aw * 0.28, ad + 0.3, false, roof, siding)
+			for y in [sill + 1.6, sill + 4.15]:
+				_window(Vector3(cx - aw * 0.22, y, z1), Vector3(1, 0, 0), 0.9, 1.35, true, false, TRIM)
+				_window(Vector3(cx + aw * 0.22, y, z1), Vector3(1, 0, 0), 0.9, 1.35, true, false, TRIM)
+				_window(Vector3(x1, y, cz), Vector3(0, 0, -1), 0.9, 1.35, true, false, TRIM)
+				_window(Vector3(x0, y, cz), Vector3(0, 0, 1), 0.9, 1.35, true, false, TRIM)
+		_:
+			var top := sill + 2.6
+			_box("siding", Vector3(aw, top - sill, ad), Vector3(cx, (sill + top) * 0.5, cz), siding)
+			_corners(x0, x1, z0, z1, sill, top)
+			_gable_roof(cx, cz + 0.15, top, aw, minf(aw * 0.27, 1.5), ad + 0.3, false, roof, siding)
+			# A patio door out to the yard, and windows down the sides.
+			var dx := cx + (aw * 0.25 if own.randf() < 0.5 else -aw * 0.25)
+			_box("paint", Vector3(1.95, 2.25, 0.04), Vector3(dx, sill + 1.1, z1), TRIM)
+			_glass(Vector3(dx, sill + 1.05, z1 + 0.03), Vector3(1, 0, 0), 1.8, 2.1, own.randf_range(0.0, 0.3))
+			_window(Vector3(cx - (dx - cx), sill + 1.6, z1), Vector3(1, 0, 0), 0.9, 1.35, true, false, TRIM)
+			for s in [-1.0, 1.0]:
+				var x: float = x1 if s > 0.0 else x0
+				var right := Vector3(0, 0, -s)
+				for i in maxi(1, floori(ad / 2.4)):
+					_window(Vector3(x, sill + 1.6, z0 + (i + 1) * ad / (floori(ad / 2.4) + 1)), right, 0.9, 1.35, true, false, TRIM)
+	# A new patio off the back, a step down from the door.
+	if kind != "wing" and z1 + 3.0 < depth - 2.0:
+		_box("concrete", Vector3(minf(aw, 4.2), 0.1, 2.6), Vector3(cx, 0.05, z1 + 1.3), FOUNDATION.lightened(0.05))
+	rng = was
+
+
+## A low shed roof over a rear addition: high at the house wall (z0),
+## sloping down `drop` toward the back over `run`.
+func _back_shed(cx: float, w: float, z0: float, run: float, y: float, drop: float, roof: Color) -> void:
+	var up := Vector3(0, 0.1, 0)
+	var a := Vector3(cx - w * 0.5, y + drop, z0)
+	var b := Vector3(cx + w * 0.5, y + drop, z0)
+	var c := Vector3(cx + w * 0.5, y, z0 + run)
+	var d := Vector3(cx - w * 0.5, y, z0 + run)
+	var len := Vector2(run, drop).length()
+	_quad("roof", a + up, b + up, c + up, d + up, roof,
+		[Vector2(-w * 0.5, 0), Vector2(w * 0.5, 0), Vector2(w * 0.5, len), Vector2(-w * 0.5, len)], Vector3.UP)
+	_quad("paint", d, c, b, a, SOFFIT, [], Vector3.DOWN)
+	_quad("paint", d + up, c + up, c + Vector3(0, -0.12, 0), d + Vector3(0, -0.12, 0), TRIM, [], Vector3.BACK)
+	for e in [[a, d, Vector3.LEFT], [b, c, Vector3.RIGHT]]:
+		_quad("paint", e[0], e[1], e[1] + up, e[0] + up, TRIM, [], e[2])
 
 
 ## What an Indiana street is full of: a basketball goal at the side of the
@@ -593,7 +717,7 @@ func _placed(body: Dictionary, gs: float, zf: float, paint: Dictionary, dx := 0.
 	var masses := []
 	for m: Rect2 in body.masses:
 		masses.append(Rect2((-m.end.x if gs < 0.0 else m.position.x) + dx, m.position.y + zf, m.size.x, m.size.y))
-	return {"arrays": arrays, "info": _placed_info(body.info, gs, zf, dx), "reach": body.reach + zf,
+	return {"arrays": arrays, "info": _placed_info(body.info, gs, zf, dx), "paint": paint, "reach": body.reach + zf,
 		"back_z": body.back_z + zf, "mass_back_z": body.mass_back_z + zf, "masses": masses}
 
 
@@ -632,7 +756,7 @@ static func _placed_info(info: Dictionary, gs: float, zf: float, dx := 0.0) -> D
 			"x0": v = (-info.x1 if gs < 0.0 else v) + dx
 			"x1": v = (-info.x0 if gs < 0.0 else v) + dx
 			"bed": v = [-v[1] + dx, -v[0] + dx] if gs < 0.0 else [v[0] + dx, v[1] + dx]
-			"keep_out":
+			"keep_out", "deck":
 				var r: Rect2 = v
 				v = Rect2((-r.end.x if gs < 0.0 else r.position.x) + dx, r.position.y + zf, r.size.x, r.size.y)
 		out[k] = v
@@ -751,6 +875,7 @@ func _draw_plan(key: Array, wide: float, room: float, storeys: int) -> Dictionar
 	_back_z = -INF
 	_mass_back_z = -INF
 	_masses = []
+	_deck = Rect2()
 	# Drawn in stand-in paint (see _plan). The elevation, shutters or not
 	# and how much brick, comes with the plan.
 	var siding: Color = STAND_IN.siding
@@ -796,6 +921,8 @@ func _draw_plan(key: Array, wide: float, room: float, storeys: int) -> Dictionar
 		"cape": info = _cape(zf, gs, siding, roof, shutters, shutter, door)
 		"midcentury": info = _midcentury(zf, gs, gw, roof, door, brick)
 		_: info = _ranch(zf, gs, gw, siding, roof, shutters, shutter, door, brick_style, brick)
+	if _deck.size.x > 0.0:
+		info.deck = _deck
 	var arrays := {}
 	for mat in _st:
 		arrays[mat] = _st[mat].commit_to_arrays()
@@ -1784,6 +1911,7 @@ func _stoop(x: float, zf: float, w: float, d: float, h: float) -> void:
 ## once the deck is over 30 in up (IRC R312). It reaches back (+z) from the
 ## wall at `zb`.
 func _rear_deck(x: float, zb: float, sill: float) -> void:
+	_deck = Rect2(x - 1.9, zb, 3.8, 3.0 if sill <= 0.45 else 3.0 + ceilf(sill / 0.19) * 0.27)
 	if sill <= 0.45:
 		_box("concrete", Vector3(3.6, 0.1, 3.0), Vector3(x, 0.05, zb + 1.5), FOUNDATION)
 		_box("concrete", Vector3(1.6, sill, 0.5), Vector3(x, sill * 0.5, zb + 0.25), FOUNDATION)

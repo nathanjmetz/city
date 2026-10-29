@@ -208,7 +208,7 @@ func _draw() -> void:
 
 static func _colour(b: Dictionary) -> Color:
 	match str(b.type):
-		"house", "row_home": return FRAME
+		"house", "duplex", "row_home": return FRAME
 		"factory": return IRON
 		"office": return STONE if int(b.storeys) >= 5 else BRICK
 	return BRICK

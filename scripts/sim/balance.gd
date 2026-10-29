@@ -186,6 +186,14 @@ const CORE_RADIUS := 200.0
 ## Row homes appear once this many buildings stand within CORE_RADIUS (land
 ## too dear for a detached house on every lot), apartments from DENSE_CORE.
 const ROW_HOME_DENSITY := 30
+## Duplexes: buildings within CORE_RADIUS before an owner builds or turns a
+## house into one (the older blocks near the centre of a small town, where
+## doubles stand among houses), how often a new home is one (a weight
+## against the house's ~1), and how well-off an area must be for owners to
+## build on out back (Home with addition).
+const DUPLEX_DENSITY := 15
+const DUPLEX_PICK := 0.12
+const ADDITION_WEALTH := 0.35
 const DENSE_CORE := 20
 ## What gets built follows the market, not just the block (Brawn
 ## 2026-10-24): the people within commuting reach of the town, its own and
@@ -206,6 +214,9 @@ const DENSE_CORE := 20
 ##     building; 5-8 storeys is a regional center's downtown.
 const MARKET_MIN := {
 	"row_home": [50_000, 100_000],
+	# ACS: a few doubles in towns of 1,500 or so; fourplexes once a market
+	# reaches a county-seat town's size.
+	"duplex": [1500, 5000],
 	"apartments": [10_000, 25_000, 100_000, 150_000, 400_000],
 	"mixed_use": [0, 5000, 15_000],
 	"office": [10_000, 25_000, 50_000, 150_000, 1_000_000],
@@ -2895,7 +2906,7 @@ const HERITAGE_FULL_YEARS := 25
 ## How much character each kind of building carries when it is old. Real
 ## county surveys (Indiana's Historic Sites and Structures Inventory) rate
 ## Main Street commercial blocks and old homes highest, plain offices lowest.
-const HERITAGE_TYPE_WEIGHT := {"house": 1.0, "row_home": 1.0, "mixed_use": 1.2, "shop": 0.8,
+const HERITAGE_TYPE_WEIGHT := {"house": 1.0, "duplex": 1.0, "row_home": 1.0, "mixed_use": 1.2, "shop": 0.8,
 	"apartments": 0.6, "office": 0.4, "factory": 0.7}
 ## Land value lift at full charm for an old building on its own, and for one
 ## inside a protected local historic district. Studies of US local districts

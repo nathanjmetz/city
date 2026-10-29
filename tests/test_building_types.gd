@@ -75,6 +75,22 @@ func _init() -> void:
 	var units: int = row.units
 	_check(units == maxi(2, floori(sim.lots[key].width / 7.5)) and row.cap == units * 3,
 		"row homes split the lot into narrow homes (%d on %.1f m)" % [units, sim.lots[key].width])
+	# Near the middle of a town with a market for them, some owners build
+	# a duplex, and a house can be turned into one; a hamlet's can't.
+	sim.market.regional = 3000
+	var dup := _picks(sim, key, ZoneMap.Zone.RESIDENTIAL, rng)
+	_check(dup.has("duplex") and dup.get("house", 0) > dup.duplex, "a small town's older blocks get a few duplexes (%s)" % str(dup))
+	var was_home = sim.buildings.get(key)
+	sim.buildings[key] = BuildingTypes.make(sim, key, {"zone": ZoneMap.Zone.RESIDENTIAL, "seed": 5, "built": 0, "occ": 0}, "house", 2)
+	_check(BuildingTypes.options(sim, key).has(["duplex", 0]), "a house there can become a duplex")
+	var four := BuildingTypes.make(sim, key, sim.buildings[key], "duplex", 1)
+	_check(four.cap >= 8 and BuildingTypes.load_of(four) == 2, "a fourplex houses four families (%d)" % four.cap)
+	sim.market.regional = 0
+	_check(not BuildingTypes.options(sim, key).has(["duplex", 0]), "a hamlet's houses stay houses")
+	if was_home == null:
+		sim.buildings.erase(key)
+	else:
+		sim.buildings[key] = was_home
 	for k in crowd:
 		sim.buildings.erase(k)
 

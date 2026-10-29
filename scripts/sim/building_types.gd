@@ -36,10 +36,24 @@ const IND := ZoneMap.Zone.INDUSTRIAL
 ## storeys × cover, or storeys × plate ÷ lot area for a tower: under the
 ## area's FAR a tower needs a big lot, so towers assemble lots (assemble()).
 const TYPES := {
-	"house": {"zone": RES, "name": "House", "becomes": ["row_home"], "cover": 0.25, "stages": [
+	"house": {"zone": RES, "name": "House", "becomes": ["duplex", "row_home"], "cover": 0.25, "stages": [
 		# A ranch, colonial or split-level (storeys 0: the seed picks).
 		{"name": "Family home", "storeys": 0, "cap": [2, 4]},
 		{"name": "Two-storey home", "storeys": 2, "cap": [4, 5]},
+		# The owner builds on out back: a family room, sunroom or a
+		# two-storey rear wing (NAHB: additions are about a third of
+		# remodeling jobs on Midwestern homes over 30 years old).
+		{"name": "Home with addition", "storeys": 2, "cap": [5, 6]},
+	]},
+	# A two-family house: a postwar side-by-side ranch duplex, a recent
+	# two-storey one, or on prewar streets an up-and-down two-family
+	# (Milwaukee's duplex flats, Indianapolis's doubles), and then a
+	# fourplex (four flats in two storeys, a stair hall in the middle).
+	# Census ACS: 2-4 unit buildings are 5-8% of homes in Indiana towns of
+	# 2,500-10,000, a few in smaller ones.
+	"duplex": {"zone": RES, "name": "Duplex", "becomes": ["row_home", "apartments"], "cover": 0.3, "stages": [
+		{"name": "Duplex", "storeys": 0, "cap": [4, 7]},
+		{"name": "Fourplex", "storeys": 2, "cap": [8, 11], "load": 2},
 	]},
 	# A real row-house lot is 6-8 m wide (20-25 ft).
 	"row_home": {"zone": RES, "name": "Row homes", "unit_w": 7.5, "cover": 0.4, "stages": [
@@ -271,6 +285,9 @@ static func pick(sim, key: String, zone: int, rng: RandomNumberGenerator) -> Arr
 	match zone:
 		RES:
 			weights.append(["house", maxf(0.2, 1.0 - dens / 80.0) * (0.5 + rich), "Room for a house and yard"])
+			if c.density >= Balance.DUPLEX_DENSITY and market_for(c, "duplex") > 0.0:
+				weights.append(["duplex", Balance.DUPLEX_PICK * (1.2 - rich) * market_for(c, "duplex"),
+					"Close to town, a house built for two families"])
 			if c.density >= Balance.ROW_HOME_DENSITY and market_for(c, "row_home") > 0.0:
 				weights.append(["row_home", clampf((dens - Balance.ROW_HOME_DENSITY) / 30.0 + 0.4, 0.0, 1.5)
 					* (1.3 - rich) * market_for(c, "row_home"), "A big market, and land is dear here, so homes share walls"])
@@ -389,6 +406,9 @@ static func _stage_ok(sim, b: Dictionary, type: String, level: int, c: Dictionar
 		return false
 	match [type, level]:
 		["house", 1]: return true
+		["house", 2]: return c.wealth >= Balance.ADDITION_WEALTH
+		["duplex", 0]: return c.density >= Balance.DUPLEX_DENSITY and c.wealth < 0.75
+		["duplex", 1]: return c.density >= Balance.ROW_HOME_DENSITY
 		["row_home", 0]: return c.density >= Balance.ROW_HOME_DENSITY * 2 and c.wealth < 0.7
 		["row_home", 1]: return c.density >= Balance.ROW_HOME_DENSITY + 15
 		["apartments", 1]: return c.density >= Balance.DENSE_CORE + 10
