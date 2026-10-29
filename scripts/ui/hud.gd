@@ -839,8 +839,11 @@ const VIEWS := [
 	["forest", "forest", "Forest", "Woodland for forestry. It grows back."],
 	["fire", "fire", "Fire", "Roads a fire station reaches"],
 	["police", "police", "Police", "Roads police patrol"],
-	["health", "health", "Health", "Roads a clinic reaches"],
+	["health", "health", "Health", "Roads a clinic or hospital reaches"],
 	["school", "school", "Schools", "Roads within reach of a school"],
+	["mail", "mail", "Mail", "Streets the mail reached lately"],
+	["parks", "parks", "Parks", "How far each park lifts the land around it"],
+	["landfill", "landfill", "Landfill", "How far a landfill drags land values down, and a cemetery lifts them"],
 	["traffic", "flow", "Traffic", "How freely traffic moves"],
 	["bus", "bus", "Buses", "Bus routes and stops the depots planned, and how full the buses are"],
 	["network", "tower", "Cell and fiber", "Cell signal across the map, and the streets with fiber"],
@@ -904,6 +907,7 @@ func _show_view(key: String) -> void:
 		service_view.show_kind = cover[key]
 	elif service_tool.kind == ServiceTool.OFF:
 		service_view.show_kind = -1
+	service_view.show_area = {"mail": "mail", "parks": "parks", "landfill": "hubs"}.get(key, "")
 	if bus_view:
 		bus_view.show_routes = key == "bus"
 	if rail_view:
