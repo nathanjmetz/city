@@ -38,6 +38,13 @@ func _process(_delta: float) -> bool:
 	for key in hud._category_buttons:
 		bar += hud._category_buttons[key].get_combined_minimum_size().x + 4
 	_check(bar <= 1280.0, "the bottom bar fits a 1280 px window (%d px)" % roundi(bar))
+	# The Traffic row (shown above the road menus while Traffic is open),
+	# measured shown: car-free and the turn rules live there, not in Roads.
+	var was: bool = hud._traffic_row.visible
+	hud._traffic_row.visible = true
+	var tw: float = hud._traffic_row.get_combined_minimum_size().x
+	hud._traffic_row.visible = was
+	_check(tw > 0.0 and tw <= MAX_WIDTH, "the Traffic row is %d px wide" % roundi(tw))
 	for cat in Hud.SERVICE_CATEGORIES:
 		hud.close_all()
 		hud._open(cat)

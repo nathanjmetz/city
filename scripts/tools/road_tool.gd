@@ -394,7 +394,7 @@ func _process(_delta: float) -> void:
 	_px = _metres_per_px(Terrain.lift(hit))
 	_cursor.scale = Vector3.ONE * maxf(1.0, CURSOR_PX * _px / 3.0)
 	_show_dots()
-	if mode == Mode.BULLDOZE or mode == Mode.UPGRADE:
+	if _picking():
 		_preview_pick(hit)
 		return
 	var p: Vector3 = _armed.p if not _armed.is_empty() else _snapped(hit)
@@ -1704,6 +1704,11 @@ func _preview_pick(hit: Vector3) -> void:
 	_preview.visible = true
 
 
+## Bulldoze and Upgrade pick a road (or building) by clicking it.
+func _picking() -> bool:
+	return mode == Mode.BULLDOZE or mode == Mode.UPGRADE
+
+
 func _update_hint() -> void:
 	if mode == Mode.NONE:
 		return
@@ -1751,14 +1756,14 @@ func _update_hint() -> void:
 			text = "Click a road, service building or farmhouse to remove it."
 		Mode.UPGRADE:
 			text = "Click a road to make it %s." % Words.a(Words.mid(RoadStyle.TYPES[road_type].name))
-	if elevation != 0.0 and mode != Mode.BULLDOZE and mode != Mode.UPGRADE:
+	if elevation != 0.0 and not _picking():
 		text += "\n%s: new roads at %+d ft  (Page Up / Page Down)" \
 			% ["Bridge" if elevation > 0.0 else "Tunnel", roundi(elevation * FT)]
 		if elevation > 0.0:
 			text += "\nRoads and track it crosses: it climbs over them, piers and all."
 	if parallel and mode in [Mode.STRAIGHT, Mode.CURVED, Mode.SCURVE]:
 		text += "\nParallel on (P): second road %d ft away  [ ]" % roundi(parallel_gap * FT)
-	if (not snap_roads or not snap_guides) and mode != Mode.BULLDOZE and mode != Mode.UPGRADE:
+	if (not snap_roads or not snap_guides) and not _picking():
 		var off := []
 		if not snap_roads:
 			off.append("onto roads")

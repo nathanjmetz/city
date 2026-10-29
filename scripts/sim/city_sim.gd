@@ -356,6 +356,12 @@ func _init() -> void:
 	# The county seat: county roads count from the courthouse once it stands.
 	parks_changed.connect(func(): streets.seat(self))
 	_hook_pollution()
+	# Car-free streets and other closures follow their road: on to both
+	# pieces when it's cut in two, gone when it's removed or undone (so a
+	# new road given the old id isn't born closed: second reader,
+	# 2026-10-26).
+	network.split.connect(_carry_closure)
+	network.changed.connect(_drop_stale_closures)
 	network.changed.connect(func():
 		_lots_light = true
 		_roads_moved = true
@@ -966,6 +972,28 @@ func _apply_cmd(cmd: Dictionary) -> bool:
 		"heritage":
 			# Protect a historic district, or lift its protection.
 			ok = heritage.set_protected(self, int(cmd.get("district", -1)), bool(cmd.get("protect", true)))
+		"car_free":
+			# A street closed to cars as a walking plaza, or opened to cars
+			# again (CS2's pedestrian streets; Nathan 2026-10-26).
+			var seg := int(cmd.seg)
+			var on := bool(cmd.get("on", true))
+			if on:
+				var cost := car_free_cost(seg)
+				if car_free_problem(seg) != "" or cost > economy.money:
+					return false
+				economy.money -= cost
+				undo.note_car_free(self, seg, cost)
+				traffic.close_segment(seg, true, "night")
+				if not seg in parks.trails.plazas:
+					parks.trails.plazas.append(seg)
+			else:
+				if not seg in parks.trails.plazas:
+					return false
+				traffic.close_segment(seg, false)
+				parks.trails.plazas.erase(seg)
+			parks.trails._rev = ""
+			parks_changed.emit()
+			ok = true
 		"set_junction":
 			# Traffic lights, stop signs or none at a junction (-1 = automatic).
 			ok = traffic.set_rule(int(cmd.node), int(cmd.rule))
@@ -3887,6 +3915,7 @@ func _build_roads(curves: Array, type: int, over: bool, join: bool) -> bool:
 		return false
 	var roads := network.snapshot()
 	var money := economy.money
+	var closures := street_closures()
 	var built := []
 	network.begin_batch()
 	for i in curves.size():
@@ -3904,6 +3933,7 @@ func _build_roads(curves: Array, type: int, over: bool, join: bool) -> bool:
 			network.restore(roads)
 			economy.money = money
 			network.end_batch()
+			put_back_closures(closures)
 			return false
 		built.append_array(pieces)
 	network.end_batch()
@@ -4030,6 +4060,101 @@ static func _off_line(line: PackedVector3Array, p: Vector3) -> float:
 const OVERLAY_NEAR := 2.5
 const OVERLAY_PARALLEL := 0.97
 const OVERLAY_STEP := 4.0
+
+
+## Why a street can't be made car-free, or "" if it can: a town street
+## (not an avenue, a highway or a country road) on the ground, not a bridge
+## or a tunnel, that isn't car-free yet.
+func car_free_problem(seg: int) -> String:
+	if not network.segments.has(seg):
+		return "Click a street."
+	if seg in parks.trails.plazas:
+		return "Already car-free."
+	if traffic.closed.has(seg):
+		# Kept apart from car-free: opening a plaza mustn't open what the
+		# engineer was paid to close (second reviewer 2026-10-29).
+		return "The city engineer already closed this street to through traffic."
+	if not network.segments[seg].type in Balance.PLAZA_TYPES:
+		return "Only town streets can be car-free, not %ss." % RoadStyle.TYPES[network.segments[seg].type].name.to_lower()
+	for p in network.curve_of(seg):
+		if absf(p.y) > 0.5:
+			return "Bridges and tunnels can't be car-free."
+	return ""
+
+
+var _plazas_moved := false
+
+
+## A road cut in two: a closure on it (car-free, or local traffic only)
+## stays on both pieces, and a plaza stays a plaza.
+func _carry_closure(seg: int, first: int, second: int) -> void:
+	if traffic.closed.has(seg):
+		var deliveries: String = str(traffic.closed[seg])
+		traffic.close_segment(seg, false)
+		traffic.close_segment(first, true, deliveries)
+		traffic.close_segment(second, true, deliveries)
+	var plazas: Array = parks.trails.plazas
+	var at := plazas.find(seg)
+	if at != -1:
+		plazas[at] = first
+		plazas.insert(at + 1, second)
+		_plazas_moved = true
+
+
+## Closures and plazas on roads that are gone; and the plazas redrawn if
+## any moved or went.
+func _drop_stale_closures() -> void:
+	for seg in traffic.closed.keys():
+		if not network.segments.has(int(seg)):
+			traffic.close_segment(int(seg), false)
+	var plazas: Array = parks.trails.plazas
+	for seg in plazas.duplicate():
+		if not network.segments.has(int(seg)):
+			plazas.erase(seg)
+			_plazas_moved = true
+		elif not network.segments[int(seg)].type in Balance.PLAZA_TYPES:
+			# Made an avenue (upgraded, or an avenue drawn along it): it's
+			# a road for cars again, and the pavers go with the rebuild
+			# (second reviewer 2026-10-29: car-free avenues).
+			plazas.erase(seg)
+			traffic.close_segment(int(seg), false)
+			_plazas_moved = true
+	if _plazas_moved:
+		_plazas_moved = false
+		parks.trails._rev = ""
+		parks_changed.emit()
+
+
+## The streets closed to cars and the plazas now, to put back when roads
+## taken out for a moment come back (a park closing that didn't let the
+## park grow, an undo). Taking a road out drops them at once.
+func street_closures() -> Dictionary:
+	return {"closed": traffic.closed.duplicate(), "plazas": parks.trails.plazas.duplicate()}
+
+
+## Puts back closures and plazas (street_closures()) on the roads that are
+## there again and are missing them.
+func put_back_closures(k: Dictionary) -> void:
+	for seg in k.get("closed", {}):
+		if network.segments.has(int(seg)) and not traffic.closed.has(int(seg)):
+			traffic.close_segment(int(seg), true, str(k.closed[seg]))
+	var plazas: Array = parks.trails.plazas
+	var moved := false
+	for seg in k.get("plazas", []):
+		if network.segments.has(int(seg)) and not int(seg) in plazas \
+				and network.segments[int(seg)].type in Balance.PLAZA_TYPES:
+			plazas.append(int(seg))
+			moved = true
+	if moved:
+		parks.trails._rev = ""
+		parks_changed.emit()
+
+
+## Pavers, benches and planters, curb to curb, for a car-free street.
+func car_free_cost(seg: int) -> int:
+	if not network.segments.has(seg):
+		return -1
+	return int(RoadNetwork.polyline_length(network.sample_segment(seg)) * Balance.PLAZA_PER_M)
 
 
 func upgrade_cost(seg: int, type: int) -> int:

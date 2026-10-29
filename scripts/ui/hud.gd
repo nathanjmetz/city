@@ -2146,6 +2146,15 @@ func _fill_traffic_row(row: HBoxContainer) -> void:
 		b.pressed.connect(func(): traffic_tool.set_mode(m))
 		turns.add_child(b)
 		_traffic_cards[m] = b
+	# Street rules (CS2's pedestrian streets): click a town street to make
+	# it car-free. Here with the junction rules, so the Roads menu keeps to
+	# its 1000 px (tests/test_build_menus.gd).
+	var rules := _section(row, "Streets  ·  click a town street")
+	var car_free := _card("people", "Car-free", "")
+	car_free.tooltip_text = "Close a town street to cars: a walking plaza where trucks still deliver at night. Click it again to open it."
+	car_free.pressed.connect(func(): traffic_tool.set_mode(TrafficTool.Mode.CAR_FREE))
+	rules.add_child(car_free)
+	_traffic_cards[TrafficTool.Mode.CAR_FREE] = car_free
 
 
 ## A tool's own key for its tooltip, or "" when it has none (the pies reach it).

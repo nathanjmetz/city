@@ -1007,10 +1007,13 @@ func _close_street(sim: CitySim, id: int, req_id: int, which: String, seg: int) 
 	# same tick (not a player command); lots and traffic catch up as after
 	# any road change.
 	var keep := sim.network.snapshot()
+	var closures := sim.street_closures()
 	sim.network.remove_segment(seg)
 	if ground_problem(sim, poly, id) != "":
-		# Something else still stands in the way: the street goes back.
+		# Something else still stands in the way: the street goes back, a
+		# plaza or car-free street with it (second reviewer 2026-10-29).
 		sim.network.restore(keep)
+		sim.put_back_closures(closures)
 		s.why = "Closing the street wasn't enough to grow the park."
 		return true
 	_take(sim, id, which, roundi(to[1].x * to[1].y / 4046.86 * Balance.PARK_LAND_PER_ACRE))
