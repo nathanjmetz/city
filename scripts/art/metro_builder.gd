@@ -118,11 +118,17 @@ func _mb_flats(to_curb: float, width: float, units: int, storeys: int) -> void:
 	var floor_h := 3.2
 	var base := 1.1  # the garden flat is half sunk, so the first floor is up a stoop
 	var grey := rng.randf() < 0.6
+	var row_seed := rng.seed
 	for i in units:
+		# Each building of the row has its own dice, so one drawn a storey
+		# taller (the row's next stage) leaves its neighbours as they were;
+		# a two-flat grown to the three-flat stage gains a storey, never
+		# loses one.
+		rng.seed = hash([row_seed, "flat", i])
 		var cx := -width * 0.5 + 0.5 + (i + 0.5) * uw
 		var bw := uw - 1.0  # a 3 ft gangway down the side
 		var d := rng.randf_range(16.0, 19.0)
-		var n := storeys if rng.randf() < 0.7 else clampi(storeys + (1 if storeys == 2 else -1), 2, 3)
+		var n := storeys if rng.randf() < 0.7 else mini(storeys + 1, 3)
 		var top := base + floor_h * n
 		var front := Color(_pick(MB_GREYSTONE)) if grey else Color(_pick(FACADE_BRICK))
 		var trim := Color(_pick(["#d9d3c3", "#efede6", "#2e2a26"]))
