@@ -121,8 +121,8 @@ const DETAIL_FLOOR := [
 ##   crops / crop_m / crop_shadows: field plants on or off, how far round
 ##     the look spot, and whether corn casts shadows.
 ##   photo: the real-life photographed ground (PhotoGround; desktop only).
-##   understory: shrubs and saplings under the woods' canopy near the
-##     camera (WildView; desktop only).
+##   understory: shrubs and saplings under the woods' canopy, and the
+##     fencerows' brush filled in, near the camera (WildView; desktop only).
 ##   cars_m: how far cars and trucks are drawn; car_near_m: inside it the
 ##     full model, past it the light one; car_detail: the close-up model
 ##     inside TrafficView.ULTRA_NEAR.

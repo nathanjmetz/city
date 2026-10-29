@@ -248,29 +248,37 @@ func _mb_porch(cx: float, w: float, zb: float, base: float, floor_h: float, floo
 ## treads on two stringers and a handrail on the outer side.
 func _mb_flight(a: Vector3, b: Vector3, sw: float, wood: Color, post: Color) -> void:
 	var rise := b.y - a.y
-	var n := maxi(2, ceili(rise / 0.2))
-	for j in range(1, n):
-		var t := float(j) / n
-		_box("paint", Vector3(0.3, 0.04, sw), Vector3(lerpf(a.x, b.x, t), a.y + rise * t, a.z), wood)
 	var run := b.x - a.x
 	var length := Vector2(run, rise).length()
 	var tilt := Basis(Vector3(0, 0, 1), atan2(rise, run))
 	var mid := (a + b) * 0.5
+	if not fine:
+		# The browser: the flight as one sloped run, stringers and all.
+		_box("paint", Vector3(length, 0.2, sw), mid + Vector3(0, -0.05, 0), wood, tilt)
+		_box("paint", Vector3(length, 0.05, 0.05), mid + Vector3(0, 0.9, sw * 0.5 - 0.02), wood, tilt)
+		return
+	var n := maxi(2, ceili(rise / 0.2))
+	for j in range(1, n):
+		var t := float(j) / n
+		_box("paint", Vector3(0.3, 0.04, sw), Vector3(lerpf(a.x, b.x, t), a.y + rise * t, a.z), wood)
 	for s in [-1.0, 1.0]:
 		_box("paint", Vector3(length, 0.24, 0.05), mid + Vector3(0, -0.1, s * (sw * 0.5 - 0.02)), post, tilt)
 	_box("paint", Vector3(length, 0.05, 0.05), mid + Vector3(0, 0.9, sw * 0.5 - 0.02), wood, tilt)
 
 
 ## A porch guard from `a` to `b` (at rail height), on a deck at `floor_y`:
-## top rail, bottom rail and balusters about every 4 in, drawn every 30 cm.
+## top rail, bottom rail and balusters about every 4 in, drawn every 30 cm
+## (desktop).
 func _mb_rail(a: Vector3, b: Vector3, floor_y: float, wood: Color) -> void:
 	var span := a.distance_to(b)
 	var along := (b - a) / span
 	var basis := Basis(along.cross(Vector3.UP), Vector3.UP, along)
 	var mid := (a + b) * 0.5
 	_box("paint", Vector3(0.12, 0.05, span), mid, wood, basis)
-	_box("paint", Vector3(0.06, 0.05, span), Vector3(mid.x, floor_y + 0.1, mid.z), wood, basis)
-	var n := maxi(1, int(span / 0.3))
+	if fine:
+		_box("paint", Vector3(0.06, 0.05, span), Vector3(mid.x, floor_y + 0.1, mid.z), wood, basis)
+	# The browser keeps its triangle budget: a post every 1.2 m, no balusters.
+	var n := maxi(1, int(span / (0.3 if fine else 1.2)))
 	for k in n + 1:
 		var p := a.lerp(b, float(k) / n)
 		_box("paint", Vector3(0.04, a.y - floor_y - 0.1, 0.04), Vector3(p.x, (a.y + floor_y + 0.1) * 0.5, p.z), wood)
@@ -528,6 +536,8 @@ func _mb_five_over_one(to_curb: float, width: float, storeys: int) -> void:
 		_glass(Vector3(x, 2.2, zf - 0.03), Vector3(-1, 0, 0), w / shops - 1.0, 3.4, rng.randf_range(0.0, 0.2))
 	_box("metal", Vector3(w * 0.5, 0.2, 1.6), Vector3(-corner * w * 0.2, ground_h - 0.5, zf - 0.8), frame)
 	_sign(Vector3(-corner * w * 0.2, ground_h - 0.25, zf - 1.62), 4.0, 0.5)
+	if fine_parts:
+		_mb_storefronts(w, zf, ground_h, shops, frame, podium, corner)
 	# The wood floors: bays of panel, every other one stepped out.
 	var bays := maxi(3, roundi(w / 7.5))
 	var bw := w / bays
@@ -617,6 +627,54 @@ func _mb_five_over_one(to_curb: float, width: float, storeys: int) -> void:
 		_mb_condensers(w, d, cz, top, storeys - 1)
 	if depth - (zf + d) > 12.0:
 		_parking(-width * 0.5 + 0.6, width * 0.5 - 0.6, zf + d + 2.0, depth - 1.0, width)
+
+
+## Up close, a five-over-one's ground floor as the aluminium storefront
+## systems of any 2010s-20s mixed-use block build it (Carmel's City
+## Center, Indianapolis's Mass Ave): veneer piers between the shops, a
+## dark bulkhead under the glass, mullions about every 1.5 m, a transom
+## bar, a glass door with its pull in each shop, a blade sign on some; the
+## residents' lobby at the end with its own canopy and address; and a row
+## of bike racks on the walk.
+func _mb_storefronts(w: float, zf: float, ground_h: float, shops: int, frame: Color, podium: Color, corner: float) -> void:
+	var r := RandomNumberGenerator.new()
+	r.seed = hash([rng.seed, "storefronts"])
+	var sw := w / shops
+	var gw := sw - 1.0
+	var pier := podium.darkened(0.25) if r.randf() < 0.5 else Color(_pick(FACADE_BRICK))
+	for i in shops + 1:
+		var px := -w * 0.5 + i * sw
+		px = clampf(px, -w * 0.5 + 0.45, w * 0.5 - 0.45)
+		_box("brick", Vector3(0.9, ground_h, 0.25), Vector3(px, ground_h * 0.5, zf - 0.1), pier)
+	for i in shops:
+		var x := -w * 0.5 + (i + 0.5) * sw
+		_box("paint", Vector3(gw, 0.5, 0.1), Vector3(x, 0.25, zf - 0.06), podium.darkened(0.4))  # bulkhead
+		_box("metal", Vector3(gw, 0.1, 0.1), Vector3(x, 3.0, zf - 0.07), frame)  # transom bar
+		_box("metal", Vector3(gw, 0.08, 0.1), Vector3(x, 3.88, zf - 0.07), frame)  # head
+		var n := maxi(2, int(gw / 1.5))
+		for k in range(1, n):
+			_box("metal", Vector3(0.07, 3.4, 0.1), Vector3(x - gw * 0.5 + k * gw / n, 2.2, zf - 0.07), frame)
+		# The door in one end bay: a darker leaf with its pull.
+		var lobby := (corner > 0.0 and i == shops - 1) or (corner < 0.0 and i == 0)
+		var dx := x + (gw * 0.5 - gw / n * 0.5) * (1.0 if i % 2 == 0 else -1.0)
+		_box("paint", Vector3(gw / n - 0.15, 2.3, 0.06), Vector3(dx, 1.15, zf - 0.09), Color("#25282a"))
+		_box("metal", Vector3(0.05, 0.9, 0.08), Vector3(dx + 0.3, 1.1, zf - 0.16), Color("#c9cbcc"))
+		if lobby:
+			# The residents' lobby: its own canopy and the address over it.
+			_box("metal", Vector3(3.2, 0.18, 1.4), Vector3(dx, 3.15, zf - 0.75), frame)
+			for j in 3:
+				_box("paint", Vector3(0.22, 0.32, 0.04), Vector3(dx - 0.35 + j * 0.35, 3.55, zf - 0.13), Color("#e9e6dc"))
+		elif r.randf() < 0.45:
+			# A blade sign on a bracket out over the walk.
+			_box("metal", Vector3(0.05, 0.05, 1.1), Vector3(x - gw * 0.35, 4.1, zf - 0.6), frame)
+			_box("paint", Vector3(0.06, 0.8, 0.8), Vector3(x - gw * 0.35, 3.6, zf - 0.75), Color(["#7a2e2a", "#2e4a6b", "#2f5a3a", "#d8b45a"][r.randi() % 4]))
+	# Bike racks on the walk (inverted U's).
+	var bx := -corner * (w * 0.5 - 3.0)
+	for k in 3:
+		var x2 := bx + corner * k * 0.9
+		for e in [-0.35, 0.35]:
+			_box("metal", Vector3(0.05, 0.85, 0.05), Vector3(x2, 0.42, zf - 2.2 + e), Color("#3b3e40"))
+		_box("metal", Vector3(0.05, 0.05, 0.75), Vector3(x2, 0.85, zf - 2.2), Color("#3b3e40"))
 
 
 ## A wood-frame apartment block's roof as seen from above: every home has

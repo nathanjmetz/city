@@ -37,6 +37,8 @@ const LADDERS := {
 	# block behind it (a block's depth, and a deeper one).
 	"community": [["shopping_center", 1, 2.2, "", 120.0], ["shopping_center", 2, 2.2, "", 120.0, 0, 62.0], ["shopping_center", 2, 2.2, "", 120.0, 0, 85.0]],
 	"power": [["shopping_center", 3, 2.2, "", 200.0, 0, 60.0], ["shopping_center", 3, 2.2, "", 150.0, 0, 90.0], ["shopping_center", 3, 2.2, "", 120.0, 0, 105.0]],
+	# A Main Street block with storeys added on top (the same block each time).
+	"mainadded": [["mixed_use", 0, 3.0, "", 20.0], ["mixed_use", 1, 5.0, "", 20.0, 2], ["mixed_use", 2, 5.0, "", 20.0, 3], ["mixed_use", 2, 5.0, "", 20.0, 2]],
 	"homes": [["house", 0, 0.9], ["house", 1, 0.9], ["row_home", 0, 1.2], ["row_home", 1, 1.2], ["apartments", 0, 2.0]],
 	# A house building on, then turned into a duplex and a fourplex.
 	# A corner store to shop with flats, then bought out next door: a
