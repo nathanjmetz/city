@@ -158,7 +158,9 @@ static func site_near(network: RoadNetwork, kind: String, hit: Vector3, size_cla
 
 ## Why this ground can't be taken, or "" if it can. `skip` is a site to
 ## leave out (the park that is growing).
-func ground_problem(sim: CitySim, poly: PackedVector2Array, skip := -1) -> String:
+## With `homes_ok`, homes and shops on the ground don't count (land the
+## player could let a park buy).
+func ground_problem(sim: CitySim, poly: PackedVector2Array, skip := -1, homes_ok := false) -> String:
 	for q in poly:
 		if not sim.land_ok(Vector3(q.x, 0.0, q.y)):
 			return "Can't build in the water or on a slope that steep."
@@ -171,7 +173,7 @@ func ground_problem(sim: CitySim, poly: PackedVector2Array, skip := -1) -> Strin
 		if id != skip and _poly_hits(poly, land_polys(id)):
 			return "Overlaps %s." % sites[id].name
 	for key in sim.buildings:
-		if sim.lots.has(key) and not Geometry2D.intersect_polygons(poly, sim.lots[key].corners).is_empty():
+		if not homes_ok and sim.lots.has(key) and not Geometry2D.intersect_polygons(poly, sim.lots[key].corners).is_empty():
 			return "Buildings stand there."
 	for p in _samples(poly):
 		var q := Vector3(p.x, 0.0, p.y)
@@ -549,6 +551,8 @@ static func _sign_up(sim: CitySim) -> void:
 ## Adds the next thing the park wants that fits, or buys land for it.
 func _fill_in(sim: CitySim, id: int, residents: int) -> bool:
 	var s: Dictionary = sites[id]
+	if not s.get("ask", {}).is_empty():
+		return _answer(sim, id)
 	for f in wanted_features(id):
 		if has_feature(id, f.type):
 			continue
@@ -766,6 +770,7 @@ func _grow(sim: CitySim, id: int, need := Vector2.ZERO, extra := 0.0) -> bool:
 		order.sort_custom(func(a, b): return a[0] == "back" and b[0] != "back")
 	elif wide and not deep:
 		order.sort_custom(func(a, b): return a[0] != "back" and b[0] == "back")
+	var homes := []
 	for o in order:
 		var strip: Vector2 = o[2]
 		var area: float = strip.x * strip.y
@@ -774,27 +779,115 @@ func _grow(sim: CitySim, id: int, need := Vector2.ZERO, extra := 0.0) -> bool:
 		var cost := roundi(area / 4046.86 * Balance.PARK_LAND_PER_ACRE)
 		if cost > sim.economy.money:
 			return false
-		if ground_problem(sim, corners(o[1], s.dir, strip), id) != "":
+		var why := ground_problem(sim, corners(o[1], s.dir, strip), id)
+		if why == "Buildings stand there." and homes.is_empty() and _homes_only(sim, corners(o[1], s.dir, strip), id):
+			homes = [o[0], o[1], strip, cost]
+		if why != "":
 			continue
-		sim.economy.money -= cost
-		match o[0]:
-			"left":
-				s.pos -= side * step * 0.5
-				s.size.x += step
-			"right":
-				s.pos += side * step * 0.5
-				s.size.x += step
-			"back":
-				s.pos -= s.dir * step * 0.5
-				s.size.y += step
-		s.grew += 1
-		# Edge pieces were cut to the old outline: they go, and come back
-		# fitted to the new one wherever a road still boxes it in.
-		if not s.get("edge", {}).is_empty():
-			s.edge = {}
-			_take_edges(sim, id)
+		_take(sim, id, o[0], cost)
 		return true
+	# Only homes or shops stand on the land it needs: the park board asks
+	# the player (the permits bell) to let it buy them, as real park boards
+	# buy the houses next door and tear them down to grow a park.
+	if not homes.is_empty():
+		_ask(sim, id, homes)
 	return false
+
+
+## Grows the park one strip to `which` side, paying `cost`.
+func _take(sim: CitySim, id: int, which: String, cost: int) -> void:
+	var s: Dictionary = sites[id]
+	var step := Balance.PARK_GROW_STEP
+	var side := Vector3(-s.dir.z, 0.0, s.dir.x)
+	sim.economy.money -= cost
+	match which:
+		"left":
+			s.pos -= side * step * 0.5
+			s.size.x += step
+		"right":
+			s.pos += side * step * 0.5
+			s.size.x += step
+		"back":
+			s.pos -= s.dir * step * 0.5
+			s.size.y += step
+	s.grew += 1
+	# Edge pieces were cut to the old outline: they go, and come back
+	# fitted to the new one wherever a road still boxes it in.
+	if not s.get("edge", {}).is_empty():
+		s.edge = {}
+		_take_edges(sim, id)
+
+
+## True when what stands on `poly` is only homes or shops (and the strip is
+## otherwise fine): ground the player can let the park buy.
+func _homes_only(sim: CitySim, poly: PackedVector2Array, id: int) -> bool:
+	return ground_problem(sim, poly, id, true) == ""
+
+
+## Files the park board's request to buy the homes on a strip.
+func _ask(sim: CitySim, id: int, homes: Array) -> void:
+	var s: Dictionary = sites[id]
+	if not sim.permits.can_file(sim, "park", id):
+		return
+	var area := []
+	for q in corners(homes[1], s.dir, homes[2]):
+		area.append([q.x, q.y])
+	var n := 0
+	for h in sim.permits.check(sim, area, 0.0, true).get("buildings", []):
+		if h.what == "lot":
+			n += 1
+	var req: int = sim.permits.file(sim, {"hub": "park", "hub_id": id, "leader": str(s.leader.get("name", "The park board")),
+		"title": "Buy %d lot%s next to %s" % [n, "" if n == 1 else "s", s.name],
+		"why": "People here fill the park; the board wants the lots next door to make it bigger.",
+		"area": area, "change": "Homes to park", "per_m2": roundi(Balance.PARK_HOME_PER_M2),
+		"base": int(homes[3]), "budget": maxi(0, int(sim.economy.money))})
+	if req != -1:
+		s.ask = {"req": req, "side": homes[0]}
+		s.why = "The park board asked to buy the homes next door."
+
+
+## The player's answer: on a yes the homes on the land they agreed to are
+## bought and cleared and the park grows over them.
+func _answer(sim: CitySim, id: int) -> bool:
+	var s: Dictionary = sites[id]
+	var state: int = sim.permits.state_of(int(s.ask.req))
+	if state == Permits.State.OPEN:
+		return false
+	var which := str(s.ask.side)
+	var req_id := int(s.ask.req)
+	s.ask = {}
+	if state != Permits.State.APPROVED:
+		if state == Permits.State.DENIED:
+			s.why = "Was told no on the homes next door."
+		return false
+	var outline := PackedVector2Array()
+	for p in sim.permits.requests[req_id].route:
+		outline.append(Vector2(float(p[0]), float(p[1])))
+	var price := 0.0
+	for key in sim.buildings.keys():
+		if sim.parcel_under(key, outline):
+			sim.buildings.erase(key)
+			price += Balance.PARK_HOME_PER_M2 * _poly_area(sim.lots[key].corners)
+	sim.permits.done(req_id)
+	var step := Balance.PARK_GROW_STEP
+	var side := Vector3(-s.dir.z, 0.0, s.dir.x)
+	var to: Array = {"left": [s.pos - side * (s.size.x + step) * 0.5, Vector2(step, s.size.y)],
+		"right": [s.pos + side * (s.size.x + step) * 0.5, Vector2(step, s.size.y)],
+		"back": [s.pos - s.dir * (s.size.y + step) * 0.5, Vector2(s.size.x, step)]}[which]
+	sim.mark_lots_dirty()
+	if ground_problem(sim, corners(to[0], s.dir, to[1]), id) != "":
+		s.why = "The land agreed to wasn't enough to grow the park."
+		return true
+	_take(sim, id, which, roundi(price))
+	s.why = "The park board bought the homes next door and grew the park."
+	return true
+
+
+static func _poly_area(poly: PackedVector2Array) -> float:
+	var a := 0.0
+	for i in poly.size():
+		a += poly[i].cross(poly[(i + 1) % poly.size()])
+	return absf(a) * 0.5
 
 
 ## Scores keep six decimals, so a saved city reloads to exactly the same
@@ -1147,6 +1240,8 @@ func to_dict() -> Dictionary:
 			"size": [s.size.x, s.size.y], "class": s.get("class", 0), "start_area": s.start_area, "founded": s.founded, "features": fs,
 			"score": s.score, "tier": s.tier, "next_feature": s.next_feature, "grew": s.grew,
 			"leader": s.leader, "why": s.why}
+		if not s.get("ask", {}).is_empty():
+			out[str(id)].ask = s.ask
 		if not s.get("edge", {}).is_empty():
 			out[str(id)].edge = CivicHubs.edge_to_save(s.edge)
 	return {"next_id": _next_id, "sites": out, "tourism": tourism.to_dict(), "trails": trails.to_dict()}
@@ -1167,7 +1262,7 @@ func from_dict(d: Dictionary) -> void:
 			"start_area": float(e.start_area), "founded": int(e.get("founded", e.get("built", 0))), "features": fs, "score": float(e.score),
 			"tier": int(e.tier), "next_feature": int(e.next_feature), "grew": int(e.grew),
 			"leader": _leader(e.get("leader", {})), "why": str(e.get("why", "")),
-			"edge": CivicHubs.edge_from_save(e.get("edge", []))}
+			"edge": CivicHubs.edge_from_save(e.get("edge", [])), "ask": Dictionary(e.get("ask", {}))}
 	_next_id = int(d.get("next_id", 1))
 	tourism.from_dict(d.get("tourism", {}))
 	trails.from_dict(d.get("trails", {}))
