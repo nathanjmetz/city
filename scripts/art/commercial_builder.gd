@@ -428,7 +428,7 @@ func _coping(w: float, d: float, cz: float, top: float, old := false) -> void:
 
 func _sign(c: Vector3, w: float, h: float) -> void:
 	var col := Color(_pick(SIGNS))
-	col.a = w / 30.0
+	col.a = minf(w / 60.0, 0.49)
 	if not sign_spec.is_empty():
 		# The business's own name in its family's colours; alpha 0 tells the
 		# sign shader there's real lettering, so it paints no stand-in.
@@ -449,7 +449,36 @@ func _awning(cx: float, w: float, zf: float, y: float, col: Color) -> void:
 	var c := Vector3(cx + w * 0.5, y, zf - 1.3)
 	var d := Vector3(cx - w * 0.5, y, zf - 1.3)
 	_quad("paint", d, c, b, a, col, [], Vector3.UP)
-	_quad("paint", d, c, c + Vector3(0, -0.3, 0), d + Vector3(0, -0.3, 0), col.darkened(0.15), [], Vector3.FORWARD)
+	if not fine_parts:
+		_quad("paint", d, c, c + Vector3(0, -0.3, 0), d + Vector3(0, -0.3, 0), col.darkened(0.15), [], Vector3.FORWARD)
+		return
+	# Desktop: a fixed canvas awning as Main Street sign shops make them,
+	# closed at the ends, either the shop's name lettered on the valance
+	# or the canvas in wide stripes.
+	var r := RandomNumberGenerator.new()
+	r.seed = hash([rng.seed, 31, snappedf(cx, 0.1)])
+	for e in [a, b]:
+		_tri("paint", e, Vector3(e.x, y, zf - 1.3), Vector3(e.x, y, zf - 0.01), col.darkened(0.08), [], Vector3(signf(e.x - cx), 0, 0))
+	var drop := Vector3(0, -0.3, 0)
+	var pick := r.randf()
+	if pick < 0.45:
+		# Painted letters (sign alpha 0.5-0.99: unlit, width (a - 0.5) * 60).
+		var v := col.darkened(0.15)
+		v.a = 0.5 + w / 60.0
+		_quad("sign", d, c, c + drop, d + drop, v, [Vector2(0, 1), Vector2(w, 1), Vector2(w, 0), Vector2(0, 0)], Vector3.FORWARD)
+	else:
+		_quad("paint", d, c, c + drop, d + drop, col.darkened(0.15), [], Vector3.FORWARD)
+	if pick > 0.7:
+		var stripe := Color("#efe9da") if r.randf() < 0.75 else Color("#c9a43a")
+		var n := Vector3(0, 1.3, 0.6).normalized() * 0.012
+		var sw := 0.16
+		var x := cx - w * 0.5 + sw
+		while x + sw < cx + w * 0.5:
+			_quad("paint", Vector3(x, y, zf - 1.3) + n, Vector3(x + sw, y, zf - 1.3) + n,
+				Vector3(x + sw, y + 0.6, zf) + n, Vector3(x, y + 0.6, zf) + n, stripe, [], Vector3.UP)
+			_quad("paint", Vector3(x, y, zf - 1.312), Vector3(x + sw, y, zf - 1.312),
+				Vector3(x + sw, y - 0.3, zf - 1.312), Vector3(x, y - 0.3, zf - 1.312), stripe.darkened(0.1), [], Vector3.FORWARD)
+			x += sw * 2.0
 
 
 # ---------------------------------------------------------------- more shops
@@ -650,7 +679,7 @@ func _strip_lot_dress(to_curb: float, back: float, n: int, wall: Color) -> void:
 			var y := base + 0.3 + t * ph
 			var col := Color(AWNING[r.randi() % AWNING.size()]).lightened(r.randf_range(0.0, 0.15))
 			# Backlit tenant panels, as on a real centre's pylon.
-			col.a = 2.3 / 30.0
+			col.a = 2.3 / 60.0
 			var pz: float = sz + side * 0.215
 			_quad("sign", Vector3(sx - 1.15, y - ph * 0.5 + 0.04, pz), Vector3(sx + 1.15, y - ph * 0.5 + 0.04, pz),
 				Vector3(sx + 1.15, y + ph * 0.5 - 0.04, pz), Vector3(sx - 1.15, y + ph * 0.5 - 0.04, pz), col,
@@ -684,15 +713,20 @@ func _shop_gas_station(to_curb: float) -> void:
 	var white_fascia := r.randf() < 0.55
 	_box("paint", Vector3(cw, 0.9, cd), Vector3(0, 5.25, ccz), Color("#f1efe8") if white_fascia else brand)
 	if white_fascia:
-		_box("paint", Vector3(cw + 0.04, 0.3, cd + 0.04), Vector3(0, 5.2, ccz), brand)
+		# Desktop: the brand band is lit from inside after dark.
+		_box("sign" if fine_parts else "paint", Vector3(cw + 0.04, 0.3, cd + 0.04), Vector3(0, 5.2, ccz), Color(brand, 0.0))
 	_quad("paint", Vector3(-cw * 0.5, 4.79, ccz - cd * 0.5), Vector3(cw * 0.5, 4.79, ccz - cd * 0.5),
 		Vector3(cw * 0.5, 4.79, ccz + cd * 0.5), Vector3(-cw * 0.5, 4.79, ccz + cd * 0.5), Color("#e8e6df"), [], Vector3.DOWN)
 	if fine_parts:
 		var lx := -cw * 0.5 + 1.5
 		while lx < cw * 0.5 - 1.0:
 			for lz in [-cd * 0.3, 0.0, cd * 0.3]:
-				_box("paint", Vector3(0.6, 0.04, 0.6), Vector3(lx, 4.77, ccz + lz), Color("#fbf8ee"))
+				_box("sign", Vector3(0.6, 0.04, 0.6), Vector3(lx, 4.77, ccz + lz), Color(1.0, 0.99, 0.95, 1.0))
 			lx += 3.0
+		# Canopies are the brightest thing on a highway at night: the
+		# forecourt washed in white light, spilling past the edges.
+		for k in 2:
+			_light_pool(Vector3(0, 0.2 + k * 0.01, ccz), cw + 10.0 - k * 6.0, cd + 10.0 - k * 6.0, Color(1.0, 0.99, 0.95))
 	var islands := 2 if cw < 16.0 else 3
 	for i in islands:
 		var x := (i - (islands - 1) * 0.5) * cw / islands
@@ -710,7 +744,7 @@ func _shop_gas_station(to_curb: float) -> void:
 	# posts the per-gallon price to the tenth of a cent).
 	var px := -half + 1.5
 	_box("paint", Vector3(0.3, 6.0, 0.3), Vector3(px, 3.0, 1.0), Color("#5a5e60"))
-	_box("paint", Vector3(2.2, 1.4, 0.3), Vector3(px, 6.3, 1.0), brand)
+	_box("sign" if fine_parts else "paint", Vector3(2.2, 1.4, 0.3), Vector3(px, 6.3, 1.0), Color(brand, 0.0))  # lit from inside
 	_box("paint", Vector3(2.0, 1.6, 0.32), Vector3(px, 4.7, 1.0), Color("#1d1d1d"))
 	var reg := 0
 	for row in 3:
@@ -792,7 +826,8 @@ func _seven_seg(n: int, c: Vector3, col: Color, scale := 1.0) -> void:
 		if m & (1 << i):
 			var b: Array = bars[i]
 			var size := Vector3(w, t, 0.02) if b[2] else Vector3(t, h, 0.02)
-			_box("paint", size, c + Vector3(-b[0], b[1], 0), col)  # mirrored: read from -z
+			# Desktop: lit LEDs after dark (sign alpha 1).
+			_box("sign" if fine_parts else "paint", size, c + Vector3(-b[0], b[1], 0), Color(col, 1.0))  # mirrored: read from -z
 
 
 ## A fuel dispenser (Gilbarco Encore / Wayne Ovation shape): a plinth, a

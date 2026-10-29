@@ -145,6 +145,9 @@ func _init() -> void:
 		else:
 			# An industry-zoned lot, built from its front edge like the game's.
 			size = Vector2(44, 64)
+			if OS.get_environment("LOT") != "":
+				var l := OS.get_environment("LOT").split(",")
+				size = Vector2(float(l[0]), float(l[1]))  # a lot grown over the years
 			lot_front = true
 			built = FactoryBuilder.build_chain(name, sd, 3.9, {"width": size.x, "depth": size.y})
 		# A grid of 400 m cells, on the middle of the ground plane.

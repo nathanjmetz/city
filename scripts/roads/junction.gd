@@ -565,7 +565,10 @@ static func _draw_node(j: Dictionary, asphalt: SurfaceTool, curb: SurfaceTool, w
 		var b: Dictionary = arms[c.b]
 		if c.fillet:
 			# Curb and sidewalk wrap the return, then run straight on to where each road starts.
-			_ring(curb, center, c, a, b, c.r - cw, c.r, RoadStyle.Y_CURB)
+			if RoadMesh.raised_curbs:
+				_curb_arc(curb, center, _arc(c, a, b, maxf(c.r, 0.0)), _arc(c, a, b, maxf(c.r - cw, 0.0)))
+			else:
+				_ring(curb, center, c, a, b, c.r - cw, c.r, RoadStyle.Y_CURB)
 			_ring(walk, center, c, a, b, c.r - back - walk_w, c.r - back, RoadStyle.Y_SIDEWALK)
 			_side(curb, walk, center, a, 1.0, c.ta, a.d)
 			_side(curb, walk, center, b, -1.0, c.tb, b.d)
@@ -574,7 +577,9 @@ static func _draw_node(j: Dictionary, asphalt: SurfaceTool, curb: SurfaceTool, w
 		else:
 			_side(curb, walk, center, a, 1.0, 0.0, a.d)
 			_side(curb, walk, center, b, -1.0, 0.0, b.d)
-			if c.theta > PI:
+			if c.theta > PI and RoadMesh.raised_curbs:
+				_curb_arc(curb, center, _bend_line(a, b, a.hw), _bend_line(a, b, a.hw + cw))
+			elif c.theta > PI:
 				_bend(curb, center, a, b, a.hw, a.hw + cw, RoadStyle.Y_CURB)
 				_bend(walk, center, a, b, a.hw + back, a.hw + back + walk_w, RoadStyle.Y_SIDEWALK)
 
@@ -608,8 +613,48 @@ static func _side(curb: SurfaceTool, walk: SurfaceTool, center: Vector3, arm: Di
 		return
 	var hw: float = arm.hw
 	var back := hw + RoadStyle.CURB_WIDTH + RoadStyle.PARKWAY_WIDTH
-	_band(curb, center, arm, side, hw, hw + RoadStyle.CURB_WIDTH, from, to, RoadStyle.Y_CURB)
+	if RoadMesh.raised_curbs:
+		_curb_side(curb, center, arm, side, from, to)
+	else:
+		_band(curb, center, arm, side, hw, hw + RoadStyle.CURB_WIDTH, from, to, RoadStyle.Y_CURB)
 	_band(walk, center, arm, side, back, back + RoadStyle.SIDEWALK_WIDTH, from, to, RoadStyle.Y_SIDEWALK)
+
+
+## A raised curb (RoadMesh.add_curb) along lines of points about the node:
+## the street's edge and the curb's back.
+static func _curb_arc(st: SurfaceTool, center: Vector3, edge: PackedVector2Array, back: PackedVector2Array) -> void:
+	var inner := PackedVector3Array()
+	var outer := PackedVector3Array()
+	for k in mini(edge.size(), back.size()):
+		inner.append(center + Vector3(edge[k].x, 0.0, edge[k].y))
+		outer.append(center + Vector3(back[k].x, 0.0, back[k].y))
+	RoadMesh.add_curb(st, inner, outer)
+
+
+## The outside of a bend at radius `r`: a line about the node from arm a's
+## left to b's right (as _bend).
+static func _bend_line(a: Dictionary, b: Dictionary, r: float) -> PackedVector2Array:
+	var a0: float = (a.n as Vector2).angle()
+	var sweep := fposmod((-b.n as Vector2).angle() - a0, TAU)
+	var out := PackedVector2Array()
+	for k in 9:
+		out.append(Vector2.from_angle(a0 + sweep * k / 8.0) * r)
+	return out
+
+
+## A raised curb along one side of an arm, `from`..`to` metres out (as _band).
+static func _curb_side(st: SurfaceTool, center: Vector3, arm: Dictionary, side: float, from: float, to: float) -> void:
+	var hw: float = arm.hw
+	var edge := PackedVector2Array()
+	var back := PackedVector2Array()
+	var n := maxi(1, ceili((to - from) / 3.0))
+	for k in n + 1:
+		var p: Array = LotPlanner.point_at(arm.pts, lerpf(from, to, float(k) / n))
+		var q := Vector2(p[0].x - center.x, p[0].z - center.z)
+		var nrm := Vector2(-p[1].z, p[1].x) * side
+		edge.append(q + nrm * hw)
+		back.append(q + nrm * (hw + RoadStyle.CURB_WIDTH))
+	_curb_arc(st, center, edge, back)
 
 
 ## A curb ramp where people cross the arm: concrete across the grass strip

@@ -186,6 +186,14 @@ const CORE_RADIUS := 200.0
 ## Row homes appear once this many buildings stand within CORE_RADIUS (land
 ## too dear for a detached house on every lot), apartments from DENSE_CORE.
 const ROW_HOME_DENSITY := 30
+## Duplexes: buildings within CORE_RADIUS before an owner builds or turns a
+## house into one (the older blocks near the centre of a small town, where
+## doubles stand among houses), how often a new home is one (a weight
+## against the house's ~1), and how well-off an area must be for owners to
+## build on out back (Home with addition).
+const DUPLEX_DENSITY := 15
+const DUPLEX_PICK := 0.12
+const ADDITION_WEALTH := 0.35
 const DENSE_CORE := 20
 ## What gets built follows the market, not just the block (Brawn
 ## 2026-10-24): the people within commuting reach of the town, its own and
@@ -206,10 +214,19 @@ const DENSE_CORE := 20
 ##     building; 5-8 storeys is a regional center's downtown.
 const MARKET_MIN := {
 	"row_home": [50_000, 100_000],
+	# ACS: a few doubles in towns of 1,500 or so; fourplexes once a market
+	# reaches a county-seat town's size.
+	"duplex": [1500, 5000],
 	"apartments": [10_000, 25_000, 100_000, 150_000, 400_000],
 	"mixed_use": [0, 5000, 15_000],
+	# Commercial blocks over two storefronts: county-seat downtowns
+	# (Wabash ~10,000, Huntington ~17,000; a town of 3,000 has a few).
+	"commercial_block": [5000, 15_000],
 	"office": [10_000, 25_000, 50_000, 150_000, 1_000_000],
 	"shopping_center": [5000, 10_000],
+	# A town of 1,500-2,000 (Upland, Fairmount) keeps a few 30-60 job shops;
+	# a 100-job plant wants a county's labor shed of 5,000 or more.
+	"factory": [0, 1500, 5000],
 }
 ## Commuting reach (metres): a neighbor town within MARKET_FULL counts in
 ## full, fading to nothing at MARKET_REACH (Census: the median US commute
@@ -415,6 +432,23 @@ const NEEDS_IMPORT_SLOW := 0.25
 ## yard a mile past a nearby plant.
 const NEEDS_CONCRETE_YD_PER_HOME := 45
 const NEEDS_CONCRETE_HAUL := 1.0
+## Local materials (LocalSupply, Brawn's pick #12): a job site's big loads
+## come from the town's own quarry, sawmill or metal works when it has one.
+## How far each will truck a load, metres: ready-mix must be placed within
+## 90 minutes of batching (ASTM C94), so plants serve about 25 km; hot-mix
+## asphalt leaves the plant at about 150 C and is hauled about 40 km at most;
+## crushed stone and fill pay to haul about 50 km (NSSGA); lumber and
+## fabricated steel go anywhere in the county.
+const LOCAL_SUPPLY_REACH := {"ready_mix": 25_000.0, "asphalt": 40_000.0, "stone": 50_000.0,
+	"lumber": 80_000.0, "steel": 80_000.0}
+## What the town's quarry earns on one load it sends a job site, dollars:
+## a 10 yd truck of ready-mix at about $165 a yard (NRMCA 2024), a 20 ton
+## tandem of crushed stone at the quarry price plus a short haul, a tandem
+## of fill dirt, and 20 tons of hot-mix at about $75 a ton (INDOT bid
+## averages). Sawmills and metal works are zoned factories without books of
+## their own, so their loads count but pay no one here.
+const LOCAL_SUPPLY_PRICE := {"ready-mix concrete": 1650, "curb concrete": 1650, "crushed stone": 450,
+	"fill dirt": 200, "hot-mix asphalt": 1500}
 ## Builders: about one crew per 1,500 people (at least 2), each with about
 ## 6 houses going up at once; past that, labor costs climb about $15,000 a
 ## home at double the load.
@@ -449,6 +483,9 @@ const DOWNTOWN_TOWNS := [25_000, 50_000, 100_000]
 ## Where zoning allows at least this FAR, an owner may buy out a low
 ## neighbour (not just an empty or vacant lot) to assemble a tower site.
 const ASSEMBLE_FAR := 4.0
+## Chance a keen Main Street owner whose next stage needs a wider front
+## (a commercial block) sets out to buy the lot next door this time.
+const ASSEMBLE_MAIN_CHANCE := 0.35
 
 # --- Farms -------------------------------------------------------------------
 
@@ -2935,7 +2972,7 @@ const HERITAGE_FULL_YEARS := 25
 ## How much character each kind of building carries when it is old. Real
 ## county surveys (Indiana's Historic Sites and Structures Inventory) rate
 ## Main Street commercial blocks and old homes highest, plain offices lowest.
-const HERITAGE_TYPE_WEIGHT := {"house": 1.0, "row_home": 1.0, "mixed_use": 1.2, "shop": 0.8,
+const HERITAGE_TYPE_WEIGHT := {"house": 1.0, "duplex": 1.0, "row_home": 1.0, "mixed_use": 1.2, "commercial_block": 1.3, "shop": 0.8,
 	"apartments": 0.6, "office": 0.4, "factory": 0.7}
 ## Land value lift at full charm for an old building on its own, and for one
 ## inside a protected local historic district. Studies of US local districts
@@ -3073,3 +3110,34 @@ const CHARTER_VOTE_COVER := 0.2
 const CHARTER_VOTE_CARE := 0.1
 const CHARTER_VOTE_HAPPY := 0.1
 const CHARTER_VOTE_BOIL := 0.5
+
+# --- Town laws (TownLaws) -----------------------------------------------------
+# Brawn, 2026-10-29 (his pick from the borrowed features): the council passes
+# real ordinances, each with a trade-off. The game never shows statute numbers.
+
+## The council takes the same law up again at most this often, in months.
+const LAW_ASK_COOLDOWN := 12
+## Hours of the sim day the council counts trucks cutting through
+## neighborhood streets (daytime freight hours).
+const LAW_COUNT_HOURS := [9, 11, 13, 15]
+## Residents petition once a street has this many through trucks counted in
+## a month.
+const LAW_TRUCK_ASK_MIN := 4
+## Truck route signs: about twenty "No trucks" and "Truck route" signs at the
+## edges of the neighborhoods, about $300 each installed.
+const LAW_TRUCK_SIGNS := 6_000
+## How much longer a neighborhood street counts for a truck passing through
+## (only the middle of a trip: a truck delivering on the street still comes
+## in). Four times its drive keeps trucks off it unless it saves a long way
+## round, as with a real posted route and its detour.
+const LAW_TRUCK_STREET_MULT := 4.0
+## Impact fee per new home. Indiana park and road impact fees (IC 36-7-4-1300
+## on) run about $1,000 to $4,000 a home; $2,000 is a typical small-city park
+## plus road fee.
+const LAW_IMPACT_FEE := 2_000
+## Builders pass a fee on to buyers, so fewer homes start: studies of US
+## impact fees find a few percent fewer starts per $1,000 of fee.
+const LAW_IMPACT_PACE := 0.9
+## The plan commission asks for an impact fee after this many new homes in a
+## year.
+const LAW_IMPACT_ASK_HOMES := 40

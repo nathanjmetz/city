@@ -5,7 +5,12 @@ extends SceneTree
 ## Kinds: house, shop, factory, row, apartments, mixed, office, main (a
 ## Main Street of mixed blocks, storeys 2 to 4), types (one of each type),
 ## care (one house from derelict to showpiece, PropertyCare's tiers -2..2)
-## and careshop (the same for a shop). "far:<kind>" draws the same
+## careshop (the same for a shop), grown (a house up its growth path: family
+## home, two storeys, then three with an addition out back) and duplex (an
+## up-and-down, a double, a ranch and a two-storey duplex, and a fourplex),
+## rows (recent townhomes, 1970s mansard rows and brick rows), garden
+## (garden apartments, 1960s-70s and recent, two and three storeys).
+## "far:<kind>" draws the same
 ## buildings as their far versions (BuildingView.far_version). GALLERY_HOUR
 ## (0-24) sets the time of day.
 
@@ -62,7 +67,8 @@ func _init() -> void:
 			k = ["house", "row", "apartments", "mixed", "office"][i]
 		if kind in ["care", "careshop"]:
 			HouseBuilder.owner_care = i - 2
-		var w: float = {"care": 24.0, "careshop": 26.0, "row": 22.0, "apartments": 36.0, "mixed": 22.0, "main": 16.0 + 4.0 * (i % 3), "mainold": 16.0 + 4.0 * (i % 3), "mainrestored": 16.0 + 4.0 * (i % 3), "office": 40.0, "towers": 44.0, "hometowers": 54.0, "towerfar": 44.0, "flats": 24.0, "courtyard": 48.0, "walkup": 26.0, "garage": 44.0, "growth": [40.0, 40.0, 44.0, 56.0, 64.0, 64.0, 72.0][i % 7], "oddlots": [26.0, 22.0, 20.0, 26.0, 18.0][i % 5]}.get(k, 20.0)
+		var w: float = {"care": 24.0, "careshop": 26.0, "row": 22.0, "apartments": 36.0, "mixed": 22.0, "main": 16.0 + 4.0 * (i % 3), "mainold": 16.0 + 4.0 * (i % 3), "mainrestored": 16.0 + 4.0 * (i % 3), "office": 40.0, "towers": 44.0, "hometowers": 54.0, "towerfar": 44.0, "flats": 24.0, "courtyard": 48.0, "walkup": 26.0, "garage": 44.0, "growth": [40.0, 40.0, 44.0, 56.0, 64.0, 64.0, 72.0][i % 7], "oddlots": [26.0, 22.0, 20.0, 26.0, 18.0][i % 5],
+			"grown": 22.0, "rows": 22.0, "garden": 40.0, "duplex": [16.0, 20.0, 24.0, 24.0, 22.0][i]}.get(k, 20.0)
 		var sd := seed * 100 + i
 		match k:
 			"shop": meshes = CommercialBuilder.build_shop(sd, 3.9)
@@ -117,6 +123,25 @@ func _init() -> void:
 				lines.position = Vector3(x + w * 0.5, 0, 0)
 				world.add_child(lines)
 			"care": meshes = HouseBuilder.build(seed * 100, 3.9, {"width": w, "depth": 48.0}, 1)
+			"rows":
+				# Row homes of each kind, two storeys and three.
+				MetroBuilder.force_row = ["townhomes", "townhomes", "mansard", "mansard", "row"][i]
+				meshes = MetroBuilder.build_row(sd, 3.9, {"width": w, "depth": 45.0}, 3, 2 + i % 2)
+				MetroBuilder.force_row = ""
+			"garden":
+				MetroBuilder.force_row = "garden"
+				meshes = MetroBuilder.build_apartments(sd, 3.9, {"width": w, "depth": 50.0, "era": ["postwar", "recent"][i % 2]}, [2, 2, 3, 3, 2][i])
+				MetroBuilder.force_row = ""
+			"grown":
+				HouseBuilder.grown = 1 if i >= 2 else 0
+				meshes = HouseBuilder.build(seed * 100 + maxi(0, i - 2) * 17, 3.9, {"width": w, "depth": 45.0, "era": "recent"},
+					[0, 2, 2, 2, 2][i])
+				HouseBuilder.grown = 0
+			"duplex":
+				DuplexBuilder.force_style = ["updown", "double", "ranch", "two", ""][i]
+				meshes = DuplexBuilder.build(sd, 3.9, {"width": w, "depth": 45.0, "era": ["prewar", "prewar", "postwar", "recent", "postwar"][i]},
+					1 if i == 4 else 0)
+				DuplexBuilder.force_style = ""
 			"careshop": meshes = DenseBuilder.build_retail(seed * 100, 3.9, {"width": w, "depth": 40.0})
 			_: meshes = HouseBuilder.build(sd, 3.9)
 		HouseBuilder.owner_care = 0

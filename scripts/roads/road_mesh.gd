@@ -2,6 +2,21 @@ class_name RoadMesh
 extends RefCounted
 ## Turns sampled centre lines into flat ribbon meshes.
 
+## Curbs stand up off the street (RoadView sets this from the graphics
+## tier: the desktop's High and up). Otherwise a curb is a flat band.
+static var raised_curbs := false
+## A 4 in rolled curb, the usual curb of an Indiana subdivision street
+## (INDOT E 605 combined concrete curb and gutter, roll type): its face
+## rises over about 6 in from the gutter's edge to a rounded top.
+const CURB_RISE := 0.1
+const CURB_ROLL := 0.15
+## Where a curb ramp meets the street the curb drops flush with it (ADA),
+## from RAMP_FROM to RAMP_TO metres in from each end of a street, eased
+## over RAMP_EASE.
+const RAMP_FROM := 0.3
+const RAMP_TO := 2.7
+const RAMP_EASE := 0.3
+
 
 ## Adds a ribbon running alongside pts, from offset `from` to offset `to`
 ## (negative = left side, positive = right side).
@@ -71,12 +86,13 @@ static func _town(pts: PackedVector3Array, type: int, mats: Dictionary, cuts := 
 	var y_mark := RoadStyle.Y_ASPHALT + 0.01
 	var layers := [
 		[spec.get("surface", "asphalt"), [[-hw, hw]], RoadStyle.Y_ASPHALT, ""],
-		["curb", [[-hw - cw, -hw], [hw, hw + cw]], RoadStyle.Y_CURB, ""],
 	]
+	if not raised_curbs:
+		layers.append(["curb", [[-hw - cw, -hw], [hw, hw + cw]], RoadStyle.Y_CURB, ""])
 	# Combined concrete curb and gutter (INDOT standard E 605-CCCG): a 2 ft
 	# concrete gutter pan along each edge of the pavement, and the curb's
 	# face reading as a thin shaded line.
-	if mats.has("curb_face"):
+	if mats.has("curb_face") and not raised_curbs:
 		var g := RoadStyle.GUTTER_WIDTH
 		layers.append(["curb", [[-hw, -hw + g], [hw - g, hw]], RoadStyle.Y_ASPHALT + 0.004, ""])
 		layers.append(["curb_face", [[-hw - 0.07, -hw], [hw, hw + 0.07]], RoadStyle.Y_CURB + 0.003, ""])
@@ -123,6 +139,26 @@ static func _town(pts: PackedVector3Array, type: int, mats: Dictionary, cuts := 
 	if cuts != Vector2.ZERO:
 		marks = _between(pts, cuts.x, RoadNetwork.polyline_length(pts) - cuts.y)
 	var mesh := _build_layers(pts, layers, trimmed(pts, hw + 2.0), mats, marks)
+	if raised_curbs:
+		var g := RoadStyle.GUTTER_WIDTH
+		var pan := SurfaceTool.new()
+		pan.begin(Mesh.PRIMITIVE_TRIANGLES)
+		add_strip(pan, pts, -hw, -hw + g, RoadStyle.Y_ASPHALT + 0.004)
+		add_strip(pan, pts, hw - g, hw, RoadStyle.Y_ASPHALT + 0.004)
+		var length := RoadNetwork.polyline_length(pts)
+		for side in [-1.0, 1.0]:
+			var edge := PackedVector3Array()
+			var back := PackedVector3Array()
+			var rises := PackedFloat32Array()
+			for d in _curb_stations(length):
+				var at: Array = LotPlanner.point_at(pts, d)
+				var n: Vector3 = Vector3(-at[1].z, 0.0, at[1].x).normalized() * side
+				edge.append(at[0] + n * hw)
+				back.append(at[0] + n * (hw + cw))
+				rises.append(_ramp_rise(d, length))
+			add_curb(pan, edge, back, rises)
+		pan.commit(mesh)
+		mesh.surface_set_material(mesh.get_surface_count() - 1, mats.curb)
 	# Downtown stall marks: T marks every 22 ft along parallel parking, and
 	# 45-degree stall lines 9 ft wide for angled parking.
 	var stalls := SurfaceTool.new()
@@ -162,6 +198,78 @@ static func _town(pts: PackedVector3Array, type: int, mats: Dictionary, cuts := 
 		stalls.commit(mesh)
 		mesh.surface_set_material(mesh.get_surface_count() - 1, mats.white)
 	return mesh
+
+
+## Distances along a street to sample its curb at: every 3 m or closer,
+## and at each edge of the curb ramps' dips.
+static func _curb_stations(length: float) -> PackedFloat32Array:
+	var out := PackedFloat32Array()
+	var marks := []
+	for e: float in [RAMP_FROM - RAMP_EASE, RAMP_FROM, RAMP_TO, RAMP_TO + RAMP_EASE]:
+		marks.append(e)
+		marks.append(length - e)
+	marks.append(0.0)
+	marks.append(length)
+	var n := maxi(1, ceili(length / 3.0))
+	for k in n + 1:
+		marks.append(length * k / n)
+	marks.sort()
+	for m: float in marks:
+		if m >= 0.0 and m <= length and (out.is_empty() or m - out[out.size() - 1] > 0.05):
+			out.append(m)
+	return out
+
+
+## The curb's rise `d` metres along a street `length` long: full, but
+## dropped flush where a curb ramp meets the street near each end.
+static func _ramp_rise(d: float, length: float) -> float:
+	var e := minf(d, length - d)
+	var t := clampf(minf(e - RAMP_FROM + RAMP_EASE, RAMP_TO + RAMP_EASE - e) / RAMP_EASE, 0.0, 1.0)
+	return lerpf(CURB_RISE, -0.03, t)
+
+
+## A raised curb between the street's edge (`inner`) and the curb's back
+## (`outer`), point by point: the rolled face up from the gutter, the top,
+## and the back down into the grass. `rises` is each point's height above
+## the pavement (CURB_RISE, or less where a ramp dips it).
+static func add_curb(st: SurfaceTool, inner: PackedVector3Array, outer: PackedVector3Array,
+		rises := PackedFloat32Array()) -> void:
+	var profiles := []
+	var ya := RoadStyle.Y_ASPHALT
+	for i in inner.size():
+		var across := outer[i] - inner[i]
+		across.y = 0.0
+		var w := across.length()
+		var dir := across / maxf(w, 0.001)
+		var rise: float = rises[i] if i < rises.size() else CURB_RISE
+		var up := Vector3.UP
+		profiles.append([inner[i] + up * (ya + 0.004), inner[i] + dir * minf(CURB_ROLL, w * 0.5) + up * (ya + rise),
+			outer[i] + up * (ya + rise), outer[i] + up * -0.05, dir])
+	var along := 0.0
+	for i in range(profiles.size() - 1):
+		var p0: Array = profiles[i]
+		var p1: Array = profiles[i + 1]
+		var step := (inner[i + 1] - inner[i]).length()
+		for k in 3:
+			# Face and top look up (and out over the street); the back looks
+			# away from it.
+			var want: Vector3 = Vector3.UP if k < 2 else p0[4]
+			_wall_quad(st, p0[k], p0[k + 1], p1[k], p1[k + 1], want, along, along + step)
+		along += step
+
+
+static func _wall_quad(st: SurfaceTool, a0: Vector3, b0: Vector3, a1: Vector3, b1: Vector3, want: Vector3,
+		v0: float, v1: float) -> void:
+	var n := (b0 - a0).cross(a1 - a0)
+	if n.length_squared() < 1e-10:
+		n = (b1 - a1).cross(a1 - a0)
+	n = n.normalized()
+	if n.dot(want) < 0.0:
+		n = -n
+	for v in [[a0, 0.0, v0], [b0, 1.0, v0], [a1, 0.0, v1], [b0, 1.0, v0], [b1, 1.0, v1], [a1, 0.0, v1]]:
+		st.set_normal(n)
+		st.set_uv(Vector2(v[1], v[2]) * 0.25)
+		st.add_vertex(v[0])
 
 
 ## A white straight-ahead arrow 8 ft long centred on offset `off`, its

@@ -22,13 +22,17 @@ const WALK_Z := -1.05
 ## "aisle_z": float (z of the lane inside the lot cars drive along),
 ## "walk_z": float (front walk), "main_street": bool}. `lot` is the sim's
 ## lot, which the builders are fitted to (width, depth, outline).
-static func for_building(zone: int, bseed: int, lot := {}, storeys := 0, type := "") -> Dictionary:
+static func for_building(zone: int, bseed: int, lot := {}, storeys := 0, type := "", level := 0) -> Dictionary:
 	var r := RandomNumberGenerator.new()
 	r.seed = bseed
 	var art_seed := r.randi()  # BuildingView passes this to the builder
 	var fit := _fit(lot)
 	match zone:
 		ZoneMap.Zone.RESIDENTIAL:
+			if type == "duplex":
+				var p := DuplexBuilder.plan_info(art_seed, fit.get("art", {"width": fit.half * 2.0, "depth": fit.depth}), level)
+				return {"spots": p.spots, "door": Vector2(p.doors[0], p.front_z), "cut_x": p.drives[0][0], "aisle_z": 0.0,
+					"walk_z": p.walk_z, "main_street": false}
 			if type in ["row_home", "apartments"]:
 				# MetroBuilder's flats, courtyards and walkups draw no drive:
 				# like a real city block of them, residents park on the street.
@@ -37,7 +41,7 @@ static func for_building(zone: int, bseed: int, lot := {}, storeys := 0, type :=
 		ZoneMap.Zone.COMMERCIAL:
 			if type == "office" and storeys < 8:
 				return office(art_seed, fit, storeys)
-			if type in ["mixed_use", "office"]:
+			if type in ["mixed_use", "commercial_block", "office"]:
 				return main_street()  # built to the sidewalk; its lot (if any) is out back
 			return shop(art_seed, fit, type == "shopping_center")
 		ZoneMap.Zone.INDUSTRIAL:

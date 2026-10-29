@@ -23,6 +23,9 @@ const MB_GREYSTONE := ["#bdb5a3", "#c4bcaa", "#b3ab98", "#a9a294"]
 const MB_COMMON := Color("#8f5f45")  # the cheap common brick on sides and backs
 const MB_IRON := Color("#1e1f20")
 const MB_ROOF := Color("#55524d")  # tar and gravel
+## Set by the art gallery to draw one kind of row: flats, townhomes,
+## mansard or row.
+static var force_row := ""
 
 
 static func _mb_start(seed: int, lot: Dictionary) -> MetroBuilder:
@@ -37,7 +40,12 @@ static func _mb_start(seed: int, lot: Dictionary) -> MetroBuilder:
 static func build_apartments(seed: int, to_curb: float, lot: Dictionary, storeys: int) -> Array:
 	var b := _mb_start(seed, lot)
 	var width := b.half * 2.0
-	if b.era != "prewar":
+	# Low buildings on postwar and recent streets are mostly garden
+	# apartments (their own dice, so other buildings draw as before).
+	var garden := absi(hash([seed, "garden"])) % 100 < 65 and storeys <= 3 and width >= 24.0
+	if force_row == "garden" or b.era != "prewar" and garden and force_row == "":
+		b._th_garden(to_curb, width, storeys, b.era == "recent")
+	elif b.era != "prewar":
 		if storeys >= 4 and width >= 28.0 and b.depth >= 30.0:
 			b._mb_five_over_one(to_curb, width, storeys)
 		else:
@@ -51,8 +59,21 @@ static func build_apartments(seed: int, to_curb: float, lot: Dictionary, storeys
 
 static func build_row(seed: int, to_curb: float, lot: Dictionary, units: int, storeys: int) -> Array:
 	var b := _mb_start(seed, lot)
-	if b.era == "prewar" and b.rng.randf() < 0.65:
+	# Each era's own kind of row (its own dice, so other rows draw as before).
+	var kind := absi(hash([seed, "row kind"])) % 100
+	var prewar := b.rng.randf() < 0.65
+	if force_row != "":
+		match force_row:
+			"flats": b._mb_flats(to_curb, b.half * 2.0, units, storeys)
+			"townhomes": b._th_townhomes(to_curb, b.half * 2.0, units, storeys)
+			"mansard": b._th_mansard(to_curb, b.half * 2.0, units, storeys)
+			_: b._row(to_curb, b.half * 2.0, units, storeys)
+	elif b.era == "prewar" and prewar:
 		b._mb_flats(to_curb, b.half * 2.0, units, storeys)
+	elif b.era == "recent" and kind < 70 and b.half * 2.0 / units >= 6.0:
+		b._th_townhomes(to_curb, b.half * 2.0, units, storeys)
+	elif b.era == "postwar" and kind < 50:
+		b._th_mansard(to_curb, b.half * 2.0, units, storeys)
 	else:
 		b._row(to_curb, b.half * 2.0, units, storeys)
 	return b._done()
@@ -410,3 +431,250 @@ func _mb_garage(to_curb: float, width: float, levels: int) -> void:
 	_box("paint", Vector3(0.5, 1.1, 0.5), Vector3(w * 0.5 - 2.2, 0.55, zf - 0.6), Color("#d2a22a"))
 	_box("paint", Vector3(3.6, 0.08, 0.08), Vector3(w * 0.5 - 4.0, 1.05, zf - 0.6), Color("#efe9d8"))
 	_sign(Vector3(w * 0.5 - 4.75, lh + 0.4, zf - 0.1), 5.0, 1.0)
+
+
+# ---------------------------------------------------------------- townhomes
+
+## Stone veneer and board-and-batten a recent townhome row mixes with lap
+## siding, unit by unit (Fishers, Carmel, Westfield townhome communities).
+const TH_STONE := ["#a39a8a", "#b5ab98", "#8f8778", "#c2b8a4"]
+const TH_SIDING := ["#e4e1d6", "#c9c3b3", "#6f7f8c", "#8c8f8a", "#d8d2c2", "#5e666b", "#9aa3a8", "#b8a98c"]
+
+
+## A row of recent townhomes, as Indiana's suburbs build them: each home
+## 6-7.5 m wide with a one-car garage under it, its door beside the garage
+## under a little gabled portico, two (or three) storeys, a front gable on
+## every other home over one long side-gabled roof, siding colours and
+## stone veneer bases changing home to home. A short concrete apron per
+## garage out to the street.
+func _th_townhomes(to_curb: float, width: float, units: int, storeys: int) -> void:
+	var r := RandomNumberGenerator.new()
+	r.seed = hash([rng.seed, "townhomes"])
+	var uw := (width - 1.0) / units
+	var zf := r.randf_range(6.2, 7.0)  # room for a car on the apron
+	var d := r.randf_range(11.5, 13.0)
+	var floor_h := 3.0
+	var base := 0.3
+	var top := base + floor_h * storeys
+	var roof := Color(TH_SIDING[0]).darkened(0.6) if r.randf() < 0.3 else Color(ROOF[r.randi() % ROOF.size()])
+	var x0 := -width * 0.5 + 0.5
+	var x1 := width * 0.5 - 0.5
+	var cz := zf + d * 0.5
+	var stone := Color(TH_STONE[r.randi() % TH_STONE.size()])
+	var first := r.randi() % TH_SIDING.size()
+	for i in units:
+		var cx := x0 + (i + 0.5) * uw
+		var siding := Color(TH_SIDING[(first + i * 3) % TH_SIDING.size()])
+		# Ends and middles step forward and back a little, as the plans do.
+		var step := 0.0 if i % 2 == 0 else 0.6
+		var zu := zf + step
+		var du := d - step
+		_box("concrete", Vector3(uw, base, du), Vector3(cx, base * 0.5, zu + du * 0.5), FOUNDATION)
+		_box("siding", Vector3(uw, top - base, du), Vector3(cx, (base + top) * 0.5, zu + du * 0.5), siding)
+		if i % 3 != 1:
+			_box("brick", Vector3(uw + 0.02, 1.1, 0.12), Vector3(cx, base + 0.55, zu - 0.05), stone)
+		# The garage on one side, the door on the other, mirrored in pairs.
+		var side := 1.0 if i % 2 == 0 else -1.0
+		var gw := minf(3.0, uw - 2.4)
+		var gx := cx + side * (uw * 0.5 - gw * 0.5 - 0.3)
+		var dx := cx - side * (uw * 0.5 - 0.95)
+		_garage(gx, zu - 0.08, gw + 0.3, 2.2)
+		_front_door(dx, zu - 0.12, base, Color(DOOR[(first + i) % DOOR.size()]))
+		_stoop(dx, zu - 0.12, 1.4, 1.2, base)
+		_gable_roof(dx, zu - 0.65, base + 2.6, 1.6, 0.55, 1.1, false, roof, TRIM, false)
+		_flat_rect("drive", gx - gw * 0.5 - 0.2, gx + gw * 0.5 + 0.2, -to_curb, zu, 0.1)
+		_flat_rect("drive", dx - 0.55, dx + 0.55, zu - 2.2, zu - 1.2, 0.06)
+		_flat_rect("drive", minf(dx, gx) - 0.55, maxf(dx, gx), zu - 2.2, zu - 1.2, 0.06)
+		# Windows: a pair over the garage and one over the door each floor.
+		for f in range(1, storeys):
+			var y := base + f * floor_h + 1.5
+			_window(Vector3(gx - 0.6, y, zu), Vector3(-1, 0, 0), 0.8, 1.45, true, false, TRIM)
+			_window(Vector3(gx + 0.6, y, zu), Vector3(-1, 0, 0), 0.8, 1.45, true, false, TRIM)
+			_window(Vector3(dx, y, zu), Vector3(-1, 0, 0), 0.8, 1.45, true, false, TRIM)
+		_window(Vector3(dx, base + 1.5, zu + du), Vector3(1, 0, 0), 0.9, 1.35, true, false, TRIM)
+		_box("paint", Vector3(1.95, 2.25, 0.04), Vector3(gx, base + 1.1, zu + du), TRIM)
+		_glass(Vector3(gx, base + 1.05, zu + du + 0.03), Vector3(1, 0, 0), 1.8, 2.1, r.randf_range(0.0, 0.3))
+		for f in range(1, storeys):
+			_window(Vector3(cx, base + f * floor_h + 1.5, zu + du), Vector3(1, 0, 0), 0.9, 1.35, true, false, TRIM)
+		# A front gable on every other home, standing on the long roof.
+		if i % 2 == 1:
+			_gable_roof(cx, zu + 1.6, top, uw - 0.2, uw * 0.33, 3.6, false, roof, siding)
+		# A patio out back behind a privacy panel.
+		_box("concrete", Vector3(uw - 0.4, 0.1, 3.0), Vector3(cx, 0.05, zf + d + 1.5), FOUNDATION.lightened(0.05))
+		if i > 0:
+			_box("paint", Vector3(0.06, 1.8, 3.0), Vector3(x0 + i * uw, 0.9, zf + d + 1.5), Color("#e4e3dd"))
+	_gable_roof(0.0, cz + 0.3, top, d - 0.6, (d - 0.6) * 0.5 * r.randf_range(0.36, 0.46), x1 - x0, true, roof,
+		Color(TH_SIDING[first]))
+	if r.randf() < 0.7:
+		var pick := TreeField.pick(r)
+		trees.append([Vector3(r.randf_range(-width * 0.3, width * 0.3), 0, -to_curb + 1.0), pick[0], pick[1],
+			r.randf_range(0.7, 1.0)])
+
+
+## A 1970s townhouse row: brick ground floor, the upper storey wrapped in a
+## steep shingled mansard with dormers, recessed entries between wing
+## walls, a flat roof above (the condo and co-op rows of every Midwestern
+## city's 1970s edge: Indianapolis's Castleton, Columbus OH, Fort Wayne).
+func _th_mansard(to_curb: float, width: float, units: int, storeys: int) -> void:
+	var r := RandomNumberGenerator.new()
+	r.seed = hash([rng.seed, "mansard"])
+	var uw := (width - 1.0) / units
+	var zf := r.randf_range(5.0, 6.5)
+	var d := r.randf_range(10.5, 12.0)
+	var floor_h := 2.9
+	var base := 0.35
+	var brick_top := base + floor_h * (storeys - 1)
+	var top := base + floor_h * storeys
+	var brick := Color(FACADE_BRICK[r.randi() % FACADE_BRICK.size()])
+	var shingle := Color(["#5b4d42", "#45464a", "#655547", "#3d3e41"][r.randi() % 4])
+	var x0 := -width * 0.5 + 0.5
+	var x1 := width * 0.5 - 0.5
+	var cz := zf + d * 0.5
+	var inset := 0.9
+	_box("concrete", Vector3(x1 - x0, base, d), Vector3(0, base * 0.5, cz), FOUNDATION)
+	_box("brick", Vector3(x1 - x0, brick_top - base, d), Vector3(0, (base + brick_top) * 0.5, cz), brick)
+	# The upper storey sits back inside the mansard.
+	_box("siding", Vector3(x1 - x0 - inset * 2.0, top - brick_top, d - inset * 2.0), Vector3(0, (brick_top + top) * 0.5, cz),
+		Color("#d8d2c2"))
+	_th_mansard_roof(x0, x1, zf, zf + d, brick_top, top - brick_top + 0.2, inset, shingle)
+	for i in units:
+		var cx := x0 + (i + 0.5) * uw
+		var side := 1.0 if i % 2 == 0 else -1.0
+		var dx := cx + side * (uw * 0.5 - 1.2)
+		# A recessed entry between short wing walls.
+		_box("paint", Vector3(1.6, 2.4, 0.9), Vector3(dx, base + 1.2, zf + 0.4), Color("#3a3530"))
+		_front_door(dx, zf + 0.82, base, Color(DOOR[(i * 3 + r.randi()) % DOOR.size()]))
+		_box("brick", Vector3(0.3, 1.8, 2.0), Vector3(dx - side * 1.0, 0.9, zf - 1.0), brick)
+		_stoop(dx, zf, 1.4, 1.0, base)
+		_flat_rect("drive", dx - 0.55, dx + 0.55, -0.3, zf - 1.0, 0.06)
+		for f in range(storeys - 1):
+			_window(Vector3(cx - side * uw * 0.15, base + f * floor_h + 1.45, zf), Vector3(-1, 0, 0), 1.6, 1.3, false, false, TRIM)
+		# A dormer through the mansard for each home's upper storey.
+		var dy := brick_top + 0.4
+		_box("siding", Vector3(1.4, 1.9, inset + 0.3), Vector3(cx - side * uw * 0.15, dy + 0.95, zf + inset * 0.5 + 0.15), Color("#d8d2c2"))
+		_box("roof", Vector3(1.6, 0.12, inset + 0.5), Vector3(cx - side * uw * 0.15, dy + 1.96, zf + inset * 0.5 + 0.1), shingle)
+		_window(Vector3(cx - side * uw * 0.15, dy + 0.95, zf), Vector3(-1, 0, 0), 1.0, 1.3, false, false, TRIM)
+		if i > 0:
+			_box("brick", Vector3(0.3, 1.0, 0.3), Vector3(x0 + i * uw, top + 0.6, cz), brick)  # party wall chimney cap
+	_rear_wall(x0, x1, zf + d, base, floor_h, storeys - 1, TRIM)
+	# A shared lot out back, off the alley or a drive.
+	_parking(x0, x1, zf + d + 1.5, zf + d + 14.0, width)
+	if r.randf() < 0.6:
+		var pick := TreeField.pick(r)
+		trees.append([Vector3(r.randf_range(-width * 0.3, width * 0.3), 0, -to_curb + 1.0), pick[0], pick[1],
+			r.randf_range(0.7, 1.0)])
+
+
+## A mansard: steep shingled sides from `y` up `h`, leaning in `inset` on
+## every side of the block x0..x1, z0..z1, and a flat roof on top.
+func _th_mansard_roof(x0: float, x1: float, z0: float, z1: float, y: float, h: float, inset: float, col: Color) -> void:
+	var o := 0.15  # the eave stands proud of the brick
+	var a0 := Vector3(x0 - o, y, z0 - o)
+	var a1 := Vector3(x1 + o, y, z0 - o)
+	var a2 := Vector3(x1 + o, y, z1 + o)
+	var a3 := Vector3(x0 - o, y, z1 + o)
+	var b0 := Vector3(x0 + inset, y + h, z0 + inset)
+	var b1 := Vector3(x1 - inset, y + h, z0 + inset)
+	var b2 := Vector3(x1 - inset, y + h, z1 - inset)
+	var b3 := Vector3(x0 + inset, y + h, z1 - inset)
+	_quad("roof", a0, a1, b1, b0, col, [], Vector3(0, inset, -h))
+	_quad("roof", a1, a2, b2, b1, col, [], Vector3(h, inset, 0))
+	_quad("roof", a2, a3, b3, b2, col, [], Vector3(0, inset, h))
+	_quad("roof", a3, a0, b0, b3, col, [], Vector3(-h, inset, 0))
+	_quad("membrane", b0, b1, b2, b3, Color("#55524d"), [], Vector3.UP)
+	_box("paint", Vector3(x1 - x0 + o * 2.0, 0.2, 0.08), Vector3((x0 + x1) * 0.5, y - 0.05, z0 - o), TRIM)
+
+
+# ---------------------------------------------------------------- garden apartments
+
+## A garden apartment building, the walk-up of every Midwestern town's
+## edge: two or three storeys of flats round open breezeway stairs, a
+## balcony or patio for each flat, parking behind. `modern` draws today's
+## (lap siding over a stone base, a gabled front over each breezeway,
+## white-railed balconies: Indiana's 2010s garden communities); otherwise
+## the 1960s-70s kind (brick, a low hip roof, steel-railed concrete
+## balconies, the breezeway a dark slot through the building).
+func _th_garden(to_curb: float, width: float, storeys: int, modern: bool) -> void:
+	var r := RandomNumberGenerator.new()
+	r.seed = hash([rng.seed, "garden"])
+	var w := minf(width - 4.0, r.randf_range(26.0, 40.0))
+	var d := r.randf_range(13.0, 15.0)
+	var zf := r.randf_range(6.0, 8.0)
+	var base := 0.4
+	var floor_h := 2.9
+	var top := base + floor_h * storeys
+	var cz := zf + d * 0.5
+	var wall := Color(TH_SIDING[r.randi() % TH_SIDING.size()]) if modern else Color(FACADE_BRICK[r.randi() % FACADE_BRICK.size()])
+	var stone := Color(TH_STONE[r.randi() % TH_STONE.size()])
+	var roof := Color(ROOF[r.randi() % ROOF.size()])
+	var trim := TRIM if modern else Color(["#d9d3c3", "#cfc8b6", "#efede6"][r.randi() % 3])
+	_box("concrete", Vector3(w + 0.1, base, d + 0.1), Vector3(0, base * 0.5, cz), FOUNDATION)
+	_box("siding" if modern else "brick", Vector3(w, top - base, d), Vector3(0, (base + top) * 0.5, cz), wall)
+	if modern:
+		_box("brick", Vector3(w + 0.03, 1.2, 0.12), Vector3(0, base + 0.6, zf - 0.05), stone)
+	# Breezeways: one in the middle, or two on a long building.
+	var halls := [0.0] if w < 32.0 else [-w * 0.25, w * 0.25]
+	var hw := 3.2
+	for hx: float in halls:
+		_box("paint", Vector3(hw, top - base - 0.1, 0.5), Vector3(hx, (base + top) * 0.5, zf + 0.2), Color("#2c2b29"))
+		# Stair flights rising inside, catching the light.
+		for f in storeys - 1:
+			for k in 2:
+				var y0 := base + f * floor_h + k * floor_h * 0.5
+				_box("concrete", Vector3(1.2, 0.18, 2.6), Vector3(hx + (k * 2 - 1) * 0.7, y0 + floor_h * 0.25, zf + 0.6),
+					FOUNDATION, Basis(Vector3.RIGHT, -0.5))
+		_stoop(hx, zf, hw, 1.4, base)
+		_flat_rect("drive", hx - 0.8, hx + 0.8, -0.3, zf - 1.4, 0.06)
+		if modern:
+			_gable_roof(hx, zf + 1.5, top, hw + 2.4, (hw + 2.4) * 0.4, 3.6, false, roof, wall)
+	# Flats either side of each breezeway: windows and a balcony each.
+	var spans := []
+	var edges := [-w * 0.5] + halls.map(func(h): return h - hw * 0.5)
+	var ends := halls.map(func(h): return h + hw * 0.5) + [w * 0.5]
+	for i in edges.size():
+		spans.append([edges[i] + 0.4 if i == 0 else ends[i - 1] + 0.4, (halls[i] - hw * 0.5 if i < halls.size() else w * 0.5) - 0.4])
+	for sp in spans:
+		var a: float = sp[0]
+		var b: float = sp[1]
+		var n := maxi(1, roundi((b - a) / 7.5))
+		var fw := (b - a) / n
+		for u in n:
+			var fx := a + (u + 0.5) * fw
+			for f in storeys:
+				var y := base + f * floor_h
+				_window(Vector3(fx - fw * 0.28, y + 1.5, zf), Vector3(-1, 0, 0), 1.0, 1.4, modern, false, trim)
+				# A patio door onto the balcony (or a ground-floor patio).
+				var bx := fx + fw * 0.15
+				_box("paint", Vector3(1.9, 2.2, 0.05), Vector3(bx, y + 1.1, zf - 0.02), trim)
+				_glass(Vector3(bx, y + 1.08, zf - 0.05), Vector3(-1, 0, 0), 1.7, 2.0, r.randf_range(0.0, 0.4))
+				if f == 0:
+					_box("concrete", Vector3(2.6, 0.12, 1.8), Vector3(bx, 0.06, zf - 0.9), FOUNDATION.lightened(0.05))
+					continue
+				var rail := trim if modern else Color("#2a2b2c")
+				_box("concrete" if not modern else "paint", Vector3(2.6, 0.18, 1.5), Vector3(bx, y - 0.05, zf - 0.75),
+					FOUNDATION if not modern else Color("#8d7b5f"))
+				_box("paint", Vector3(2.6, 0.06, 0.06), Vector3(bx, y + 1.0, zf - 1.47), rail)
+				for s in [-1.0, 1.0]:
+					_box("paint", Vector3(0.06, 0.06, 1.5), Vector3(bx + s * 1.27, y + 1.0, zf - 0.75), rail)
+				var m := 12
+				for k in m + 1:
+					_box("paint", Vector3(0.03, 0.95, 0.03), Vector3(bx - 1.27 + k * 2.54 / m, y + 0.55, zf - 1.47), rail)
+	for f in storeys:
+		for s in [-1.0, 1.0]:
+			_window(Vector3(s * w * 0.5, base + f * floor_h + 1.5, cz), Vector3(0, 0, -s), 1.0, 1.4, modern, false, trim)
+	if modern:
+		_gable_roof(0.0, cz, top, d, d * 0.5 * 0.42, w, true, roof, wall)
+	else:
+		_hip_roof(0.0, cz, top, w, d, r.randf_range(1.3, 1.8), roof)
+	_rear_wall(-w * 0.5, w * 0.5, zf + d, base, floor_h, storeys, trim)
+	_parking(-width * 0.5 + 0.6, width * 0.5 - 0.6, zf + d + 1.5, zf + d + 16.0, width)
+	var x := -w * 0.5 + 0.6
+	while x < w * 0.5 - 0.5:
+		var clear := true
+		for hx: float in halls:
+			clear = clear and absf(x - hx) > hw * 0.5 + 0.5
+		if clear:
+			_shrub(Vector3(x, 0.0, zf - 0.5), r.randf_range(0.4, 0.6))
+		x += r.randf_range(1.6, 2.6)
+	var pick := TreeField.pick(r)
+	trees.append([Vector3(-width * 0.3, 0, -to_curb + 1.2), pick[0], pick[1], r.randf_range(0.8, 1.0)])

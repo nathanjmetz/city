@@ -289,7 +289,9 @@ func _shops() -> void:
 			var plan := DenseBuilder.office_plan(seed * 31 + 7, lot, 2 + seed % 4)
 			var built := DenseBuilder.build_office(seed * 31 + 7, 3.9, lot, 2 + seed % 4)
 			var b := DenseBuilder._start(seed * 31 + 7, lot)
-			b._office(3.9, b.half * 2.0, 2 + seed % 4)
+			# An old street's office block has no lot (build_office).
+			if b.era != "prewar":
+				b._postwar_office(3.9, b.half * 2.0, 2 + seed % 4)
 			if str(b.site) != str(plan):
 				odiff.append(seed)
 			if not plan.stalls.is_empty():
