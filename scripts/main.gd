@@ -364,6 +364,11 @@ func _ready() -> void:
 		or industry_tool.kind != "" or warehouse_tool.kind != "" or park_tool.kind != "" or campus_tool.kind != "" or bank_tool.kind != "" or telecom_tool.kind != "" or move_tool.active \
 		or neighborhood_tool.kind != "" or big_tool.kind != "")
 	add_child(select_tool)
+	# A clicked station, park, landfill or post office shows its own reach.
+	select_tool.selected.connect(func(sel):
+		service_view.focus = sel if sel.get("type", "") in ["service", "hub", "park", "post_office"] else {})
+	# Placing a park shows what the parks already built lift.
+	park_tool.kind_changed.connect(func(k): service_view.tool_area = "parks" if k != "" else "")
 
 	var water_view := WaterView.new()
 	add_child(water_view)

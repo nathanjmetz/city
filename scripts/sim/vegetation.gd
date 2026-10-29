@@ -523,8 +523,8 @@ static func _dressed(p: Vector3, kind: int, sp: int, size: float, shade: float) 
 	return {"pos": p, "kind": kind, "species": sp, "size": size, "tint": tint}
 
 
-## Fencerows: lines of trees and brush along old field edges. In southern
-## Indiana fields follow the Public Land Survey, so fencerows run north-south
+## Fencerows: lines of trees and brush along old field edges. In Indiana
+## fields follow the Public Land Survey, so fencerows run north-south
 ## and east-west on the eighth-mile lines (every 201 m), most of all on the
 ## quarter-quarter lines every 402 m, with gaps where a gate or a tractor
 ## crossing is. They stand between crop fields; inside woods and water they
@@ -556,7 +556,12 @@ func _fencerows(out: Array, area: Rect2, lattice: Dictionary, built: bool, shrub
 					var p := Vector3(off, 0.0, along) if axis == 0 else Vector3(along, 0.0, off)
 					if not area.has_point(Vector2(p.x, p.z)):
 						continue
-					var kind := Kind.TREE if _h(id, 827) < 0.4 else Kind.SHRUB
+					# In runs, as real fencerows grow (aerial photos of Grant County):
+					# a stretch of trees whose crowns meet, then a brushy
+					# stretch of shrubs and the odd tree, never an even dotted
+					# line of lone trees.
+					var run := _h(Vector2i(id.x / 4, id.y), 825) < 0.55
+					var kind := Kind.TREE if _h(id, 827) < (0.85 if run else 0.15) else Kind.SHRUB
 					if kind == Kind.SHRUB and not shrubs:
 						continue
 					var cover := _blend(lattice, p)
@@ -580,7 +585,9 @@ func _fencerows(out: Array, area: Rect2, lattice: Dictionary, built: bool, shrub
 					if kind == Kind.TREE:
 						sp = TreeField.Species.OAK if pick < 0.3 else (TreeField.Species.LOCUST if pick < 0.6 \
 							else (TreeField.Species.SPRUCE if pick < 0.8 else TreeField.Species.MAPLE))
-					out.append(_dressed(p, kind, sp, 0.8 + 0.4 * _h(id, 831), _h(id, 833)))
+					# Open-grown, so wider than a woods tree of the same age.
+					var grown := (0.95 + 0.45 * _h(id, 831)) if kind == Kind.TREE else (0.8 + 0.4 * _h(id, 831))
+					out.append(_dressed(p, kind, sp, grown, _h(id, 833)))
 
 
 static func _h(i: Vector2i, salt: int) -> float:

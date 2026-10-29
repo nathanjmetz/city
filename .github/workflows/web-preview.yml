@@ -100,6 +100,7 @@ jobs:
           run_test tests/test_hud_quick.gd
           run_test tests/test_connections.gd
           run_test tests/test_road_tools.gd
+          run_test tests/test_route_lines.gd
           run_test tests/test_detail_floor.gd
           run_test tests/test_grid_fill.gd
           run_test tests/test_move_it.gd
@@ -169,10 +170,16 @@ jobs:
           run_test tests/test_mail.gd
           run_test tests/test_economy.gd
           run_test tests/test_construction.gd
+          run_test tests/test_local_supply.gd
+          run_test tests/test_production_chains.gd
+          run_test tests/test_farmers_market.gd
+          run_test tests/test_trade_haul.gd
           run_test tests/test_builders.gd
           run_test tests/test_telemetry.gd
           run_test tests/test_pollution.gd
           run_test tests/test_placement_hints.gd
+          run_test tests/test_street_reach.gd
+          run_test tests/test_patrols.gd
           run_test tests/test_cursor_cards.gd
           run_test tests/test_road_warning.gd
           run_test tests/test_resource_bands.gd

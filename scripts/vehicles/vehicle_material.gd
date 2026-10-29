@@ -58,7 +58,9 @@ void fragment() {
 		rough = 0.1;
 		emit = col * (0.35 + smoothstep(0.3, 0.7, night) * 5.0);
 	} else if (code < 0.65) {   // tail lights, bright when braking
-		float brake = mod(v_custom.a, 2.0);
+		// Rounded first: custom data comes through a hair under a whole
+		// number, and mod(1.9999, 2.0) would light every lamp as braking.
+		float brake = mod(floor(v_custom.a + 0.5), 2.0);
 		rough = 0.2;
 		emit = vec3(1.0, 0.04, 0.02) * (0.15 + smoothstep(0.3, 0.7, night) * 1.2 + brake * 2.5);
 	} else if (code < 0.75) {   // red and blue emergency lights
@@ -83,9 +85,24 @@ void fragment() {
 			CLEARCOAT = 1.0;
 			CLEARCOAT_ROUGHNESS = 0.06;
 		} else if (code < 0.15) {
-			col = vec3(0.012, 0.016, 0.02);
+			// Glass mirrors what is around it, not just the sky: the road
+			// and verges below the horizon, a dark tree line along it, pale
+			// haze just above and deeper blue overhead, strongest at a
+			// glancing angle (Fresnel). Face on, the dark cabin shows.
+			vec3 r = (INV_VIEW_MATRIX * vec4(reflect(-VIEW, NORMAL), 0.0)).xyz;
+			float fres = 0.04 + 0.96 * pow(1.0 - clamp(dot(NORMAL, VIEW), 0.0, 1.0), 5.0);
+			vec3 env = mix(vec3(0.05, 0.05, 0.045), vec3(0.09, 0.1, 0.07), smoothstep(-0.4, 0.0, r.y));
+			env = mix(env, vec3(0.05, 0.07, 0.04), smoothstep(-0.01, 0.01, r.y));
+			env = mix(env, vec3(0.62, 0.68, 0.74), smoothstep(0.05, 0.16, r.y));
+			env = mix(env, vec3(0.32, 0.45, 0.68), smoothstep(0.25, 0.9, r.y));
+			emit = env * mix(0.12, 1.0, fres) * (1.0 - 0.9 * night);
+			col = vec3(0.01, 0.012, 0.014);
 			rough = 0.02;
-			spec = 1.0;
+			spec = 0.15;
+		} else if (code > 0.55 && code < 0.65) {
+			// Tail lamp lenses are moulded and ribbed: a soft sheen, so
+			// screen-space reflections don't sparkle on them.
+			rough = 0.4;
 		} else if (code < 0.35 && code > 0.25) {
 			// Rubber and plastic aren't one flat black.
 			col *= 0.9 + 0.2 * hash(floor(VERTEX * 40.0));

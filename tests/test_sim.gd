@@ -379,7 +379,15 @@ func _init() -> void:
 	_check(Agency.holds(oil, co, co.pos, 1.0e6, "region_buys:crude oil", 1), "a neighbouring town that buys crude opens the terminal path")
 	oil.region = {}
 	var dev_rows: Array = Inspect.describe(oil, {"type": "industry", "id": 1}).rows
-	_check(str(dev_rows).contains("Could build next"), "the company panel shows its development tree")
+	_check(str(dev_rows).contains("Could build next") or str(dev_rows).contains("Held back"), "the company panel shows its development tree")
+	# What holds a hub back, in words (after Caesar III and Anno).
+	_check(Agency.need_words(oil, co, co.pos, 0.0, "region_buys:crude oil", 1) == "a neighboring town buying crude oil",
+		"a missing buyer in words")
+	_check(Agency.need_words(oil, co, co.pos, 0.0, "population", 5000).begins_with("a town of 5,000 people"),
+		"a population need in words (%s)" % Agency.need_words(oil, co, co.pos, 0.0, "population", 5000))
+	var held := Agency.held_back(oil, {"built": []}, [{"id": "a", "name": "Terminal", "needs": {"population": 1 << 30}},
+		{"id": "b", "name": "Spur", "requires": ["a"], "needs": {"population": 1 << 30, "link": true}}], co.pos, 0.0)
+	_check(held.begins_with("Terminal: needs a town of"), "held back names the step closest to opening (%s)" % held)
 	_check(oil.factory_chain(co.pos + Vector3(600, 0, 0)) == "refinery"
 		and oil.factory_chain(co.pos + Vector3(40000, 0, 0)) == "general",
 		"factories near the oil field make plastics; far from any industry they're general")
