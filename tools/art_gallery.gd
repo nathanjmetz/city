@@ -126,7 +126,7 @@ func _init() -> void:
 			"care": meshes = HouseBuilder.build(seed * 100, 3.9, {"width": w, "depth": 48.0}, 1)
 			"rows":
 				# Row homes of each kind, two storeys and three.
-				MetroBuilder.force_row = ["townhomes", "urban", "mansard", "urban", "row"][i]
+				MetroBuilder.force_row = ["colonial", "urban", "mansard", "colonial", "row"][i]
 				meshes = MetroBuilder.build_row(sd, 3.9, {"width": w, "depth": 45.0}, 3, 2 + i % 2)
 				MetroBuilder.force_row = ""
 			"infill":
