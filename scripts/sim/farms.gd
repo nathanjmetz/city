@@ -508,9 +508,6 @@ func decide(usable: Callable) -> bool:
 		# Each new year the leader picks every field's crop (CropPlan).
 		if year > int(f.get("plan_year", 0)):
 			f.plan_year = year
-			if not f.has("till"):
-				# The habit the farm had before its leader weighed it.
-				f.till = CropPlan.TILL_IDS[CropCalendar.farm_practice(id, f)]
 			if not f.cells.is_empty():
 				CropPlan.plan(f, demand, price, day, func(c): return fertility_at(cell_center(f, c)),
 					func(c): return slope_of.call(cell_center(f, c)) if slope_of.is_valid() else 0.0)

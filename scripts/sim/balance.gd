@@ -625,6 +625,12 @@ const CROP_ROTATION_YIELD := {
 	"soybeans": {"soybeans": 0.92},
 	"wheat": {"wheat": 0.85, "corn": 0.95},
 }
+## What a careful farmer counts against planting a row crop on the same
+## field two years running, dollars an acre: corn on corn needs rootworm
+## control (a Bt trait or soil insecticide, about $20-30 an acre) and
+## soybeans on soybeans build up cyst nematode and disease (Purdue
+## extension), on top of the yield lost.
+const CROP_REPEAT_RISK := 30.0
 ## Fertiliser saved, dollars an acre: the nitrogen credit to corn from last
 ## year's soybeans (about 40 lb N) or alfalfa (about 120 lb), at $0.60 a lb.
 const CROP_N_CREDIT := {"corn": {"soybeans": 25.0, "hay": 75.0}}
@@ -659,8 +665,9 @@ const CROP_COVER_SOIL_VALUE := 45.0
 ## field cultivator pass about $17. A tilled farm chisels corn stalks in the
 ## fall and runs the cultivator each spring; no-till skips them for a
 ## burndown herbicide pass of about $15. So no-tilling into corn stalks
-## saves about $24 an acre and into bean stubble or wheat about $2
-## (TILLAGE_SAVE, by last year's crop). Purdue's long-term tillage plots on
+## saves about $24 an acre; into bean stubble or wheat the one cultivator
+## pass it skips costs about what the burndown does (TILLAGE_SAVE, by last
+## year's crop). Purdue's long-term tillage plots on
 ## dark, poorly drained ground like most of Grant County yield about 5% less
 ## corn no-tilled and the same soybeans. Residue left on top cuts erosion
 ## by most of it (NRCS: 60-90%) and builds organic matter. "crops" are the
@@ -673,7 +680,7 @@ const TILLAGE := {
 		"health": 0.03},
 }
 const TILLAGE_SAVE := {"corn": 24.0}
-const TILLAGE_SAVE_OTHER := 2.0
+const TILLAGE_SAVE_OTHER := 0.0
 ## Changing how a farm tills means fitting the planter (row cleaners, more
 ## down-pressure: about $2,000 a row on a 16-row planter) and learning it:
 ## about $8 an acre a year over ten years.
@@ -2510,6 +2517,30 @@ const FAMILY_EXPAND_CHANCE := 0.25
 ## about $54,000 a year, near the median small-business owner's income (SBA).
 const FAMILY_PROFIT_SHARE := 0.3
 const FAMILY_PER_JOB := 450
+## Shop hours, a shop's work mode (Brawn's pick #17): a small-town Indiana
+## store keeps about 9 to 6, and each January its owner weighs staying open
+## until 9 for the people who work days. Restaurants, taverns and pizza
+## places are open for supper anyway; offices keep office hours. Per trade:
+## [sales a job a year, gross margin, share of sales after 6 pm when open]
+## (Census Annual Retail Trade Survey sales per employee and margins; the
+## evening share from retail traffic counts: groceries and drug stores do a
+## quarter or so of their business after work, specialty stores little).
+const SHOP_LATE := {
+	"grocery": [250_000.0, 0.28, 0.25], "pharmacy": [300_000.0, 0.25, 0.2], "hardware": [180_000.0, 0.36, 0.08],
+	"feed": [250_000.0, 0.2, 0.04], "auto": [120_000.0, 0.45, 0.05], "florist": [80_000.0, 0.5, 0.04],
+	"bakery": [70_000.0, 0.5, 0.04], "furniture": [200_000.0, 0.45, 0.1], "antiques": [60_000.0, 0.45, 0.06],
+	"clothing": [120_000.0, 0.45, 0.08], "gifts": [80_000.0, 0.5, 0.08], "appliance": [220_000.0, 0.3, 0.08],
+	"hair": [50_000.0, 0.6, 0.15], "barber": [50_000.0, 0.6, 0.08],
+}
+const SHOP_EVENING_TRADES := ["restaurant", "tavern", "pizza"]
+## The hour the day's shops close, and the hour a late one closes.
+const SHOP_CLOSE := 18
+const SHOP_LATE_CLOSE := 21
+## The evening crew: about a third of the day's staff for the three extra
+## hours at $14 an hour (Indiana retail median, BLS), 26 open days a month.
+const SHOP_LATE_STAFF := 0.33
+const SHOP_LATE_WAGE := 14.0
+const SHOP_LATE_DAYS := 26
 ## A new family's savings when it opens its first business.
 const FAMILY_START_CASH := 50_000
 ## Opening a business on an empty zoned lot: a small-town restaurant or

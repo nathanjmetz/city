@@ -91,11 +91,6 @@ static func net_per_acre(crop: String, prev: String, health: float, fertility: f
 	return gross + second - Balance.FARM_COST_PER_ACRE[crop] + credit(crop, prev) + save
 
 
-## Balance.TILLAGE keys by CropCalendar practice (NO_TILL, CHISEL,
-## BEANS_NO_TILL; RYE is no-till with a cover crop).
-const TILL_IDS := ["no_till", "chisel", "beans_no_till", "no_till"]
-
-
 ## How farm f tills (Balance.TILLAGE key); "chisel" until its leader picks.
 static func till_of(f: Dictionary) -> String:
 	return str(f.get("till", "chisel"))
@@ -252,6 +247,8 @@ static func _option(crop: String, prev: String, health: float, years: int, ferti
 		factors["demand"] = [float(demand[crop][0]), demand[crop][1]]
 	# Seed, fertiliser and fuel at stake up front: corn costs the most.
 	factors["risk"] = [-0.1 * Balance.FARM_COST_PER_ACRE[crop], "costs less to put in"]
+	if crop == prev and crop in ["corn", "soybeans"]:
+		factors["risk"][0] -= Balance.CROP_REPEAT_RISK
 	# Splitting the farm spreads work at planting and harvest, and price
 	# risk: past half the farm in one crop, more of it counts against it.
 	# (Pasture is the herd's ground, not a crop to balance.)
@@ -278,12 +275,13 @@ static func _option(crop: String, prev: String, health: float, years: int, ferti
 
 
 ## The leader's pick of how to work the ground this year (Agency.choose):
-## what each way saves or costs an acre on the crops the fields carry now,
+## what each way saves or costs an acre over the fields' rotations,
 ## what it does for the soil and against washing on steep ground, and the
 ## cost of changing the farm's habit. Sets f.till and f.till_why.
 static func plan_till(f: Dictionary, lead: Dictionary, cells_of: Dictionary, keys: Array, price: float,
 		fert: Callable, slope: Callable) -> String:
-	var was := till_of(f)
+	# A farm's first pick carries no cost of changing.
+	var was := str(f.get("till", ""))
 	var options := []
 	var ids: Array = Balance.TILLAGE.keys()
 	ids.sort()
@@ -305,8 +303,14 @@ static func plan_till(f: Dictionary, lead: Dictionary, cells_of: Dictionary, key
 			steep /= cells.size()
 			var n := float(cells.size())
 			acres += n
-			money += n * (net_per_acre(fl.crop, fl.prev, fl.health, fertility, price, 1.0, t)
-				- net_per_acre(fl.crop, fl.prev, fl.health, fertility, price))
+			# Over the field's rotation (last year's crop and the one before
+			# it, which usually comes round again), not one year of it.
+			var turns := [[str(fl.crop), str(fl.prev)]]
+			if str(fl.prev) in GRAIN and fl.prev != fl.crop:
+				turns.append([str(fl.prev), str(fl.crop)])
+			for turn in turns:
+				money += n / turns.size() * (net_per_acre(turn[0], turn[1], fl.health, fertility, price, 1.0, t)
+					- net_per_acre(turn[0], turn[1], fl.health, fertility, price))
 			# Soil it builds, counted a few years ahead, and soil it keeps from
 			# washing off steep ground.
 			future += n * float(Balance.TILLAGE[t].health) * 3.0 * Balance.CROP_HEALTH_YIELD \
@@ -314,14 +318,14 @@ static func plan_till(f: Dictionary, lead: Dictionary, cells_of: Dictionary, key
 			future += n * maxf(steep - Balance.CROP_ERODIBLE_SLOPE, 0.0) * Balance.CROP_EROSION_PER_ACRE \
 				* (1.0 - float(Balance.TILLAGE[t].wash))
 		if acres <= 0.0:
-			return was  # all hay or pasture: nothing to till
+			return till_of(f)  # all hay or pasture: nothing to till
 		var said: String = {"chisel": "keeps corn yields up on wet, dark ground",
 			"beans_no_till": "saves the tillage passes before soybeans",
 			"no_till": "saves the tillage passes"}[t]
 		options.append({"id": t, "name": str(Balance.TILLAGE[t].name), "factors": {
 			"money": [money / acres, said],
 			"future": [future / acres, "leaves the residue to hold and build the soil"],
-			"risk": [0.0 if t == was else -Balance.TILLAGE_SWITCH, "sticks with how the farm already works"]}})
+			"risk": [0.0 if t == was or was == "" else -Balance.TILLAGE_SWITCH, "sticks with how the farm already works"]}})
 	var pick := Agency.choose(lead, options)
 	f.till = str(pick.id)
 	f.till_why = str(pick.why)

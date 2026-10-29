@@ -73,6 +73,7 @@ func _init() -> void:
 	_check(int(back.sites[1].shifts) == 2 and int(back.sites[2].shifts) == 1, "shifts are saved")
 
 	_tillage()
+	_hours()
 
 	print("ALL TESTS PASSED" if not _failed else "TESTS FAILED")
 	quit(1 if _failed else 0)
@@ -118,6 +119,43 @@ func _tillage() -> void:
 	var back := Farms.new()
 	back.from_dict(JSON.parse_string(JSON.stringify(sim.farms.to_dict())))
 	_check(str(back.farms[id].get("till", "")) == str(f.till), "the farm's tillage is saved")
+
+
+## Shops: each January the owner weighs staying open until 9.
+func _hours() -> void:
+	var sim := CitySim.new()
+	sim.stats = {"population": 2000, "workers": 1000, "employed": 450, "jobs": 450, "commuting": 50, "homes_free": 0}
+	var fams: Families = sim.families
+	var shops := {"grocery": "g", "florist": "f", "restaurant": "r", "law": "l", "grocery2": "g2"}
+	for what in shops:
+		sim.buildings[shops[what]] = {"cap": 10, "zone": ZoneMap.Zone.COMMERCIAL}
+		var fam := fams._new_family(sim, "Miller", "Miller", "serif", hash(what), 2030)
+		fam.caution = 0.5
+		fam.ambition = 0.5
+		fams.families[fam.id] = fam
+		fams.next_id += 1
+		fams._own("lot:" + shops[what], fam.id, what.trim_suffix("2"), what, 2030)
+	fams._set_hours(sim, "lot:g")
+	fams._set_hours(sim, "lot:f")
+	_check(fams.owned["lot:g"].late, "the grocery stays open until 9 (%s)" % fams.owned["lot:g"].hours_why)
+	_check(not fams.owned["lot:f"].late, "the florist closes at 6 (%s)" % fams.owned["lot:f"].hours_why)
+	_check(fams.open_at("lot:g", 19) and not fams.open_at("lot:g", 21) and not fams.open_at("lot:f", 19)
+		and fams.open_at("lot:f", 10), "after six only the late shops are open")
+	_check(fams.open_at("lot:r", 20) and not fams.open_at("lot:l", 19), "the diner is open for supper, the law office isn't")
+	_check(fams._draw(sim, "lot:g") > 10 * Balance.FAMILY_PER_JOB or not sim.utilities_ok("g"),
+		"the evening's sales go to the owners")
+	# A second grocery shares the town's evening shoppers.
+	fams._set_hours(sim, "lot:g2")
+	_check(float(fams.owned["lot:g2"].get("late_net", 0)) < float(fams.owned["lot:g"].late_net),
+		"a second grocery splits the evening trade")
+	sim.stats = {"population": 2000, "workers": 1000, "employed": 0, "jobs": 0, "commuting": 0, "homes_free": 0}
+	fams._set_hours(sim, "lot:g")
+	_check(not fams.owned["lot:g"].late, "with nobody working days, the evening isn't worth it")
+	_check(fams.rows(sim, "lot:f").any(func(r): return r[0] == "Hours" and r[1].begins_with("9 am to 6 pm")),
+		"the shop's panel shows its hours")
+	var back := Families.new()
+	back.from_dict(JSON.parse_string(JSON.stringify(fams.to_dict())))
+	_check(back.open_at("lot:g2", 19) == fams.open_at("lot:g2", 19) and back.owned["lot:f"].has("late"), "hours are saved")
 
 
 func _farm(lead: Dictionary, till: String, crop := "") -> Dictionary:
