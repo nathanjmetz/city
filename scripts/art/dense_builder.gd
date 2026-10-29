@@ -249,7 +249,9 @@ func _mixed(to_curb: float, width: float, storeys: int) -> void:
 			if i == bays / 2 and bw > 1.5:
 				_shop_door(x, bw, zf, mull)
 			else:
+				shopfront = fine
 				_glass(Vector3(x, 1.65, zf - 0.03), Vector3(-1, 0, 0), bw - 0.12, 1.9, rng.randf_range(0.0, 0.2))
+				shopfront = false
 				_box("paint", Vector3(bw - 0.02, 0.6, 0.16), Vector3(x, 0.4, zf - 0.08), trim)
 				if fine:
 					# Raised panels on the bulkhead.
@@ -342,7 +344,9 @@ func _shop_door(x: float, bw: float, zf: float, mull: Color) -> void:
 	var side := (bw - dw - 0.12) * 0.5
 	for sgn in [-1.0, 1.0]:
 		var sx: float = x + sgn * (dw + side) * 0.5
+		shopfront = fine
 		_glass(Vector3(sx, 1.65, zf - 0.03), Vector3(-1, 0, 0), side, 1.9, 0.0)
+		shopfront = false
 		_box("paint", Vector3(side, 0.6, 0.16), Vector3(sx, 0.4, zf - 0.08), mull)
 	var col := Color(_pick(["#3a2a1e", "#1c1d1f", "#5a3a22"])) if fine else mull
 	_box("paint", Vector3(dw + 0.12, 2.62, 0.08), Vector3(x, 1.31, zf - 0.02), col)  # frame, kick panel and head

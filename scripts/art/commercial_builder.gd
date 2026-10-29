@@ -121,7 +121,9 @@ func _retail(to_curb: float) -> void:
 		var x := -sw * 0.5 + (i + 0.5) * sw / bays
 		var y := 1.55 if i == door else 1.8
 		var gh := 2.6 if i == door else 2.1
+		shopfront = fine_parts and i != door
 		_glass(Vector3(x, y, zf - 0.03), Vector3(-1, 0, 0), sw / bays - 0.08, gh, 0.0 if i == door else rng.randf_range(0.0, 0.15))
+		shopfront = false
 		_box("paint", Vector3(0.08, 2.7, 0.12), Vector3(x - sw / bays * 0.5, 1.6, zf - 0.06), mull)
 	_box("paint", Vector3(0.08, 2.7, 0.12), Vector3(sw * 0.5, 1.6, zf - 0.06), mull)
 	_box("paint", Vector3(sw, 0.1, 0.14), Vector3(0, 2.92, zf - 0.07), mull)
@@ -192,7 +194,9 @@ func _main_street(to_curb: float) -> void:
 	var bays := 4
 	for i in bays:
 		var x := -sw * 0.5 + (i + 0.5) * sw / bays
+		shopfront = fine_parts
 		_glass(Vector3(x, 1.85, zf - 0.03), Vector3(-1, 0, 0), sw / bays - 0.12, 2.3, rng.randf_range(0.0, 0.2))
+		shopfront = false
 		_box("paint", Vector3(0.1, 3.0, 0.14), Vector3(x - sw / bays * 0.5, 1.75, zf - 0.07), mull)
 	_box("paint", Vector3(0.1, 3.0, 0.14), Vector3(sw * 0.5, 1.75, zf - 0.07), mull)
 	_box("paint", Vector3(sw + 0.3, 0.6, 0.16), Vector3(0, 0.4, zf - 0.08), trim)
@@ -424,7 +428,9 @@ func _strip_center(to_curb: float) -> void:
 	for i in n:
 		var x := -w * 0.5 + (i + 0.5) * bay
 		var sw := bay - 1.4
+		shopfront = fine_parts
 		_glass(Vector3(x - 0.4, 1.7, zf - 0.03), Vector3(-1, 0, 0), sw - 1.4, 2.3, rng.randf_range(0.0, 0.2))
+		shopfront = false
 		_glass(Vector3(x + sw * 0.5 - 0.5, 1.45, zf - 0.03), Vector3(-1, 0, 0), 0.95, 2.4, 0.0)
 		_box("paint", Vector3(sw, 0.1, 0.12), Vector3(x, 2.9, zf - 0.06), mull)
 		_box("paint", Vector3(sw, 0.35, 0.12), Vector3(x, 0.47, zf - 0.06), mull)
