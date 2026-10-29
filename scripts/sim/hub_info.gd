@@ -52,7 +52,7 @@ static func describe(sim: CitySim, id: int) -> Dictionary:
 		problems.append("No free land next to it to grow into.")
 	# Its leader and development tree: built, last move, next, and what's locked.
 	rows.append_array(Inspect._development(sim, h, CivicHubs.tree(h), h.pos, CivicHubs.funding(h)).filter(
-		func(r): return r[0] != "Built" and r[0] != "Could build next"))
+		func(r): return not r[0] in ["Built", "Could build next", "Held back"]))
 	for node in CivicHubs.tree(h):
 		if node.id in h.built:
 			rows.append([node.name, _dev_note(sim, node.effects)])
