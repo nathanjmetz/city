@@ -18,6 +18,9 @@ const OFFICE_GLASS := Color(0.55, 0.62, 0.66, 0.35)
 ## Small parts only the desktop draws (door pulls, bulkhead panels, transom
 ## muntins, sash frames); the browser keeps its triangle budget.
 static var fine := not OS.has_feature("web")
+## Storeys the building had before floors were added on top (BuildingTypes
+## added_from), or 0 when it was built as it stands.
+var _added := 0
 
 
 static func _start(seed: int, lot: Dictionary, spec := {}) -> DenseBuilder:
@@ -851,6 +854,9 @@ static func build_office(seed: int, to_curb: float, lot: Dictionary, storeys: in
 	if b.era == "prewar":
 		return TowerBuilder.build_tower(seed, to_curb, lot, storeys, spec, "chicago")
 	b.office_glass = fine
+	b._added = int(lot.get("added_from", 0))
+	if b._added >= storeys:
+		b._added = 0
 	b._postwar_office(to_curb, b.half * 2.0, storeys)
 	b._service_yard(false)
 	return b._done()
@@ -863,6 +869,8 @@ static func build_office(seed: int, to_curb: float, lot: Dictionary, storeys: in
 func _postwar_office(to_curb: float, width: float, storeys: int) -> void:
 	var r := RandomNumberGenerator.new()
 	r.seed = hash([rng.seed, "midrise office"])
+	# (A mirror-glass box shows no added floors: it was built whole. The pick
+	# stays the same either way, so SiteLayout's dry run finds the same lot.)
 	if storeys >= 4 and r.randf() < 0.55:
 		_office_mirror(to_curb, width, storeys)
 	else:
@@ -1022,6 +1030,8 @@ func _office(to_curb: float, width: float, storeys: int) -> void:
 		_box("metal", Vector3(2.2, 1.4, 1.6), Vector3(rng.randf_range(-w * 0.3, w * 0.3), deck + 0.7,
 			cz + rng.randf_range(-d * 0.2, d * 0.2)), Color("#b9bcbc"))
 	_office_roof(w, d, cz, deck, wall, mat, storeys)
+	if _added > 0:
+		_office_added(w, d, zf, cz, floor_h, deck, storeys, mat, band)
 	if fine:
 		_office_front(w, zf, storeys, floor_h, band)
 	_office_lot(to_curb, w, zf, zf + d, width)
@@ -1030,6 +1040,39 @@ func _office(to_curb: float, width: float, storeys: int) -> void:
 		# The one on the drive side stands in the front lawn, off the drive.
 		var at := Vector3(-w * 0.5 - 1.5, 0, zf - 2.0) if s < 0.0 else Vector3(w * 0.5 - 2.5, 0, zf - 4.5)
 		trees.append([at, pick[0], pick[1], rng.randf_range(0.8, 1.0)])
+
+
+## Floors added on top of a postwar office block: the 1950s-60s ones were
+## often built with footings and columns for more floors, and a later
+## owner added them in the cladding of their own day (Indianapolis's
+## Meridian Street and Fort Wayne offices raised in the 1970s-80s). The
+## old roofline stays as a coping band; above it the wall is a precast or
+## EIFS skin over brick (or brick over a painted block), with its own
+## spandrel bands. Its own random numbers, so the builder's don't move.
+func _office_added(w: float, d: float, zf: float, cz: float, floor_h: float, deck: float, storeys: int, mat: String,
+		band: Color) -> void:
+	var r := RandomNumberGenerator.new()
+	r.seed = hash([rng.seed, "added floors"])
+	var y0 := _added * floor_h + 0.3
+	var h := deck - y0
+	var skin_mat := "paint" if mat == "brick" else "brick"
+	var skin := Color(["#cfc8b8", "#b9b4aa", "#d8d0bd", "#a8a49c"][r.randi() % 4]) if skin_mat == "paint" \
+		else Color(FACADE_BRICK[r.randi() % FACADE_BRICK.size()])
+	# The skin, just behind the glass (which sits 3 cm out).
+	_box(skin_mat, Vector3(w + 0.04, h, 0.02), Vector3(0, y0 + h * 0.5, zf - 0.012), skin)
+	_box(skin_mat, Vector3(w + 0.04, h, 0.02), Vector3(0, y0 + h * 0.5, zf + d + 0.012), skin)
+	for sx in [-1.0, 1.0]:
+		_box(skin_mat, Vector3(0.02, h, d + 0.04), Vector3(sx * (w * 0.5 + 0.012), y0 + h * 0.5, cz), skin)
+	# The parapet in the new skin.
+	for sz in [-1.0, 1.0]:
+		_box(skin_mat, Vector3(w + 0.06, 1.22, 0.29), Vector3(0, deck + 0.6, cz + sz * (d * 0.5 - 0.125)), skin)
+		_box(skin_mat, Vector3(0.29, 1.22, d + 0.06), Vector3(sz * (w * 0.5 - 0.125), deck + 0.6, cz), skin)
+	# The old roofline: its coping left on as a band round the building.
+	_box("paint", Vector3(w + 0.4, 0.28, d + 0.4), Vector3(0, y0 - 0.1, cz), Color("#cfcbc2") if mat == "brick" else Color("#8e8c86"))
+	# The new floors' spandrel bands, a contrast to the old ones.
+	var nb := band.lightened(0.35) if band.get_luminance() < 0.5 else band.darkened(0.35)
+	for f in range(_added, storeys):
+		_box("paint", Vector3(w + 0.1, 0.9, 0.1), Vector3(0, f * floor_h + 0.3 + 0.45, zf - 0.09), nb)
 
 
 ## The close-up front of a suburban office (1980s-2000s Indianapolis,
