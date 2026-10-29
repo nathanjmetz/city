@@ -137,7 +137,7 @@ func _init() -> void:
 			size = Vector2(150, 100)
 			lot_front = true
 			var hub := HubBuilder.build_hub({"kind": "recycling_" + ("1" if name == "recycling" else name.right(1)) if name.begins_with("recycling") else name, "cells": cells,
-				"cell": 50.0, "built": [], "received": 40_000_000}, sd, to_curb)
+				"cell": 50.0, "built": Array(OS.get_environment("DEV").split(",", false)), "received": 40_000_000}, sd, to_curb)
 			built = [hub[0], hub[1], hub[2], [], hub[3]]
 		elif name == "warehouse":
 			size = Vector2(80, 90)
