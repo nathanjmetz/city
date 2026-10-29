@@ -263,6 +263,26 @@ func _init() -> void:
 			if DenseBuilder.site_plan(s, lot, false, 0).door == DenseBuilder.site_plan(s, lot, false, 1).door:
 				kept_stores += 1
 	_check(grocers > 10 and kept_stores == grocers, "a grown corner store is the store it was (%d of %d)" % [kept_stores, grocers])
+	# Every stage keeps the walls of the stage before it (a duplex grown to a
+	# fourplex is rebuilt, so it isn't here).
+	var levels := {"house": 4, "row_home": 2, "apartments": 2, "mixed_use": 3, "commercial_block": 2, "shop": 2}
+	var lot_w := {"house": 20.0, "row_home": 24.0, "apartments": 30.0, "mixed_use": 20.0, "commercial_block": 28.0, "shop": 20.0}
+	for t in levels:
+		for era in ["prewar", "postwar", "recent"]:
+			var moved := 0
+			for s in 12:
+				var prev := []
+				for lv in levels[t]:
+					var st := int(BuildingTypes.TYPES[t].stages[lv].storeys)
+					var units := maxi(2, floori(lot_w[t] / float(BuildingTypes.TYPES.row_home.unit_w)))
+					BuildingView.build_for(t, st, s * 100 + 7, 3.9, {"width": lot_w[t], "depth": 40.0, "era": era}, {}, units, "general", lv)
+					var m: Array = HouseBuilder.last_masses.duplicate()
+					for r: Rect2 in prev:
+						if not m.any(func(q: Rect2): return q.grow(0.3).encloses(r)):
+							moved += 1
+							break
+					prev = m
+			_check(moved == 0, "a %s %s keeps its walls at every stage (%d moved)" % [era, t, moved])
 	print("FAILED" if failed else "ALL PASSED")
 	quit(1 if failed else 0)
 
