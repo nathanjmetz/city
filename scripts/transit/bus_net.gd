@@ -1587,10 +1587,21 @@ func _school_walks(sim: CitySim) -> void:
 				ref = sim.traffic.register({"ref": "school:%d" % sid, "pos": [gate.x, gate.z], "on_foot": true})
 				if ref == "":
 					break
+			var little := false
 			for pid in sim.people.residents(key):
 				var p: Dictionary = sim.people.people[pid]
 				if p.age >= 5 and p.age <= 11 and p.at == "":
-					sim.traffic.go(pid, ref, "school", stay)
+					if sim.traffic.go(pid, ref, "school", stay):
+						little = little or p.age <= Balance.SCHOOL_WALK_ALONE - 1
+			# Under about 9 they don't walk on their own (NHTS, Safe Routes):
+			# someone at home walks them there at the children's pace and
+			# heads back.
+			if little:
+				for pid in sim.people.residents(key):
+					var p: Dictionary = sim.people.people[pid]
+					if p.age >= 18 and p.at == "":
+						sim.traffic.go(pid, ref, "school", 5, true)
+						break
 
 
 func _school_next(sim: CitySim, bus: Dictionary) -> void:

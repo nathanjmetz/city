@@ -36,6 +36,30 @@ func _init() -> void:
 	_check(xs.all(func(x): return x > 0.1 and x < 0.75), "walkers keep to the right half of the walk (%s)" % str(xs))
 	_check(absf(xs[0] - xs[1]) > 0.2 and absf(xs[1] - xs[2]) > 0.2, "a household walks side by side, not inside each other")
 	_check(other < -0.1, "someone coming the other way passes on the other side (%.2f)" % other)
+	# Pace: a grown-up about 1.4 m/s, children and the old slower (Bohannon
+	# 1997), and a family setting off together for the same place keeps
+	# together at the first one's pace.
+	var sim := CitySim.new()
+	var folk := {1: 8, 2: 35, 3: 84, 4: 35}
+	for pid in folk:
+		sim.people.people[pid] = {"id": pid, "age": folk[pid], "home": "h%d" % pid}
+	sim.people.people[5] = {"id": 5, "age": 35, "home": "h1"}
+	var pt := TrafficSim.new(RoadNetwork.new())
+	pt._sim = sim
+	var avg := {}
+	for pid in [1, 2, 3]:
+		var sum := 0.0
+		for k in 40:
+			pt._next_walker = k
+			pt._wstep = k
+			sum += pt._pace(pid, PackedVector3Array([Vector3.ZERO, Vector3(0, 0, 50 + pid)]))
+		avg[pid] = sum / 40.0
+	_check(absf(avg[2] - 1.4) < 0.08 and avg[1] < avg[2] - 0.1 and avg[3] < avg[2] - 0.15,
+		"a grown-up walks about 1.4 m/s, a child and someone in their eighties slower (%.2f, %.2f, %.2f)" % [avg[2], avg[1], avg[3]])
+	pt._wstep = 999
+	var to_school := PackedVector3Array([Vector3.ZERO, Vector3(0, 0, 300)])
+	var kid := pt._pace(1, to_school)
+	_check(pt._pace(5, to_school) == kid, "a parent walking the little one keeps to the child's pace")
 	quit(1 if _failed else 0)
 
 

@@ -102,6 +102,9 @@ const CROSS_PEN := 6.0
 ## MUTCD design walking speed is 3.5 ft/s for crossings, people stroll faster).
 const MAX_WALKERS := 800
 const WALK_V := 1.4
+## Comfortable walking pace by age against a grown adult's 1.4 m/s
+## (Bohannon 1997; children 6-12 about 1.2 m/s): [up to age, share].
+const WALK_PACE := [[4, 0.7], [12, 0.86], [59, 1.0], [69, 0.94], [79, 0.84], [200, 0.72]]
 ## Metres right of the walk's middle that walkers keep to (a sidewalk is
 ## 1.5 m wide): see walker_pose.
 const WALK_LANES := [0.15, 0.4, 0.62]
@@ -214,6 +217,8 @@ var _due_done := -1  # the last tick _rest took its due vehicles for (-1: look t
 var _pend := {}      # vehicle id -> parked vehicle waiting for a gap to pull out
 var _slow := {}      # ways whose _speed is below 1 (or has cars), kept up to date each tick
 var _slow_ok := -1   # the lane version _slow was gathered on
+var _groups := {}    # [home, where to] -> pace of who set off from there this step (_pace)
+var _group_step := -1
 var _wstep := 0      # walker steps taken since load: a walker is _wstep - w.t0 steps along
 var _wdone := {}     # walker step -> walkers who get where they're going then
 ## Cars driving as part of a traffic flow (see FLOW_FROM): parked nowhere,
@@ -4154,8 +4159,9 @@ func _rest() -> void:
 # --- People -------------------------------------------------------------------
 
 ## Sends a person somewhere: on foot if it's close or their car isn't here,
-## otherwise a walk to the car and a drive. False if they can't go now.
-func go(pid: int, to_ref: String, purpose: String, stay: int) -> bool:
+## otherwise a walk to the car and a drive (always on foot when `on_foot`,
+## as walking the children to school). False if they can't go now.
+func go(pid: int, to_ref: String, purpose: String, stay: int, on_foot := false) -> bool:
 	if _sim == null or not _sim.people.people.has(pid):
 		return false
 	if _dirty:
@@ -4169,11 +4175,11 @@ func go(pid: int, to_ref: String, purpose: String, stay: int) -> bool:
 	var to_pl := place(to_ref)
 	if from_pl.is_empty() or to_pl.is_empty():
 		return false
-	var car := _vehicle_parked(p.car)
-	var far: bool = from_pl.door.distance_to(to_pl.door) > People.WALK_MAX
+	var car: Dictionary = {} if on_foot else _vehicle_parked(p.car)
+	var far: bool = from_pl.door.distance_to(to_pl.door) > People.WALK_MAX and not on_foot
 	# A golf cart (TownLaws golf_carts) takes its owner on short hops round
 	# town, and home again from wherever it was left.
-	var cart := _vehicle_parked(int(p.get("cart", -1)))
+	var cart: Dictionary = {} if on_foot else _vehicle_parked(int(p.get("cart", -1)))
 	var by_cart := false
 	if not cart.is_empty() and cart.at_place == from_ref and cars.size() < max_cars \
 			and (from_ref != home_ref or from_pl.door.distance_to(to_pl.door) <= Balance.CART_TRIP_MAX):
@@ -4269,7 +4275,7 @@ func _walk(pid: int, pts: PackedVector3Array, then: Dictionary) -> void:
 		"d": 0.0, "t": 0, "then": then, "t0": _wstep,
 		# Walking pace in whole cm/s, and distance worked out from the ticks
 		# walked, so a saved and loaded walker is exactly where it was.
-		"v": float(roundi(WALK_V * (85 + hash([pid, _next_walker]) % 31))) / 100.0}
+		"v": _pace(pid, pts)}
 	# At a signal, people wait at the kerb until the cars on the road they
 	# cross have a red (MUTCD Walk / Don't Walk with the parallel green):
 	# worked out now, since the lights run on a fixed cycle.
@@ -4298,6 +4304,31 @@ func _walk(pid: int, pts: PackedVector3Array, then: Dictionary) -> void:
 	walkers.append(w)
 	_file_walker(w)
 	_next_walker += 1
+
+
+## A walker's pace in whole cm/s: their own, slower when young or old,
+## or, setting off together from home for the same place (a family walking
+## to school, a parent with the little ones), the first one's, so they keep
+## together.
+func _pace(pid: int, pts: PackedVector3Array) -> float:
+	var p: Dictionary = _sim.people.people.get(pid, {}) if _sim != null else {}
+	var group := []
+	if p.has("home") and pts.size() > 1:
+		if _group_step != _wstep:
+			_groups.clear()
+			_group_step = _wstep
+		group = [p.home, pts[pts.size() - 1].snapped(Vector3.ONE)]
+		if _groups.has(group):
+			return _groups[group]
+	var share := 1.0
+	for a in WALK_PACE:
+		if int(p.get("age", 30)) <= int(a[0]):
+			share = a[1]
+			break
+	var v := float(roundi(WALK_V * share * (85 + hash([pid, _next_walker]) % 31))) / 100.0
+	if not group.is_empty():
+		_groups[group] = v
+	return v
 
 
 ## Files a walker under the step they arrive: the first whole step count t
