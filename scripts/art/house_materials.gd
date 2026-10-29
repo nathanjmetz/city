@@ -42,7 +42,9 @@ void vertex() {
 float snow_cover(float slope_from, float slope_to) {
 	float up = smoothstep(slope_from, slope_to, world_normal.y);
 	float patchy = texture(noise_soft, world_pos.xz / 6.0).r;
-	return up * smoothstep(0.15, 0.55, snow * 0.9 + patchy * 0.35 - 0.1);
+	// None at all without snow: the noise's peaks alone would leave white
+	// flecks on summer roofs.
+	return up * smoothstep(0.15, 0.55, snow * 0.9 + patchy * 0.35 - 0.1) * smoothstep(0.0, 0.08, snow);
 }
 """
 
@@ -547,7 +549,9 @@ void fragment() {
 	float grime = 1.0 - 0.1 * (1.0 - smoothstep(0.2, 1.2, world_pos.y));
 	float cover = snow_cover(0.8, 0.95);
 	ALBEDO = mix(vcol(COLOR.rgb) * s * grime * (0.93 + streak * 0.12), vec3(0.86, 0.88, 0.92), cover);
-	ROUGHNESS = mix(0.45, 0.7, cover);
+	// Painted steel panels are a low-gloss finish (about 30 at 60 degrees):
+	// a satin sheen toward the sky, never a mirror.
+	ROUGHNESS = mix(0.6, 0.7, cover);
 	SPECULAR = 0.5;
 }
 """
