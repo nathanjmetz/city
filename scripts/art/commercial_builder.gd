@@ -713,15 +713,20 @@ func _shop_gas_station(to_curb: float) -> void:
 	var white_fascia := r.randf() < 0.55
 	_box("paint", Vector3(cw, 0.9, cd), Vector3(0, 5.25, ccz), Color("#f1efe8") if white_fascia else brand)
 	if white_fascia:
-		_box("paint", Vector3(cw + 0.04, 0.3, cd + 0.04), Vector3(0, 5.2, ccz), brand)
+		# Desktop: the brand band is lit from inside after dark.
+		_box("sign" if fine_parts else "paint", Vector3(cw + 0.04, 0.3, cd + 0.04), Vector3(0, 5.2, ccz), Color(brand, 0.0))
 	_quad("paint", Vector3(-cw * 0.5, 4.79, ccz - cd * 0.5), Vector3(cw * 0.5, 4.79, ccz - cd * 0.5),
 		Vector3(cw * 0.5, 4.79, ccz + cd * 0.5), Vector3(-cw * 0.5, 4.79, ccz + cd * 0.5), Color("#e8e6df"), [], Vector3.DOWN)
 	if fine_parts:
 		var lx := -cw * 0.5 + 1.5
 		while lx < cw * 0.5 - 1.0:
 			for lz in [-cd * 0.3, 0.0, cd * 0.3]:
-				_box("paint", Vector3(0.6, 0.04, 0.6), Vector3(lx, 4.77, ccz + lz), Color("#fbf8ee"))
+				_box("sign", Vector3(0.6, 0.04, 0.6), Vector3(lx, 4.77, ccz + lz), Color(1.0, 0.99, 0.95, 1.0))
 			lx += 3.0
+		# Canopies are the brightest thing on a highway at night: the
+		# forecourt washed in white light, spilling past the edges.
+		for k in 2:
+			_light_pool(Vector3(0, 0.2 + k * 0.01, ccz), cw + 10.0 - k * 6.0, cd + 10.0 - k * 6.0, Color(1.0, 0.99, 0.95))
 	var islands := 2 if cw < 16.0 else 3
 	for i in islands:
 		var x := (i - (islands - 1) * 0.5) * cw / islands
@@ -739,7 +744,7 @@ func _shop_gas_station(to_curb: float) -> void:
 	# posts the per-gallon price to the tenth of a cent).
 	var px := -half + 1.5
 	_box("paint", Vector3(0.3, 6.0, 0.3), Vector3(px, 3.0, 1.0), Color("#5a5e60"))
-	_box("paint", Vector3(2.2, 1.4, 0.3), Vector3(px, 6.3, 1.0), brand)
+	_box("sign" if fine_parts else "paint", Vector3(2.2, 1.4, 0.3), Vector3(px, 6.3, 1.0), Color(brand, 0.0))  # lit from inside
 	_box("paint", Vector3(2.0, 1.6, 0.32), Vector3(px, 4.7, 1.0), Color("#1d1d1d"))
 	var reg := 0
 	for row in 3:
@@ -821,7 +826,8 @@ func _seven_seg(n: int, c: Vector3, col: Color, scale := 1.0) -> void:
 		if m & (1 << i):
 			var b: Array = bars[i]
 			var size := Vector3(w, t, 0.02) if b[2] else Vector3(t, h, 0.02)
-			_box("paint", size, c + Vector3(-b[0], b[1], 0), col)  # mirrored: read from -z
+			# Desktop: lit LEDs after dark (sign alpha 1).
+			_box("sign" if fine_parts else "paint", size, c + Vector3(-b[0], b[1], 0), Color(col, 1.0))  # mirrored: read from -z
 
 
 ## A fuel dispenser (Gilbarco Encore / Wayne Ovation shape): a plinth, a
