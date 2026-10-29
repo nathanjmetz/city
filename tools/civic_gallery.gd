@@ -97,6 +97,8 @@ func _init() -> void:
 			size = Balance.AMENITIES[k].get("size", Vector2(70, 60))
 			var site := {"kind": k, "tier": 2, "size": size, "name": Parks.LANDMARK_NAMES.get(k, "Lincoln Park"),
 				"pos": Vector3.ZERO, "dir": Vector3(0, 0, -1), "features": []}
+			if OS.get_environment("MARKET") != "":
+				site["market_stalls"] = int(OS.get_environment("MARKET"))  # the Saturday farmers' market
 			if name == "bigpark":
 				# A park grown over the years, every growth item placed.
 				size = Vector2(150, 110)
