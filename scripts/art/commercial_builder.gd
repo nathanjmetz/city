@@ -669,11 +669,32 @@ func _bank(to_curb: float) -> void:
 	_stoop(0.0, zf, 6.0, 3.0, 0.6)
 	for k in 4:
 		_cylinder("paint", Vector3(-2.4 + k * 1.6, 0.6, zf - 2.5), 0.28, 5.4, stone, 10)
+		# A square plinth and a capital, as on every Colonial Revival bank.
+		_box("paint", Vector3(0.75, 0.3, 0.75), Vector3(-2.4 + k * 1.6, 0.77, zf - 2.5), stone)
+		_box("paint", Vector3(0.72, 0.22, 0.72), Vector3(-2.4 + k * 1.6, 5.86, zf - 2.5), stone)
 	_box("paint", Vector3(6.4, 0.8, 3.2), Vector3(0, 6.4, zf - 1.5), stone)
+	# The cornice under the pediment, projecting past the frieze.
+	_box("paint", Vector3(6.8, 0.18, 3.5), Vector3(0, 6.86, zf - 1.6), stone.lightened(0.05))
+	if fine_parts:
+		var nd := 22
+		for k in nd:
+			_box("paint", Vector3(0.12, 0.12, 0.1), Vector3(-3.15 + k * 6.3 / (nd - 1), 6.68, zf - 3.12), stone)  # dentils
+		# Stone quoins up the front corners.
+		for sx in [-1.0, 1.0]:
+			for q in 9:
+				var qw := 0.7 if q % 2 == 0 else 0.45
+				_box("paint", Vector3(qw, 0.32, 0.08), Vector3(sx * (w * 0.5 - qw * 0.5 + 0.02), 1.0 + q * 0.68, zf - 0.05), stone)
 	_tri("paint", Vector3(-3.2, 6.8, zf - 3.1), Vector3(3.2, 6.8, zf - 3.1), Vector3(0, 8.0, zf - 3.1), stone, [], Vector3.FORWARD)
 	_quad("roof", Vector3(-3.3, 6.8, zf - 3.1), Vector3(0, 8.0, zf - 3.1), Vector3(0, 8.0, zf), Vector3(-3.3, 6.8, zf), Color(ROOF[0]), [], Vector3(-1, 3, 0))
 	_quad("roof", Vector3(3.3, 6.8, zf - 3.1), Vector3(0, 8.0, zf - 3.1), Vector3(0, 8.0, zf), Vector3(3.3, 6.8, zf), Color(ROOF[0]), [], Vector3(1, 3, 0))
-	_box("paint", Vector3(1.8, 2.8, 0.08), Vector3(0, 2.0, zf - 0.04), Color("#3a3530"))
+	# The front doors: a stone surround with a cornice, a pair of glass and
+	# bronze doors and a transom light over them.
+	_box("paint", Vector3(2.6, 3.5, 0.12), Vector3(0, 2.35, zf - 0.075), stone)
+	_box("paint", Vector3(3.0, 0.25, 0.3), Vector3(0, 4.2, zf - 0.15), stone)
+	_box("paint", Vector3(1.9, 2.95, 0.06), Vector3(0, 2.07, zf - 0.13), Color("#3a3530"))
+	for sx in [-0.45, 0.45]:
+		_glass(Vector3(sx, 1.9, zf - 0.17), Vector3(-1, 0, 0), 0.7, 2.0, 0.0)
+	_glass(Vector3(0, 3.2, zf - 0.17), Vector3(-1, 0, 0), 1.7, 0.55, 0.0)
 	site.door = Vector2(0.0, zf - 3.0)
 	_sign(Vector3(0, 4.3, zf - 0.08), 4.0, 0.5)
 	# Drive-up lane and canopy beside the building.
