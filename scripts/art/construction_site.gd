@@ -168,6 +168,7 @@ func _show(st: Dictionary) -> void:
 		return
 	var near := _near()
 	_final.visible = stage in ["exterior", "interior", "landscape"]
+	_unplanted(_final.visible and stage != "landscape")
 	_ground.visible = stage == "landscape"
 	_pad.visible = stage != "landscape"
 	# The stone comes up with the topsoil when the drive is poured.
@@ -307,6 +308,7 @@ func _finish() -> void:
 	_done = true
 	set_process(false)
 	_final.visible = true
+	_unplanted(false)
 	_ground.visible = true
 	if _footing != null:
 		_footing.visible = true
@@ -358,6 +360,35 @@ func _clipped(wall: Color, roof: Color) -> MeshInstance3D:
 	mi.set_meta("mats", [mat, glazed])
 	add_child(mi)
 	return mi
+
+
+## Leaves the foundation shrubs (foliage riding in the paint surface) out
+## of the finished building until the yard is planted, and the signs (the
+## sign surface: lit letters, panels, lenses) until it's ready to open:
+## a sign goes up on its own permit at the very end.
+func _unplanted(on: bool) -> void:
+	if on == _shrubs_out:
+		return
+	_shrubs_out = on
+	var paint := HouseMaterials.get_mat("paint")
+	var sign := HouseMaterials.get_mat("sign")
+	for i in _final.mesh.get_surface_count():
+		var m := _final.mesh.surface_get_material(i)
+		if m == paint:
+			_final.set_surface_override_material(i, HouseMaterials.get_mat("paint_unplanted") if on else null)
+		elif m == sign:
+			_final.set_surface_override_material(i, _unhung() if on else null)
+var _shrubs_out := false
+
+
+static func _unhung() -> ShaderMaterial:
+	if _unhung_mat == null:
+		var sh := Shader.new()
+		sh.code = "shader_type spatial;\nrender_mode unshaded, shadows_disabled;\nvoid fragment() {\n\tdiscard;\n}\n"
+		_unhung_mat = ShaderMaterial.new()
+		_unhung_mat.shader = sh
+	return _unhung_mat
+static var _unhung_mat: ShaderMaterial
 
 
 ## New windows in a wrapped wall, seen from outside: dark glass.
