@@ -570,6 +570,12 @@ static func _park(sim: CitySim, id: int) -> Dictionary:
 		status = _venue(sim, id, rows)
 	if s.kind == "trailhead":
 		status = _trails(sim, id, rows)
+	if FarmersMarket.find_venue(sim) == id:
+		var fm := sim.farmers_market
+		var on := "On now, %d stalls" % fm.stalls_at(id) if fm.open else "Saturdays, May to October"
+		if not fm.last.is_empty() and not fm.open:
+			on += "; %d farms came last time" % int(fm.last.vendors)
+		rows.append(["Farmers' market", on])
 	var going_up := sim.construction.describe("park:%d" % id, sim.tick_count)
 	if going_up != "":
 		status = going_up
@@ -1136,4 +1142,4 @@ static func _purpose_words(purpose: String) -> String:
 	return {"commute": "Going to work", "shopping": "Shopping", "home": "Going home", "return": "Heading back",
 		"grain": "Hauling grain", "raw": "Hauling raw goods", "fuel": "Hauling fuel", "goods": "Delivering goods",
 		"delivery": "Making a delivery", "export": "Shipping out of town", "import": "Bringing goods in",
-		"visit": "Visiting", "bus": "Bus route"}.get(purpose, purpose.capitalize())
+		"visit": "Visiting", "bus": "Bus route", "market": "Taking produce to the farmers' market"}.get(purpose, purpose.capitalize())

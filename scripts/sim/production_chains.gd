@@ -37,8 +37,10 @@ const NODES := {
 	"rv": {"name": "RV plant", "icon": "rv_plant"},
 	"shop": {"name": "Stores", "icon": "shops"},
 	"post": {"name": "Post office", "icon": "mail"},
+	"market": {"name": "Farmers' market", "icon": "farms"},
 	"build": {"name": "Job sites", "icon": "builder_yard"},
 	"rail": {"name": "Out by rail", "icon": "rail_depot"},
+	"friend": {"name": "Neighbor towns", "icon": "region"},
 	"region": {"name": "Region", "icon": "region"},
 }
 ## How the page groups links: each chain's name and the place it starts
@@ -55,7 +57,7 @@ const CHAINS := [
 ]
 
 ## Where a chain ends: what goes there is used up or gone.
-const ENDS := ["shop", "build", "post", "rail", "region"]
+const ENDS := ["shop", "build", "post", "market", "rail", "friend", "region"]
 
 ## month index -> {"from>to>good": loads}
 var months := {}
