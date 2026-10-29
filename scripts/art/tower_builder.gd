@@ -113,6 +113,10 @@ static func _tw_form(seed: int, width: float, homes: bool) -> String:
 func _tw_chicago(to_curb: float, width: float, storeys: int) -> void:
 	var w := minf(width - 1.0, rng.randf_range(24.0, 36.0))
 	var d := minf(depth - 4.0, rng.randf_range(24.0, 32.0))
+	# On an assembled site the block runs the whole frontage, as the
+	# Marquette (about 60 m on Dearborn) and Indianapolis's wide Chicago
+	# School office blocks do.
+	w = maxf(w, minf(width - 1.0, 64.0))
 	var zf := 0.4  # built to the sidewalk
 	var cz := zf + d * 0.5
 	var ground_h := 5.2
@@ -203,9 +207,13 @@ func _tw_deco(to_curb: float, width: float, storeys: int) -> void:
 	var spandrel := Color(_pick(TW_SPANDREL))
 	# The 1916 rule: the street wall rises about a third of the way, then
 	# each tier steps back, ending in a slim tower and a stepped crown.
-	var tiers := [[w, d, ceili(storeys * 0.4)], [w - 6.0, d - 6.0, ceili(storeys * 0.7)], [w - 12.0, d - 12.0, storeys]]
+	# On an assembled site the street wall runs the whole frontage and the
+	# tower rises from the middle of it (the Chicago Board of Trade's base
+	# fills its block end).
+	var w0 := maxf(w, minf(width - 1.0, 64.0))
+	var tiers := [[w0, d, ceili(storeys * 0.4)], [w - 6.0, d - 6.0, ceili(storeys * 0.7)], [w - 12.0, d - 12.0, storeys]]
 	if storeys < 12:
-		tiers = [[w, d, ceili(storeys * 0.6)], [w - 6.0, d - 6.0, storeys]]
+		tiers = [[w0, d, ceili(storeys * 0.6)], [w - 6.0, d - 6.0, storeys]]
 	if _far:
 		var fy := 0.0
 		for t in tiers:
@@ -251,12 +259,12 @@ func _tw_deco(to_curb: float, width: float, storeys: int) -> void:
 		f0 = f1
 	# The ground floor: bronze shopfronts and a tall lobby portal.
 	var cz0 := zf + d * 0.5
-	for face in [_tw_faces(w, d, cz0)[0]]:
-		var n := maxi(3, roundi(w / 7.0))
+	for face in [_tw_faces(w0, d, cz0)[0]]:
+		var n := maxi(3, roundi(w0 / 7.0))
 		for i in n:
-			var c: Vector3 = face[0] + face[1] * (-w * 0.5 + (i + 0.5) * w / n)
+			var c: Vector3 = face[0] + face[1] * (-w0 * 0.5 + (i + 0.5) * w0 / n)
 			c.y = 2.6
-			_glass(c, face[1], w / n - 1.2, 3.8, 0.0)
+			_glass(c, face[1], w0 / n - 1.2, 3.8, 0.0)
 	_box("brick", Vector3(5.0, 8.0, 0.6), Vector3(0, 4.0, zf - 0.3), stone.lightened(0.1))
 	_box("paint", Vector3(3.0, 6.5, 0.1), Vector3(0, 3.25, zf - 0.62), Color("#3b2f22"))  # bronze and glass
 	if not _homes:
