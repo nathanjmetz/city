@@ -58,7 +58,7 @@ static func build_apartments(seed: int, to_curb: float, lot: Dictionary, storeys
 	elif width >= 34.0 and storeys <= 3 and b.depth >= 34.0:
 		b._mb_courtyard(to_curb, width, 3)
 	else:
-		b._mb_walkup(to_curb, width, maxi(storeys + 1, 3))
+		b._mb_walkup(to_curb, width, maxi(storeys, 3))
 	return b._done()
 
 
@@ -253,7 +253,9 @@ func _mb_walkup(to_curb: float, width: float, storeys: int) -> void:
 	var floor_h := 3.1
 	var base := 0.9
 	var top := base + floor_h * storeys
-	var wall := Color(_pick(FACADE_BRICK + ["#c9b48a", "#6e3b2e"]))
+	# Common red, dark brown, buff, cream and the orange-red of local
+	# kilns: the brick of old Midwestern walk-ups (Indianapolis, Fort Wayne).
+	var wall := Color(_pick(FACADE_BRICK + ["#c9b48a", "#d8c9a3", "#5a3328", "#a4553a"]))
 	var stone := Color(_pick(MB_GREYSTONE))
 	var trim := Color(_pick(["#d9d3c3", "#efede6", "#2e2a26"]))
 	_downtown_walk(to_curb, width, zf)
