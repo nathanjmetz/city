@@ -3278,6 +3278,53 @@ const LAW_IMPACT_PACE := 0.9
 ## year.
 const LAW_IMPACT_ASK_HOMES := 40
 
+# --- Clusters (Clusters) ------------------------------------------------------
+# Brawn, 2026-10-29 (his pick from the borrowed features): like businesses
+# gather, and do better together.
+
+## Like businesses count as neighbors within this far, metres (a few blocks).
+const CLUSTER_REACH := 250.0
+## A hospital or clinic anchors medical offices, and the courthouse the
+## lawyers and agents, within a quarter mile.
+const CLUSTER_ANCHOR_REACH := 400.0
+## An anchor counts as this many like neighbors.
+const CLUSTER_ANCHOR_SCORE := 2.0
+## A cluster pulls new owners in once it's this strong...
+const CLUSTER_PULL_MIN := 2.0
+## ...about this share of them.
+const CLUSTER_PULL := 0.5
+## A cluster carries this many more of a trade than the town otherwise would.
+const CLUSTER_EXTRA := 2
+## Land value lift for a business in a full cluster (CLUSTER_FULL or more):
+## retail and office rents run roughly 5-20% higher among their own kind.
+const CLUSTER_LIFT := 0.12
+const CLUSTER_FULL := 4.0
+## An auto row needs a road at this speed limit or faster (or four lanes).
+const CLUSTER_AUTO_MPH := 40
+## A new-car dealer needs about this many people in its market.
+const CLUSTER_DEALER_PEOPLE := 8_000
+
+# --- Worn paths (WornPaths) ---------------------------------------------------
+# Brawn, 2026-10-29 (his pick from the borrowed features): dirt paths worn
+# where people walk with no sidewalk.
+
+## A sim day of walks is one day of the month's: each counts for this many.
+const WORN_DAYS := 30.0
+## What's left of last month's wear as the grass grows back (gone in a
+## season or two once nobody walks it).
+const WORN_REGROW := 0.6
+## Passes a month: the grass shows a path past WORN_SHOW and is bare dirt by
+## WORN_BARE (trampling studies: cover thins after a few hundred passes and
+## is gone after several hundred more); under WORN_GONE it's forgotten.
+const WORN_SHOW := 100.0
+const WORN_BARE := 600.0
+const WORN_GONE := 20.0
+## How wide a well-worn single-file path is, metres (about two feet).
+const WORN_WIDTH := 0.7
+## The path stops this far short of each end of a road, metres (where the
+## junction's corner and crossing are).
+const WORN_JUNCTION_CLEAR := 12.0
+
 # --- Police patrols (Patrols) ---------------------------------------------------
 # A small-town department keeps one or two cars on the road a shift, round
 # the clock, over three 8-hour shifts (BJS Local Police Departments: towns of
