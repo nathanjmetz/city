@@ -1082,7 +1082,24 @@ func _cc_parking(to_curb: float, w: float, zw: float, xg0: float, cr: RandomNumb
 	_box("paint", Vector3(12.3, 0.55, 9.3), Vector3(pc.x, 4.45, pc.y + 1.0), accent)
 	_glass(Vector3(pc.x, 1.6, pc.y - 3.53), Vector3(-1, 0, 0), 8.0, 2.0, 0.1)
 	_sign(Vector3(pc.x, 3.0, pc.y - 3.6), 5.0, 0.8)
-	_box("paint", Vector3(2.0, 2.4, 6.0), Vector3(pc.x + 6.9, 2.6, pc.y + 1.0), accent.darkened(0.2))  # pickup window canopy
+	# The drive-through: a 3.5 m lane down the east side, cars heading for
+	# the road with the building on the driver's side; the pickup window
+	# under a slim canopy, and behind the building the menu board and
+	# order speaker (any McDonald's, Wendy's or Taco Bell pad).
+	_box("paint", Vector3(1.6, 0.3, 4.5), Vector3(pc.x + 6.8, 3.3, pc.y + 1.0), accent.darkened(0.2))  # pickup window canopy
+	_glass(Vector3(pc.x + 6.03, 1.5, pc.y + 1.0), Vector3(0, 0, -1), 1.6, 1.2, 0.0)
+	_box("paint", Vector3(0.1, 0.12, 1.9), Vector3(pc.x + 6.1, 0.85, pc.y + 1.0), Color("#8f9396"))  # sill
+	_flat_rect("line", pc.x + 9.5, pc.x + 9.62, pc.y - 3.5, pc.y + 7.4, 0.07, Color("#e9e6da"))
+	if fine_parts:
+		var dark := Color("#2a2c2e")
+		_box("paint", Vector3(0.3, 1.8, 2.6), Vector3(pc.x + 6.4, 1.8, pc.y + 6.6), dark)  # menu board
+		_box("paint", Vector3(0.04, 1.5, 2.3), Vector3(pc.x + 6.56, 1.85, pc.y + 6.6), Color("#e8ddc4"))
+		for k in 3:
+			_box("paint", Vector3(0.05, 0.3, 0.6), Vector3(pc.x + 6.6, 2.3 - k * 0.45, pc.y + 5.9 + k * 0.35), accent)
+		_box("paint", Vector3(0.25, 0.9, 0.12), Vector3(pc.x + 6.4, 0.45, pc.y + 6.6), dark)
+		_box("paint", Vector3(0.35, 1.3, 0.35), Vector3(pc.x + 6.5, 0.65, pc.y + 5.4), dark)  # order speaker
+		_box("paint", Vector3(0.45, 0.6, 0.6), Vector3(pc.x + 6.5, 1.15, pc.y + 5.1), accent)  # its little canopy
+	_flat_rect("mulch", pad.position.x + 0.6, pad.position.x + 9.4, pad.position.y - 0.2, pad.position.y + 1.6, 0.075)  # their bed
 	for i in 3:
 		_shrub(Vector3(pad.position.x + 2.0 + i * 3.0, 0, pad.position.y + 0.6), 0.7)
 	# Rows: the fire lane is the first aisle, then 18.3 m modules.
