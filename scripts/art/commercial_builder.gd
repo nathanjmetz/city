@@ -133,13 +133,17 @@ func _retail(to_curb: float) -> void:
 	var bays := int(sw / 1.6)
 	var door := rng.randi_range(0, bays - 1)
 	site.door = Vector2(-sw * 0.5 + (door + 0.5) * sw / bays, zf)
+	# A store whose sign says it serves food shows its booths and counter.
+	var eats := fine_parts and sign_spec.is_empty() and int(_word_slot(0.0) * 0.5) - 1 in EATERIES
 	for i in bays:
 		var x := -sw * 0.5 + (i + 0.5) * sw / bays
 		var y := 1.55 if i == door else 1.8
 		var gh := 2.6 if i == door else 2.1
 		shopfront = fine_parts and i != door
+		diner_room = 7.0 if eats and i != door else 0.0
 		_glass(Vector3(x, y, zf - 0.03), Vector3(-1, 0, 0), sw / bays - 0.08, gh, 0.0 if i == door else rng.randf_range(0.0, 0.15))
 		shopfront = false
+		diner_room = 0.0
 		_box("paint", Vector3(0.08, 2.7, 0.12), Vector3(x - sw / bays * 0.5, 1.6, zf - 0.06), mull)
 	_box("paint", Vector3(0.08, 2.7, 0.12), Vector3(sw * 0.5, 1.6, zf - 0.06), mull)
 	_box("paint", Vector3(sw, 0.1, 0.14), Vector3(0, 2.92, zf - 0.07), mull)
@@ -730,8 +734,7 @@ func _channel_letters(c: Vector3, w: float, h: float, named := "") -> void:
 	_pick(SIGNS)  # the same one draw as _sign
 	if w < 1.0:
 		return  # no room for a name (a sliver of shops beside an anchor)
-	var r := RandomNumberGenerator.new()
-	r.seed = hash([rng.seed, 37, snappedf(c.x, 0.1)])
+	var r := _letters_rng(c.x)
 	var tints := [Color("#e0262e"), Color("#e0262e"), Color("#f4f1ea"), Color("#1f5fbf"), Color("#1f8a4a"), Color("#f2b632")]
 	var col: Color = tints[r.randi() % tints.size()]
 	col.a = 1.0
@@ -749,6 +752,22 @@ func _channel_letters(c: Vector3, w: float, h: float, named := "") -> void:
 	# The raceway the letters hang on, painted to match the fascia.
 	_box("paint", Vector3(span + px * 2.0, 0.12, 0.1), Vector3(c.x, y0 + lh * 0.45, c.z - 0.03), Color("#5b5d5f"))
 	_pixel_text(word, c.x, y0, z, px, 0.13, col, "sign")
+
+
+## The channel letters' own random numbers for a tenant at `x`.
+func _letters_rng(x: float) -> RandomNumberGenerator:
+	var r := RandomNumberGenerator.new()
+	r.seed = hash([rng.seed, 37, snappedf(x, 0.1)])
+	return r
+
+
+## Which trade a tenant at `x` spells in channel letters (as _channel_letters
+## draws it: a tint, a height, then the word).
+func _letters_word(x: float) -> int:
+	var r := _letters_rng(x)
+	r.randi()
+	r.randf()
+	return r.randi() % 50
 
 
 ## Block capitals from the 3x5 pixel font, centred on `cx`, facing the street
@@ -858,8 +877,10 @@ func _strip_center(to_curb: float, anchor := false) -> void:
 			continue
 		var sw := bay - 1.4
 		shopfront = fine_parts
+		diner_room = 7.0 if fine_parts and (i > 0 or sign_spec.is_empty()) and _letters_word(x) in EATERIES else 0.0
 		_glass(Vector3(x - 0.4, 1.7, zf - 0.03), Vector3(-1, 0, 0), sw - 1.4, 2.3, rng.randf_range(0.0, 0.2))
 		shopfront = false
+		diner_room = 0.0
 		_glass(Vector3(x + sw * 0.5 - 0.5, 1.45, zf - 0.03), Vector3(-1, 0, 0), 0.95, 2.4, 0.0)
 		_box("paint", Vector3(sw, 0.1, 0.12), Vector3(x, 2.9, zf - 0.06), mull)
 		_box("paint", Vector3(sw, 0.35, 0.12), Vector3(x, 0.47, zf - 0.06), mull)

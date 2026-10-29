@@ -21,6 +21,11 @@ const SPOTS := [
 	["junction_top", Vector3(84, 0, 0), 180.0, 89.0, 40.0],
 	["shop_cut", Vector3(-39, 0, 128), 200.0, 24.0, 40.0],
 	["shop_cut_b", Vector3(-39, 0, 128), 20.0, 24.0, 40.0],
+	["rr_county", Vector3(1601, 0, 150), 60.0, 14.0, 45.0],
+	["rr_county_far", Vector3(1601, 0, 150), 200.0, 22.0, 110.0],
+	["rr_town", Vector3(0, 0, 67), 120.0, 16.0, 40.0],
+	["rr_active", Vector3(-1608, 0, -385), 150.0, 12.0, 32.0],
+	["rr_active_b", Vector3(-1608, 0, -385), 330.0, 12.0, 32.0],
 ]
 
 var _main: Node
@@ -49,6 +54,7 @@ func _process(_delta: float) -> bool:
 	var args := OS.get_cmdline_user_args()
 	if _frames == 2:
 		DayNight.seasons_on = false
+		GradeCrossingView.shut = OS.get_environment("SHUT_GATES") != ""
 		DayNight.cycle_on = false
 		# Late morning in July, unless SHOT_HOUR / SHOT_MONTH say otherwise.
 		var month := float(OS.get_environment("SHOT_MONTH")) if OS.get_environment("SHOT_MONTH") != "" else 7.0
