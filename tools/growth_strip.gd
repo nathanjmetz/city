@@ -15,6 +15,8 @@ const LADDERS := {
 	# One 30-storey office in every form, on the same assembled site.
 	"forms": [["office", 4, 16.0, "chicago"], ["office", 4, 16.0, "deco"], ["office", 4, 16.0, "glass"], ["office", 4, 16.0, "pomo"], ["office", 4, 16.0, "podium"]],
 	"homeforms": [["apartments", 4, 6.6, "glass"], ["apartments", 4, 6.6, "podium"], ["apartments", 3, 4.4, "podium"], ["apartments", 3, 4.4, "glass"]],
+	# One prewar office on a storefront lot and on sites bought up next door.
+	"sites": [["office", 3, 12.0, "chicago", 30.0], ["office", 3, 12.0, "chicago", 62.0], ["office", 4, 16.0, "deco", 36.0], ["office", 4, 16.0, "deco", 66.0]],
 	"homes": [["house", 0, 0.9], ["house", 1, 0.9], ["row_home", 0, 1.2], ["row_home", 1, 1.2], ["apartments", 0, 2.0]],
 }
 const BASE_W := {"office": 30.0, "apartments": 30.0, "mixed_use": 20.0, "shop": 20.0, "house": 20.0, "row_home": 24.0}
@@ -44,6 +46,8 @@ func _init() -> void:
 	for st in ladder:
 		var need := BuildingTypes.area_for(st[0], st[1], st[2])
 		var w := maxf(BASE_W[st[0]], (need if need != INF else 0.0) / DEPTH)
+		if st.size() > 4:
+			w = st[4]
 		widths.append(w)
 		total += w + 6.0
 	var road := MeshInstance3D.new()
