@@ -29,6 +29,9 @@ static func build_main(kind: String, seed: int, to_curb: float) -> Array:
 		"high_school": b._high_school(to_curb)
 		"college": b._college(to_curb)
 		_: b._old_main(to_curb)
+	b.half = 60.0
+	b.depth = 60.0
+	b._dress(false, true)
 	return [b._commit_house(), b._commit_flat(), b.trees]
 
 
@@ -44,6 +47,9 @@ static func build_block(use: String, levels: int, seed: int) -> Array:
 		"library": b._library(levels)
 		"dorm": b._dorm(levels)
 		_: b._hall_block(levels, use in ["lab", "tech"])
+	b.half = 60.0
+	b.depth = 60.0
+	b._dress(false, true)
 	return [b._commit_house(), b._commit_flat(), b.trees]
 
 

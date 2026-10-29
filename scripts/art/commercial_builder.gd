@@ -894,6 +894,7 @@ func _cylinder(mat: String, base: Vector3, r: float, h: float, col: Color, segs 
 ## It draws from its own random sequence, so the building it dresses comes
 ## out the same as before. Each building calls _dr_note for each hall.
 var _dr_halls := []  # [cx, cz, w, d, h, roof, busy end] with roof "gable", "flat" or "none"
+var _dr_main := -1  # the hall that takes the utility corner (-1: the biggest)
 
 
 ## Notes a hall to dress: centre, width along x, depth along z, eave height.
@@ -904,7 +905,7 @@ func _dr_note(cx: float, cz: float, w: float, d: float, h: float, roof: String, 
 
 ## Dresses every noted hall, then the site's yard (`yard` false: no fence,
 ## trailer or pallets, for public buildings).
-func _dress(yard := true) -> void:
+func _dress(yard := true, civic := false) -> void:
 	if _dry or _dr_halls.is_empty():
 		return
 	var main := rng
@@ -914,18 +915,21 @@ func _dress(yard := true) -> void:
 	for hall in _dr_halls:
 		if hall[2] * hall[3] > big[2] * big[3]:
 			big = hall
-		_dr_walls(hall)
+		_dr_walls(hall, civic)
 		if hall[5] == "gable":
 			_dr_roof_gable(hall)
 		elif hall[5] == "flat":
 			_dr_roof_flat(hall)
-	_dr_utility(big)
+	if _dr_main >= 0 and _dr_main < _dr_halls.size():
+		big = _dr_halls[_dr_main]
+	if big[2] * big[3] > 120.0:
+		_dr_utility(big, civic)
 	if yard:
 		_dr_yard(big)
 	rng = main
 
 
-func _dr_walls(hall: Array) -> void:
+func _dr_walls(hall: Array, civic := false) -> void:
 	var cx: float = hall[0]
 	var cz: float = hall[1]
 	var w: float = hall[2]
@@ -944,38 +948,46 @@ func _dr_walls(hall: Array) -> void:
 				xs.append(x)
 				x += 12.0
 		for x in xs:
-			_dr_spout(Vector3(x, 0, z), h, spout, Vector3(0, 0, side), flat)
+			if _dr_free(Vector3(x, 0, z + side * 0.3)):
+				_dr_spout(Vector3(x, 0, z), h, spout, Vector3(0, 0, side), flat)
 	if flat and d > 20.0:
 		for end in [-1.0, 1.0]:
-			_dr_spout(Vector3(cx + end * (w * 0.5 + 0.1), 0, cz + d * 0.2), h, spout, Vector3(end, 0, 0), true)
+			if _dr_free(Vector3(cx + end * (w * 0.5 + 0.4), 0, cz + d * 0.2)):
+				_dr_spout(Vector3(cx + end * (w * 0.5 + 0.1), 0, cz + d * 0.2), h, spout, Vector3(end, 0, 0), true)
 	# Wall packs along the back and both ends, about every 15 m.
 	var y := minf(h - 0.8, 6.0)
 	var n := maxi(1, int(w / 15.0))
 	for i in n:
-		_dr_wallpack(Vector3(cx - w * 0.5 + (i + 0.5) * w / n, y, cz + d * 0.5 + 0.18), Vector3(0, 0, 1))
+		var p := Vector3(cx - w * 0.5 + (i + 0.5) * w / n, y, cz + d * 0.5 + 0.18)
+		if _dr_free(p + Vector3(0, 0, 0.2)):
+			_dr_wallpack(p, Vector3(0, 0, 1))
 	for end in [-1.0, 1.0]:
 		if end == hall[6]:
 			continue
 		var m := maxi(1, int(d / 15.0))
 		for i in m:
-			_dr_wallpack(Vector3(cx + end * (w * 0.5 + 0.18), y, cz - d * 0.5 + (i + 0.5) * d / m), Vector3(end, 0, 0))
-		# A man door near the front of each end wall, its light over it.
-		if d > 8.0:
-			_dr_side_door(Vector3(cx + end * (w * 0.5 + 0.03), 1.05, cz - d * 0.5 + 3.0), end)
+			var p := Vector3(cx + end * (w * 0.5 + 0.18), y, cz - d * 0.5 + (i + 0.5) * d / m)
+			if _dr_free(p + Vector3(end * 0.2, 0, 0)):
+				_dr_wallpack(p, Vector3(end, 0, 0))
+		# A man door near the front of each end wall (near the back on a
+		# public building, clear of its windows), its light over it.
+		var dz := cz + d * 0.5 - 1.6 if civic else cz - d * 0.5 + 3.0
+		if d > 8.0 and _dr_free(Vector3(cx + end * (w * 0.5 + 0.6), 0, dz), 0.7):
+			_dr_side_door(Vector3(cx + end * (w * 0.5 + 0.03), 1.05, dz), end)
 	# Translucent wall lights under a metal eave, along the back.
 	if not flat and h > 6.0:
 		_box("paint", Vector3(w - 1.0, 0.9, 0.04), Vector3(cx, h - 0.9, cz + d * 0.5 + 0.12), Color("#dfe0d6"))
 
 
 func _dr_spout(foot: Vector3, h: float, col: Color, out: Vector3, scupper: bool) -> void:
-	var o := out * 0.1
+	var o := out * 0.2  # clear of trim bands on the wall
 	_box("paint", Vector3(0.12, h, 0.12), foot + o + Vector3(0, h * 0.5, 0), col)
 	if scupper:
 		# The conductor head under its scupper.
 		_box("paint", Vector3(0.36, 0.42, 0.3), foot + o * 1.6 + Vector3(0, h - 0.5, 0), col)
 	# The shoe and splash block at the foot.
-	_box("paint", Vector3(0.14, 0.14, 0.14) + out.abs() * 0.22, foot + out * 0.28 + Vector3(0, 0.12, 0), col)
-	_box("concrete", Vector3(0.36, 0.05, 0.36) + out.abs() * 0.3, foot + out * 0.55 + Vector3(0, 0.11, 0), FOUNDATION)
+	_box("paint", Vector3(0.14, 0.14, 0.14) + out.abs() * 0.22, foot + out * 0.38 + Vector3(0, 0.12, 0), col)
+	_box("concrete", Vector3(0.36, 0.05, 0.36) + out.abs() * 0.3, foot + out * 0.65 + Vector3(0, 0.11, 0), FOUNDATION)
 
 
 ## A bronze LED wall pack on a wall facing `out`.
@@ -1060,7 +1072,7 @@ func _dr_roof_flat(hall: Array) -> void:
 
 ## The meters, disconnects, gas riser and transformer, on whichever end wall
 ## has more room, and the FDC and Knox box by the front.
-func _dr_utility(hall: Array) -> void:
+func _dr_utility(hall: Array, civic := false) -> void:
 	var cx: float = hall[0]
 	var cz: float = hall[1]
 	var w: float = hall[2]
@@ -1069,35 +1081,68 @@ func _dr_utility(hall: Array) -> void:
 	var end := 1.0 if half - (cx + w * 0.5) >= (cx - w * 0.5) + half else -1.0
 	if end == hall[6]:
 		end = -end
-	var wx := cx + end * (w * 0.5 + 0.1)
-	var z := cz + d * 0.5 - 3.0
-	var panel := Color("#b5b8b6")
-	for k in 3:
-		_box("metal", Vector3(0.22, 0.9 if k else 1.4, 0.7), Vector3(wx + end * 0.16, 1.5, z - k * 0.85), panel.darkened(0.04 * k))
-	_box("metal", Vector3(0.08, h - 2.0, 0.1), Vector3(wx + end * 0.12, 1.0 + (h - 2.0) * 0.5 + 0.9, z), panel.darkened(0.1))  # conduit
-	_box("metal", Vector3(0.06, 0.06, 2.2), Vector3(wx + end * 0.12, 0.6, z - 0.9), panel.darkened(0.1))
-	# The gas meter on its riser.
-	var gz := z - 3.4
-	_box("paint", Vector3(0.08, 1.0, 0.08), Vector3(wx + end * 0.15, 0.5, gz), Color("#d7b42a"))
-	_box("paint", Vector3(0.3, 0.08, 0.08), Vector3(wx + end * 0.15, 0.95, gz + 0.15), Color("#d7b42a"))
-	_box("metal", Vector3(0.32, 0.4, 0.3), Vector3(wx + end * 0.22, 0.9, gz + 0.35), Color("#9ea2a0"))
-	# The pad-mount transformer out from the wall, with bollards.
-	var t := Vector3(wx + end * 3.2, 0, z - 1.2)
-	if _in_lot(t, 1.6):
-		_box("concrete", Vector3(2.4, 0.15, 2.6), t + Vector3(0, 0.08, 0), FOUNDATION)
-		_box("metal", Vector3(1.8, 1.45, 1.9), t + Vector3(0, 0.88, 0), Color("#55704f"))
-		_box("metal", Vector3(1.9, 0.06, 2.0), t + Vector3(0, 1.62, 0), Color("#4b6446"))
-		for p in [Vector3(-1.5, 0, -1.5), Vector3(1.5, 0, -1.5), Vector3(-1.5, 0, 1.5), Vector3(1.5, 0, 1.5)]:
-			_dr_bollard(t + p)
+	# The service wall: the roomier end wall of a plant, or the back wall
+	# near that end on a public building (its end walls have windows).
+	# `out` points away from the wall, `along` runs along it.
+	var base := Vector3(cx + end * (w * 0.5 + 0.1), 0, cz + d * 0.5 - 3.0)
+	var out := Vector3(end, 0, 0)
+	var along := Vector3(0, 0, -1)
+	if civic:
+		# Out on a galvanised strut rack clear of the back windows, as
+		# switchgear often stands at schools and offices.
+		base = Vector3(cx + end * (w * 0.5 - 2.5), 0, cz + d * 0.5 + 1.4)
+		out = Vector3(0, 0, 1)
+		along = Vector3(-end, 0, 0)
+		if _dr_free(base, 0.6):
+			for k in [-0.65, 2.35]:
+				_box("metal", Vector3(0.1, 2.4, 0.1), base + along * k + Vector3(0, 1.2, 0), Color("#a9acae"))
+			for y in [0.9, 2.1]:
+				_box("metal", out.abs() * 0.08 + along.abs() * 3.2 + Vector3(0, 0.08, 0), base + along * 0.85 + Vector3(0, y, 0), Color("#a9acae"))
+			base -= out * 0.12
+	var pa := out.abs()
+	var la := along.abs()
+	if _dr_free(base + out * 0.4):
+		var panel := Color("#b5b8b6")
+		for k in 3:
+			_box("metal", pa * 0.22 + la * 0.7 + Vector3(0, 0.9 if k else 1.4, 0), base + out * 0.16 + along * (k * 0.85) + Vector3(0, 1.5, 0),
+				panel.darkened(0.04 * k))
+		var up := 0.4 if civic else h - 2.0
+		_box("metal", pa * 0.08 + la * 0.1 + Vector3(0, up, 0), base + out * 0.12 + Vector3(0, 1.9 + up * 0.5, 0), panel.darkened(0.1))  # conduit
+		_box("metal", pa * 0.06 + la * 2.2 + Vector3(0, 0.06, 0), base + out * 0.12 + along * 0.9 + Vector3(0, 0.6, 0), panel.darkened(0.1))
+		# The gas meter on its riser.
+		var g := base + along * 3.4
+		if _dr_free(g + out * 0.4):
+			_box("paint", Vector3(0.08, 1.0, 0.08), g + out * 0.15 + Vector3(0, 0.5, 0), Color("#d7b42a"))
+			_box("paint", pa * 0.08 + la * 0.3 + Vector3(0, 0.08, 0), g + out * 0.15 - along * 0.15 + Vector3(0, 0.95, 0), Color("#d7b42a"))
+			_box("metal", pa * 0.3 + la * 0.32 + Vector3(0, 0.4, 0), g + out * 0.22 - along * 0.35 + Vector3(0, 0.9, 0), Color("#9ea2a0"))
+		# The pad-mount transformer out from the wall, with bollards.
+		var t := base + out * 3.2 + along * 1.2
+		if _in_lot(t, 1.6) and _dr_free(t, 1.8):
+			_box("concrete", Vector3(2.4, 0.15, 2.6), t + Vector3(0, 0.08, 0), FOUNDATION)
+			_box("metal", Vector3(1.8, 1.45, 1.9), t + Vector3(0, 0.88, 0), Color("#55704f"))
+			_box("metal", Vector3(1.9, 0.06, 2.0), t + Vector3(0, 1.62, 0), Color("#4b6446"))
+			for q in [Vector3(-1.5, 0, -1.5), Vector3(1.5, 0, -1.5), Vector3(-1.5, 0, 1.5), Vector3(1.5, 0, 1.5)]:
+				_dr_bollard(t + q)
 	# The FDC (brass Siamese on a red plate) and the Knox box by the front corner.
 	var fx := cx - end * (w * 0.5 - 1.2)
 	var fz := cz - d * 0.5 - 0.06
 	for r: Rect2 in _masses:
 		if r.grow(0.3).has_point(Vector2(fx, fz - 0.3)):
 			fx = cx + end * (w * 0.5 - 2.2)  # an office in front: the other corner
-	_box("paint", Vector3(0.45, 0.35, 0.05), Vector3(fx, 0.6, fz - 0.12), Color("#a42a22"))
-	_box("metal", Vector3(0.32, 0.14, 0.16), Vector3(fx, 0.6, fz - 0.22), Color("#b8952e"))
-	_box("metal", Vector3(0.2, 0.25, 0.1), Vector3(fx + 0.8, 1.8, fz - 0.12), Color("#1f2224"))
+	if _dr_free(Vector3(fx, 0, fz - 0.3)):
+		_box("paint", Vector3(0.45, 0.35, 0.05), Vector3(fx, 0.6, fz - 0.12), Color("#a42a22"))
+		_box("metal", Vector3(0.32, 0.14, 0.16), Vector3(fx, 0.6, fz - 0.22), Color("#b8952e"))
+		_box("metal", Vector3(0.2, 0.25, 0.1), Vector3(fx + 0.8, 1.8, fz - 0.12), Color("#1f2224"))
+
+
+## Whether a point (on the ground plan) is clear of every noted hall, so a
+## wall detail never ends up inside the building next door.
+func _dr_free(p: Vector3, margin := 0.05) -> bool:
+	for hall in _dr_halls:
+		var r := Rect2(hall[0] - hall[2] * 0.5, hall[1] - hall[3] * 0.5, hall[2], hall[3]).grow(margin)
+		if r.has_point(Vector2(p.x, p.z)):
+			return false
+	return true
 
 
 func _dr_bollard(p: Vector3) -> void:
