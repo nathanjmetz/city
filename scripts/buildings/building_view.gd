@@ -334,7 +334,11 @@ static func build_for(type: String, storeys: int, s: int, to_curb: float, fit: D
 			CommercialBuilder.force_shop = "center" if level >= 1 else "strip"
 			built = DenseBuilder.build_retail(s, to_curb, fit, spec)
 			CommercialBuilder.force_shop = ""
-		"mixed_use": built = DenseBuilder.build_mixed(s, to_curb, fit, storeys, spec)
+		"mixed_use":
+			# On a corner, an old corner store that grew a storey of flats.
+			built = CornerStore.build_grown(s, to_curb, fit, storeys, spec)
+			if built.is_empty():
+				built = DenseBuilder.build_mixed(s, to_curb, fit, storeys, spec)
 		"commercial_block": built = MainBlock.build(s, to_curb, fit, storeys, spec)
 		"office":
 			# Eight storeys and up is a downtown tower, built for its era.
