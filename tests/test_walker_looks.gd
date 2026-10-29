@@ -21,6 +21,21 @@ func _init() -> void:
 		"a boy of 12 is shorter than at 16, and at 16 than grown")
 	_check(WalkerView.build(7, {"first": "Betty", "age": 88}).y < WalkerView.build(7, {"first": "Betty", "age": 50}).y,
 		"someone in their eighties stands a little shorter")
+	# On the sidewalk: each keeps right in a lane of their own, so people
+	# coming the other way pass and a family walks side by side.
+	var tr := TrafficSim.new(RoadNetwork.new())
+	var line := PackedVector3Array([Vector3(0, 0, 0), Vector3(0, 0, -100)])
+	var back := PackedVector3Array([Vector3(0, 0, -100), Vector3(0, 0, 0)])
+	var cum := PackedFloat32Array([0.0, 100.0])
+	var xs := []
+	for pid in [41, 42, 43]:
+		xs.append(tr.walker_pose({"person": pid, "pts": line, "cum": cum, "len": 100.0, "d": 0.0, "t": 0, "t0": 0,
+			"v": 1.4}, 0.0)[0].x)
+	var other: float = tr.walker_pose({"person": 41, "pts": back, "cum": cum, "len": 100.0, "d": 0.0, "t": 0,
+		"t0": 0, "v": 1.4}, 0.0)[0].x
+	_check(xs.all(func(x): return x > 0.1 and x < 0.75), "walkers keep to the right half of the walk (%s)" % str(xs))
+	_check(absf(xs[0] - xs[1]) > 0.2 and absf(xs[1] - xs[2]) > 0.2, "a household walks side by side, not inside each other")
+	_check(other < -0.1, "someone coming the other way passes on the other side (%.2f)" % other)
 	quit(1 if _failed else 0)
 
 
