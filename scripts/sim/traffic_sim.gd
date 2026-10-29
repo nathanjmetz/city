@@ -231,6 +231,11 @@ var _extra := {}      # place ref -> spots added beyond its layout, in order (_a
 ## drive in to deliver: "never", "night" (10 pm to 6 am) or "always".
 var closed := {}
 var _truck_plan := false  # the route being planned is for a truck (close_segment)
+## The town's truck routes law (TownLaws): a truck passing through counts a
+## neighborhood street as Balance.LAW_TRUCK_STREET_MULT times its drive.
+var truck_routes := false
+var _tpen := {}       # way -> extra seconds for a truck under truck_routes
+var _tpen_key := []
 var _walk_lines := {} # segment * 2 + side -> sidewalk line
 var _rings := {}      # node -> sidewalk ends around it (_corner_ring)
 var _marks := []      # crosswalks on the walk just planned: [point, node, way in]
@@ -939,6 +944,78 @@ func lanes_for(way: int, next: int) -> Array:
 	return _arrows.get(way, {}).get(next, [])
 
 
+## A vehicle's trip on the roads for the route view (Cities: Skylines'
+## "show routes"): {came: the way it came from where it set off, ahead: the
+## rest of its route}, each [way, from d, to d] runs. A driving car keeps
+## only the route ahead, so where it came from is planned again from its
+## start, the way it would have driven. `came` is left out when `ahead_only`.
+func trip_runs(car: Dictionary, ahead_only := false) -> Dictionary:
+	var out := {"came": [], "ahead": []}
+	if car.has("flow_in"):
+		var ins: Array = car.flow_in
+		for i in ins.size():
+			var wid: int = ins[i][1]
+			if not ways.has(wid):
+				continue
+			var run := [wid, float(car.d) if i == 0 else 0.0,
+				float(car.end_d) if i == ins.size() - 1 else float(ways[wid].len)]
+			var now := i + 1 >= ins.size() or int(ins[i + 1][0]) > _tick
+			(out.ahead if now or not out.ahead.is_empty() else out.came).append(run)
+		return out
+	var route: Array = car.get("route", [])
+	var leg: int = car.get("leg", 0)
+	if leg >= route.size() or not ways.has(route[leg]):
+		return out
+	var d: float = car.d
+	if car.j != null and int(car.j.get("wo", -1)) == int(route[leg]):
+		d = 0.0
+	for i in range(leg, route.size()):
+		var wid: int = route[i]
+		if not ways.has(wid):
+			break
+		out.ahead.append([wid, d if i == leg else 0.0,
+			float(car.end_d) if i == route.size() - 1 else float(ways[wid].len)])
+	if ahead_only or _dirty:
+		return out  # a view never rebuilds the roads between ticks
+	var start = car.get("from_stop")
+	var from_ref: String = car.get("from_ref", "")
+	if from_ref != "" and from_ref != "edge" and place(from_ref).get("stop") is Dictionary:
+		start = place(from_ref).stop
+	if not start is Dictionary or not start.has("seg"):
+		return out
+	var w: Dictionary = ways[route[leg]]
+	var fwd: bool = w.fwd
+	var here := {"seg": w.seg, "at_frac": d / w.len if fwd else 1.0 - d / w.len, "side": 1 if fwd else -1}
+	var back := _route(start, here)
+	if back.is_empty():
+		return out
+	var r: Array = back.route
+	for i in r.size():
+		out.came.append([r[i], float(back.d) if i == 0 else 0.0,
+			float(back.end_d) if i == r.size() - 1 else float(ways[r[i]].len)])
+	return out
+
+
+## Points down the middle of a way's lanes from `d0` to `d1` metres along.
+func way_line(wid: int, d0: float, d1: float) -> PackedVector3Array:
+	var out := PackedVector3Array()
+	if not ways.has(wid):
+		return out
+	var w: Dictionary = ways[wid]
+	var mid: float = (w.offs[0] + w.offs[w.lanes - 1]) * 0.5
+	d0 = clampf(d0, 0.0, w.len)
+	d1 = clampf(d1, d0, w.len)
+	var at := [d0]
+	for c in w.cum:
+		if c > d0 + 0.5 and c < d1 - 0.5:
+			at.append(c)
+	at.append(d1)
+	for d in at:
+		var f := _way_dir(w, d)
+		out.append(_poly_point(w.pts, w.cum, d) + Vector3(-f.z, 0.0, f.x) * mid)
+	return out
+
+
 ## Share of the speed limit cars manage on a way, 0 to 1 (1 if empty).
 func way_speed(way: int) -> float:
 	return _speed.get(way, 1.0)
@@ -1594,6 +1671,7 @@ func _plan(starts: Array, targets: Dictionary, lane := -1, pen := {}) -> Array:
 	var end_prev := -1
 	var first := lane >= 0
 	var none := PackedFloat64Array()
+	var tpen: Dictionary = _truck_pen() if _truck_plan and truck_routes else {}
 	while not hg.is_empty():
 		var f: float = hg[0]
 		var u: int = hu[0]
@@ -1620,6 +1698,8 @@ func _plan(starts: Array, targets: Dictionary, lane := -1, pen := {}) -> Array:
 					end_prev = u
 					best_route = []
 			var ng: float = e + _wcost.get(nx, INF)
+			if not tpen.is_empty():
+				ng += tpen.get(nx, 0.0)
 			if ng < dist[nx]:
 				if dist[nx] == INF:
 					_pl_seen.append(nx)
@@ -1639,6 +1719,20 @@ func _plan(starts: Array, targets: Dictionary, lane := -1, pen := {}) -> Array:
 			guard += 1
 		return route
 	return best_route
+
+
+## The extra a truck passing through pays on each neighborhood street way
+## (truck_routes), kept until the ways are rebuilt.
+func _truck_pen() -> Dictionary:
+	if _tpen_key != [version, ways.size()]:
+		_tpen_key = [version, ways.size()]
+		_tpen.clear()
+		for wid in ways:
+			var seg: int = int(wid) >> 1
+			if network.segments.has(seg) and int(network.segments[seg].type) in TownLaws.LOCAL_STREETS:
+				var w: Dictionary = ways[wid]
+				_tpen[wid] = w.len / w.vmax * (Balance.LAW_TRUCK_STREET_MULT - 1.0)
+	return _tpen
 
 
 ## One more than the highest way id, kept until the ways are rebuilt.
@@ -2505,6 +2599,10 @@ func place(ref: String) -> Dictionary:
 		pl = _lot_place(ref)
 	elif ref.begins_with("svc:"):
 		pl = _park_place(ref)
+		# Any other service is a stop on the street out front (crews and
+		# deliveries while it goes up), as for any site.
+		if pl.is_empty() and _sites.has(ref):
+			pl = _site_place(_sites[ref])
 	elif _sites.has(ref):
 		pl = _site_place(_sites[ref])
 	if pl.is_empty():
@@ -2541,8 +2639,14 @@ func _place_seed(ref: String) -> int:
 		return 0
 	var b = _sim.buildings.get(ref.substr(4))
 	# The layout depends on the storeys too (a house that grows a storey
-	# lays its drive out again), so a copy loaded after it grew agrees.
-	return 0 if b == null else hash([int(b.seed), int(b.zone), BuildingTypes.storeys(b), BuildingTypes.type_of(b)])
+	# lays its drive out again), so a copy loaded after it grew agrees; and
+	# a corner store grown into a retail store has a lot of its own.
+	if b == null:
+		return 0
+	var sig := [int(b.seed), int(b.zone), BuildingTypes.storeys(b), BuildingTypes.type_of(b)]
+	if sig[3] == "shop":
+		sig.append(mini(int(b.get("level", 0)), 1))
+	return hash(sig)
 
 
 func _lot_place(ref: String) -> Dictionary:
@@ -2551,7 +2655,7 @@ func _lot_place(ref: String) -> Dictionary:
 	var lot: Dictionary = _sim.lots[ref.substr(4)]
 	var b = _sim.buildings.get(ref.substr(4))
 	var lay := SiteLayout.empty_lot() if b == null else SiteLayout.for_building(int(b.zone), int(b.seed), lot,
-		BuildingTypes.storeys(b), BuildingTypes.type_of(b), int(b.get("level", 0)))
+		BuildingTypes.storeys(b), BuildingTypes.type_of(b), int(b.get("level", 0)), _sim.network)
 	var spots := []
 	for s in lay.spots:
 		spots.append({"pos": SiteLayout.world(lot, s.pos), "face": SiteLayout.world_dir(lot, s.face),
@@ -2908,7 +3012,7 @@ func parking_need(at: Vector3) -> Dictionary:
 				var need := ceili(float(b.get("cap", 0)) * rate)
 				var own := int(float(lot.get("width", 0.0)) / CURB_SPACE)
 				for sp in SiteLayout.for_building(int(b.zone), int(b.seed), lot, BuildingTypes.storeys(b),
-						BuildingTypes.type_of(b), int(b.get("level", 0))).spots:
+						BuildingTypes.type_of(b), int(b.get("level", 0)), _sim.network).spots:
 					if sp.kind == "stall":
 						own += 1
 				if need > own:
@@ -5009,7 +5113,10 @@ func _may_enter(car: Dictionary, c: Dictionary, ds: float) -> bool:
 			if not stopped:
 				return false
 			for ap in _approach.get(n, []):
-				if ap.car.id != car.id and ap.conn.wi != c.wi and _first(ap.car, car) and _conflicts(c, ap.conn):
+				# First come, first served, but not behind someone who can't go
+				# yet for a full street beyond: drivers wave each other on.
+				if ap.car.id != car.id and ap.conn.wi != c.wi and _first(ap.car, car) and _conflicts(c, ap.conn) \
+						and _room_past(ap.car, ap.conn):
 					return false
 		Rule.PRIORITY:
 			if not j.major.has(c.wi):
@@ -5021,7 +5128,7 @@ func _may_enter(car: Dictionary, c: Dictionary, ds: float) -> bool:
 					if j.major.has(ap.conn.wi):
 						if _soon(ap) and _conflicts(c, ap.conn):
 							return false
-					elif _first(ap.car, car) and _conflicts(c, ap.conn):
+					elif _first(ap.car, car) and _conflicts(c, ap.conn) and _room_past(ap.car, ap.conn):
 						return false
 			elif mine_minor_turn:
 				for ap in _approach.get(n, []):
@@ -5038,6 +5145,15 @@ func _soon(ap: Dictionary) -> bool:
 	# A car standing at its line (waiting on a gap itself) isn't about to
 	# come through: only moving ones within 5 s are (HCM ch. 20 critical gap).
 	return ap.car.commit or ap.car.v > 0.5 and ap.ds / ap.car.v < 5.0
+
+
+## Whether there's a car's length of room for `car` on the far side of
+## the junction (if not, it isn't going anywhere yet).
+func _room_past(car: Dictionary, c: Dictionary) -> bool:
+	if c.wo < 0:
+		return true
+	var list: Array = _lanes.get(c.wo * 8 + c.lo, [])
+	return list.is_empty() or list[list.size() - 1].d - ways[c.wo].s0 >= car.len + JAM_GAP
 
 
 ## Whether `a` stopped at its line before `b` (first come, first served).

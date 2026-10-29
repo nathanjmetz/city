@@ -328,7 +328,7 @@ static func build_for(type: String, storeys: int, s: int, to_curb: float, fit: D
 				built = TowerBuilder.build_tower(s, to_curb, fit, storeys, {}, "", true)
 			else:
 				built = MetroBuilder.build_apartments(s, to_curb, fit, storeys)
-		"shop": built = DenseBuilder.build_retail(s, to_curb, fit, spec)
+		"shop": built = DenseBuilder.build_retail(s, to_curb, fit, spec, level)
 		"shopping_center":
 			# A neighborhood center (the second stage) has a grocer anchor.
 			CommercialBuilder.force_shop = "center" if level >= 1 else "strip"
@@ -361,6 +361,8 @@ func _spawn(key: String, refill := false) -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = b.seed
 	var fit := _local_lot(lot, xf)
+	if fit.corner and int(b.zone) == ZoneMap.Zone.COMMERCIAL:
+		fit.side = SiteLayout.corner_side(sim.network, lot)
 	var drawn := _draw(key, lot, b, fit, rng.randi())
 	if drawn.is_empty():
 		return

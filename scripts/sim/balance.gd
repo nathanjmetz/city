@@ -432,6 +432,23 @@ const NEEDS_IMPORT_SLOW := 0.25
 ## yard a mile past a nearby plant.
 const NEEDS_CONCRETE_YD_PER_HOME := 45
 const NEEDS_CONCRETE_HAUL := 1.0
+## Local materials (LocalSupply, Brawn's pick #12): a job site's big loads
+## come from the town's own quarry, sawmill or metal works when it has one.
+## How far each will truck a load, metres: ready-mix must be placed within
+## 90 minutes of batching (ASTM C94), so plants serve about 25 km; hot-mix
+## asphalt leaves the plant at about 150 C and is hauled about 40 km at most;
+## crushed stone and fill pay to haul about 50 km (NSSGA); lumber and
+## fabricated steel go anywhere in the county.
+const LOCAL_SUPPLY_REACH := {"ready_mix": 25_000.0, "asphalt": 40_000.0, "stone": 50_000.0,
+	"lumber": 80_000.0, "steel": 80_000.0}
+## What the town's quarry earns on one load it sends a job site, dollars:
+## a 10 yd truck of ready-mix at about $165 a yard (NRMCA 2024), a 20 ton
+## tandem of crushed stone at the quarry price plus a short haul, a tandem
+## of fill dirt, and 20 tons of hot-mix at about $75 a ton (INDOT bid
+## averages). Sawmills and metal works are zoned factories without books of
+## their own, so their loads count but pay no one here.
+const LOCAL_SUPPLY_PRICE := {"ready-mix concrete": 1650, "curb concrete": 1650, "crushed stone": 450,
+	"fill dirt": 200, "hot-mix asphalt": 1500}
 ## Builders: about one crew per 1,500 people (at least 2), each with about
 ## 6 houses going up at once; past that, labor costs climb about $15,000 a
 ## home at double the load.
@@ -2900,6 +2917,9 @@ const POLICY_UPKEEP := [0.7, 0.85, 1.0, 1.2, 1.4]
 ## ...and how far they reach, how much they serve and how many trucks they
 ## run. A lean department stretches thin; a generous one has slack.
 const POLICY_EFFECT := [0.8, 0.9, 1.0, 1.1, 1.2]
+## Police cruisers on the road per station per shift, by Funding step
+## (times PATROL_CARS): Lean keeps one car out, Generous three.
+const POLICY_CARS := [0.5, 0.75, 1.0, 1.25, 1.5]
 ## Homes, shops and factories: what the town spends on each building a month
 ## for street care, trees and inspections (negative: it saves that much)...
 const POLICY_CARE_PER_BUILDING := [-12, -6, 0, 15, 30]
@@ -3154,3 +3174,54 @@ const CHARTER_VOTE_COVER := 0.2
 const CHARTER_VOTE_CARE := 0.1
 const CHARTER_VOTE_HAPPY := 0.1
 const CHARTER_VOTE_BOIL := 0.5
+
+# --- Town laws (TownLaws) -----------------------------------------------------
+# Brawn, 2026-10-29 (his pick from the borrowed features): the council passes
+# real ordinances, each with a trade-off. The game never shows statute numbers.
+
+## The council takes the same law up again at most this often, in months.
+const LAW_ASK_COOLDOWN := 12
+## Hours of the sim day the council counts trucks cutting through
+## neighborhood streets (daytime freight hours).
+const LAW_COUNT_HOURS := [9, 11, 13, 15]
+## Residents petition once a street has this many through trucks counted in
+## a month.
+const LAW_TRUCK_ASK_MIN := 4
+## Truck route signs: about twenty "No trucks" and "Truck route" signs at the
+## edges of the neighborhoods, about $300 each installed.
+const LAW_TRUCK_SIGNS := 6_000
+## How much longer a neighborhood street counts for a truck passing through
+## (only the middle of a trip: a truck delivering on the street still comes
+## in). Four times its drive keeps trucks off it unless it saves a long way
+## round, as with a real posted route and its detour.
+const LAW_TRUCK_STREET_MULT := 4.0
+## Impact fee per new home. Indiana park and road impact fees (IC 36-7-4-1300
+## on) run about $1,000 to $4,000 a home; $2,000 is a typical small-city park
+## plus road fee.
+const LAW_IMPACT_FEE := 2_000
+## Builders pass a fee on to buyers, so fewer homes start: studies of US
+## impact fees find a few percent fewer starts per $1,000 of fee.
+const LAW_IMPACT_PACE := 0.9
+## The plan commission asks for an impact fee after this many new homes in a
+## year.
+const LAW_IMPACT_ASK_HOMES := 40
+
+# --- Police patrols (Patrols) ---------------------------------------------------
+# A small-town department keeps one or two cars on the road a shift, round
+# the clock, over three 8-hour shifts (BJS Local Police Departments: towns of
+# 2,500-10,000 average about 2 sworn officers per 1,000 residents).
+const PATROL_CARS := 2
+const PATROL_SHIFT_HOURS := 8
+## The day shift starts at 6 AM; then 2 PM and 10 PM.
+const PATROL_FIRST_SHIFT := 6
+## A street counts as patrolled for a week after a cruiser drove it: a game
+## day goes by far faster than the cars drive (a tick is a game minute but
+## a tenth of a second on the road), so a real day's beat takes a week here.
+const PATROL_FRESH_TICKS := 7 * 24 * 60
+## Streets driven within this many hours of each other count as equally
+## stale, so a car works through the stale ones near it.
+const PATROL_BUNCH_HOURS := 4
+## Streets a car tries for its next leg before giving up and heading in.
+const PATROL_TRIES := 4
+## With cars switched off: the streets one car covers in a shift.
+const PATROL_STREETS_PER_SHIFT := 40

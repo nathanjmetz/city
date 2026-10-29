@@ -711,7 +711,12 @@ static func _development(sim: CitySim, hub: Dictionary, tree: Array, at: Vector3
 	var next := []
 	for node in Agency.open(sim, hub, tree, at, profit):
 		next.append(node.name)
-	rows.append(["Could build next", ", ".join(next) if not next.is_empty() else "Nothing yet: needs more profit, schooling or neighbours"])
+	if not next.is_empty():
+		rows.append(["Could build next", ", ".join(next)])
+	else:
+		# What holds it back, in words, rather than a shrug.
+		var why := Agency.held_back(sim, hub, tree, at, profit)
+		rows.append(["Held back", why if why != "" else "Nothing left to build"])
 	return rows
 
 

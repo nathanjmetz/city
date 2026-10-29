@@ -136,6 +136,8 @@ var hubs := CivicHubs.new()
 var parks := Parks.new()
 ## The post office, its postmaster, and the carriers on their routes.
 var mail := Mail.new()
+## Police cruisers on patrol and the streets they drove (Patrols).
+var patrols := Patrols.new()
 ## Services shared with neighbor towns under signed deals (Interlocal).
 var interlocal := Interlocal.new()
 ## What the region's shared projects do in this town (Regional).
@@ -189,6 +191,8 @@ var subdivisions := Subdivisions.new()
 var street_age := StreetAge.new()
 ## The city engineer: counts rush-hour traffic and proposes fixes (CityEngineer).
 var engineer := CityEngineer.new()
+## The ordinances the town council has passed (TownLaws).
+var laws := TownLaws.new()
 ## The town's numbers over time, for the top bar's charts (StatHistory).
 var history := StatHistory.new()
 ## Buildings only grow and fill with power and water, as in Cities: Skylines.
@@ -924,6 +928,9 @@ func _apply_cmd(cmd: Dictionary) -> bool:
 			if ok:
 				_sync_stances()
 				_sync_levers()
+		"law":
+			# The council adopts or repeals a town law.
+			ok = laws.set_law(self, str(cmd.get("law", "")), bool(cmd.get("on", true)))
 		"heritage":
 			# Protect a historic district, or lift its protection.
 			ok = heritage.set_protected(self, int(cmd.get("district", -1)), bool(cmd.get("protect", true)))
@@ -1001,6 +1008,7 @@ func _apply_cmd(cmd: Dictionary) -> bool:
 			parks = Parks.new()
 			parks_changed.emit()
 			mail = Mail.new()
+			patrols = Patrols.new()
 			neighborhoods = Neighborhoods.new()
 			neighborhoods_changed.emit()
 			policies.from_dict({})
@@ -1014,6 +1022,8 @@ func _apply_cmd(cmd: Dictionary) -> bool:
 			subdivisions.from_dict({})
 			street_age.from_dict({})
 			engineer.from_dict({})
+			laws.from_dict({})
+			laws.sync(self)
 			timelapse.from_dict(self, {})
 			history.from_dict({})
 			_lever_steps.clear()
@@ -1452,11 +1462,17 @@ func tick() -> void:
 	elif hour == 18 * TICKS_PER_HOUR:
 		charter.month(self)
 		timelapse.month(self)
+	elif hour == 19 * TICKS_PER_HOUR:
+		laws.month(self)
+	if hour % TICKS_PER_HOUR == 25 and hour / TICKS_PER_HOUR in Balance.LAW_COUNT_HOURS:
+		# The council's count of trucks cutting through neighborhoods.
+		laws.count(self)
 	if tick_count % TICKS_PER_HOUR == 0:
 		history.hour(self)
 	if tick_count % TICKS_PER_HOUR == 30:
 		heritage.carry_out(self)
 		leaders.carry_out(self)
+		laws.carry_out(self)
 		charter.carry_out(self)
 		redevelopment.carry_out(self)
 		if subdivisions.carry_out(self):
@@ -1545,6 +1561,9 @@ func tick() -> void:
 	mail.tick(self)
 	Perf.add("sim.mail", t)
 	t = Perf.now()
+	patrols.tick(self)
+	Perf.add("sim.patrols", t)
+	t = Perf.now()
 	interlocal.tick(self)
 	Perf.add("sim.interlocal", t)
 	t = Perf.now()
@@ -1601,6 +1620,7 @@ func town_month() -> void:
 	leaders.month(self)
 	charter.month(self)
 	timelapse.month(self)
+	laws.month(self)
 
 
 ## Game time as a Dictionary (year, month, day, weekday, hour, minute).
@@ -3980,6 +4000,8 @@ func _grow_one(salt := 0) -> String:
 	for z in zone_order:
 		# Growth on the Economy page: Hold builds nothing new, Expand more.
 		var pace := policies.pick(Balance.POLICY_BUILD_PACE, "growth", Economy.ZONE_AREA.get(z, "homes"))
+		if z == ZoneMap.Zone.RESIDENTIAL:
+			pace *= laws.home_pace()  # an impact fee: builders pass it on
 		if rng.randf() >= demand[z] * pace:
 			continue
 		var list: Array = by_zone[z]
@@ -3997,6 +4019,8 @@ func _grow_one(salt := 0) -> String:
 		buildings[key] = b
 		if z == ZoneMap.Zone.INDUSTRIAL:
 			buildings[key].chain = factory_chain(lots[key].pos)
+		elif z == ZoneMap.Zone.RESIDENTIAL:
+			economy.money += laws.home_fee()
 		var lot: Dictionary = lots[key]
 		construction.start("lot:" + key, PROFILE_OF_ZONE[z], tick_count, lot.front, -lot.normal, lot.to_curb)
 		buildings_changed.emit()
@@ -4878,6 +4902,7 @@ func save_steps(postcard := false) -> Array:
 		["parks", func(): return parks.to_dict()],
 		["neighborhoods", func(): return neighborhoods.to_dict()],
 		["mail", func(): return mail.to_dict()],
+		["patrols", func(): return patrols.to_dict()],
 		["interlocal", func(): return interlocal.to_dict()],
 		["regional", func(): return regional.to_dict()],
 		["market", func(): return market.to_dict()],
@@ -4897,6 +4922,7 @@ func save_steps(postcard := false) -> Array:
 		["subdivisions", func(): return subdivisions.to_dict()],
 		["street_age", func(): return street_age.to_dict()],
 		["engineer", func(): return engineer.to_dict()],
+		["laws", func(): return laws.to_dict()],
 		["junctions", func(): return traffic.rules_to_dict()],
 		["greens", func(): return traffic.greens_to_dict()],
 		["offsets", func(): return traffic.offsets_to_dict()],
@@ -4983,6 +5009,7 @@ func from_dict(d: Dictionary) -> void:
 	parks.from_dict(d.get("parks", {}))
 	neighborhoods.from_dict(d.get("neighborhoods", {}))
 	mail.from_dict(d.get("mail", {}))
+	patrols.from_dict(d.get("patrols", {}))
 	interlocal.from_dict(d.get("interlocal", {}))
 	regional.from_dict(d.get("regional", {}))
 	market.from_dict(d.get("market", {}))
@@ -5003,6 +5030,8 @@ func from_dict(d: Dictionary) -> void:
 	subdivisions.from_dict(d.get("subdivisions", {}))
 	street_age.from_dict(d.get("street_age", {}))
 	engineer.from_dict(d.get("engineer", {}))
+	laws.from_dict(d.get("laws", {}))
+	laws.sync(self)
 	for legacy in farms.legacy_outlines:
 		reserves.paint(legacy[0], legacy[1])
 	for id in farms.farms:
