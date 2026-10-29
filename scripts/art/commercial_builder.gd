@@ -1111,6 +1111,44 @@ func _power_center(to_curb: float) -> void:
 		if fine_parts:
 			_cc_entry(vx, zf - 4.4, hb, false, 6, -1.0 if vx < hx else 1.0, true, 1.5)
 	boxes.append([xh0, xh1, hh])
+	# Block pilasters every bay along the front, and on desktop the
+	# sidewalk display a home improvement store sets out along its front
+	# all season: storage sheds, riding mowers in a row, grills.
+	var npil := maxi(2, int(wh / 9.0))
+	for i in npil + 1:
+		var px := xh0 + i * wh / npil
+		if absf(px - hx) > 10.5:
+			_box("paint", Vector3(0.9, hh, 0.5), Vector3(px, hh * 0.5, zf - 0.25), hw.darkened(0.06))
+	if fine_parts:
+		var x := xh0 + 2.5
+		var k := 0
+		while x < xh1 - 3.0:
+			if absf(x - hx) < 13.0:
+				x = hx + 13.0
+				continue
+			match k % 3:
+				0:  # a storage shed: a little gabled building
+					_box("paint", Vector3(2.4, 2.0, 2.4), Vector3(x + 0.6, 1.0, zf - 3.0), Color(["#c9b48f", "#8a5a3c", "#a7b3a0"][k % 3 if k % 2 == 0 else (k + 1) % 3]))
+					_tri("roof", Vector3(x - 0.7, 2.0, zf - 4.25), Vector3(x + 1.9, 2.0, zf - 4.25), Vector3(x + 0.6, 2.7, zf - 4.25),
+						Color("#4a4440"), [], Vector3(0, 0, -1))
+					_quad("roof", Vector3(x - 0.7, 2.0, zf - 4.25), Vector3(x + 0.6, 2.7, zf - 4.25), Vector3(x + 0.6, 2.7, zf - 1.75),
+						Vector3(x - 0.7, 2.0, zf - 1.75), Color("#4a4440"), [], Vector3(-1, 1, 0))
+					_quad("roof", Vector3(x + 0.6, 2.7, zf - 4.25), Vector3(x + 1.9, 2.0, zf - 4.25), Vector3(x + 1.9, 2.0, zf - 1.75),
+						Vector3(x + 0.6, 2.7, zf - 1.75), Color("#4a4440"), [], Vector3(1, 1, 0))
+					x += 3.4
+				1:  # riding mowers, nose out
+					var mc := Color(["#2f6a3e", "#c9a227", "#b0262b"][(k / 3) % 3])
+					for m in 4:
+						var mx := x + m * 1.2
+						_box("paint", Vector3(0.95, 0.5, 1.7), Vector3(mx, 0.45, zf - 2.6), mc)
+						_box("paint", Vector3(0.5, 0.45, 0.4), Vector3(mx, 0.85, zf - 2.3), Color("#1e1e1e"))  # seat
+						_box("paint", Vector3(1.0, 0.25, 0.25), Vector3(mx, 0.2, zf - 1.9), Color("#1e1e1e"))  # back tires
+					x += 5.2
+				2:  # grills under their covers
+					for m in 3:
+						_box("paint", Vector3(1.2, 1.1, 0.6), Vector3(x + m * 1.4, 0.55, zf - 1.6), Color("#2a2c2e"))
+					x += 4.6
+			k += 1
 	# The yard on the outer end: block knee wall and black fence, a shed roof
 	# over the lumber racks along the store's wall, the drive-in gate.
 	var yz0 := zf - 4.0
@@ -1174,6 +1212,8 @@ func _power_center(to_curb: float) -> void:
 			var wx: float = jx + k * (tw * 0.5 + 3.0)
 			if wx > x0 + 2.0 and wx < x1 - 2.0:
 				_glass(Vector3(wx, 2.0, zf + 0.97), Vector3(-1, 0, 0), 3.4, 2.2, cr.randf_range(0.2, 0.5))
+		for px in [x0 + 0.45, x1 - 0.45]:
+			_box("paint", Vector3(0.9, jh, 0.5), Vector3(px, jh * 0.5, zf + 0.75), jc.darkened(0.06))
 		boxes.append([x0, x1, jh])
 	# The discount store at the other end.
 	var dh := cr.randf_range(8.4, 9.4)
@@ -1801,11 +1841,132 @@ func _bank(to_curb: float) -> void:
 	_box("metal", Vector3(0.8, 1.4, 0.8), Vector3(lx - 1.2, 0.7, cz), Color("#b9bcbc"))
 	_flat_rect("asphalt", lx - 2.2, lx + 2.2, 0.0, depth - 1.0, 0.07)
 	_shop_parking(to_curb, w, zf - 3.2, -3.0)
+	if fine_parts:
+		_bank_dress(w, zf, cz, lx)
 	# Grown (shop level 1): a one-storey wing on the back for the loan
 	# offices, under a hip roof of its own, as Indiana's town banks built on
 	# in the 1960s-80s.
 	if not small_store:
 		_rt_wing(w, zf + d, 3.8, brick, "brick", stone, true)
+
+
+## Desktop: what a small-town Indiana bank has around it (First Merchants,
+## Farmers State or any county bank of the 1950s-90s): the flag on a 9 m pole
+## on the front lawn; a time-and-temperature sign by the street in amber
+## LEDs; and at the drive-up, an ATM island, a yellow clearance bar hung at
+## the canopy's mouth, and lights under the canopy. Its own random numbers.
+func _bank_dress(w: float, zf: float, cz: float, lx: float) -> void:
+	var r := RandomNumberGenerator.new()
+	r.seed = hash([rng.seed, 41])
+	# The flag, on the lawn by the front corner away from the drive.
+	var fx := -(w * 0.5 + 1.3)
+	var fz := zf - 1.2
+	_box("concrete", Vector3(0.5, 0.15, 0.5), Vector3(fx, 0.075, fz), Color("#cfcac0"))
+	_cylinder("metal", Vector3(fx, 0.15, fz), 0.06, 8.8, Color("#c9ccce"), 8)
+	_box("metal", Vector3(0.16, 0.16, 0.16), Vector3(fx, 9.03, fz), Color("#c8a040"))  # the ball
+	_us_flag(Vector3(fx - 0.08, 8.85, fz), 1.52, 0.8, r.randf_range(0.0, TAU))
+	# Time and temperature by the street: a dark cabinet on a post, both faces.
+	var tx := -(half - 1.4)
+	var tz := -1.0
+	_box("paint", Vector3(0.15, 3.2, 0.15), Vector3(tx, 1.6, tz), Color("#3a3c3e"))
+	_box("paint", Vector3(1.3, 0.55, 0.25), Vector3(tx, 3.45, tz), Color("#1b1d1f"))
+	var amber := Color("#ffae2a")
+	var hour := r.randi_range(1, 12)
+	var mins := r.randi_range(0, 59)
+	var digits := [hour / 10, hour % 10, mins / 10, mins % 10] if r.randf() < 0.6 else [-1, r.randi_range(2, 9), r.randi_range(0, 9), -2]
+	for k in 4:
+		var dxk := tx + 0.42 - k * 0.27 - (0.06 if k >= 2 else 0.0)
+		var dg: int = digits[k]
+		if dg >= 0:
+			_seven_seg(dg, Vector3(dxk, 3.45, tz - 0.13), amber, 1.4)
+		elif dg == -2:
+			# The degree sign.
+			_box("sign", Vector3(0.06, 0.06, 0.02), Vector3(dxk + 0.06, 3.55, tz - 0.13), Color(amber, 1.0))
+	if digits[0] >= 0:
+		for y in [3.4, 3.5]:
+			_box("sign", Vector3(0.03, 0.03, 0.02), Vector3(tx - 0.0, y, tz - 0.13), Color(amber, 1.0))  # the colon
+	# The drive-up: an ATM island under the canopy's street end.
+	var az := cz - 2.2
+	_box("concrete", Vector3(0.9, 0.18, 2.4), Vector3(lx - 1.2, 0.09, az), Color("#cfcac0"))
+	_box("paint", Vector3(0.7, 1.6, 0.8), Vector3(lx - 1.2, 0.98, az), Color("#2b4f7a"))
+	_box("paint", Vector3(0.04, 0.3, 0.4), Vector3(lx - 0.825, 1.35, az), Color("#14181c"))
+	_box("sign", Vector3(0.02, 0.22, 0.3), Vector3(lx - 0.785, 1.35, az), Color(0.55, 0.8, 1.0, 1.0))  # the screen
+	for k in 2:
+		# Yellow bollards at the island's ends.
+		_cylinder("paint", Vector3(lx - 1.2, 0.18, az + (k * 2.0 - 1.0) * 1.05), 0.1, 0.9, Color("#e8c21a"), 8)
+	# The clearance bar at the canopy's mouth, on chains, in yellow and black.
+	var bz := cz - 3.9
+	for q in 8:
+		_box("paint", Vector3(0.5, 0.12, 0.12), Vector3(lx - 1.75 + q * 0.5, 3.2, bz), Color("#e8c21a") if q % 2 == 0 else Color("#1c1c1c"))
+	for sx in [-1.6, 1.6]:
+		_box("metal", Vector3(0.015, 0.75, 0.015), Vector3(lx + sx, 3.63, bz), Color("#8a8a8a"))
+	_box("paint", Vector3(4.2, 0.05, 0.05), Vector3(lx, 4.0, bz), Color("#5a5e60"))
+	# Lights under the canopy.
+	for k in 2:
+		_box("sign", Vector3(0.5, 0.02, 0.5), Vector3(lx, 3.99, cz + (k * 2.0 - 1.0) * 1.6), Color(0.95, 0.96, 1.0, 1.0))
+	_light_pool(Vector3(lx, 0.12, cz), 4.0, 7.0, Color(0.95, 0.96, 1.0))
+
+
+## The US flag flying from a pole at `c` (its hoist), out along `dir` x,
+## in four panels that ripple a little; stripes and the blue canton on both
+## faces.
+func _us_flag(c: Vector3, fl: float, fh: float, phase: float, dir := -1.0) -> void:
+	var red := Color("#b22234")
+	var white := Color("#f2f0ea")
+	var blue := Color("#3c3b6e")
+	var sh := fh / 13.0
+	for k in 13:
+		var c0 := red if k % 2 == 0 else white
+		# The canton covers the top seven stripes, two-fifths out.
+		var cols := [blue, blue, c0, c0] if k < 7 else [c0, c0, c0, c0]
+		_flag_strip(c + Vector3(0, -k * sh, 0), fl, sh, phase, dir, cols)
+	# A scatter of stars on the canton (both faces).
+	for i in 5:
+		for j in 4:
+			var t := 0.5 * (i + 0.6) / 5.4
+			_box("paint", Vector3(0.045, 0.045, 0.012), Vector3(c.x + dir * fl * t, c.y - sh * 7.0 * (j + 0.6) / 4.4,
+				c.z + _flag_wave(t, phase)), white)
+
+
+## Indiana's flag: gold torch and a ring of stars on blue (simplified).
+func _indiana_flag(c: Vector3, fl: float, fh: float, phase: float, dir := -1.0) -> void:
+	var blue := Color("#1f3a8a")
+	var gold := Color("#d4ab3a")
+	_flag_strip(c, fl, fh, phase, dir, [blue, blue, blue, blue])
+	var m := Vector3(c.x + dir * fl * 0.5, c.y - fh * 0.5, c.z + _flag_wave(0.5, phase))
+	_box("paint", Vector3(0.05, 0.36, 0.012), m + Vector3(0, -0.04, 0), gold)  # the torch
+	_box("paint", Vector3(0.12, 0.1, 0.012), m + Vector3(0, 0.2, 0), gold)
+	for i in 12:
+		var a := PI * (0.15 + 0.7 * i / 11.0)
+		var t := 0.5 - cos(a) * 0.28
+		_box("paint", Vector3(0.04, 0.04, 0.012), Vector3(c.x + dir * fl * t, m.y + sin(a) * fh * 0.36 - fh * 0.05,
+			c.z + _flag_wave(t, phase)), gold)
+
+
+## A plain flag in one colour with a pale square device: a company's.
+func _house_flag(c: Vector3, fl: float, fh: float, phase: float, col: Color, dir := -1.0) -> void:
+	_flag_strip(c, fl, fh, phase, dir, [col, col, col, col])
+	var m := Vector3(c.x + dir * fl * 0.5, c.y - fh * 0.5, c.z + _flag_wave(0.5, phase))
+	_box("paint", Vector3(fh * 0.4, fh * 0.4, 0.012), m, Color("#f2f0ea"))
+	_box("paint", Vector3(fh * 0.22, fh * 0.22, 0.014), m, col)
+
+
+## How far a flag ripples out of its plane at fraction `t` of its length.
+func _flag_wave(t: float, phase: float) -> float:
+	return sin(phase + t * 4.0 * 1.3) * 0.08 * t
+
+
+## One horizontal band of a flag, `h` deep below `c`, in four rippled
+## panels coloured `cols` from the hoist out, seen from both faces.
+func _flag_strip(c: Vector3, fl: float, h: float, phase: float, dir: float, cols: Array) -> void:
+	for p in 4:
+		var t0 := p / 4.0
+		var t1 := (p + 1) / 4.0
+		var a := Vector3(c.x + dir * fl * t0, c.y, c.z + _flag_wave(t0, phase))
+		var b := Vector3(c.x + dir * fl * t1, c.y, c.z + _flag_wave(t1, phase))
+		var dn := Vector3(0, -h, 0)
+		_quad("paint", a, b, b + dn, a + dn, cols[p], [], Vector3.FORWARD)
+		_quad("paint", a, b, b + dn, a + dn, cols[p], [], Vector3.BACK)
 
 
 ## A small brick church on the main street: a steep gable to the street,

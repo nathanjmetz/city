@@ -130,7 +130,9 @@ func _rebuild() -> void:
 		var c := colour(car)
 		var runs := sim.traffic.trip_runs(car, true)
 		var came: Array = []
-		var key := [car.get("trip", 0), car.get("from_ref", "")]
+		# Planned again on a new trip, or once the roads change (a street
+		# removed or built: its ways come and go).
+		var key := [car.get("trip", 0), car.get("from_ref", ""), sim.network.revision]
 		if car.has("flow_in"):
 			came = sim.traffic.trip_runs(car).came
 		elif _came.has(car.id) and _came[car.id][0] == key:
