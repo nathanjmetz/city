@@ -5,7 +5,8 @@ extends SceneTree
 ## (BuildingView.build_for). For the growth-stage art loop.
 ## Run: godot -s tools/growth_strip.gd -- out.png <ladder> [seed] [era] [yaw pitch dist [target_x]]
 ## Ladders: office, apartments, main (shop to Main Street block), homes
-## (house to row homes to walk-up). Era: postwar (default) or prewar.
+## (house to row homes to walk-up), house (a house building on, then a
+## duplex and a fourplex). Era: postwar (default), prewar or recent.
 
 const LADDERS := {
 	# [type, level, FAR it's built under]
@@ -20,8 +21,10 @@ const LADDERS := {
 	# A row of houses bought for a strip center, then a grocer-anchored one.
 	"retail": [["shop", 0, 2.2], ["shop", 1, 2.2], ["shopping_center", 0, 2.2, "", 70.0], ["shopping_center", 1, 2.2, "", 150.0]],
 	"homes": [["house", 0, 0.9], ["house", 1, 0.9], ["row_home", 0, 1.2], ["row_home", 1, 1.2], ["apartments", 0, 2.0]],
+	# A house building on, then turned into a duplex and a fourplex.
+	"house": [["house", 0, 0.9], ["house", 1, 0.9], ["house", 2, 0.9], ["duplex", 0, 0.9], ["duplex", 1, 0.9]],
 }
-const BASE_W := {"shopping_center": 60.0, "office": 30.0, "apartments": 30.0, "mixed_use": 20.0, "shop": 20.0, "house": 20.0, "row_home": 24.0}
+const BASE_W := {"shopping_center": 60.0, "office": 30.0, "apartments": 30.0, "mixed_use": 20.0, "shop": 20.0, "house": 20.0, "duplex": 22.0, "row_home": 24.0}
 const DEPTH := 55.0
 
 var _frames := 0
