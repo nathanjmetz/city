@@ -22,9 +22,14 @@ extends SubViewport
 ## Also carries the wet look's shared value (`weather_wet`, set by Weather):
 ## Shader values are added here at run time, not in the project settings.
 
-## The map's size in pixels: about 1.7 m a pixel over a 1.7 km town.
+## The map's size in pixels (High and up, and below). It is stretched over
+## the lamps' extent: about 0.9 m a pixel over a 1.7 km town, 2 m over 4 km
+## (Low and Medium twice that).
 const SIZE_HIGH := 2048
 const SIZE_LOW := 1024
+## The map's square snaps out to whole steps of this (metres), so a growing
+## town seldom moves it.
+const STEP := 256.0
 ## Room round the lamps, metres.
 const MARGIN := 80.0
 ## Lamp heads, metres up, for which way their light comes from (the map
@@ -239,8 +244,9 @@ static func cover(lamps: Array) -> Array:
 		var p: Vector3 = l[1]
 		lo = lo.min(Vector2(p.x, p.z))
 		hi = hi.max(Vector2(p.x, p.z))
-	var side := maxf(hi.x - lo.x, hi.y - lo.y) + MARGIN * 2.0
-	var mid := (lo + hi) * 0.5
+	# A step to spare, so snapping the middle never uncovers a lamp.
+	var side := ceilf((maxf(hi.x - lo.x, hi.y - lo.y) + MARGIN * 2.0 + STEP) / STEP) * STEP
+	var mid := ((lo + hi) * 0.5 / STEP).round() * STEP
 	return [mid.x - side * 0.5, mid.y - side * 0.5, side]
 
 
@@ -270,5 +276,9 @@ func draw(lamps: Array) -> void:
 		var px := (centre - Vector2(c[0], c[1])) * scale
 		_mm.set_instance_transform_2d(i, Transform2D(side * half_u * scale, fwd * half_v * scale, px))
 		_mm.set_instance_custom_data(i, Color(half_u, half_v, mid_v, h))
+	# The new square goes out with the new map: the map is drawn this same
+	# frame, ahead of the town that reads it (the renderer draws a
+	# viewport's sub-viewports before the viewport itself), so the two never
+	# disagree. It seldom moves anyway (STEP).
 	RenderingServer.global_shader_parameter_set("lamp_rect", _rect)
 	render_target_update_mode = SubViewport.UPDATE_ONCE

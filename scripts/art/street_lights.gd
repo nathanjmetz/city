@@ -46,19 +46,26 @@ void fragment() {
 }
 """
 
-## The head: a grey housing whose flat glass lens underneath glows at night,
-## and a little light spilling up its sides.
+## The head. On the desktop a grey housing whose flat glass lens underneath
+## glows at night, with a little light spilling up its sides; the browser
+## keeps its whole head glowing evenly, as before.
 const HEAD_SHADER := """
 shader_type spatial;
 global uniform float night;
 uniform vec4 lamp : source_color;
 void fragment() {
 	float on = smoothstep(0.25, 0.6, night);
+#if CURRENT_RENDERER == RENDERER_COMPATIBILITY
+	ALBEDO = mix(vec3(0.55, 0.55, 0.52), vec3(0.2), on);
+	ROUGHNESS = 0.3;
+	EMISSION = lamp.rgb * on * 6.0;
+#else
 	vec3 n = (INV_VIEW_MATRIX * vec4(NORMAL, 0.0)).xyz;
 	float lens = smoothstep(-0.5, -0.9, n.y);
 	ALBEDO = mix(vec3(0.55, 0.55, 0.52), vec3(0.2), on * lens);
 	ROUGHNESS = 0.3;
 	EMISSION = lamp.rgb * on * mix(1.2, 14.0, lens);
+#endif
 }
 """
 

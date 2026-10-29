@@ -206,15 +206,19 @@ void fragment() {
 	// low spots, in settled patches and along the curb; once it stops, the
 	// wheel paths dry first, then the rest, the puddles last.
 	vec4 wl = wet_now();
+	// Screen-space slopes, taken outside any branch: how fast the ground
+	// and UV.x run across the screen.
+	vec2 dpx = dFdx(p);
+	vec2 dpy = dFdy(p);
+	float dax = dFdx(across);
+	float day = dFdy(across);
 	if (wl.x > 0.0) {
 		// Metres across from the road's middle, from how fast UV.x runs
 		// over the ground (junction pads carry no across: no paths there).
-		vec2 dpx = dFdx(p);
-		vec2 dpy = dFdy(p);
 		float det = dpx.x * dpy.y - dpx.y * dpy.x;
 		vec2 ga = vec2(0.0);
 		if (abs(det) > 1e-9) {
-			ga = vec2(dFdx(across) * dpy.y - dFdy(across) * dpx.y, dpx.x * dFdy(across) - dpy.x * dFdx(across)) / det;
+			ga = vec2(dax * dpy.y - day * dpx.y, dpx.x * day - dpy.x * dax) / det;
 		}
 		float width = 1.0 / max(length(ga), 1e-4);
 		float valid = step(3.0, width) * step(width, 40.0);

@@ -162,4 +162,28 @@ func _wet_streets() -> void:
 		var p: Vector3 = l[1]
 		ok = ok and p.x - float(c[0]) >= LampLight.MARGIN - 0.01 and p.z - float(c[1]) >= LampLight.MARGIN - 0.01 \
 			and float(c[0]) + float(c[2]) - p.x >= LampLight.MARGIN - 0.01 and float(c[1]) + float(c[2]) - p.z >= LampLight.MARGIN - 0.01
-	_check(ok and is_equal_approx(float(c[2]), 880.0 + 2.0 * LampLight.MARGIN), "the lamp map covers every lamp (%s)" % [c])
+	_check(ok and float(c[2]) <= 880.0 + 2.0 * LampLight.MARGIN + 2.0 * LampLight.STEP, "the lamp map covers every lamp (%s)" % [c])
+	lamps.append(["a", Vector3(310, 0, 905), Vector3.FORWARD, 2.0, 9.0])
+	_check(LampLight.cover(lamps) == c, "a lamp more inside the town leaves the map where it was")
+	# Read from the sky's odds: a load mid-afternoon after a morning's rain
+	# finds the streets still wet, and they dry a few hours on.
+	var before := Weather.clock_before({"year": 3, "month": 1, "day": 1, "hour": 1, "minute": 30.0}, 2.0)
+	_check(int(before.month) == 12 and int(before.year) == 2 and int(before.hour) == 23 and is_equal_approx(float(before.minute), 30.0),
+		"two sky hours before 1:30 am on the 1st of January is 11:30 pm in December's sky (%s)" % [before])
+	var spell := {}
+	for y in 6:
+		for m in range(5, 9):
+			for h in range(8, 17):
+				var at := {"year": y, "month": m, "day": 1, "hour": h, "minute": 0.0}
+				if spell.is_empty() and float(Weather.conditions(at)[1]) > 0.4 \
+						and float(Weather.conditions(Weather.clock_before(at, -2.0))[1]) == 0.0 \
+						and float(Weather.conditions(Weather.clock_before(at, -6.0))[1]) == 0.0:
+					spell = at
+	var odds := func(t): return Weather.conditions(t)
+	_check(not spell.is_empty() and Weather.wet_at(spell, odds) > 0.95, "in a summer rain the streets are soaked (%s)" % [spell])
+	var after := Weather.clock_before(spell, -2.0)
+	var later := Weather.clock_before(spell, -6.0)
+	var damp := Weather.wet_at(after, odds)
+	_check(damp > 0.0 and damp < 1.0, "an hour or so after it stops they are still drying (%.2f)" % damp)
+	_check(Weather.wet_at(later, odds) == 0.0, "hours later they are dry")
+	_check(Weather.wet_at(after, odds) == damp, "the same hour always reads the same")
