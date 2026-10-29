@@ -130,6 +130,61 @@ static func boom_lift(st: SurfaceTool, t: Transform3D, col: Color, fine: bool) -
 		_m(st, t, Vector3(0.5, 0.4, 0.15), p + Vector3(0.5, 0.75, -0.4), dark)  # control box
 
 
+## A lattice-boom crawler crane (a 200 t class, like those that stand
+## tilt-up warehouse panels in Indiana) working from the slab: two crawler
+## tracks, the carbody and upper house with its stacked counterweight and
+## cab, a 45 m lattice boom up at 65 degrees with its pendants back to the
+## gantry, and the hook block and spreader hanging from the tip.
+static func crawler_crane(st: SurfaceTool, t: Transform3D, col: Color, fine: bool) -> void:
+	var dark := Color("#262626")
+	for sx in [-1.0, 1.0]:
+		_m(st, t, Vector3(1.2, 1.3, 8.6), Vector3(sx * 2.9, 0.65, 0), dark)
+		if fine:
+			for z in [-3.9, 3.9]:
+				_wheel(st, t, Vector3(sx * 2.9, 0.65, z), 0.65, 1.16, dark.lightened(0.04), 12)
+	_m(st, t, Vector3(4.6, 1.0, 4.0), Vector3(0, 1.6, 0), dark.lightened(0.08))
+	var up := t * Transform3D(Basis.IDENTITY, Vector3(0, 2.1, 0))
+	_m(st, up, Vector3(4.8, 2.6, 7.0), Vector3(0, 1.3, -1.2), col)
+	_m(st, up, Vector3(4.8, 2.4, 1.8), Vector3(0, 1.0, -5.4), Color("#4a4a48"))  # counterweight
+	_m(st, up, Vector3(1.3, 2.2, 2.0), Vector3(-2.9, 1.3, 1.6), col.darkened(0.08))  # cab
+	_m(st, up, Vector3(0.04, 1.4, 1.6), Vector3(-3.56, 1.5, 1.6), Color("#2b3a44"))
+	_m(st, up, Vector3(1.2, 1.4, 0.04), Vector3(-2.9, 1.5, 2.62), Color("#2b3a44"))
+	# The boom: four chords of a 1.8 m box lattice.
+	var a := deg_to_rad(65.0)
+	var dir := Vector3(0, sin(a), cos(a))
+	var foot := Vector3(0, 1.6, 2.0)
+	var len := 45.0
+	var tip := foot + dir * len
+	var side := Vector3.RIGHT
+	var nrm := side.cross(dir).normalized()  # across the boom's depth
+	for sx in [-0.9, 0.9]:
+		for sy in [-0.9, 0.9]:
+			var o: Vector3 = side * sx + nrm * sy
+			_strut(st, up, foot + o * 0.3, tip + o * 0.45, Vector2(0.14, 0.14), col if col.v > 0.5 else Color("#e8e6e0"))
+	if fine:
+		var d := 2.5
+		while d < len - 1.0:
+			var p := foot + dir * d
+			var w := lerpf(0.3, 0.45, d / len) * 2.0
+			_m(st, up, Vector3(w * 0.9, 0.08, 0.08), p + nrm * w * 0.45, col, Basis(Vector3.RIGHT, -a + PI * 0.5))
+			_m(st, up, Vector3(w * 0.9, 0.08, 0.08), p - nrm * w * 0.45, col, Basis(Vector3.RIGHT, -a + PI * 0.5))
+			_strut(st, up, p + side * w * 0.45, p - side * w * 0.45 + dir * 2.4, Vector2(0.06, 0.06), col)
+			d += 2.5
+	# The gantry and the pendants holding the boom.
+	var gantry := Vector3(0, 6.5, -3.0)
+	_strut(st, up, Vector3(0, 2.6, -2.0), gantry, Vector2(0.4, 0.4), col)
+	for sx in [-0.4, 0.4]:
+		_strut(st, up, gantry + side * sx, tip + side * sx * 0.5, Vector2(0.05, 0.05), Color("#2a2a2a"))
+	_m(st, up, Vector3(1.4, 1.2, 1.4), tip + Vector3(0, 0.2, 0.4), col.darkened(0.15))  # sheaves
+	# Hoist line, hook block and the spreader for a panel.
+	var drop := tip.y - 14.0
+	_m(st, up, Vector3(0.05, drop, 0.05), tip + Vector3(0, -drop * 0.5, 0.6), Color("#1e1e1e"))
+	_m(st, up, Vector3(0.7, 1.4, 0.5), tip + Vector3(0, -drop - 0.4, 0.6), Color("#e0a81a"))
+	_m(st, up, Vector3(6.0, 0.35, 0.35), tip + Vector3(0, -drop - 3.2, 0.6), Color("#e0a81a"))
+	for sx in [-2.8, 2.8]:
+		_strut(st, up, tip + Vector3(0, -drop - 1.0, 0.6), tip + Vector3(sx, -drop - 3.0, 0.6), Vector2(0.04, 0.04), Color("#1e1e1e"))
+
+
 ## A box at `c` (machine space) turned by `b`, placed by `t`.
 static func _m(st: SurfaceTool, t: Transform3D, size: Vector3, c: Vector3, col: Color, b := Basis.IDENTITY) -> void:
 	ConstructionSite._prop(st, size, t * c, col, t.basis * b)
