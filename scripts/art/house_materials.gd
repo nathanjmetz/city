@@ -131,6 +131,7 @@ void fragment() {
 ## Window glass: dark rooms behind, blinds pulled to different heights
 ## (vertex alpha), and sky reflected more strongly at grazing angles.
 const GLASS := """
+// Office glass is UV.x in 4..5 (lit a floor at a time after dark).
 // A shop window (UV.x in 2..3, set by the builders' `shopfront` on the
 // desktop): a lit sales floor behind the glass, found by casting the view
 // ray into a box room the width of the pane, from the floor below the
@@ -208,7 +209,7 @@ bool shop_room(vec2 uv, vec3 vw, out vec3 col, out float glow) {
 
 void fragment() {
 	bool shop = false;
-	if (UV.x >= 2.0) {
+	if (UV.x >= 2.0 && UV.x < 4.0) {
 		vec3 vw = normalize((INV_VIEW_MATRIX * vec4(-VIEW, 0.0)).xyz);
 		vec3 inside;
 		float glow;
@@ -227,6 +228,9 @@ void fragment() {
 		}
 	}
 	if (!shop) {
+	// UV.x in 4..5: office glass (the builders' `office_glass`, desktop).
+	float office = step(4.0, UV.x);
+	float ux = UV.x - 4.0 * office;
 	vec3 room = vec3(0.018, 0.02, 0.022);
 	float blinds = step(1.0 - COLOR.a, UV.y);
 	float slat = 0.85 + 0.15 * smoothstep(0.3, 0.5, fract(UV.y * 28.0));
@@ -239,7 +243,7 @@ void fragment() {
 	float h1 = hash(wcell + 11.3);
 	vec3 drape = mix(vec3(0.62, 0.58, 0.50), vec3(0.75, 0.74, 0.70), hash(wcell + 2.7));
 	drape = mix(drape, vec3(0.30, 0.34, 0.42), step(0.85, hash(wcell + 5.1)));
-	float side = max(1.0 - smoothstep(0.17, 0.24, UV.x), smoothstep(0.76, 0.83, UV.x));
+	float side = max(1.0 - smoothstep(0.17, 0.24, ux), smoothstep(0.76, 0.83, ux));
 	col = mix(col, lin(drape) * 0.55, side * step(h1, 0.6) * (1.0 - blinds * 0.7));
 	col += vec3(0.022, 0.02, 0.017) * (1.0 - UV.y) * (1.0 - blinds);
 	float fres = pow(1.0 - clamp(dot(NORMAL, VIEW), 0.0, 1.0), 4.0);
@@ -258,6 +262,17 @@ void fragment() {
 	vec3 lamp = mix(warm, vec3(0.55, 0.7, 1.0), step(0.9, hash(cell + 7.7)));
 	// Light through blinds is dimmer and softer.
 	EMISSION = lamp * on * mix(2.2, 1.1, blinds) * (0.8 + 0.4 * UV.y);
+	if (office > 0.5) {
+		// Offices after hours go dark a floor at a time: a few whole floors
+		// still lit (late workers, the cleaning crew) in cool LED white, a
+		// stray desk lamp elsewhere.
+		float fl = floor(world_pos.y / 3.6);
+		float bld = hash(floor(world_pos.xz / 45.0));
+		float floor_on = step(hash(vec2(fl * 1.7, bld * 53.0)), 0.2);
+		float lit = mix(step(0.96, hash(cell + 9.1)), step(hash(cell + 4.4), 0.88), floor_on);
+		lit *= smoothstep(0.2, 0.6, night);
+		EMISSION = vec3(0.82, 0.9, 1.0) * lit * mix(1.8, 1.0, blinds) * (0.85 + 0.3 * UV.y);
+	}
 	}
 }
 """

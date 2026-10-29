@@ -208,6 +208,10 @@ var street_age := StreetAge.new()
 var engineer := CityEngineer.new()
 ## The ordinances the town council has passed (TownLaws).
 var laws := TownLaws.new()
+## Like businesses gathering, and the lift they give each other (Clusters).
+var clusters := Clusters.new()
+## Dirt paths worn beside roads people walk with no sidewalk (WornPaths).
+var worn := WornPaths.new()
 ## The town's numbers over time, for the top bar's charts (StatHistory).
 var history := StatHistory.new()
 ## Buildings only grow and fill with power and water, as in Cities: Skylines.
@@ -1047,6 +1051,7 @@ func _apply_cmd(cmd: Dictionary) -> bool:
 			engineer.from_dict({})
 			laws.from_dict({})
 			laws.sync(self)
+			worn.from_dict({})
 			timelapse.from_dict(self, {})
 			history.from_dict({})
 			_lever_steps.clear()
@@ -1487,6 +1492,7 @@ func tick() -> void:
 		timelapse.month(self)
 	elif hour == 19 * TICKS_PER_HOUR:
 		laws.month(self)
+		worn.month(self)
 	if hour % TICKS_PER_HOUR == 25 and hour / TICKS_PER_HOUR in Balance.LAW_COUNT_HOURS:
 		# The council's count of trucks cutting through neighborhoods.
 		laws.count(self)
@@ -3238,7 +3244,8 @@ func _hook_pollution() -> void:
 ## A lot's land value factor (1.0 = no change): the hubs nearby, trash left
 ## out, pollution, and an old building's charm.
 func land_factor(key: String) -> float:
-	return hubs.lot_factor(self, key) * pollution.lot_factor(self, key) * heritage.land(key) * care.land(key)
+	return hubs.lot_factor(self, key) * pollution.lot_factor(self, key) * heritage.land(key) * care.land(key) \
+		* clusters.land(self, key)
 
 
 func _lot_blocked(lot: Dictionary) -> bool:
@@ -4948,6 +4955,7 @@ func save_steps(postcard := false) -> Array:
 		["street_age", func(): return street_age.to_dict()],
 		["engineer", func(): return engineer.to_dict()],
 		["laws", func(): return laws.to_dict()],
+		["worn", func(): return worn.to_dict()],
 		["junctions", func(): return traffic.rules_to_dict()],
 		["lane_rules", func(): return traffic.lane_rules_to_dict()],
 		["greens", func(): return traffic.greens_to_dict()],
@@ -5064,6 +5072,7 @@ func from_dict(d: Dictionary) -> void:
 	engineer.from_dict(d.get("engineer", {}))
 	laws.from_dict(d.get("laws", {}))
 	laws.sync(self)
+	worn.from_dict(d.get("worn", {}))
 	for legacy in farms.legacy_outlines:
 		reserves.paint(legacy[0], legacy[1])
 	for id in farms.farms:

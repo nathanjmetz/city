@@ -2136,6 +2136,19 @@ const BIG_FACTORY_LAND_PER_M2 := 220
 ## hogs (the plant owns the pigs and feed; the grower is paid for the barn
 ## space and work).
 const BIG_FACTORY_CONTRACT_SHARE := 0.85
+## Work modes (Brawn's pick #17): an owner whose orders back up can run a
+## second shift before building another line, as real plants do. A second
+## shift adds about 80-90% of the day shift's output (fewer supervisors,
+## maintenance in the gaps; BLS: about one full-time factory worker in six
+## works evenings or nights), pays a shift differential of about 5-10% on
+## its work, and carries night overhead (supervisors, lights, security).
+## Ethanol plants already run around the clock (a continuous process), so
+## only these kinds can add one.
+const SECOND_SHIFT_KINDS := ["meatpacker", "furniture", "rv"]
+const SECOND_SHIFT_OUTPUT := 0.85
+const SECOND_SHIFT_PAY := 0.08
+## Night overhead as a share of the plant's fixed costs a month.
+const SECOND_SHIFT_FIXED := 0.3
 # --- Schools and universities -------------------------------------------------
 # Brawn's model (2026-10-22): the player places a high school, community
 # college or university and sets its funding. Its principal or president
@@ -2155,6 +2168,9 @@ const STATION_LEVY_PER_PERSON := 1.3
 ## a bond the levy pays back (Indiana towns bond fire stations and their
 ## additions over 10-20 years).
 const STATION_BOND_DOWN := 0.25
+## A school's capital comes from its Operations Fund (IC 20-46-8), a
+## bigger levy than a town's cumulative funds: dollars a resident a month.
+const STATION_LEVY_OF := {"school": 3.0}
 ## Each piece: `cost` dollars from the fund, `grow` metres the lot reaches
 ## further back from the street (0 builds on what it has), `needs` from the
 ## town (population; tall = buildings of 3+ storeys; city = a city charter),
@@ -2207,6 +2223,19 @@ const STATION_TREES := {
 			"needs": {"population": 4000}, "effects": {"reach*": 0.05}, "note": "a dentist and an optometrist move in"},
 		{"id": "dialysis", "name": "Dialysis center", "cost": 1_600_000, "grow": 14.0, "requires": ["urgent_care"],
 			"needs": {"population": 10_000}, "effects": {"reach*": 0.05}, "note": "no more drives to Marion three times a week"},
+	],
+	# An elementary school: Indiana schools build from their Operations
+	# Fund (IC 20-46-8) and bond big projects (IC 20-48-1), so a growing
+	# town's school leases portables first and then builds.
+	"school": [
+		{"id": "prek", "name": "Pre-K wing", "cost": 1_400_000, "grow": 16.0,
+			"needs": {"population": 2500}, "effects": {"reach*": 0.05}, "note": "On My Way Pre-K seats for four-year-olds"},
+		{"id": "portables", "name": "Portable classrooms", "cost": 240_000, "grow": 12.0,
+			"needs": {"population": 3500}, "effects": {"reach*": 0.08}, "note": "two leased modular classrooms out back"},
+		{"id": "addition", "name": "Classroom addition", "cost": 4_000_000, "grow": 24.0, "requires": ["portables"],
+			"needs": {"population": 6000}, "effects": {"reach*": 0.2}, "note": "eight classrooms on two floors, the portables go"},
+		{"id": "aux_gym", "name": "Second gym", "cost": 2_800_000, "grow": 24.0, "requires": ["addition"],
+			"needs": {"population": 8000}, "effects": {"reach*": 0.05}, "note": "practice space and community leagues"},
 	],
 	"police": [
 		{"id": "sally_port", "name": "Sally port", "cost": 300_000, "grow": 10.0,
@@ -3254,6 +3283,53 @@ const LAW_IMPACT_PACE := 0.9
 ## The plan commission asks for an impact fee after this many new homes in a
 ## year.
 const LAW_IMPACT_ASK_HOMES := 40
+
+# --- Clusters (Clusters) ------------------------------------------------------
+# Brawn, 2026-10-29 (his pick from the borrowed features): like businesses
+# gather, and do better together.
+
+## Like businesses count as neighbors within this far, metres (a few blocks).
+const CLUSTER_REACH := 250.0
+## A hospital or clinic anchors medical offices, and the courthouse the
+## lawyers and agents, within a quarter mile.
+const CLUSTER_ANCHOR_REACH := 400.0
+## An anchor counts as this many like neighbors.
+const CLUSTER_ANCHOR_SCORE := 2.0
+## A cluster pulls new owners in once it's this strong...
+const CLUSTER_PULL_MIN := 2.0
+## ...about this share of them.
+const CLUSTER_PULL := 0.5
+## A cluster carries this many more of a trade than the town otherwise would.
+const CLUSTER_EXTRA := 2
+## Land value lift for a business in a full cluster (CLUSTER_FULL or more):
+## retail and office rents run roughly 5-20% higher among their own kind.
+const CLUSTER_LIFT := 0.12
+const CLUSTER_FULL := 4.0
+## An auto row needs a road at this speed limit or faster (or four lanes).
+const CLUSTER_AUTO_MPH := 40
+## A new-car dealer needs about this many people in its market.
+const CLUSTER_DEALER_PEOPLE := 8_000
+
+# --- Worn paths (WornPaths) ---------------------------------------------------
+# Brawn, 2026-10-29 (his pick from the borrowed features): dirt paths worn
+# where people walk with no sidewalk.
+
+## A sim day of walks is one day of the month's: each counts for this many.
+const WORN_DAYS := 30.0
+## What's left of last month's wear as the grass grows back (gone in a
+## season or two once nobody walks it).
+const WORN_REGROW := 0.6
+## Passes a month: the grass shows a path past WORN_SHOW and is bare dirt by
+## WORN_BARE (trampling studies: cover thins after a few hundred passes and
+## is gone after several hundred more); under WORN_GONE it's forgotten.
+const WORN_SHOW := 100.0
+const WORN_BARE := 600.0
+const WORN_GONE := 20.0
+## How wide a well-worn single-file path is, metres (about two feet).
+const WORN_WIDTH := 0.7
+## The path stops this far short of each end of a road, metres (where the
+## junction's corner and crossing are).
+const WORN_JUNCTION_CLEAR := 12.0
 
 # --- Police patrols (Patrols) ---------------------------------------------------
 # A small-town department keeps one or two cars on the road a shift, round

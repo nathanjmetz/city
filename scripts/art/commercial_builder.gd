@@ -440,13 +440,50 @@ func _sign(c: Vector3, w: float, h: float) -> void:
 		# sign shader there's real lettering, so it paints no stand-in.
 		col = sign_spec.panel
 		col.a = 0.0
-		labels.append_array(SignText.on_panel(sign_spec, c + Vector3(0, 0, -0.01), w, h, Vector3.FORWARD))
+		labels.append_array(SignText.on_panel(sign_spec, c + Vector3(0, 0, -0.01), w, h, Vector3.FORWARD, true))
 	var r := Vector3(-w * 0.5, 0, 0)
 	var u := Vector3(0, h, 0)
 	# Faces the street (-z); x runs right to left as seen from the street.
 	_quad("sign", c + r, c - r, c - r + u, c + r + u, col,
 		[Vector2(0, 0), Vector2(w, 0), Vector2(w, 1), Vector2(0, 1)], Vector3.FORWARD)
 	_box("paint", Vector3(w + 0.1, h + 0.1, 0.06), c + Vector3(0, h * 0.5, 0.04), col.darkened(0.3))
+
+
+## Desktop: a strip tenant's name in channel letters, the way strip-centre
+## leases require them: separate lit letters about 13 cm deep on a raceway
+## along the fascia, red most often, then white, blue or green; they glow
+## after dark (sign alpha 1). Takes the same one draw from rng as _sign.
+func _channel_letters(c: Vector3, w: float, h: float) -> void:
+	_pick(SIGNS)  # the same one draw as _sign
+	var r := RandomNumberGenerator.new()
+	r.seed = hash([rng.seed, 37, snappedf(c.x, 0.1)])
+	var tints := [Color("#e0262e"), Color("#e0262e"), Color("#f4f1ea"), Color("#1f5fbf"), Color("#1f8a4a"), Color("#f2b632")]
+	var col: Color = tints[r.randi() % tints.size()]
+	col.a = 1.0
+	var lh := h * r.randf_range(0.7, 0.95)
+	var lw := lh * 0.62
+	var gap := lh * 0.14
+	var n := maxi(3, int(w / (lw + gap)))
+	var x0 := c.x - (n * (lw + gap) - gap) * 0.5
+	var y0 := c.y + (h - lh) * 0.5
+	var z := c.z - 0.08
+	# The raceway the letters hang on, painted to match the fascia.
+	_box("paint", Vector3(n * (lw + gap), 0.12, 0.1), Vector3(c.x, y0 + lh * 0.45, c.z - 0.03), Color("#5b5d5f"))
+	var t := lh * 0.18
+	for i in n:
+		if r.randf() < 0.1 and i > 0 and i < n - 1:
+			continue  # a space between words
+		var lx := x0 + i * (lw + gap) + lw * 0.5
+		# A block letter from a few strokes: stems, then bars across.
+		var stems := r.randi_range(1, 2)
+		if stems == 1:
+			_box("sign", Vector3(t, lh, 0.13), Vector3(lx + r.randf_range(-0.3, 0.3) * lw, y0 + lh * 0.5, z), col)
+		else:
+			for sx in [-1.0, 1.0]:
+				_box("sign", Vector3(t, lh, 0.13), Vector3(lx + sx * (lw - t) * 0.5, y0 + lh * 0.5, z), col)
+		for k in 3:
+			if r.randf() < 0.55:
+				_box("sign", Vector3(lw, t, 0.13), Vector3(lx, y0 + t * 0.5 + k * (lh - t) * 0.5, z - 0.005), col)
 
 
 func _awning(cx: float, w: float, zf: float, y: float, col: Color) -> void:
@@ -541,7 +578,11 @@ func _strip_center(to_curb: float, anchor := false) -> void:
 		var spec := sign_spec
 		if i > 0:
 			sign_spec = {}
-		_sign(Vector3(x, 3.9, zf - 2.55), sw * rng.randf_range(0.5, 0.8), 0.7)
+		var sgw := sw * rng.randf_range(0.5, 0.8)
+		if fine_parts and sign_spec.is_empty():
+			_channel_letters(Vector3(x, 3.9, zf - 2.55), sgw, 0.7)
+		else:
+			_sign(Vector3(x, 3.9, zf - 2.55), sgw, 0.7)
 		sign_spec = spec
 	# Canopy over the walk on square columns (a mansard's slope instead).
 	var x1 := w * 0.5 - aw if style == "mansard" and aw > 0.0 else w * 0.5

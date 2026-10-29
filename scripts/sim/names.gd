@@ -89,6 +89,12 @@ const TRADES := [
 	{"trade": "gifts", "w": 2, "style": "script", "names": ["{F's} Gifts", "{S} Gift Shop"]},
 	{"trade": "appliance", "w": 1, "style": "franklin", "names": ["{S} Appliance & TV"]},
 	{"trade": "accounting", "office": true, "w": 2, "style": "serif", "names": ["{S} Tax & Accounting"]},
+	# Only where their own kind gathers (Clusters): car lots on the auto row,
+	# doctors and dentists by the hospital.
+	{"trade": "dealer", "cluster": true, "w": 2, "style": "condensed", "names": ["{S} Motors", "{S} Auto Sales", "{S} Motor Co."]},
+	{"trade": "doctor", "cluster": true, "office": true, "w": 3, "style": "franklin",
+		"names": ["{S} Family Medicine", "{S} Medical Clinic", "{S} Family Practice"]},
+	{"trade": "dentist", "cluster": true, "office": true, "w": 2, "style": "franklin", "names": ["{S} Family Dentistry", "{S} Dental"]},
 ]
 ## What each kind of trade is called in a sentence ("a diner").
 const TRADE_WORD := {
@@ -98,7 +104,7 @@ const TRADE_WORD := {
 	"florist": "florist", "bakery": "bakery", "furniture": "furniture store", "funeral": "funeral home",
 	"law": "law office", "realty": "real estate office", "antiques": "antique store",
 	"clothing": "clothing store", "gifts": "gift shop", "appliance": "appliance store",
-	"accounting": "accounting office",
+	"accounting": "accounting office", "dealer": "car lot", "doctor": "doctor's office", "dentist": "dentist's office",
 	"mill": "grain mill", "sawmill": "sawmill", "refinery": "plastics plant", "metal": "machine shop",
 	"general": "factory", "farm": "farm", "oil": "oil company", "ore": "stone quarry", "forest": "logging company",
 }
@@ -137,15 +143,23 @@ static func place(seed: int) -> String:
 static func trade(seed: int, office := false) -> Dictionary:
 	var total := 0
 	for t in TRADES:
-		if not office or t.get("office", false):
+		if (not office or t.get("office", false)) and not t.get("cluster", false):
 			total += int(t.w)
 	var r := absi(seed) % total
 	for t in TRADES:
-		if not office or t.get("office", false):
+		if (not office or t.get("office", false)) and not t.get("cluster", false):
 			r -= int(t.w)
 			if r < 0:
 				return t
 	return TRADES[0]
+
+
+## True for a trade an office building can house.
+static func is_office(trade: String) -> bool:
+	for t in TRADES:
+		if t.trade == trade:
+			return t.get("office", false)
+	return false
 
 
 ## Name patterns and default lettering for a trade or kind.

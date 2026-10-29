@@ -200,6 +200,17 @@ func _init() -> void:
 		"postwar and recent streets build shops with flats of their own era (%s)" % str(infill))
 	_check(not MainInfill.wanted(DenseBuilder._start(3, {"width": 20.0, "depth": 40.0, "era": "recent"}), 5),
 		"five storeys and up stay the towers' job")
+	# Recent rows that aren't front-garage townhomes are rear-loaded urban ones.
+	# Postwar rows that aren't mansard rows are colonial townhouses.
+	for kind in ["urban", "colonial"]:
+		for units in [2, 3, 4]:
+			for st in [2, 3]:
+				var w: float = units * 7.5 + 1.0
+				MetroBuilder.force_row = kind
+				var out := MetroBuilder.build_row(units * 10 + st, 3.9, {"width": w, "depth": 40.0, "era": "recent"}, units, st)
+				MetroBuilder.force_row = ""
+				_check(out.size() >= 3 and _inside(HouseBuilder.last_masses, w * 0.5, 40.0),
+					"%d %s townhomes of %d storeys fit their %d m lot" % [units, kind, st, w])
 	var kinds := [0, 0, 0]
 	for s in 300:
 		kinds[absi(hash([s, "walkup kind"])) % 3] += 1

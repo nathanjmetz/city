@@ -87,6 +87,8 @@ jobs:
           run_test tests/test_country_roads.gd
           run_test tests/test_sim.gd
           run_test tests/test_town_laws.gd
+          run_test tests/test_clusters.gd
+          run_test tests/test_worn_paths.gd
           run_test tests/test_water.gd
           run_test tests/test_advisor.gd
           run_test tests/test_build_menus.gd
@@ -153,6 +155,7 @@ jobs:
           run_test tests/test_boxed_mail.gd
           run_test tests/test_warehouses.gd
           run_test tests/test_big_factories.gd
+          run_test tests/test_work_modes.gd
           run_test tests/test_parks.gd
           run_test tests/test_boxed_parks.gd
           run_test tests/test_tourism.gd

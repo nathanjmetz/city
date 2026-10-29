@@ -50,7 +50,9 @@ static func build_service(kind: int, seed: int, size: Vector2, to_curb: float, b
 		Services.Kind.CLINIC:
 			b._clinic(front, to_curb)
 			b._station_upgrades(kind, size, front, built)
-		Services.Kind.SCHOOL: b._school(front, to_curb)
+		Services.Kind.SCHOOL:
+			b._school(front, to_curb)
+			b._station_upgrades(kind, size, front, built)
 		Services.Kind.SUBSTATION: b._substation(front, to_curb)
 		Services.Kind.WATER_TOWER: b._water_tower(front, to_curb)
 		Services.Kind.WELL, Services.Kind.WATER_UTILITY: b._well(front, to_curb)
@@ -178,6 +180,21 @@ func _station_upgrades(kind: int, size: Vector2, front: float, built: Array) -> 
 			"urgent_care": _clinic_wing(w, z, g, "urgent_care")
 			"dental": _clinic_wing(w, z, g, "dental")
 			"dialysis": _clinic_wing(w, z, g, "dialysis")
+			"prek": _prek_wing(w, z, g, brick, trim)
+			"portables":
+				# The addition's classrooms replace the portables: their pad
+				# stays as a blacktop.
+				if "addition" in built:
+					_flat_rect("asphalt", -w * 0.5 + 4.0, -w * 0.5 + 30.0, z + 1.0, z + g - 1.0, 0.06)
+					for i in 2:
+						_hoop(Vector3(-w * 0.5 + 10.0 + i * 12.0, 0, z + 2.0))
+				else:
+					_portables(w, z, g)
+					_covered_walk(-22.0, front + 70.0, z)
+			"addition":
+				_school_addition(w, z, g, brick, trim)
+				_covered_walk(-22.0, front + 70.0, z + 3.0)
+			"aux_gym": _aux_gym(w, z, g, brick, trim)
 		z += g
 
 
@@ -385,6 +402,138 @@ func _clinic_wing(w: float, z: float, g: float, what: String) -> void:
 	trees.append([Vector3(-w * 0.5 + 1.5, 0, z + g - 1.0), pick[0], pick[1], rng.randf_range(0.7, 0.9)])
 
 
+## Portable classrooms (an Indiana school outgrowing its building leases
+## modular classrooms, each a 24 x 36 ft double-wide): two tan-sided units
+## on block piers, a wooden ramp with rails to each door, a wall-mounted
+## heat pump and a covered walk back to the school.
+func _portables(w: float, z: float, g: float) -> void:
+	var side := Color(_pick(["#cdbf9e", "#d9cdb0", "#bfb59a"]))
+	var trim := Color("#efede6")
+	var uw := 11.0
+	var ud := 7.3
+	var floor := 0.75
+	for i in 2:
+		var c := Vector3(-w * 0.5 + 10.0 + i * 15.0, 0, z + 2.0 + ud * 0.5)
+		for px in [-1.0, 0.0, 1.0]:
+			for pz in [-1.0, 1.0]:
+				_box("concrete", Vector3(0.4, floor, 0.4), c + Vector3(px * (uw * 0.5 - 0.6), floor * 0.5, pz * (ud * 0.5 - 0.6)), CONCRETE)
+		_box("paint", Vector3(uw, 0.25, ud), c + Vector3(0, floor - 0.1, 0), DARK)
+		_box("paint", Vector3(uw, 2.6, ud), c + Vector3(0, floor + 1.3, 0), side)
+		_box("paint", Vector3(uw + 0.3, 0.18, ud + 0.3), c + Vector3(0, floor + 2.7, 0), Color("#d9d9d4"))
+		_box("paint", Vector3(uw + 0.06, 0.2, ud + 0.06), c + Vector3(0, floor + 2.5, 0), trim)
+		# Windows on the long sides, a door on the school side.
+		for e in [-1.0, 1.0]:
+			for k in 3:
+				_glass(Vector3(c.x - 3.5 + k * 3.5, floor + 1.4, c.z + e * (ud * 0.5 + 0.03)), Vector3(-e, 0, 0), 1.2, 1.0, 0.3)
+		_box("paint", Vector3(0.9, 2.0, 0.06), c + Vector3(uw * 0.5 - 1.6, floor + 1.0, -ud * 0.5 - 0.03), Color("#6e7a80"))
+		_box("paint", Vector3(0.9, 0.7, 0.5), c + Vector3(-uw * 0.5 - 0.3, floor + 1.0, 0), Color("#c9c9c4"))
+		# The ramp: 1:12, along the front to a landing at the door.
+		var rz := c.z - ud * 0.5 - 0.9
+		_box("wood", Vector3(1.6, 0.12, 1.6), Vector3(c.x + uw * 0.5 - 1.6, floor - 0.05, rz), Color("#a08a6a"))
+		_box("wood", Vector3(6.0, 0.1, 1.2), Vector3(c.x + uw * 0.5 - 5.4, floor * 0.5, rz), Color("#a08a6a"),
+			Basis(Vector3.BACK, -atan(floor / 6.0)))
+		for e in [-1.0, 1.0]:
+			_box("wood", Vector3(6.6, 0.06, 0.06), Vector3(c.x + uw * 0.5 - 5.2, floor * 0.5 + 0.9, rz + e * 0.6), Color("#8a7458"),
+				Basis(Vector3.BACK, -atan(floor / 6.0)))
+	# The walk back to the school's door, under a steel canopy.
+	_flat_rect("drive", -w * 0.5 + 4.0, -w * 0.5 + 34.0, z, z + 1.6, 0.08)
+	_box("paint", Vector3(30.0, 0.15, 2.2), Vector3(-w * 0.5 + 19.0, 2.6, z + 0.8), Color("#3a4a5a"))
+	for i in 6:
+		_box("paint", Vector3(0.12, 2.6, 0.12), Vector3(-w * 0.5 + 5.0 + i * 5.6, 1.3, z + 1.8), Color("#3a4a5a"))
+
+
+## A pre-K wing (Indiana's On My Way Pre-K funds four-year-olds' seats in
+## public schools): one storey of brick with big low windows, its own
+## door and drop-off, and a fenced playground with soft surfacing.
+func _prek_wing(w: float, z: float, g: float, brick: Color, trim: Color) -> void:
+	var ww := 30.0
+	var wd := g - 6.0
+	var x := w * 0.5 - 4.0 - ww * 0.5
+	var zf := z + 4.0  # clear of the ball diamond's backstop
+	var h := 4.0
+	_slab(x, ww, zf, wd)
+	_flat_roofed_at("brick", x, ww, wd, zf + wd * 0.5, h, h + 0.5, brick)
+	_ribbon_z(x - ww * 0.5, zf + 0.5, zf + wd - 0.5, Vector3.LEFT, Color("#d9a92a"), trim)
+	_rooftop_units(x, ww, zf, wd, h, 1)
+	# The playground beside it, fenced, on rubber tiles.
+	var px0 := x - ww * 0.5 - 18.0
+	var px1 := x - ww * 0.5 - 2.0
+	_flat_rect("mulch", px0, px1, zf, zf + wd, 0.05, Color("#4a6a8a"))
+	_play_set(Vector3(px0 + 4.0, 0, zf + wd * 0.5))
+	for e in [[Vector3(px0, 0, zf), Vector3(px1, 0, zf)], [Vector3(px0, 0, zf + wd), Vector3(px1, 0, zf + wd)],
+			[Vector3(px0, 0, zf), Vector3(px0, 0, zf + wd)]]:
+		_fence_run(e[0], e[1], 1.2)
+
+
+## A classroom addition: two storeys of brick (eight classrooms, about
+## 12,000 sq ft) with ribbon windows on both floors, joined to the school
+## by a glass link, a stair tower at its end.
+func _school_addition(w: float, z: float, g: float, brick: Color, trim: Color) -> void:
+	var panel := Color(_pick(["#3a5a6e", "#6e3a2e", "#3b4a3a", "#c9b27a"]))
+	var ww := 44.0
+	var wd := g - 6.0
+	var x := -w * 0.5 + 6.0 + ww * 0.5
+	var zf := z + 3.0
+	var h := 8.2
+	_slab(x, ww, zf, wd)
+	_flat_roofed_at("brick", x, ww, wd, zf + wd * 0.5, h, h + 0.6, brick)
+	for f in 2:
+		_ribbon_lift(x - ww * 0.5, x + ww * 0.5, zf, Vector3.FORWARD, panel, trim, f * 3.9)
+		_ribbon_lift(x - ww * 0.5, x + ww * 0.5, zf + wd, Vector3.BACK, panel, trim, f * 3.9)
+	# Stair tower, a little taller, glass up its face.
+	_box("brick", Vector3(5.0, h + 2.0, 5.0), Vector3(x + ww * 0.5 + 2.5, (h + 2.0) * 0.5, zf + wd * 0.5), brick.darkened(0.08))
+	_glass(Vector3(x + ww * 0.5 + 5.03, h * 0.5 + 0.5, zf + wd * 0.5), Vector3(0, 0, -1), 2.0, h - 1.0, 0.0)
+	_glass(Vector3(-22.0, 1.4, zf - 0.03), Vector3(-1, 0, 0), 2.4, 2.6, 0.0)
+	_rooftop_units(x, ww - 6.0, zf, wd, h, 3)
+
+
+## A covered walk from the school's back door out to what it added: a
+## concrete path under a flat steel canopy on posts, as schools run out to
+## their portables and detached wings.
+func _covered_walk(x: float, z0: float, z1: float) -> void:
+	if z1 - z0 < 2.0:
+		return
+	var steel := Color("#3a4a5a")
+	_flat_rect("drive", x - 1.1, x + 1.1, z0, z1, 0.085)
+	_box("paint", Vector3(2.6, 0.15, z1 - z0), Vector3(x, 2.7, (z0 + z1) * 0.5), steel)
+	var n := maxi(1, int((z1 - z0) / 5.0))
+	for i in n + 1:
+		_box("paint", Vector3(0.12, 2.7, 0.12), Vector3(x + 1.2, 1.35, z0 + 0.3 + (z1 - z0 - 0.6) * i / n), steel)
+
+
+## A second (auxiliary) gym for practices and community leagues: a tall
+## brick box with clerestory windows high up, double doors and a canopy.
+func _aux_gym(w: float, z: float, g: float, brick: Color, trim: Color) -> void:
+	var ww := 34.0
+	var wd := g - 4.0
+	var x := w * 0.5 - 4.0 - ww * 0.5
+	var zf := z + 2.0
+	var h := 9.0
+	_slab(x, ww, zf, wd)
+	_flat_roofed_at("brick", x, ww, wd, zf + wd * 0.5, h, h + 0.6, brick)
+	_box("paint", Vector3(ww + 0.06, 0.5, wd + 0.06), Vector3(x, h - 0.6, zf + wd * 0.5), trim)
+	for e in [-1.0, 1.0]:
+		for i in 4:
+			_glass(Vector3(x + e * (ww * 0.5 + 0.03), 7.0, zf + 3.0 + i * (wd - 6.0) / 3.0), Vector3(0, 0, -e), 3.0, 1.0, 0.0)
+	_box("paint", Vector3(3.2, 2.4, 0.06), Vector3(x, 1.2, zf - 0.03), Color("#5a6e7a"))
+	_box("paint", Vector3(5.0, 0.3, 2.4), Vector3(x, 3.1, zf - 1.2), trim)
+	_rooftop_units(x, ww - 8.0, zf, wd, h, 2)
+	_flat_rect("drive", x - 2.0, x + 2.0, z, zf, 0.08)
+
+
+## A ribbon of windows (as _ribbon) raised `lift` metres, for upper floors.
+func _ribbon_lift(x0: float, x1: float, z: float, out: Vector3, panel: Color, trim: Color, lift: float) -> void:
+	var right := Vector3(-1, 0, 0) if out.z < 0.0 else Vector3(1, 0, 0)
+	var step := 3.0
+	var x := x0 + 0.6
+	while x + step <= x1 - 0.6:
+		var c := x + step * 0.5
+		_glass(Vector3(c, 2.45 + lift, z + out.z * 0.03), right, step - 0.15, 1.5, rng.randf_range(0.0, 0.5))
+		_box("paint", Vector3(step - 0.15, 0.85, 0.06), Vector3(c, 1.15 + lift, z + out.z * 0.03), panel)
+		x += step
+	_box("paint", Vector3(x1 - x0 - 1.0, 0.12, 0.14), Vector3((x0 + x1) * 0.5, 3.24 + lift, z + out.z * 0.07), trim)
+
+
 ## The 911 center's radio tower: a self-supporting lattice about 45 m high,
 ## its equipment shelter and generator at the foot.
 func _dispatch_tower(p: Vector3) -> void:
@@ -556,11 +705,12 @@ func _school(front: float, to_curb: float) -> void:
 	_play_set(Vector3(-9.0, 0, z0 + wd + 29.0))
 	for i in 2:
 		_hoop(Vector3(-11.0 + i * 11.0, 0, z0 + wd + 4.0))
-	_diamond(Vector3(22.0, 0, 46.0))
+	# (Placed from the front: a grown school's lot reaches further back.)
+	_diamond(Vector3(22.0, 0, front + 96.0))
 	for i in 6:
 		var pick := TreeField.pick(rng, true)
 		trees.append([Vector3(-36.0 + i * 3.0 + rng.randf_range(-1.0, 1.0), 0, front + 19.0 + rng.randf_range(0.0, 2.0)) if i < 3
-			else Vector3(rng.randf_range(-38.0, -30.0), 0, rng.randf_range(10.0, 45.0)), pick[0], pick[1], rng.randf_range(0.8, 1.1)])
+			else Vector3(rng.randf_range(-38.0, -30.0), 0, front + rng.randf_range(60.0, 95.0)), pick[0], pick[1], rng.randf_range(0.8, 1.1)])
 
 
 func _ribbon(x0: float, x1: float, z: float, out: Vector3, panel: Color, trim: Color, gap: float) -> void:

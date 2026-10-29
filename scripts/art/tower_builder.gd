@@ -62,6 +62,7 @@ static func _tw_start(seed: int, to_curb: float, lot: Dictionary, storeys: int, 
 	var b := TowerBuilder.new()
 	b._far = far
 	b._homes = homes
+	b.office_glass = DenseBuilder.fine and not homes and not far
 	b.rng = RandomNumberGenerator.new()
 	b.rng.seed = seed
 	b.sign_spec = spec

@@ -68,8 +68,8 @@ func _init() -> void:
 		if kind in ["care", "careshop"]:
 			HouseBuilder.owner_care = i - 2
 		var w: float = {"care": 24.0, "careshop": 26.0, "row": 22.0, "apartments": 36.0, "mixed": 22.0, "main": 16.0 + 4.0 * (i % 3), "mainold": 16.0 + 4.0 * (i % 3), "mainrestored": 16.0 + 4.0 * (i % 3), "office": 40.0, "towers": 44.0, "hometowers": 54.0, "towerfar": 44.0, "flats": 24.0, "courtyard": 48.0, "walkup": 26.0, "garage": 44.0, "growth": [40.0, 40.0, 44.0, 56.0, 64.0, 64.0, 72.0][i % 7], "oddlots": [26.0, 22.0, 20.0, 26.0, 18.0][i % 5],
-			"grown": 22.0, "rows": 22.0, "garden": 40.0, "walkups": 32.0, "infill": [16.0, 20.0, 24.0, 18.0, 26.0][i], "duplex": [16.0, 20.0, 24.0, 24.0, 22.0][i],
-			"corner": [14.0, 13.0, 12.0, 22.0, 20.0][i], "cottage": [16.0, 20.0, 22.0, 18.0, 24.0][i], "cornerflats": [14.0, 18.0, 12.0, 16.0, 16.0][i]}.get(k, 20.0)
+			"grown": 22.0, "rows": 22.0, "garden": 40.0, "walkups": 32.0, "infill": [16.0, 20.0, 24.0, 18.0, 26.0][i % 5], "duplex": [16.0, 20.0, 24.0, 24.0, 22.0][i % 5],
+			"corner": [14.0, 13.0, 12.0, 22.0, 20.0][i % 5], "cottage": [16.0, 20.0, 22.0, 18.0, 24.0][i % 5], "cornerflats": [14.0, 18.0, 12.0, 16.0, 16.0][i % 5]}.get(k, 20.0)
 		var sd := seed * 100 + i
 		match k:
 			"shop": meshes = CommercialBuilder.build_shop(sd, 3.9)
@@ -126,7 +126,7 @@ func _init() -> void:
 			"care": meshes = HouseBuilder.build(seed * 100, 3.9, {"width": w, "depth": 48.0}, 1)
 			"rows":
 				# Row homes of each kind, two storeys and three.
-				MetroBuilder.force_row = ["townhomes", "townhomes", "mansard", "mansard", "row"][i]
+				MetroBuilder.force_row = ["colonial", "urban", "mansard", "colonial", "row"][i]
 				meshes = MetroBuilder.build_row(sd, 3.9, {"width": w, "depth": 45.0}, 3, 2 + i % 2)
 				MetroBuilder.force_row = ""
 			"infill":

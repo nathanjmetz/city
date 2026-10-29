@@ -17,7 +17,8 @@ extends RefCounted
 
 ## The chief looks at the fund and the town once a game day (a month).
 const DECIDE_EVERY := 1440
-const TREE_OF := {Services.Kind.FIRE: "fire", Services.Kind.POLICE: "police", Services.Kind.CLINIC: "clinic"}
+const TREE_OF := {Services.Kind.FIRE: "fire", Services.Kind.POLICE: "police", Services.Kind.CLINIC: "clinic",
+	Services.Kind.SCHOOL: "school"}
 
 var depts := {}  # service id -> {built: [ids, in the order built], fund, why}
 
@@ -75,7 +76,8 @@ static func _facts(sim: CitySim) -> Dictionary:
 func _decide(sim: CitySim, id: int, facts: Dictionary) -> bool:
 	var d: Dictionary = depts[id]
 	var b: Dictionary = sim.services.buildings[id]
-	d.fund = roundf(float(d.fund) + float(facts.population) * Balance.STATION_LEVY_PER_PERSON)
+	d.fund = roundf(float(d.fund) + float(facts.population)
+		* float(Balance.STATION_LEVY_OF.get(TREE_OF[int(b.kind)], Balance.STATION_LEVY_PER_PERSON)))
 	for n in open(int(b.kind), d.built, facts):
 		if float(n.cost) * Balance.STATION_BOND_DOWN > float(d.fund):
 			continue  # saving up for it
