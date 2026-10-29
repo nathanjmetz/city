@@ -68,7 +68,7 @@ static func office_plan(seed: int, lot: Dictionary, storeys: int) -> Dictionary:
 	if b.era == "prewar":
 		return b.site
 	b._dry = true
-	b._office(3.9, b.half * 2.0, storeys)
+	b._postwar_office(3.9, b.half * 2.0, storeys)
 	return b.site
 
 
@@ -665,9 +665,133 @@ static func build_office(seed: int, to_curb: float, lot: Dictionary, storeys: in
 	# and Marion), the same look its tower grows into.
 	if b.era == "prewar":
 		return TowerBuilder.build_tower(seed, to_curb, lot, storeys, spec, "chicago")
-	b._office(to_curb, b.half * 2.0, storeys)
+	b._postwar_office(to_curb, b.half * 2.0, storeys)
 	b._service_yard(false)
 	return b._done()
+
+
+## A postwar office: under four storeys the ribbon-window block; from four
+## to seven, about half are a reflective-glass mid-rise instead (the
+## growth step between a suburban office and a downtown tower). Picked
+## from the seed, so no random draw moves.
+func _postwar_office(to_curb: float, width: float, storeys: int) -> void:
+	var r := RandomNumberGenerator.new()
+	r.seed = hash([rng.seed, "midrise office"])
+	if storeys >= 4 and r.randf() < 0.55:
+		_office_mirror(to_curb, width, storeys)
+	else:
+		_office(to_curb, width, storeys)
+
+
+## A 1980s suburban mid-rise office (Keystone at the Crossing and the
+## Meridian corridor in Indianapolis and Carmel, Fort Wayne's office parks):
+## a deep floor plate wrapped in reflective glass with its corners cut at
+## 45 degrees, vision glass over dark spandrel bands at every floor, a
+## two-storey glass entry bay under a flat canopy, flagpoles out front and
+## the lot out back. Its own random numbers, so the builder's don't move.
+func _office_mirror(to_curb: float, width: float, storeys: int) -> void:
+	var r := RandomNumberGenerator.new()
+	r.seed = hash([rng.seed, "mirror office"])
+	var w := minf(width - 10.0, r.randf_range(30.0, 40.0))
+	var zf := r.randf_range(10.0, 12.5)
+	# Deep plates, but leave a row of parking out back where the lot allows.
+	var d := clampf(depth - zf - 15.5, 16.0, r.randf_range(20.0, 26.0))
+	var cz := zf + d * 0.5
+	var floor_h := 3.9
+	var deck := floor_h * storeys + 0.3
+	var top := deck + 1.2
+	var tint := Color(["#20343b", "#2a3440", "#3a3427", "#24302a"][r.randi() % 4])
+	var frame := Color("#2b2d2f") if r.randf() < 0.6 else Color("#9ea3a6")
+	var c := minf(4.5, w * 0.15)
+	var hw := w * 0.5
+	var hd := d * 0.5
+	# The core (what the far version boxes), inside the glass.
+	_box("paint", Vector3(w - c * 2.0, deck, d - 0.4), Vector3(0, deck * 0.5, cz), tint)
+	var pts := [Vector3(hw - c, 0, cz - hd), Vector3(-hw + c, 0, cz - hd), Vector3(-hw, 0, cz - hd + c), Vector3(-hw, 0, cz + hd - c),
+		Vector3(-hw + c, 0, cz + hd), Vector3(hw - c, 0, cz + hd), Vector3(hw, 0, cz + hd - c), Vector3(hw, 0, cz - hd + c)]
+	for i in pts.size():
+		var a: Vector3 = pts[i]
+		var b: Vector3 = pts[(i + 1) % pts.size()]
+		var along := (b - a).normalized()
+		var out := along.cross(Vector3.UP)
+		var len := a.distance_to(b)
+		# Spandrel glass behind the vision glass (membrane-faced, so far away
+		# the tower keeps its dark skin instead of a pale box).
+		_quad("membrane", a, b, b + Vector3(0, top, 0), a + Vector3(0, top, 0), tint, [], out)
+		var mid := (a + b) * 0.5 + out * 0.03
+		for f in storeys:
+			var gh := 3.0 if f == 0 else 2.3
+			var y := f * floor_h + 0.3 + (1.6 if f == 0 else 2.15)
+			_glass(mid + Vector3(0, y, 0), along, len - 0.15, gh, 0.0 if f == 0 else r.randf_range(0.1, 0.45))
+		# Mullions about 1.5 m apart, full height, and the coping.
+		var n := maxi(1, roundi(len / 1.5))
+		for k in n + 1:
+			var p: Vector3 = a + along * (k * len / n) + out * 0.08
+			p.y = top * 0.5
+			_box("metal", Vector3(0.1, top, 0.14), p, frame, Basis(along, Vector3.UP, out))
+		_box("metal", Vector3(len + 0.1, 0.35, 0.3), (a + b) * 0.5 + out * 0.08 + Vector3(0, top - 0.17, 0), frame,
+			Basis(along, Vector3.UP, out))
+	# The roof, inside the parapet: the middle, the two sides and the cut corners.
+	var y0 := deck + 0.02
+	var roof := _low_slope(w, d, cz, false)
+	_quad("membrane", Vector3(-hw + c, y0, cz - hd), Vector3(hw - c, y0, cz - hd), Vector3(hw - c, y0, cz + hd),
+		Vector3(-hw + c, y0, cz + hd), roof, [], Vector3.UP)
+	for sx in [-1.0, 1.0]:
+		var x0: float = sx * hw
+		var x1: float = sx * (hw - c)
+		_quad("membrane", Vector3(x0, y0, cz - hd + c), Vector3(x1, y0, cz - hd + c), Vector3(x1, y0, cz + hd - c),
+			Vector3(x0, y0, cz + hd - c), roof, [], Vector3.UP)
+		for sz in [-1.0, 1.0]:
+			_tri("membrane", Vector3(x0, y0, cz + sz * (hd - c)), Vector3(x1, y0, cz + sz * (hd - c)), Vector3(x1, y0, cz + sz * hd),
+				roof, [], Vector3.UP)
+	_office_roof(w - c * 2.0, d, cz, deck, tint, "paint", storeys)
+	# The entry bay: two storeys of glass standing 2.4 m out from the front,
+	# under a flat canopy that reaches over the drop-off.
+	var bw := minf(9.0, w * 0.3)
+	var bd := 2.4
+	var bh := floor_h * 2.0
+	var bz := zf - bd * 0.5
+	_box("paint", Vector3(bw - 0.2, bh, bd - 0.2), Vector3(0, bh * 0.5, bz), tint.darkened(0.2))
+	_glass(Vector3(0, bh * 0.5, zf - bd - 0.03), Vector3(-1, 0, 0), bw - 0.2, bh - 0.3, 0.0)
+	for sx in [-1.0, 1.0]:
+		_glass(Vector3(sx * (bw * 0.5 + 0.03), bh * 0.5, bz), Vector3(0, 0, -sx), bd - 0.2, bh - 0.3, 0.0)
+		_box("metal", Vector3(0.18, bh, 0.18), Vector3(sx * bw * 0.5, bh * 0.5, zf - bd), frame)
+	for k in range(1, 4):
+		_box("metal", Vector3(0.1, bh, 0.1), Vector3(-bw * 0.5 + k * bw * 0.25, bh * 0.5, zf - bd - 0.06), frame)
+	_box("metal", Vector3(bw, 0.12, 0.12), Vector3(0, 2.4, zf - bd - 0.06), frame)  # door head
+	_box("metal", Vector3(bw + 2.0, 0.4, bd + 3.0), Vector3(0, bh + 0.2, zf - (bd + 3.0) * 0.5), frame)  # canopy
+	_flat_rect("drive", -bw * 0.5 - 1.0, bw * 0.5 + 1.0, zf - bd - 4.5, zf - bd, 0.07)
+	_flat_rect("drive", -1.5, 1.5, -0.3, zf - bd - 4.5, 0.07)
+	_sign(Vector3(bw * 0.5 + 3.0, 0.3, zf - 8.0), 3.6, 0.8)
+	if fine:
+		# Three flagpoles on the lawn (flag, state, company), as real
+		# office parks fly them.
+		for k in 3:
+			var fx := -bw * 0.5 - 3.0 - k * 1.6
+			_box("metal", Vector3(0.12, 10.0, 0.12), Vector3(fx, 5.0, zf - 6.5), Color("#c9cccd"))
+			var flag: Color = [Color("#3c3b6e"), Color("#1f3a8a"), Color(_pick(SPANDREL)).darkened(0.3)][k]
+			_box("paint", Vector3(1.5, 0.95, 0.03), Vector3(fx - 0.8, 9.4, zf - 6.5), flag)
+			if k == 0:
+				for st in 3:
+					_box("paint", Vector3(0.9, 0.12, 0.035), Vector3(fx - 1.1, 9.05 + st * 0.3, zf - 6.5), Color("#b22234"))
+		_flat_rect("line", -hw + 1.0, -bw * 0.5 - 1.5, zf - 1.8, zf - 0.3, 0.065, Color("#4a3426"))
+		_flat_rect("line", bw * 0.5 + 1.5, hw - 1.0, zf - 1.8, zf - 0.3, 0.065, Color("#4a3426"))
+		var keep := rng
+		rng = r
+		for sx in [-1.0, 1.0]:
+			var x0: float = sx * (bw * 0.5 + 2.2)
+			var x1: float = sx * (hw - 1.6)
+			var n := int(absf(x1 - x0) / 1.4)
+			for i in n:
+				_shrub(Vector3(lerpf(x0, x1, (i + 0.5) / n), 0.0, zf - 1.05), r.randf_range(0.42, 0.55), 2 if i % 3 == 1 else 0)
+		rng = keep
+	_office_lot(to_curb, w, zf, zf + d, width)
+	site.door = Vector2(0.0, zf - bd)
+	for sx in [-1.0, 1.0]:
+		var pick := TreeField.pick(rng)
+		# The one on the drive side stands in the front lawn, off the drive.
+		var at := Vector3(-hw - 1.5, 0, zf - 1.5) if sx < 0.0 else Vector3(hw - 1.0, 0, zf - 3.0)
+		trees.append([at, pick[0], pick[1], rng.randf_range(0.8, 1.0)])
 
 
 func _office(to_curb: float, width: float, storeys: int) -> void:
