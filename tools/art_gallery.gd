@@ -6,9 +6,11 @@ extends SceneTree
 ## Main Street of mixed blocks, storeys 2 to 4), types (one of each type),
 ## care (one house from derelict to showpiece, PropertyCare's tiers -2..2)
 ## and careshop (the same for a shop). "far:<kind>" draws the same
-## buildings as their far versions (BuildingView.far_version).
+## buildings as their far versions (BuildingView.far_version). GALLERY_HOUR
+## (0-24) sets the time of day.
 
 var _frames := 0
+var _sky: SkyLight
 
 
 func _init() -> void:
@@ -27,7 +29,8 @@ func _init() -> void:
 	var seed := int(args[2]) if args.size() > 2 else 1
 	var world := Node3D.new()
 	root.add_child(world)
-	world.add_child(SkyLight.new())
+	_sky = SkyLight.new()
+	world.add_child(_sky)
 	world.add_child(Ground.new())
 	# A street along x in front of the lots (lots face -z, toward it).
 	var road := MeshInstance3D.new()
@@ -162,6 +165,12 @@ static func _odd_lot(i: int, w: float) -> PackedVector2Array:
 
 func _process(_delta: float) -> bool:
 	_frames += 1
+	# GALLERY_HOUR=21 lights the row for that time of day (night signs, lit windows).
+	if _frames == 2 and OS.get_environment("GALLERY_HOUR") != "":
+		var hour := float(OS.get_environment("GALLERY_HOUR"))
+		_sky.set_time(hour, 6.5)
+		RenderingServer.global_shader_parameter_set("night", _sky.darkness)
+		RenderingServer.global_shader_parameter_set("windows_lit", DayNight.window_share(hour))
 	if _frames == 30:
 		var args := OS.get_cmdline_user_args()
 		var out := args[0] if args.size() > 0 else "gallery.png"

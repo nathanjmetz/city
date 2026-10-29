@@ -333,6 +333,8 @@ func _mixed(to_curb: float, width: float, storeys: int) -> void:
 	_alley_side(w, zf + d, fronts, fw, storeys, shop_h, floor_h, wall)
 	if fine and storeys >= 2:
 		_party_wall(w, d, zf, shop_h, floor_h, storeys, wall)
+	if fine:
+		_front_signs(w, zf, fronts, fw, shop_h, storeys)
 	if depth > zf + d + 3.0:
 		_flat_rect("asphalt", -width * 0.5, width * 0.5, zf + d, minf(depth, zf + d + 10.0), 0.06)
 	_downtown_walk(to_curb, width, zf)
@@ -404,6 +406,68 @@ func _alley_side(w: float, zb: float, fronts: int, fw: float, storeys: int, shop
 ## faded painted advertisement, a "ghost sign" for a flour, tobacco or soft
 ## drink brand, its lettering worn to pale bands. Desktop only, with its own
 ## random numbers so the builder's don't move.
+## Main Street signs that stick out over the walk, desktop only: double-faced
+## blade signs on wrought-iron brackets between the shopfronts (a few of them
+## outlined in neon, the 1940s way) and gooseneck lamps that light the flat
+## sign boards, as on restored fronts in Wabash, Madison or Marion.
+func _front_signs(w: float, zf: float, fronts: int, fw: float, shop_h: float, storeys: int) -> void:
+	var r := RandomNumberGenerator.new()
+	r.seed = hash([rng.seed, 23])
+	var iron := Color("#1e1e20")
+	for k in fronts:
+		var fx := -w * 0.5 + (k + 0.5) * fw
+		var sw := fw - 1.0
+		# Goosenecks over the board: barn-style shades on curved arms.
+		if r.randf() < 0.45:
+			var lamps := 2 if sw < 6.0 else 3
+			for q in lamps:
+				var lx := fx + (float(q) - (lamps - 1) * 0.5) * sw * 0.8 / lamps
+				_box("paint", Vector3(0.04, 0.04, 0.42), Vector3(lx, 4.45, zf - 0.52), iron)
+				_box("paint", Vector3(0.04, 0.22, 0.04), Vector3(lx, 4.35, zf - 0.71), iron)
+				_box("paint", Vector3(0.22, 0.08, 0.22), Vector3(lx, 4.22, zf - 0.71), Color("#2c3e2f"))
+				# The lamp's lens, facing down at the sign; it glows after dark.
+				_quad("sign", Vector3(lx - 0.09, 4.175, zf - 0.8), Vector3(lx + 0.09, 4.175, zf - 0.8),
+					Vector3(lx + 0.09, 4.175, zf - 0.62), Vector3(lx - 0.09, 4.175, zf - 0.62),
+					Color(1.0, 0.86, 0.6, 1.0), [], Vector3.DOWN)
+		# Blade signs hang over the walk from the upper floor's pier.
+		if storeys < 2 or r.randf() > 0.4:
+			continue
+		var bx := fx - fw * 0.5 + 0.3 if k > 0 else fx + sw * 0.5 + 0.1
+		# Boards about 1 m out; some stand tall, the old vertical kind.
+		var bl := r.randf_range(0.8, 1.2)
+		var bh := r.randf_range(0.7, 1.1) if r.randf() < 0.65 or storeys == 2 else r.randf_range(1.6, 2.4)
+		var y0 := shop_h + 0.45
+		var z0 := zf - 0.45
+		var col := Color(CommercialBuilder.SIGNS[r.randi() % CommercialBuilder.SIGNS.size()])
+		col.a = bl / 30.0
+		for s in [-1.0, 1.0]:
+			var x: float = bx + s * 0.035
+			_quad("sign", Vector3(x, y0, z0), Vector3(x, y0, z0 - bl), Vector3(x, y0 + bh, z0 - bl), Vector3(x, y0 + bh, z0),
+				col, [Vector2(0, 0), Vector2(bl, 0), Vector2(bl, 1), Vector2(0, 1)], Vector3(s, 0, 0))
+		var frame := col.darkened(0.45)
+		frame.a = 1.0
+		_box("paint", Vector3(0.05, bh + 0.08, bl + 0.08), Vector3(bx, y0 + bh * 0.5, z0 - bl * 0.5), frame)
+		# The bracket: an arm off the wall, a diagonal brace and two hangers.
+		var arm_y := y0 + bh + 0.22
+		_box("paint", Vector3(0.05, 0.05, bl + 0.5), Vector3(bx, arm_y, zf - 0.02 - (bl + 0.5) * 0.5), iron)
+		var brace := Vector3(0, 0.5, -0.5)
+		_box("paint", Vector3(0.04, 0.04, brace.length()), Vector3(bx, arm_y - 0.25, zf - 0.27),
+			iron, Basis.looking_at(brace.normalized(), Vector3.RIGHT))
+		for t in [0.15, bl - 0.15]:
+			_box("paint", Vector3(0.025, 0.2, 0.025), Vector3(bx, y0 + bh + 0.12, z0 - t), iron)
+		if r.randf() < 0.3:
+			# Neon tubing around the board, both faces: lit after dark.
+			var neon := Color(["#ff3b6b", "#ff5a2a", "#4ad0ff", "#ffd23a", "#7dff6a"][r.randi() % 5])
+			neon.a = 1.0
+			for s in [-1.0, 1.0]:
+				var x: float = bx + s * 0.07
+				for e in [[Vector3(0.03, 0.03, bl - 0.14), Vector3(x, y0 + 0.07, z0 - bl * 0.5)],
+						[Vector3(0.03, 0.03, bl - 0.14), Vector3(x, y0 + bh - 0.07, z0 - bl * 0.5)],
+						[Vector3(0.03, bh - 0.17, 0.03), Vector3(x, y0 + bh * 0.5, z0 - 0.07)],
+						[Vector3(0.03, bh - 0.17, 0.03), Vector3(x, y0 + bh * 0.5, z0 - bl + 0.07)]]:
+					_box("sign", e[0], e[1], neon)
+
+
 func _party_wall(w: float, d: float, zf: float, shop_h: float, floor_h: float, storeys: int, wall: Color) -> void:
 	var r := RandomNumberGenerator.new()
 	r.seed = hash([rng.seed, 4421])
