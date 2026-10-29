@@ -105,6 +105,7 @@ var outline := PackedVector2Array()
 var _back_z := -INF  # the furthest back anything built so far reaches (for the back yard)
 var _mass_back_z := -INF  # the same for building masses only
 var _masses := []  # the building masses' footprints (Rect2 in lot x/z), for tree spacing
+var _glass_log := []  # [centre, right, width, height] of each pane and opening, so trim can keep off them
 var pad := 0.0
 var era := "recent"
 var _cell_seed := 0  # the street block this lot is in (its builder)
@@ -2286,6 +2287,7 @@ func _note(mat: String, kind: int, count: int) -> void:
 ## blind height rides in the vertex colour's alpha. A derelict building's
 ## ground-floor windows are boarded over with plywood.
 func _glass(c: Vector3, right: Vector3, w: float, h: float, blinds: float) -> void:
+	_glass_log.append([c, right, w, h])
 	var r := right * w * 0.5
 	var u := Vector3(0, h * 0.5, 0)
 	if owner_care <= -2 and c.y < 3.6:
