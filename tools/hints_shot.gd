@@ -58,16 +58,18 @@ func _process(_delta: float) -> bool:
 				# One police station at the west end of a long road lined with
 				# homes: its reach, the homes past it red, and a second
 				# station's reach from the cursor.
+				sim.charter.reached["town"] = 0  # police open
 				sim.apply({"type": "build_road", "start": [-5600, 300], "ctrl": [-2650, 300], "end": [300, 300]})
 				for x in range(-5500, 300, 120):
 					sim.apply({"type": "paint_zone", "center": [x, 275], "radius": 12, "zone": ZoneMap.Zone.RESIDENTIAL})
-				var at := Vector3(-4800.0, 0, 300 - 32)
-				sim.apply({"type": "place_service", "kind": Services.Kind.POLICE, "pos": [at.x, at.z], "dir": [0, 1]})
+				var site := Services.site_near(sim.network, Services.Kind.POLICE, Vector3(-4800.0, 0, 260))
+				print("reach: police ", sim.apply({"type": "place_service", "kind": Services.Kind.POLICE,
+					"pos": [site[0].x, site[0].z], "dir": [site[1].x, site[1].z]}))
 				for i in 5:
 					sim.tick()
+				sim.update_stats()
 				cam.set_view(deg_to_rad(0.0), deg_to_rad(70.0), 4200.0)
 				cam.look_at_point(Vector3(-2600, 0, 300))
-				hud.service_tool.set_kind(Services.Kind.POLICE)
 			"police":
 				# Two stations on a long road, so their coverage shows its edge.
 				sim.apply({"type": "build_road", "start": [-5600, 300], "ctrl": [-2650, 300], "end": [300, 300]})
@@ -83,6 +85,10 @@ func _process(_delta: float) -> bool:
 	if _frames == 60 and _mode == "reach":
 		var cam: CityCamera = main.get_children().filter(func(n): return n is CityCamera)[0]
 		cam.glide_to(Vector3(-2600, 0, 300), 4200.0)
+	if _frames == 150 and _mode == "reach":
+		# After the guided tour's first card: a police station in hand.
+		var hud: Hud = main.get_children().filter(func(n): return n is Hud)[0]
+		hud.service_tool.set_kind(Services.Kind.POLICE)
 	if _frames == 60 and _mode == "police":
 		# After the guided tour's own camera glide.
 		var cam: CityCamera = main.get_children().filter(func(n): return n is CityCamera)[0]
@@ -98,7 +104,14 @@ func _process(_delta: float) -> bool:
 		var hud: Hud = main.get_children().filter(func(n): return n is Hud)[0]
 		hud.road_tool._click()
 	if _frames > 20 and _frames < 200:
-		Input.warp_mouse(root.get_viewport().get_visible_rect().size * 0.5)
+		# Reach: the cursor out at the far end, away from the homes.
+		var at := Vector2(0.2, 0.5) if _mode == "reach" else Vector2(0.5, 0.5)
+		Input.warp_mouse(root.get_viewport().get_visible_rect().size * at)
+	if _frames == 199 and _mode == "reach":
+		var hud: Hud = main.get_children().filter(func(n): return n is Hud)[0]
+		print("reach: tool ", hud.service_tool.kind, " shown ", hud.service_tool.view.show_kind, " visible ", hud.service_tool.view._coverage.visible,
+			" lots ", main.sim.lots.size(), " reach ", main.sim.services.reach_by_kind.get(Services.Kind.POLICE, {}).size(),
+			" services ", main.sim.services.buildings.size())
 	if _frames == 200:
 		root.get_viewport().get_texture().get_image().save_png(_out)
 		print("saved ", _out)

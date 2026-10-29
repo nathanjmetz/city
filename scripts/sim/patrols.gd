@@ -209,7 +209,7 @@ static func _curbs(sim: CitySim) -> Dictionary:
 ## change or it moves.
 func _reach_of(sim: CitySim, id: int) -> Dictionary:
 	var b: Dictionary = sim.services.buildings[id]
-	var key := [sim.network.get_instance_id(), sim.network.revision, b.pos, b.dir, sim.services.funding(id, Balance.POLICY_EFFECT)]
+	var key := [sim.network.get_instance_id(), sim.network.revision, b.pos, b.dir, sim.services.effect_of(id)]
 	var e: Array = _reach.get(id, [])
 	if e.is_empty() or e[0] != key:
 		e = [key, sim.services.reach_of(sim.network, id, float(Services.KINDS[Services.Kind.POLICE].reach))]

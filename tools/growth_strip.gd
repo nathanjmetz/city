@@ -17,6 +17,8 @@ const LADDERS := {
 	"forms": [["office", 4, 16.0, "chicago"], ["office", 4, 16.0, "deco"], ["office", 4, 16.0, "glass"], ["office", 4, 16.0, "pomo"], ["office", 4, 16.0, "podium"]],
 	"homeforms": [["apartments", 4, 6.6, "glass"], ["apartments", 4, 6.6, "podium"], ["apartments", 4, 6.6, "balcony"], ["apartments", 3, 4.4, "balcony"], ["apartments", 3, 4.4, "glass"]],
 	# One prewar office on a storefront lot and on sites bought up next door.
+	# The five-storey apartment stage on lots of different widths.
+	"midrise": [["apartments", 2, 4.4, "", 20.0], ["apartments", 2, 4.4, "", 24.0], ["apartments", 2, 4.4, "", 28.0], ["apartments", 2, 4.4, "", 40.0]],
 	# Modernist glass towers on bought-up sites (their plazas).
 	"plazas": [["office", 3, 12.0, "glass", 50.0], ["office", 4, 16.0, "glass", 64.0], ["office", 4, 16.0, "glass", 72.0]],
 	"sites": [["office", 3, 12.0, "chicago", 30.0], ["office", 3, 12.0, "chicago", 62.0], ["office", 4, 16.0, "deco", 36.0], ["office", 4, 16.0, "deco", 66.0]],
