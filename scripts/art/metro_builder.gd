@@ -162,7 +162,7 @@ func _mb_flats(to_curb: float, width: float, units: int, storeys: int) -> void:
 		_rear_wall(cx - bw * 0.5, cx + bw * 0.5, zf + d, base, floor_h, n, trim, porch)
 		if porch:
 			_mb_porch(cx, minf(bw - 0.4, 5.6), zf + d, base, floor_h, n, hash([rng.seed, "porch"]))
-		backs.append([cx, zf + d + (3.2 if porch else 2.8)])
+		backs.append([cx, zf + d + (3.2 if porch else 2.8), cx + bay_side * (bw * 0.5 + 0.5)])
 		_flat_rect("drive", dx - 0.6, dx + 0.6, -0.3, zf - 1.6 - 1.4, 0.06)
 		_flat_rect("drive", cx + bay_side * (bw * 0.5 + 0.1), cx + bay_side * (bw * 0.5 + 0.9), zf, zf + d, 0.06)  # the gangway walk
 		# A low iron fence along the front yard.
@@ -247,7 +247,11 @@ func _mb_porch(cx: float, w: float, zb: float, base: float, floor_h: float, floo
 ## The yards behind a row of flats: each fenced on its side lines and
 ## along the alley (4 ft chain-link mostly, some 6 ft wood), a gate and a
 ## walk out to the alley, and the trash and recycling carts by the gate.
-## `backs` holds each building's [middle x, where its yard starts].
+## `backs` holds each building's [middle x, where its yard starts] and,
+## for flats, where its gangway is. With no alley behind (`alley` false)
+## the back fence runs unbroken, the walk stops at a patio, and the carts
+## wait at the end of the gangway they're wheeled down to the curb, as on
+## the alley-less blocks of Indianapolis and Fort Wayne.
 func _mb_yards(width: float, uw: float, backs: Array, seed: int) -> void:
 	if backs.is_empty():
 		return
@@ -273,6 +277,19 @@ func _mb_yards(width: float, uw: float, backs: Array, seed: int) -> void:
 			continue
 		var a: float = lines[i][0]
 		var b: float = lines[i + 1][0]
+		if not alley:
+			_lot_fence(Vector2(a, zr), Vector2(b, zr), kind)
+			var pz := minf(z0 + 2.5, zr - 2.6)
+			_flat_rect("drive", cx - 0.45, cx + 0.45, z0 - 0.4, pz, 0.05)
+			_flat_rect("drive", cx - 1.5, cx + 1.5, pz, pz + 2.4, 0.05)
+			var gx: float = backs[i][2] if backs[i].size() > 2 else a + 0.7
+			if r.randf() < 0.85:
+				for k in 2:
+					var c := Vector3(clampf(gx, a + 0.45, b - 0.45), 0.0, z0 - 0.2 + k * 0.82)
+					var body := Color(["#2a2b2c", "#2f4f8a"][k])
+					_box("paint", Vector3(0.72, 1.0, 0.66), c + Vector3(0, 0.5, 0), body.darkened(0.08))
+					_box("paint", Vector3(0.8, 0.06, 0.72), c + Vector3(-0.02 * signf(gx - cx), 1.04, 0), body)
+			continue
 		# The alley fence with a 3 ft gate in the middle.
 		_lot_fence(Vector2(a, zr), Vector2(cx - 0.5, zr), kind)
 		_lot_fence(Vector2(cx + 0.5, zr), Vector2(b, zr), kind)
