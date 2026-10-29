@@ -95,6 +95,8 @@ var _lo := false
 ## Close-up detail for the desktop Ultra tier: rounder wheels with spokes,
 ## door seams and handles, wipers, plates.
 var _hi := false
+## Set by a model that wants its pickup bed under a soft tonneau cover.
+var _tonneau := false
 
 ## Levels of detail build() takes: normal close range, far, and Ultra close-up.
 const LOD_NEAR := 0
@@ -548,8 +550,10 @@ func _hatch_box() -> void:  # Kia Soul: tall, upright box
 		"b": 1.5, "c": 3.85, "e": 4.08, "tail": 1.02, "wr": 0.34, "axles": [0.88, 3.45], "c_pillar": false})
 
 
-func _pickup_ext() -> void:  # Chevrolet Silverado double cab, 6.5 ft bed
+func _pickup_ext() -> void:  # Chevrolet Silverado double cab, 6.5 ft bed, tonneau
+	_tonneau = true
 	_truck(5.84, 3.75, [1.15, 4.6], false)
+	_tonneau = false
 
 
 ## A 1990s Chevrolet C/K regular cab long bed: square body, chrome grille,
@@ -688,6 +692,16 @@ func _truck(L: float, cab_end: float, wb: Array, work: bool, W := 2.03, H := 1.9
 		[L - 0.1, c, belt - 0.08, belt, hw - 0.03, hw, hw - 0.05],
 		[L, c + 0.08, belt - 0.12, belt - 0.02, hw - 0.06, hw - 0.04, hw - 0.08],
 	]
+	# Ultra: the bed is really open, its floor a bed depth (about 0.53 m,
+	# F-150 and Silverado) under the rails.
+	var fl := belt - 0.53
+	if _hi:
+		body = body.slice(0, 3) + [
+			[cab_end + 0.06, c, belt - 0.08, belt, hw - 0.03, hw, hw - 0.05],
+			[cab_end + 0.07, c, fl - 0.05, fl, hw - 0.03, hw, hw - 0.04],
+			[L - 0.1, c, fl - 0.05, fl, hw - 0.03, hw, hw - 0.04],
+			[L, c + 0.08, fl - 0.08, fl - 0.02, hw - 0.06, hw - 0.04, hw - 0.06],
+		]
 	_loft(body, [_edges(PAINT, TRIM)], PAINT, PAINT)
 	var g := hw - 0.07
 	var r := hw - 0.2
@@ -699,8 +713,12 @@ func _truck(L: float, cab_end: float, wb: Array, work: bool, W := 2.03, H := 1.9
 	]
 	_loft(gh, [_edges(GLASS, PAINT, PAINT, GLASS), _edges(GLASS, PAINT, GLASS, PAINT),
 		_edges(PAINT, PAINT, PAINT, PAINT)], PAINT, PAINT)
-	# The open bed: dark floor between the bed rails.
-	_box(Vector3(0, belt + 0.008, (cab_end + 0.08 + L - 0.08) * 0.5), Vector3(W - 0.18, 0.004, L - cab_end - 0.2), DARK)
+	if _hi:
+		_open_bed(L, cab_end, wb[1], hw, belt, fl)
+	if not _hi or _tonneau:
+		# A soft tonneau cover over the bed (the open bed's dark floor below
+		# Ultra).
+		_box(Vector3(0, belt + 0.008, (cab_end + 0.08 + L - 0.08) * 0.5), Vector3(W - 0.18, 0.004, L - cab_end - 0.2), DARK)
 	_wheels(wb, 0.42, hw, 0.28)
 	if _hi:
 		_truck_face(hw, c, work)
@@ -749,6 +767,32 @@ func _truck(L: float, cab_end: float, wb: Array, work: bool, W := 2.03, H := 1.9
 		if _hi:
 			for i in int(ll / 0.3):
 				_box(Vector3(0, 2.17, lz - ll * 0.5 + 0.15 + i * 0.3), Vector3(0.44, 0.03, 0.03), CHROME)
+
+
+## Ultra: a pickup's open bed: double-wall sides and front wall in the
+## body colour, a tailgate between the tail-lamp pillars with its handle,
+## and a black spray-in liner over the ribbed floor and the wheel-well
+## humps inside.
+func _open_bed(L: float, cab_end: float, axle: float, hw: float, belt: float, fl: float) -> void:
+	var z0 := cab_end + 0.07
+	var h := belt - fl
+	var liner := Color(0.11, 0.11, 0.115, 0.3)
+	for s in [-1.0, 1.0]:
+		_box(Vector3(s * (hw - 0.0425), fl + h * 0.5, (z0 + L - 0.01) * 0.5), Vector3(0.075, h, L - 0.01 - z0), PAINT)
+		_box(Vector3(s * (hw - 0.083), fl + h * 0.5 - 0.01, (z0 + L - 0.08) * 0.5), Vector3(0.006, h - 0.04, L - 0.08 - z0 - 0.08), liner)
+		_box(Vector3(s * (hw - 0.3), fl + 0.15, axle), Vector3(0.42, 0.3, 0.95), liner)
+	_box(Vector3(0, fl + h * 0.5, z0 + 0.03), Vector3(hw * 2.0 - 0.1, h, 0.06), PAINT)
+	_box(Vector3(0, fl + h * 0.5 - 0.01, z0 + 0.063), Vector3(hw * 2.0 - 0.17, h - 0.04, 0.006), liner)
+	_box(Vector3(0, fl + 0.003, (z0 + L) * 0.5), Vector3(hw * 2.0 - 0.16, 0.006, L - z0 - 0.08), liner)
+	var z := z0 + 0.2
+	while z < L - 0.2:
+		for x in [-0.5, -0.25, 0.0, 0.25, 0.5]:
+			_box(Vector3(x, fl + 0.012, z), Vector3(0.05, 0.012, 0.16), liner)
+		z += 0.36
+	# Tailgate, its inside face lined, and the handle up top.
+	_box(Vector3(0, (fl - 0.02 + belt - 0.02) * 0.5, L - 0.035), Vector3(hw * 2.0 - 0.18, belt - fl, 0.07), PAINT)
+	_box(Vector3(0, (fl + belt) * 0.5, L - 0.073), Vector3(hw * 2.0 - 0.22, h - 0.06, 0.006), liner)
+	_box(Vector3(0, belt - 0.1, L + 0.008), Vector3(0.26, 0.07, 0.012), Color(0.05, 0.05, 0.05, 0.3))
 
 
 ## Ultra: a full-size pickup's face, after the F-150 / Silverado: a tall
@@ -891,6 +935,8 @@ func _motorhome() -> void:
 func _pickup_camper() -> void:
 	_truck(5.94, 3.2, [1.15, 4.8], false)
 	var hw := 1.15
+	if _hi:  # the camper fills the bed down to its floor
+		_box(Vector3(0, 1.075, 4.6), Vector3(1.8, 0.47, 2.6), WHITE)
 	_loft([
 		[2.55, 2.0, 2.15, 2.2, hw - 0.1, hw - 0.08, hw - 0.14],
 		[2.9, 1.95, 3.1, 3.2, hw - 0.02, hw, hw - 0.06],
