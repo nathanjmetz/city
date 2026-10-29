@@ -2110,7 +2110,7 @@ const BIG_FACTORY_CONTRACT_SHARE := 0.85
 # a second site. Graduates who stay make the town better educated, and
 # office and tech jobs open only for the graduates the town has.
 
-## Fire and police stations grow with their town (Stations). The chief
+## Fire and police stations and clinics grow with their town (Stations). The chief
 ## pays from the department's cumulative fund, a separate levy Indiana
 ## towns may charge (cumulative fire fund, IC 36-8-14, and cumulative
 ## capital development fund, IC 36-9-14.5, each up to about 3.3 cents per
@@ -2135,6 +2135,11 @@ const STATION_BOND_DOWN := 0.25
 ##   - Living quarters: towns past about 5,000 move from volunteers to paid
 ##     crews on 24-hour shifts; a staffed station turns out in about a
 ##     minute against 4-6 for volunteers (NFPA 1710 vs 1720).
+##   - Clinic: a rural health clinic grows as Indiana's do: a pharmacy with
+##     a drive-through (one per ~1,500-3,000 people), urgent care with X-ray
+##     (towns of 3,000+ get one), dental and eye offices, then a 12-chair
+##     dialysis center (US: about 1 dialysis patient in 600, a center
+##     serves 50-70 of them, so towns of about 10,000 and up).
 ##   - Standby generator: NFPA 1221 and FEMA's critical facility guidance
 ##     put backup power at every station; a 100 kW diesel set ~$100-150k.
 ##   - Emergency operations center: a city's EOC, often at the main station.
@@ -2158,6 +2163,16 @@ const STATION_TREES := {
 			"needs": {"population": 5000}, "effects": {"reach*": 0.15}, "note": "a paid crew sleeps at the station"},
 		{"id": "eoc", "name": "Emergency operations center", "cost": 1_800_000, "grow": 16.0, "requires": ["quarters"],
 			"needs": {"population": 10_000, "city": 1}, "effects": {"reach*": 0.05}, "note": "the city's command room"},
+	],
+	"clinic": [
+		{"id": "pharmacy", "name": "Pharmacy with a drive-through", "cost": 450_000, "grow": 12.0,
+			"needs": {"population": 1500}, "effects": {"reach*": 0.05}, "note": "prescriptions filled on the way out"},
+		{"id": "urgent_care", "name": "Urgent care and X-ray", "cost": 1_300_000, "grow": 14.0,
+			"needs": {"population": 3000}, "effects": {"reach*": 0.15}, "note": "open evenings and weekends"},
+		{"id": "dental", "name": "Dental and eye offices", "cost": 900_000, "grow": 12.0,
+			"needs": {"population": 4000}, "effects": {"reach*": 0.05}, "note": "a dentist and an optometrist move in"},
+		{"id": "dialysis", "name": "Dialysis center", "cost": 1_600_000, "grow": 14.0, "requires": ["urgent_care"],
+			"needs": {"population": 10_000}, "effects": {"reach*": 0.05}, "note": "no more drives to Marion three times a week"},
 	],
 	"police": [
 		{"id": "sally_port", "name": "Sally port", "cost": 300_000, "grow": 10.0,

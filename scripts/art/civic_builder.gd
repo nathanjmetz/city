@@ -47,7 +47,9 @@ static func build_service(kind: int, seed: int, size: Vector2, to_curb: float, b
 		Services.Kind.POLICE:
 			b._police(front, to_curb)
 			b._station_upgrades(kind, size, front, built)
-		Services.Kind.CLINIC: b._clinic(front, to_curb)
+		Services.Kind.CLINIC:
+			b._clinic(front, to_curb)
+			b._station_upgrades(kind, size, front, built)
 		Services.Kind.SCHOOL: b._school(front, to_curb)
 		Services.Kind.SUBSTATION: b._substation(front, to_curb)
 		Services.Kind.WATER_TOWER: b._water_tower(front, to_curb)
@@ -154,7 +156,7 @@ func _station_upgrades(kind: int, size: Vector2, front: float, built: Array) -> 
 	if built.is_empty():
 		return
 	var w := size.x
-	var z := front + FIRST_D
+	var z := front + float(Services.KINDS[kind].size.y)
 	var back := -front
 	var brick := Color(_pick(["#8a4a38", "#9b5a42", "#a8775c", "#b59a7c"]))
 	var trim := Color(_pick(["#d9d3c3", "#cfc8b6", "#efede6"]))
@@ -172,6 +174,10 @@ func _station_upgrades(kind: int, size: Vector2, front: float, built: Array) -> 
 			"evidence": _evidence(w, z, g)
 			"k9": _kennel(Vector3(-w * 0.5 + 1.5, 0, front + FIRST_D - 5.6))
 			"dispatch": _dispatch_tower(Vector3(w * 0.5 - 3.5, 0, front + FIRST_D - 3.5))
+			"pharmacy": _clinic_wing(w, z, g, "pharmacy")
+			"urgent_care": _clinic_wing(w, z, g, "urgent_care")
+			"dental": _clinic_wing(w, z, g, "dental")
+			"dialysis": _clinic_wing(w, z, g, "dialysis")
 		z += g
 
 
@@ -328,6 +334,55 @@ func _kennel(p: Vector3) -> void:
 		_flat_rect("drive", r.x, r.x + 1.5, r.z, r.z + 3.6, 0.07)
 		_fence(Vector2(r.x, r.z), Vector2(r.x + 1.5, r.z + 3.6), 1.8)
 		_box("paint", Vector3(1.6, 0.05, 1.6), r + Vector3(0.75, 1.9, 2.8), Color("#6b6f73"))
+
+
+## A wing a growing clinic builds on behind (Stations): brick to the window
+## heads with a stucco band, like the clinic, its own door under a canopy
+## off the side drive. The pharmacy has a drive-through lane under a
+## canopy, urgent care an ambulance-height canopy and a lit sign, dialysis
+## a covered drop-off (patients come three times a week).
+func _clinic_wing(w: float, z: float, g: float, what: String) -> void:
+	var brick := Color(_pick(["#a8775c", "#b59a7c", "#8a4a38", "#c9c1ae"]))
+	var eifs := Color(_pick(["#d9d3c3", "#e3ddd0", "#c9c1ae"]))
+	var ww := w - 10.0 if what != "pharmacy" else 13.0
+	var wd := g - 3.0
+	var x := -w * 0.5 + 1.0 + ww * 0.5
+	var zf := z + 1.0
+	var h := 4.4
+	_slab(x, ww, zf, wd)
+	_flat_roofed_at("brick", x, ww, wd, zf + wd * 0.5, h, h + 0.6, brick)
+	_box("paint", Vector3(ww + 0.06, 1.4, wd + 0.06), Vector3(x, h - 0.2, zf + wd * 0.5), eifs)
+	# The side facing the drive (+x): windows and the door under a canopy.
+	var side := x + ww * 0.5
+	_window_row(side, zf + wd * 0.5, wd - 3.0, 1.6, 1.4, 3, eifs, Vector3.RIGHT)
+	_glass(Vector3(side + 0.03, 1.4, zf + wd * 0.5), Vector3(0, 0, 1), 2.0, 2.4, 0.0)
+	_box("paint", Vector3(2.6, 0.3, 3.4), Vector3(side + 1.3, 3.0, zf + wd * 0.5), eifs)
+	_rooftop_units(x, ww, zf, wd, h, 1)
+	_flat_rect("asphalt", side, w * 0.5 - 0.5, z, z + g - 0.3, 0.06)
+	match what:
+		"pharmacy":
+			# The drive-through: a canopy on two posts over a lane along the
+			# wing, the window under it.
+			var lx := side + 2.2
+			_box("paint", Vector3(4.4, 0.4, 6.0), Vector3(lx, 3.6, zf + wd * 0.5), eifs)
+			for e in [-1.0, 1.0]:
+				_box("paint", Vector3(0.3, 3.4, 0.3), Vector3(side + 4.1, 1.7, zf + wd * 0.5 + e * 2.6), eifs.darkened(0.1))
+			_box("paint", Vector3(0.06, 1.0, 1.2), Vector3(side + 0.04, 1.3, zf + wd * 0.5 + 1.4), Color("#2a3a44"))
+			_flat_rect("line", side + 4.3, side + 4.4, zf - 1.0, zf + wd + 1.0, 0.07, LINE)
+			_sign(Vector3(x, h + 0.2, zf - 0.04), ww * 0.5, 0.6)
+		"urgent_care":
+			_box("paint", Vector3(5.0, 0.5, 6.5), Vector3(side + 2.5, 4.6, zf + wd * 0.5), eifs)
+			for e in [-1.0, 1.0]:
+				_box("paint", Vector3(0.35, 4.4, 0.35), Vector3(side + 4.8, 2.2, zf + wd * 0.5 + e * 3.0), eifs.darkened(0.1))
+			_box("paint", Vector3(0.1, 0.8, 3.6), Vector3(side + 5.06, 4.6, zf + wd * 0.5), Color("#b8322a"))
+		"dialysis":
+			_box("paint", Vector3(4.0, 0.4, 7.0), Vector3(side + 2.0, 3.3, zf + wd * 0.5 + 0.5), eifs)
+			for i in 3:
+				_box("paint", Vector3(1.6, 0.45, 0.45), Vector3(side + 1.2, 0.45, zf + 1.5 + i * 2.5), Color("#6b5a48"))
+		_:
+			_sign(Vector3(x, h + 0.2, zf - 0.04), ww * 0.5, 0.6)
+	var pick := TreeField.pick(rng, true)
+	trees.append([Vector3(-w * 0.5 + 1.5, 0, z + g - 1.0), pick[0], pick[1], rng.randf_range(0.7, 0.9)])
 
 
 ## The 911 center's radio tower: a self-supporting lattice about 45 m high,
