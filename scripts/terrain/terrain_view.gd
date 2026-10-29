@@ -1313,9 +1313,17 @@ static func _water_mesh(d: Dictionary) -> ArrayMesh:
 			var level: float = index[wettest]
 			var base := wverts.size()
 			for c in corners:
-				wverts.append(Vector3(verts[c].x, level, verts[c].z))
+				# Each wet corner at its own level, so squares that meet share
+				# their edge (no steps or seams across the water); a dry one
+				# at the square's wettest level.
+				var at := level
+				if wet[c] >= 0.02:
+					if not index.has(c):
+						index[c] = Terrain.water_level(verts[c].x + Terrain.view_origin.x, verts[c].z + Terrain.view_origin.y)
+					at = index[c]
+				wverts.append(Vector3(verts[c].x, at, verts[c].z))
 				# How deep the water is here, for the shore's shading.
-				wdepth.append(Vector2(1.0 - clampf((level - verts[c].y) / 3.0, 0.0, 1.0), 0.0))
+				wdepth.append(Vector2(1.0 - clampf((at - verts[c].y) / 3.0, 0.0, 1.0), 0.0))
 			widx.append_array([base, base + 1, base + 2, base, base + 2, base + 3])
 	if widx.is_empty():
 		return null
