@@ -562,29 +562,43 @@ func _props_look(stage: String) -> void:
 		_props.material_override = _prop_mat()
 		add_child(_props)
 		return
-	# A porta-john by the front corner.
-	_prop(st, Vector3(1.12, 2.3, 1.12), Vector3(left + 0.6, 1.15, front + 1.4), Color("#2f6db0"))
-	_prop(st, Vector3(1.16, 0.08, 1.16), Vector3(left + 0.6, 2.33, front + 1.4), Color("#e8e8e6"))
+	var k := absi(hash([snappedf(_bldg.size.x, 0.1), snappedf(_bldg.size.z, 0.1), snappedf(_height, 0.1), "site"]))
+	var fine := not OS.has_feature("web")
+	# A porta-john by the front corner, its door to the lot.
+	_cs_john(st, Vector3(left + 0.6, 0.0, front + 1.4), k, fine)
 	if stage in ["clear", "foundation", "frame"]:
 		# Silt fence: black fabric on stakes down the sides and across the back.
 		var corners := [Vector3(b.position.x, 0, front + 2.0), Vector3(b.position.x, 0, b.end.z),
 			Vector3(b.end.x, 0, b.end.z), Vector3(b.end.x, 0, front + 2.0)]
 		for i in 3:
 			_fence(st, corners[i], corners[i + 1])
-	if stage == "clear":
-		# Spoil from digging the footings, heaped at the back.
-		_prop(st, Vector3(4.0, 1.0, 3.0), Vector3(right - 3.0, 0.5, b.end.z - 2.5), DIRT.darkened(0.15))
-		_prop(st, Vector3(2.6, 0.6, 1.8), Vector3(right - 3.0, 1.3, b.end.z - 2.5), DIRT.darkened(0.1))
+	if stage in ["clear", "foundation"]:
+		# Spoil from digging the footings, heaped at the back; the topsoil
+		# stripped off the lot in its own darker pile beside it.
+		var back := b.end.z - 3.0
+		_cs_mound(st, Vector3(right - 3.2, 0.0, back), 2.6, 2.0, 1.5, DIRT.lightened(0.05), k)
+		_cs_mound(st, Vector3(right - 7.4, 0.0, back + 0.4), 1.9, 1.6, 1.0, Color("#3f3326"), k + 1)
 	if stage in ["frame", "dry_in", "exterior", "interior"]:
 		# A 20-yard roll-off dumpster along the side, nose to the street.
-		var dz := front + 4.5
-		_prop(st, Vector3(2.4, 1.3, 6.7), Vector3(right - 1.3, 0.75, dz + 3.35), Color("#2c5a8c"))
-		_prop(st, Vector3(2.2, 0.06, 6.5), Vector3(right - 1.3, 1.38, dz + 3.35), Color("#6b5a48"))
+		_cs_dumpster(st, Vector3(right - 1.3, 0.0, front + 7.85), k, fine, stage != "frame")
 	if stage == "frame":
-		# Bundled lumber (or steel) on dunnage.
-		var col: Color = FRAME_FAR[_frame_kind] if _frame_kind != "tilt_up" else FrameBuilder.GALV
-		for k in 2:
-			_prop(st, Vector3(1.2, 0.6, 4.9), Vector3(left + 1.0 + k * 1.6, 0.42, front + 5.0), col)
+		if _frame_kind == "wood":
+			# Banded lumber units on dunnage, a stack of OSB, and the roof
+			# trusses lying flat until the walls are up.
+			_cs_lumber(st, Vector3(left + 1.0, 0.0, front + 5.0), fine)
+			_cs_lumber(st, Vector3(left + 2.6, 0.0, front + 5.0), fine)
+			_cs_osb(st, Vector3(left + 1.6, 0.0, front + 9.0), k)
+			var span := minf(minf(_bldg.size.x, _bldg.size.z), 12.0)
+			if b.end.z - _bldg.end.z > 4.5:
+				_cs_trusses(st, Vector3(_bldg.get_center().x, 0.0, _bldg.end.z + 1.2), span, fine)
+		else:
+			# Bundled steel (or panels) on dunnage.
+			var col: Color = FRAME_FAR[_frame_kind] if _frame_kind != "tilt_up" else FrameBuilder.GALV
+			for n in 2:
+				if fine and _frame_kind == "steel":
+					_cs_steel(st, Vector3(left + 1.0 + n * 1.6, 0.0, front + 5.0), col)
+				else:
+					_prop(st, Vector3(1.2, 0.6, 4.9), Vector3(left + 1.0 + n * 1.6, 0.42, front + 5.0), col)
 	if _crane_on and stage in ["frame", "dry_in", "exterior"]:
 		_crane(st)
 	_props = MeshInstance3D.new()
@@ -703,6 +717,185 @@ func _paving_props(st: SurfaceTool, stage: String, b: AABB, front: float) -> voi
 		_prop(st, Vector3(1.2, 1.2, 1.2), Vector3(0.0, 2.2, z + 0.8), Color("#2b2b2b"))
 		_prop(st, Vector3(1.8, 1.3, 3.2), Vector3(3.2, 0.9, z - 6.0), Color("#e0b21c"))
 		_prop(st, Vector3(1.9, 1.1, 1.1), Vector3(3.2, 0.55, z - 7.2), Color("#3d3f42"))
+
+
+# ---------------------------------------------------------------- site things
+
+## A molded-plastic portable toilet (about 44 x 44 in, 7.5 ft tall): skid
+## base, body, the pale translucent roof and its dome, a vent stack, and
+## the door with its latch, toward the lot. Rental fleets run blue, green,
+## grey and tan.
+func _cs_john(st: SurfaceTool, at: Vector3, k: int, fine: bool) -> void:
+	var col: Color = [Color("#2f63a6"), Color("#2f6e4a"), Color("#6f7478"), Color("#b39b74")][k % 4]
+	_prop(st, Vector3(1.16, 0.1, 1.16), at + Vector3(0, 0.05, 0), col.darkened(0.35))
+	_prop(st, Vector3(1.08, 2.08, 1.08), at + Vector3(0, 1.14, 0), col)
+	_prop(st, Vector3(1.16, 0.08, 1.16), at + Vector3(0, 2.2, 0), Color("#e6e3d8"))
+	_prop(st, Vector3(0.86, 0.12, 0.86), at + Vector3(0, 2.3, 0), Color("#dcd9cf"))
+	_prop(st, Vector3(0.1, 0.4, 0.1), at + Vector3(-0.38, 2.4, 0.38), Color("#1e1e1e"))
+	# The door, on the side facing into the lot.
+	_prop(st, Vector3(0.03, 1.86, 0.78), at + Vector3(0.555, 1.1, 0), col.lightened(0.06))
+	if fine:
+		_prop(st, Vector3(0.05, 0.06, 0.12), at + Vector3(0.58, 1.12, -0.3), Color("#d9d6cc"))
+		_prop(st, Vector3(0.035, 0.12, 0.6), at + Vector3(0.565, 1.95, 0), col.darkened(0.25))  # vent slots
+		for z in [-0.36, 0.36]:
+			_prop(st, Vector3(0.04, 0.1, 0.06), at + Vector3(0.57, 0.55, z * 0.95), Color("#8a8a86"))
+
+
+## A 20-yard roll-off (22 ft x 7.5 ft x 4.5 ft high) on its rails: the
+## steel tub with a sloped nose for the truck's cable, vertical stiffeners
+## down the sides, a top rail, the swing door at the back, and offcuts,
+## drywall, cardboard and wrap inside once the trades are throwing them in.
+func _cs_dumpster(st: SurfaceTool, c: Vector3, k: int, fine: bool, full: bool) -> void:
+	var paint: Color = [Color("#2a568a"), Color("#2e5a3a"), Color("#8a3328"), Color("#4b5056")][(k >> 3) % 4]
+	var len := 6.7
+	var w := 2.36
+	var h := 1.37
+	var y0 := 0.16
+	# Rails and the tub.
+	for x in [-0.6, 0.6]:
+		_prop(st, Vector3(0.14, y0, len), c + Vector3(x, y0 * 0.5, 0), Color("#2b2b2b"))
+	# An open tub: floor, two sides and the back door, 3/16" plate.
+	var t := 0.06
+	var body := len - 0.8
+	_prop(st, Vector3(w, 0.1, body), c + Vector3(0, y0 + 0.05, 0.4), paint)
+	for sx in [-1.0, 1.0]:
+		_prop(st, Vector3(t, h, body), c + Vector3(sx * (w - t) * 0.5, y0 + h * 0.5, 0.4), paint)
+	_prop(st, Vector3(w, h, t), c + Vector3(0, y0 + h * 0.5, 0.4 + body * 0.5 - t * 0.5), paint)
+	# The nose slopes in toward the street end.
+	var nose := Basis(Vector3.RIGHT, -0.5)
+	_prop(st, Vector3(w, h * 1.05, 0.9), c + Vector3(0, y0 + h * 0.46, -len * 0.5 + 0.72), paint, nose)
+	for sx in [-1.0, 1.0]:
+		_prop(st, Vector3(0.12, 0.1, body), c + Vector3(sx * (w * 0.5 - 0.03), y0 + h + 0.03, 0.4), paint.darkened(0.2))
+	if fine:
+		var z := -len * 0.5 + 1.4
+		while z < len * 0.5 - 0.3:
+			for sx in [-1.0, 1.0]:
+				_prop(st, Vector3(0.07, h - 0.05, 0.09), c + Vector3(sx * (w * 0.5 + 0.03), y0 + h * 0.5, z), paint.darkened(0.12))
+			z += 0.62
+		# The back door's hinges and its latch bar.
+		for x in [-0.95, 0.95]:
+			_prop(st, Vector3(0.12, 0.16, 0.06), c + Vector3(x, y0 + h * 0.75, len * 0.5 + 0.03), Color("#2b2b2b"))
+		_prop(st, Vector3(w * 0.9, 0.06, 0.05), c + Vector3(0, y0 + h * 0.45, len * 0.5 + 0.04), Color("#3a3a3a"))
+		# Rust and scrapes along the top edge.
+		for sx in [-1.0, 1.0]:
+			_prop(st, Vector3(0.13, 0.04, len * 0.6), c + Vector3(sx * (w * 0.5 - 0.03), y0 + h - 0.06, 0.6), Color("#6b4630"))
+	# What's in it: a bed of broken-up waste, then a heap of it.
+	_prop(st, Vector3(w - 0.14, 0.5, body - 0.14), c + Vector3(0, y0 + 0.35, 0.4), Color("#4a4038"))
+	if full and fine:
+		var rng := RandomNumberGenerator.new()
+		rng.seed = hash([k, "dumpster"])
+		var waste := [Color("#cdb48a"), Color("#e3e1da"), Color("#a5845a"), Color("#5f6a74"), Color("#d8d4c4")]
+		for i in 18:
+			var size := Vector3(rng.randf_range(0.2, 0.9), rng.randf_range(0.04, 0.25), rng.randf_range(0.3, 2.2))
+			var at := c + Vector3(rng.randf_range(-0.8, 0.8), y0 + h - 0.3 + rng.randf_range(0.0, 0.35), rng.randf_range(-2.2, 2.6))
+			_prop(st, size, at, waste[rng.randi() % waste.size()], Basis(Vector3.UP, rng.randf_range(-0.6, 0.6)).rotated(
+				Vector3.RIGHT, rng.randf_range(-0.25, 0.25)))
+
+
+## A banded unit of framing lumber off the yard's truck (2x4s and 2x6s in
+## 16 ft lengths, about 4 ft wide and 2.5 ft high) on 4x4 dunnage, steel
+## straps round it and the yard's white wrap over its top.
+func _cs_lumber(st: SurfaceTool, at: Vector3, fine: bool) -> void:
+	var wood := Color("#d6bd8a")
+	for z in [-1.8, 0.0, 1.8]:
+		_prop(st, Vector3(1.4, 0.09, 0.09), at + Vector3(0, 0.045, z), wood.darkened(0.25))
+	_prop(st, Vector3(1.2, 0.72, 4.88), at + Vector3(0, 0.45, 0), wood)
+	# Wrap over the top and down the sides, the ends left open.
+	_prop(st, Vector3(1.24, 0.3, 4.4), at + Vector3(0, 0.68, 0), Color("#ebe9e2"))
+	if fine:
+		for z in [-1.6, 0.0, 1.6]:
+			_prop(st, Vector3(1.26, 0.76, 0.03), at + Vector3(0, 0.45, z), Color("#4a4d50"))
+		# Board ends: the end grain darker, the gaps between boards darker still.
+		for e in [-1.0, 1.0]:
+			_prop(st, Vector3(1.18, 0.7, 0.02), at + Vector3(0, 0.45, e * 2.445), wood.darkened(0.12))
+			for i in 4:
+				_prop(st, Vector3(1.18, 0.012, 0.022), at + Vector3(0, 0.18 + i * 0.14, e * 2.446), wood.darkened(0.45))
+
+
+## Wide-flange beams and joists off the steel hauler, shop-primed, laid
+## side by side two layers deep on timber dunnage: each an I in section
+## (two flanges and a web), so the ends read as steel, not a block.
+func _cs_steel(st: SurfaceTool, at: Vector3, col: Color) -> void:
+	for z in [-1.8, 0.0, 1.8]:
+		_prop(st, Vector3(1.4, 0.12, 0.12), at + Vector3(0, 0.06, z), Color("#7d6448"))
+	var d := 0.3  # a W12: about a foot deep, 6.5 in wide
+	var bf := 0.165
+	for layer in 2:
+		var y := 0.12 + layer * (d + 0.01)
+		for i in 6:
+			var x := -0.52 + i * 0.205 + layer * 0.1
+			if layer == 1 and i > 4:
+				continue
+			var c := at + Vector3(x, y, 0)
+			_prop(st, Vector3(bf, 0.016, 5.4), c + Vector3(0, 0.008, 0), col)
+			_prop(st, Vector3(bf, 0.016, 5.4), c + Vector3(0, d - 0.008, 0), col)
+			_prop(st, Vector3(0.01, d, 5.4), c + Vector3(0, d * 0.5, 0), col.darkened(0.15))
+
+
+## A stack of OSB sheathing (4 x 8 ft sheets, a few dozen high), the
+## mill's coloured edge seal down its sides and the strand face on top.
+func _cs_osb(st: SurfaceTool, at: Vector3, k: int) -> void:
+	var edge: Color = [Color("#3e7a52"), Color("#c9433a"), Color("#3a6aa0")][(k >> 5) % 3]
+	for z in [-0.9, 0.0, 0.9]:
+		_prop(st, Vector3(1.3, 0.09, 0.09), at + Vector3(0, 0.045, z), Color("#9c8560"))
+	_prop(st, Vector3(1.22, 0.55, 2.44), at + Vector3(0, 0.365, 0), edge)
+	_prop(st, Vector3(1.224, 0.03, 2.444), at + Vector3(0, 0.63, 0), Color("#c9a467"))
+
+
+## Roof trusses as the truck leaves them, lying flat in a stack on dunnage
+## until the walls are up: a 6:12 Fink truss, its two top chords, bottom
+## chord, W webs and tails, a dozen high.
+func _cs_trusses(st: SurfaceTool, at: Vector3, span: float, fine: bool) -> void:
+	var wood := Color("#d9c597")
+	var n := 12
+	var hgt := n * 0.04
+	var y := 0.1 + hgt * 0.5
+	var rise := span * 0.25
+	var l := at + Vector3(-span * 0.5, 0, 0)
+	var r := at + Vector3(span * 0.5, 0, 0)
+	var apex := at + Vector3(0, 0, rise)
+	for x in [-span * 0.35, 0.0, span * 0.35]:
+		_prop(st, Vector3(0.09, 0.09, rise + 0.6), at + Vector3(x, 0.045, rise * 0.5), wood.darkened(0.3))
+	var member := func(p0: Vector3, p1: Vector3, wdt: float) -> void:
+		var d: Vector3 = p1 - p0
+		var dir := d.normalized()
+		var bas := Basis(dir.cross(Vector3.UP).normalized(), Vector3.UP, dir)
+		_prop(st, Vector3(wdt, hgt, d.length()), (p0 + p1) * 0.5 + Vector3(0, y, 0), wood, bas)
+	member.call(l - Vector3(0.6, 0, 0), r + Vector3(0.6, 0, 0), 0.09)
+	member.call(l - Vector3(0.6, 0, -0.3), apex, 0.09)
+	member.call(r + Vector3(0.6, 0, 0.3), apex, 0.09)
+	if fine:
+		var q1 := at + Vector3(-span / 6.0, 0, 0)
+		var q2 := at + Vector3(span / 6.0, 0, 0)
+		member.call(q1, at + Vector3(-span / 3.0, 0, rise / 3.0 * 2.0), 0.064)
+		member.call(q1, apex, 0.064)
+		member.call(q2, apex, 0.064)
+		member.call(q2, at + Vector3(span / 3.0, 0, rise / 3.0 * 2.0), 0.064)
+		# Galvanized plates at the joints.
+		for p in [l, r, apex, q1, q2]:
+			_prop(st, Vector3(0.22, hgt + 0.01, 0.16), p + Vector3(0, y, 0.04), FrameBuilder.GALV)
+
+
+## A heaped pile of dirt: a lumpy dome, `rx` by `rz` across and `h` high.
+func _cs_mound(st: SurfaceTool, c: Vector3, rx: float, rz: float, h: float, col: Color, k: int) -> void:
+	var rings := 8
+	var segs := 20
+	var pt := func(i: int, j: int) -> Vector3:
+		var t := float(i) / rings  # 0 at the top, 1 at the foot
+		var a := TAU * j / segs
+		var lump := 1.0 + 0.12 * sin(a * 3.0 + k) + 0.08 * sin(a * 5.0 + k * 1.7)
+		var r := sin(t * PI * 0.5) * lump
+		return c + Vector3(cos(a) * rx * r, h * cos(t * PI * 0.5) * (1.0 + 0.1 * sin(a * 2.0 + k)) * (1.0 if i < rings else 0.0) + 0.05, sin(a) * rz * r)
+	for i in rings:
+		for j in segs:
+			var q := [pt.call(i, j), pt.call(i, j + 1), pt.call(i + 1, j + 1), pt.call(i + 1, j)]
+			var n: Vector3 = (q[2] - q[0]).cross(q[1] - q[3]).normalized()
+			if n.y < 0.0:
+				n = -n
+			st.set_color(col.darkened(0.05 * (i % 2)))
+			st.set_normal(n)
+			for v in [q[0], q[1], q[2], q[0], q[2], q[3]]:
+				st.add_vertex(v)
 
 
 func _fence(st: SurfaceTool, a: Vector3, b: Vector3) -> void:
