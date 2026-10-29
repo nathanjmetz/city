@@ -21,6 +21,9 @@ const SPOTS := [
 	["junction_top", Vector3(84, 0, 0), 180.0, 89.0, 40.0],
 	["shop_cut", Vector3(-39, 0, 128), 200.0, 24.0, 40.0],
 	["shop_cut_b", Vector3(-39, 0, 128), 20.0, 24.0, 40.0],
+	["rr_county", Vector3(1601, 0, 150), 60.0, 14.0, 45.0],
+	["rr_county_far", Vector3(1601, 0, 150), 200.0, 22.0, 110.0],
+	["rr_town", Vector3(0, 0, 67), 120.0, 16.0, 40.0],
 ]
 
 var _main: Node
