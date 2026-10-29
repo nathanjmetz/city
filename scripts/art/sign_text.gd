@@ -30,6 +30,8 @@ const SIZE := 64
 const CAPS := ["slab", "condensed", "franklin", "gothic"]
 
 static var _fonts := {}
+## Whether store signs are lit now (DayNight flips it at dusk and dawn).
+static var night_on := false
 
 
 static func font(style: String) -> Font:
@@ -75,13 +77,26 @@ static func make(l: Dictionary) -> Label3D:
 	label.visibility_range_end_margin = FADE
 	label.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
 	label.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	if l.get("lit", false):
+		# A store's backlit sign: its letters shine after dark.
+		label.add_to_group("lit_sign")
+		label.shaded = not night_on
 	return label
+
+
+## Lights or darkens every store sign's lettering (dusk and dawn).
+static func set_night(tree: SceneTree, on: bool) -> void:
+	if on == night_on:
+		return
+	night_on = on
+	for n in tree.get_nodes_in_group("lit_sign"):
+		(n as Label3D).shaded = not on
 
 
 ## The labels for a sign panel centred at `c` (bottom edge middle), `w` wide
 ## and `h` tall, facing `normal`: the name, and under it "SINCE 2031" on a
-## business old enough to brag about it.
-static func on_panel(spec: Dictionary, c: Vector3, w: float, h: float, normal: Vector3) -> Array:
+## business old enough to brag about it. `lit` letters shine after dark.
+static func on_panel(spec: Dictionary, c: Vector3, w: float, h: float, normal: Vector3, lit := false) -> Array:
 	var out := []
 	var front := c + normal * 0.03
 	var since := int(spec.get("since", -1))
@@ -93,6 +108,8 @@ static func on_panel(spec: Dictionary, c: Vector3, w: float, h: float, normal: V
 	else:
 		out.append({"pos": front + Vector3(0, h * 0.5, 0), "normal": normal, "text": spec.text, "height": h * 0.58,
 			"width": w * 0.88, "color": spec.letter, "style": spec.style})
+	for l in out:
+		l["lit"] = lit
 	return out
 
 
