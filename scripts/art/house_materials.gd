@@ -282,6 +282,24 @@ void fragment() {
 const YARD := """
 uniform vec4 concrete : source_color = vec4(0.67, 0.66, 0.62, 1.0);
 uniform vec4 asphalt : source_color = vec4(0.30, 0.30, 0.30, 1.0);
+// Block cracks, as on the streets (Surfaces.ASPHALT) but closer set: a lot
+// gets no traffic to knead it and cracks worse. Metres to the nearest edge.
+float lot_crack_edge(vec2 p) {
+	vec2 q = vec2(p.x * 0.825 - p.y * 0.565, p.x * 0.565 + p.y * 0.825) / 3.5;
+	vec2 qi = floor(q);
+	float f1 = 9.0;
+	float f2 = 9.0;
+	for (int j = -1; j <= 1; j++) {
+		for (int i = -1; i <= 1; i++) {
+			vec2 g = qi + vec2(float(i), float(j));
+			vec2 o = fract(sin(vec2(dot(g, vec2(127.1, 311.7)), dot(g, vec2(269.5, 183.3)))) * 43758.5453);
+			vec2 d = g + 0.15 + o * 0.7 - q;
+			float l = dot(d, d);
+			if (l < f1) { f2 = f1; f1 = l; } else if (l < f2) { f2 = l; }
+		}
+	}
+	return (sqrt(f2) - sqrt(f1)) * 0.5 * 3.5 + (texture(noise_grain, p / 1.7).r - 0.5) * 0.05;
+}
 void fragment() {
 	vec2 p = world_pos.xz;
 	float close = clamp(1.0 - length(VERTEX) / 150.0, 0.0, 1.0);
@@ -292,10 +310,57 @@ void fragment() {
 	float stain = smoothstep(0.55, 0.85, texture(noise_soft, p / 4.0).r);
 	float grain = texture(noise_grain, p / 0.6).r;
 	vec3 drive = concrete.rgb * (1.0 - stain * 0.12) * (1.0 - joint * 0.4 * close) * (0.95 + grain * 0.1);
-	vec3 lot = asphalt.rgb * (0.85 + texture(noise_soft, p / 20.0).r * 0.3) * (1.0 - stain * 0.15)
-		* (1.0 + (texture(noise_grain, p / 0.3).r - 0.5) * 0.25 * close);
+	// Desktop High and up: the photo scans' own stones and broom marks take
+	// over from the drawn speckle up close (Surfaces.PHOTO).
+	float near_lot = lotph * clamp(1.0 - length(VERTEX) / 220.0, 0.0, 1.0);
+	float near_walk = walkph * clamp(1.0 - length(VERTEX) / 200.0, 0.0, 1.0);
+	float is_lot = step(0.2, COLOR.a) * (1.0 - step(0.86, COLOR.a));
+	float is_walk = 1.0 - step(0.2, COLOR.a);
+	vec2 tilt = vec2(0.0);
+	float rough = 0.9;
+	float shade_lot = 1.0;
+	if (near_lot > 0.0 && is_lot > 0.0) {
+		vec4 ph = lotph_at(p, near_lot);
+		shade_lot = ph.x;
+		rough = mix(rough, 0.82 + ph.y * 0.18, near_lot);
+		tilt = ph.zw;
+	}
+	if (near_walk > 0.0 && is_walk > 0.0) {
+		vec4 ph = walkph_at(p, near_walk);
+		drive *= ph.x;
+		rough = mix(rough, 0.75 + ph.y * 0.25, near_walk);
+		tilt = ph.zw;
+	}
+	// A lot ages to a warm grey in the sun, a little darker where it was
+	// sealcoated more lately, with saw-cut patches where a bad spot was dug
+	// out and repaved: dark rectangles with straight edges.
+	float seal = smoothstep(0.3, 0.7, texture(noise_soft, p / 160.0 + 0.37).r);
+	vec2 pc = floor(p / 13.0);
+	float ph1 = fract(sin(dot(pc, vec2(41.3, 289.1))) * 43758.5453);
+	vec2 pf = p / 13.0 - pc;
+	vec2 lo = vec2(fract(ph1 * 17.0), fract(ph1 * 29.0)) * 0.45 + 0.05;
+	vec2 hi = lo + vec2(0.2 + fract(ph1 * 7.0) * 0.3, 0.15 + fract(ph1 * 11.0) * 0.3);
+	vec2 e = fwidth(pf);
+	vec2 inside = smoothstep(lo - e, lo, pf) * (1.0 - smoothstep(hi, hi + e, pf));
+	float repave = step(0.8, ph1) * inside.x * inside.y;
+	seal = max(seal * 0.7, repave);
+	vec3 lot = asphalt.rgb * mix(vec3(1.22, 1.2, 1.15), vec3(0.85), seal)
+		* (0.85 + texture(noise_soft, p / 20.0).r * 0.3) * (1.0 - stain * 0.15)
+		* (1.0 + (texture(noise_grain, p / 0.3).r - 0.5) * 0.25 * close * (1.0 - near_lot) * (1.0 - seal * 0.6))
+		* mix(shade_lot, 1.0, seal * 0.5);
+	// Sealed cracks show on the worn stretches; fresh seal hides them.
+	if (is_lot > 0.0 && close > 0.0) {
+		float footprint = length(fwidth(p));
+		float run = smoothstep(0.42, 0.5, texture(noise_soft, p / 6.0 + 0.5).r) * (1.0 - seal);
+		float crack = (1.0 - smoothstep(0.03, 0.03 + footprint, lot_crack_edge(p))) * run
+			* close * clamp(0.06 / max(footprint, 1e-4), 0.0, 1.0);
+		lot = mix(lot, vec3(0.11), crack * 0.7);
+		rough -= crack * 0.3;
+		tilt *= 1.0 - crack;
+	}
 	float wear = smoothstep(0.4, 0.7, texture(noise_grain, p / 1.1).r);
-	vec3 line = mix(vcol(COLOR.rgb), asphalt.rgb, wear * 0.45);
+	// Paint lies in the pavement's texture, so it takes some of its grain.
+	vec3 line = mix(vcol(COLOR.rgb), asphalt.rgb, wear * 0.45) * mix(1.0, shade_lot, 0.6);
 	float chips = texture(noise_grain, p / 0.12).r;
 	// Wheel-worn and fresh-spread patches, so a big lot isn't one flat colour.
 	vec3 loose = vcol(COLOR.rgb) * (0.6 + chips * 0.8) * (0.84 + texture(noise_soft, p / 14.0).r * 0.3);
@@ -312,8 +377,12 @@ void fragment() {
 	cover *= mix(packed, 0.85 + chips * 0.15, is_loose);
 	vec3 snowy = vec3(0.80, 0.83, 0.88) * mix(0.82, 0.97, is_loose) * (0.95 + grain * 0.07);
 	ALBEDO = mix(col, snowy, cover);
-	ROUGHNESS = mix(0.9, 0.75, cover);
+	ROUGHNESS = mix(rough, 0.75, cover);
 	SPECULAR = 0.25;
+	// Flat ground only, like the sidewalks: a sloped face keeps its own.
+	if (dot(tilt, tilt) > 0.0 && world_normal.y > 0.95) {
+		NORMAL = lotph_normal_view(tilt * (1.0 - cover), VIEW_MATRIX);
+	}
 }
 """
 
@@ -526,7 +595,7 @@ static func get_mat(key: String) -> Material:
 		"brick": mat = _shader(BRICK)
 		"roof": mat = _shader(ROOF)
 		"glass": mat = _shader(GLASS)
-		"yard": mat = _shader(YARD)
+		"yard": mat = _yard()
 		"metal": mat = _shader(METAL)
 		"sign": mat = _shader(SIGN)
 		"chain": mat = _shader(CHAIN)
@@ -560,6 +629,15 @@ static func _shader(body: String) -> ShaderMaterial:
 	mat.set_shader_parameter("noise_soft", _soft)
 	mat.set_shader_parameter("noise_grain", _grain)
 	return mat
+
+
+## The yard draws two photo scans (Surfaces.PHOTOS): asphalt for lots and
+## concrete for drives and walks, each under its own uniform names.
+static func _yard() -> ShaderMaterial:
+	var turn := "vec2 turn(vec2 p, float a) {\n\treturn vec2(p.x * cos(a) - p.y * sin(a), p.x * sin(a) + p.y * cos(a));\n}\n"
+	var mat := _shader(turn + Surfaces.photo_code("lotph") + Surfaces.photo_code("walkph") + YARD)
+	Surfaces.with_photo(mat, "asphalt", "lotph")
+	return Surfaces.with_photo(mat, "concrete", "walkph")
 
 
 ## Light thrown by a lot's own lamps after dark (parking-lot LEDs, sign

@@ -29,6 +29,8 @@ const USPS_BLUE := Color(0.08, 0.17, 0.42, 0.4)
 const USPS_RED := Color(0.75, 0.08, 0.12, 0.4)
 const WHITE := Color(0.92, 0.92, 0.91, 0.4)
 const STEEL := Color(0.62, 0.63, 0.64, 0.2)
+## DOT-C2 conspicuity sheeting: alternating red and white reflective tape.
+const TAPE_RED := Color(0.72, 0.05, 0.04, 0.4)
 const DARK := Color(0.16, 0.16, 0.17, 0.4)
 const RIM := Color(0.72, 0.72, 0.73, 0.2)
 ## Loads: oak bark, freshly sawn log ends, iron ore, dunnage, ratchet straps.
@@ -1449,6 +1451,19 @@ func _trailer_base(L: float, wheels_at: Array) -> void:
 		_box(Vector3(0, 0.6, L - 0.3), Vector3(2.3, 0.12, 0.12), TRIM)
 		for s in [-1.0, 1.0]:
 			_box(Vector3(s * 0.9, 0.7, 4.0), Vector3(0.15, 0.7, 0.15), TRIM)
+	if _hi:
+		# Ultra: red and white tape across the underride guard (FMVSS 108
+		# asks for it on every trailer 80 in wide), and mud flaps behind
+		# the rear axle.
+		var x := -1.15
+		var k := 0
+		while x < 1.15:
+			var w := minf(0.3, 1.15 - x)
+			_box(Vector3(x + w * 0.5, 0.6, L - 0.237), Vector3(w, 0.06, 0.006), WHITE if k % 2 == 0 else TAPE_RED)
+			x += w
+			k += 1
+		for s in [-1.0, 1.0]:
+			_box(Vector3(s * 1.0, 0.45, float(wheels_at[wheels_at.size() - 1]) + 0.68), Vector3(0.6, 0.6, 0.015), TIRE)
 
 
 func _trailer_box() -> void:
@@ -1457,11 +1472,41 @@ func _trailer_box() -> void:
 		[0.0, 1.25, 4.0, 4.1, 1.3, 1.3, 1.28],
 		[L, 1.25, 4.0, 4.1, 1.3, 1.3, 1.28],
 	], [_edges(WHITE, STEEL)], WHITE, Color(0.85, 0.85, 0.85, 0.4))
-	if not _lo:
+	if _hi:
+		_trailer_box_tape(L)
+	elif not _lo:
 		for s in [-1.0, 1.0]:
 			_box(Vector3(s * 1.304, 1.3, L * 0.5), Vector3(0.006, 0.05, L), Color(0.85, 0.2, 0.05, 0.4))
+	if not _lo:
 		_box(Vector3(0, 2.6, L + 0.01), Vector3(0.03, 2.6, 0.01), STEEL)
 	_trailer_base(L, [13.9, 15.15])
+
+
+## Ultra: the conspicuity tape a dry van carries by law (DOT-C2, 7 in red
+## and 11 in white) along both sills and across the rear, white corner
+## marks up top, and the four lock rods on the swing doors.
+func _trailer_box_tape(L: float) -> void:
+	for s in [-1.0, 1.0]:
+		var z := 0.3
+		var k := 0
+		while z < L - 0.3:
+			var seg := 0.18 if k % 2 == 0 else 0.28
+			seg = minf(seg, L - 0.3 - z)
+			_box(Vector3(s * 1.304, 1.32, z + seg * 0.5), Vector3(0.006, 0.05, seg), TAPE_RED if k % 2 == 0 else WHITE)
+			z += seg
+			k += 1
+		# Upper rear corners: an inverted L of white.
+		_box(Vector3(s * 1.1, 3.93, L + 0.022), Vector3(0.3, 0.05, 0.006), WHITE)
+		_box(Vector3(s * 1.225, 3.75, L + 0.022), Vector3(0.05, 0.3, 0.006), WHITE)
+	var x := -1.2
+	var k2 := 0
+	while x < 1.2:
+		var w := minf(0.18 if k2 % 2 == 0 else 0.28, 1.2 - x)
+		_box(Vector3(x + w * 0.5, 1.36, L + 0.022), Vector3(w, 0.05, 0.006), TAPE_RED if k2 % 2 == 0 else WHITE)
+		x += w
+		k2 += 1
+	for rx in [-0.9, -0.35, 0.35, 0.9]:
+		_box(Vector3(rx, 2.68, L + 0.03), Vector3(0.03, 2.5, 0.03), STEEL)
 
 
 ## A 53 ft USPS contract trailer: white with the blue and red stripe.
