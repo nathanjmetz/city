@@ -103,6 +103,10 @@ func setup(s: CitySim, walker_material: Material) -> void:
 	_prop("ball", _cyl(0.12, 0.24), Color(0.95, 0.95, 0.95))
 	_prop("bench", _box(Vector3(1.8, 0.45, 0.5)), Color(0.42, 0.3, 0.18))
 	_prop("chair", _box(Vector3(0.55, 0.45, 0.5)), Color(0.86, 0.85, 0.8))
+	_prop("paddle_pole", _box(Vector3(0.03, 1.1, 0.03)), Color(0.85, 0.85, 0.85))
+	var octagon := _cyl(0.23, 0.02)
+	octagon.radial_segments = 8
+	_prop("paddle", octagon, Color(0.75, 0.05, 0.05))
 	_prop("chair_back", _box(Vector3(0.55, 0.55, 0.05)), Color(0.86, 0.85, 0.8))
 	_prop("blanket", _box(Vector3(2.0, 0.03, 1.6)), Color(0.75, 0.18, 0.16))
 	_prop("disc", _cyl(0.14, 0.03), Color(0.95, 0.75, 0.1))
@@ -288,6 +292,21 @@ func _pick() -> void:
 				continue
 			_scenes.append({"kind": "recess", "school": sb, "seed": hash([id, "recess"])})
 			people += 14
+	# Schools: a crossing guard at the corner nearest the doors while the
+	# children walk in and home (most Indiana towns post one at the busiest
+	# crossing by an elementary school).
+	if weekday and term and (hour >= 6.75 and hour < 8.5 or hour >= 14.0 and hour < 16.0):
+		for id in sim.services.buildings:
+			var sb: Dictionary = sim.services.buildings[id]
+			if int(sb.kind) != Services.Kind.SCHOOL or people >= cap:
+				continue
+			var sp: Vector3 = sb.pos
+			if Vector2(sp.x - eye.x, sp.z - eye.z).length() > RADIUS:
+				continue
+			var spot := _guard_spot(int(id), sb)
+			if not spot.is_empty():
+				_scenes.append({"kind": "guard", "spot": spot, "seed": hash([id, "guard"])})
+				people += 1
 	# Shops: window shoppers out front in the day, a worker on a break.
 	for key in sim.buildings:
 		if people >= cap:
@@ -343,6 +362,9 @@ func _draw() -> void:
 			continue
 		if s.kind == "bus_stop":
 			_stop_scene(people, s)
+			continue
+		if s.kind == "guard":
+			_guard_scene(people, props, s)
 			continue
 		var lot: Dictionary = s.lot
 		var seed: int = s.seed
@@ -524,6 +546,88 @@ func _draw() -> void:
 		for i in list.size():
 			pm.set_instance_transform(i, list[i])
 		pm.visible_instance_count = list.size()
+
+
+## Where a school's crossing guard stands: the corner of the junction
+## nearest its doors, on the school's side, and the way across the street
+## they walk out into. {} if no junction is near. Kept until the roads
+## change.
+var _guard_spots := {}  # school id -> [network revision, spot]
+
+
+func _guard_spot(id: int, sb: Dictionary) -> Dictionary:
+	var known: Array = _guard_spots.get(id, [])
+	if not known.is_empty() and int(known[0]) == sim.network.revision:
+		return known[1]
+	var spot := {}
+	var dir: Vector3 = sb.dir if sb.dir is Vector3 else Vector3.FORWARD
+	var gate: Vector3 = sb.pos + dir * (Services.size_of(sb).y * 0.5 + Services.SETBACK)
+	var n := sim.network.find_node_near(gate, 160.0)
+	if n != -1 and sim.network.segments_at(n).size() >= 3:
+		var c: Vector3 = sim.network.nodes[n]
+		var to_school := Vector3(gate.x - c.x, 0.0, gate.z - c.z).normalized()
+		# The street the children walk along to the school, and the widest
+		# street they cross at this corner.
+		var along := Vector3.ZERO
+		var hw_along := 0.0
+		var best := -2.0
+		var hw_cross := 0.0
+		for sid in sim.network.segments_at(n):
+			var cv := sim.network.curve_of(sid)
+			var out: Vector3 = (cv[1] - cv[0]) if sim.network.segments[sid].a == n else (cv[1] - cv[2])
+			out = Vector3(out.x, 0.0, out.z).normalized()
+			var hw := RoadStyle.half_width(sim.network.segments[sid].type)
+			if out.dot(to_school) > best:
+				best = out.dot(to_school)
+				along = out
+				hw_along = hw
+		for sid in sim.network.segments_at(n):
+			var cv := sim.network.curve_of(sid)
+			var out: Vector3 = (cv[1] - cv[0]) if sim.network.segments[sid].a == n else (cv[1] - cv[2])
+			out = Vector3(out.x, 0.0, out.z).normalized()
+			if absf(out.dot(along)) < 0.7:
+				hw_cross = maxf(hw_cross, RoadStyle.half_width(sim.network.segments[sid].type))
+		if along != Vector3.ZERO and hw_cross > 0.0:
+			var perp := Vector3(-along.z, 0.0, along.x)
+			if perp.dot(to_school) < 0.0:
+				perp = -perp
+			# On the school side's corner, a step back from the cross
+			# street's curb, facing across it.
+			spot = {"at": c + along * (hw_cross + 2.0) + perp * (hw_along + 2.5), "face": -along,
+				"reach": hw_cross + 2.0}
+	_guard_spots[id] = [sim.network.revision, spot]
+	return spot
+
+
+## The crossing guard: hi-vis vest and a hand-held STOP paddle (MUTCD
+## 7D-2), waiting at the corner, then out into the crosswalk holding the
+## paddle up while children cross, and back.
+func _guard_scene(people: Array, props: Dictionary, s: Dictionary) -> void:
+	var spot: Dictionary = s.spot
+	var face: Vector3 = spot.face
+	var u := fposmod(_clock + float(s.seed % 31), 30.0)
+	# 0-18 s at the corner, 3 s out, 6 s in the road, 3 s back.
+	var out := 0.0
+	if u >= 18.0 and u < 21.0:
+		out = (u - 18.0) / 3.0
+	elif u >= 21.0 and u < 27.0:
+		out = 1.0
+	elif u >= 27.0:
+		out = 1.0 - (u - 27.0) / 3.0
+	var at: Vector3 = spot.at + face * (float(spot.reach) * out)
+	var moving := (u >= 18.0 and u < 21.0) or u >= 27.0
+	var before := people.size()
+	_person(people, at, face if u < 27.0 else -face, s.seed, u * 1.2 if moving else -1.0)
+	var vest := Color(0.62, 1.0, 0.0).srgb_to_linear()  # ANSI 107 fluorescent yellow-green
+	vest.a = (people[before][1] as Color).a
+	people[before][1] = vest
+	var side := face.cross(Vector3.UP).normalized()
+	var hand := Terrain.stand(at) + side * 0.3 + face * 0.15
+	var raised := out > 0.0
+	props.paddle_pole.append(Transform3D(Basis(), hand + Vector3(0, 1.05 if raised else 0.55, 0)))
+	# The STOP face turned to the traffic on the street being crossed.
+	props.paddle.append(Transform3D(Basis.looking_at(side, Vector3.UP) * Basis(Vector3.RIGHT, PI * 0.5),
+		hand + Vector3(0, 1.75 if raised else 1.2, 0)))
 
 
 ## People waiting at a bus stop: on the shelter's bench if it has one,
