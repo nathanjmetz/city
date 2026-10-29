@@ -68,6 +68,30 @@ func _init() -> void:
 				var out := MainBlock.build(7, 3.9, {"width": w, "depth": 45.0, "era": era}, storeys)
 				_check(out.size() >= 3 and _inside(HouseBuilder.last_masses, w * 0.5, 45.0),
 					"%s commercial block on a %d m lot fits it" % [era, w])
+	# A house grown to two storeys is the house that was there: one that
+	# had two storeys already stays as built, a cape or bungalow raises a
+	# dormer on the same walls; only a ranch owner builds new.
+	var kept := 0
+	var raised := 0
+	for era in ["prewar", "postwar", "recent"]:
+		for s in 30:
+			var lot := {"width": [14.0, 18.0, 22.0][s % 3], "depth": 40.0, "era": era}
+			var first := HouseBuilder.plan_info(500 + s, lot, 0)
+			HouseBuilder.build(500 + s, 3.9, lot, 0)
+			var m0: Array = HouseBuilder.last_masses.duplicate()
+			var grown := HouseBuilder.plan_info(500 + s, lot, 2)
+			HouseBuilder.build(500 + s, 3.9, lot, 2)
+			var m2: Array = HouseBuilder.last_masses.duplicate()
+			var kind: String = first.get("kind", "")
+			if kind in ["ranch", "midcentury"]:
+				continue
+			var same: bool = m0 == m2 and first.door_x == grown.door_x and first.drive_x == grown.drive_x
+			_check(same, "a %s %s grown to two storeys keeps its walls and drive (%d)" % [era, kind, s])
+			if kind in ["cape", "bungalow"]:
+				raised += 1
+			else:
+				kept += 1
+	_check(kept > 10 and raised > 10, "two-storey houses stay and capes and bungalows raise dormers (%d, %d)" % [kept, raised])
 	# Corner stores, a shop's first stage: on a corner (either side) and
 	# mid-block, prewar at the sidewalk with no lot, postwar with stalls;
 	# what SiteLayout reads from its dry run is what's drawn.

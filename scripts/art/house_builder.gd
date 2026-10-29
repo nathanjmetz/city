@@ -107,6 +107,9 @@ var _mass_back_z := -INF  # the same for building masses only
 var _masses := []  # the building masses' footprints (Rect2 in lot x/z), for tree spacing
 var _glass_log := []  # [centre, right, width, height] of each pane and opening, so trim can keep off them
 var _deck := Rect2()  # while a plan is drawn: its back deck or patio and steps (lot x/z)
+## While a plan is drawn: its owner has raised the roof (a "Two-storey home"
+## grown from a cape or bungalow) with a full shed dormer.
+var _raised := false
 var pad := 0.0
 var era := "recent"
 var _cell_seed := 0  # the street block this lot is in (its builder)
@@ -542,6 +545,9 @@ func _plan(storeys: int, info_only := false) -> Dictionary:
 		room = seat[4]
 		plan = seat[5]
 	var key := [era, plan, wide, room, storeys, force_kind]
+	if storeys >= 2 and outline.size() < 3:
+		key = _grown_key(key)
+		storeys = key[4]
 	if info_only and not _plans.has(key):
 		return {"info": _placed_info(_shape(key).info, gs, zf, dx)}
 	var body: Dictionary = _plans.get(key, {})
@@ -558,6 +564,23 @@ func _plan(storeys: int, info_only := false) -> Dictionary:
 	if info_only:
 		return {"info": _placed_info(body.info, gs, zf, dx)}
 	return _placed(body, gs, zf, paint, dx)
+
+
+## The plan a house grown to two storeys (BuildingTypes "Two-storey home")
+## is drawn from: the one it was built from, as owners grow a house rather
+## than pull it down. One that had two storeys already stays as it was; a
+## cape or bungalow gets a full shed dormer, the usual way a Midwestern
+## owner finishes the attic (the "dormered" cape and bungalow); a ranch
+## owner who needs two storeys builds new (`key` as asked).
+func _grown_key(key: Array) -> Array:
+	var first := key.duplicate()
+	first[4] = 0
+	var kind: String = _shape(first).info.get("kind", "")
+	if not kind in ONE_STOREY:
+		return first
+	if kind in ["cape", "bungalow"]:
+		return first + ["dormer"]
+	return key
 
 
 ## A plan's info and masses without drawing it (a kept plan's, or laid out
@@ -876,6 +899,7 @@ func _draw_plan(key: Array, wide: float, room: float, storeys: int) -> Dictionar
 	_mass_back_z = -INF
 	_masses = []
 	_deck = Rect2()
+	_raised = key.size() > 6 and key[6] == "dormer"
 	# Drawn in stand-in paint (see _plan). The elevation, shutters or not
 	# and how much brick, comes with the plan.
 	var siding: Color = STAND_IN.siding
@@ -923,6 +947,8 @@ func _draw_plan(key: Array, wide: float, room: float, storeys: int) -> Dictionar
 		_: info = _ranch(zf, gs, gw, siding, roof, shutters, shutter, door, brick_style, brick)
 	if _deck.size.x > 0.0:
 		info.deck = _deck
+	info.kind = kind
+	_raised = false
 	var arrays := {}
 	for mat in _st:
 		arrays[mat] = _st[mat].commit_to_arrays()
@@ -1301,6 +1327,9 @@ func _bungalow(zf: float, gs: float, siding: Color, roof: Color, door: Color, br
 	_corners(x0, x1, zf, zf + d, 0.75, top)
 	var rise := w * 0.5 * rng.randf_range(0.5, 0.62)
 	_gable_roof(cx, cz, top, w, rise, d, false, roof, siding)
+	if _raised:
+		# Across the side away from the drive, behind the front gable.
+		_full_dormer(cx, cz + 0.6, top, w, rise, d - 2.4, false, -gs, rise * 0.8, siding, roof)
 	# Knee braces under the gable eaves.
 	for s in [-1.0, 1.0]:
 		_box("paint", Vector3(0.12, 0.12, 0.7), Vector3(cx + s * w * 0.32, top - 0.25, zf - 0.3), trim)
@@ -1448,6 +1477,8 @@ func _cape(zf: float, gs: float, siding: Color, roof: Color, shutters: bool, shu
 	for s in [-1.0, 1.0]:
 		_dormer(cx + s * w * 0.25, zf + 1.2, cz, top, top + 1.75, 1.6, siding, roof, shutter)
 	_chimney(cx - gs * w * 0.5, cz, top + rise + 0.5, Color(_pick(BRICK)), -gs)
+	if _raised:
+		_full_dormer(cx, cz, top, d, rise, w, true, 1.0, minf(2.4, rise * 0.62), siding, roof)
 	_stoop(cx, zf, 1.9, 1.3, 0.5)
 	_front_door(cx, zf, 0.5, door)
 	# Pediment over the door.
@@ -2046,6 +2077,72 @@ func _window(c: Vector3, right: Vector3, w: float, h: float, grid: bool, shutter
 
 ## Gable roof. `ridge_x` true: the ridge runs along x and `span` is measured
 ## along z; false: the ridge runs along z (a gable facing the street).
+## A full shed dormer on one slope of a gable roof (as _gable_roof takes
+## it: `span` across the ridge, `rise` to it, `length` along it, `ridge_x`
+## its way): a wall set just in from the eave wall to `wall_h` over the
+## plate, a shallow shed roof back up to just under the ridge, siding
+## cheeks, and a row of windows. `side` picks the slope (+1: +z, or +x).
+## The usual way an owner turns a cape's or bungalow's attic into a full
+## second floor (Indianapolis's and Chicago's dormered bungalows).
+func _full_dormer(cx: float, cz: float, top: float, span: float, rise: float, length: float, ridge_x: bool, side: float,
+		wall_h: float, siding: Color, roof: Color) -> void:
+	# Its own random numbers (windows draw some), so the rest of the house
+	# is drawn as it was before the dormer went up.
+	var was := rng
+	rng = RandomNumberGenerator.new()
+	rng.seed = hash([was.seed, "dormer"])
+	_full_dormer_parts(cx, cz, top, span, rise, length, ridge_x, side, wall_h, siding, roof)
+	rng = was
+
+
+func _full_dormer_parts(cx: float, cz: float, top: float, span: float, rise: float, length: float, ridge_x: bool, side: float,
+		wall_h: float, siding: Color, roof: Color) -> void:
+	var to_world := func(a: float, s: float, y: float) -> Vector3:
+		return Vector3(cx + a, y, cz + side * s) if ridge_x else Vector3(cx + side * s, y, cz + a)
+	var half_span := span * 0.5
+	var plane := func(s: float) -> float:
+		return top + rise * (1.0 - s / half_span)
+	var la := length * 0.5 - 0.8  # set in from the gable ends
+	if la < 1.2:
+		return
+	var s0 := 0.15
+	var sf := half_span - 0.45
+	var yt := top + wall_h
+	var y0 := top + rise - 0.06
+	var yb: float = plane.call(sf)
+	var n: Vector3 = to_world.call(0.0, 1.0, 0.0) - to_world.call(0.0, 0.0, 0.0)
+	var along: Vector3 = to_world.call(1.0, 0.0, 0.0) - to_world.call(0.0, 0.0, 0.0)
+	# The face wall and the cheeks.
+	_quad("siding", to_world.call(-la, sf, yb), to_world.call(la, sf, yb), to_world.call(la, sf, yt), to_world.call(-la, sf, yt),
+		siding, [], n)
+	for e in [-1.0, 1.0]:
+		var a: float = e * la
+		_quad("siding", to_world.call(a, s0, plane.call(s0)), to_world.call(a, sf, yb), to_world.call(a, sf, yt),
+			to_world.call(a, s0, y0), siding, [], along * e)
+	# The shed roof, out past the face a little, and its fascia.
+	var so := sf + 0.3
+	var yo := yt - (y0 - yt) / (sf - s0) * 0.3
+	var up := Vector3(0, 0.03, 0)
+	_quad("roof", to_world.call(-la - 0.2, s0, y0) + up, to_world.call(la + 0.2, s0, y0) + up, to_world.call(la + 0.2, so, yo) + up,
+		to_world.call(-la - 0.2, so, yo) + up, roof, [], Vector3.UP)
+	_quad("paint", to_world.call(-la - 0.2, so, yo), to_world.call(la + 0.2, so, yo), to_world.call(la + 0.2, so, yo - 0.18),
+		to_world.call(-la - 0.2, so, yo - 0.18), TRIM, [], n)
+	for e in [-1.0, 1.0]:
+		var a: float = e * (la + 0.2)
+		_quad("paint", to_world.call(a, s0, y0), to_world.call(a, so, yo), to_world.call(a, so, yo - 0.16),
+			to_world.call(a, s0, y0 - 0.16), TRIM, [], along * e)
+	# Windows in pairs across the face, sills over the roof below.
+	var wh := minf(1.1, yt - yb - 0.45)
+	if wh < 0.6:
+		return
+	var right := Vector3.UP.cross(n)
+	var count := maxi(2, int(la * 2.0 / 2.2))
+	var wy := yt - 0.3 - wh * 0.5
+	for i in count:
+		var a := -la + (i + 0.5) * la * 2.0 / count
+		_window(to_world.call(a, sf, wy), right, 0.85, wh, true, false, TRIM)
+
+
 func _gable_roof(cx: float, cz: float, base: float, span: float, rise: float, length: float,
 		ridge_x: bool, roof: Color, gable: Color, gutters := true, roofing := "roof") -> void:
 	var over := 0.45
