@@ -217,6 +217,8 @@ const MARKET_MIN := {
 	# ACS: a few doubles in towns of 1,500 or so; fourplexes once a market
 	# reaches a county-seat town's size.
 	"duplex": [1500, 5000],
+	# A house cut into flats wants renters, as a double does.
+	"house": [0, 0, 0, 0, 1500],
 	"apartments": [10_000, 25_000, 100_000, 150_000, 400_000],
 	"mixed_use": [0, 5000, 15_000],
 	# Commercial blocks over two storefronts: county-seat downtowns
@@ -275,7 +277,7 @@ const LEVEL_DOWN_AFTER := 2880
 ## frame carries them, as many prewar blocks' did), for these types. The
 ## rest rebuild. A guess at a real mix; no survey counts additions.
 const ADD_ON_PERCENT := 50
-const ADD_ON_TYPES := ["office"]
+const ADD_ON_TYPES := ["office", "mixed_use"]
 ## Share of owners keen to build on: DEVELOP_KEEN plus DEVELOP_KEEN_WEALTH
 ## times the neighborhood's wealth (0 to 1), so about half at 0.5.
 const DEVELOP_KEEN := 0.25

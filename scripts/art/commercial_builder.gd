@@ -679,9 +679,10 @@ func _sign(c: Vector3, w: float, h: float) -> void:
 		labels.append_array(SignText.on_panel(sign_spec, c + Vector3(0, 0, -0.01), w, h, Vector3.FORWARD, true))
 	var r := Vector3(-w * 0.5, 0, 0)
 	var u := Vector3(0, h, 0)
+	var v0 := _word_slot(c.x) if sign_spec.is_empty() else 0.0
 	# Faces the street (-z); x runs right to left as seen from the street.
 	_quad("sign", c + r, c - r, c - r + u, c + r + u, col,
-		[Vector2(0, 0), Vector2(w, 0), Vector2(w, 1), Vector2(0, 1)], Vector3.FORWARD)
+		[Vector2(0, v0), Vector2(w, v0), Vector2(w, v0 + 1.0), Vector2(0, v0 + 1.0)], Vector3.FORWARD)
 	_box("paint", Vector3(w + 0.1, h + 0.1, 0.06), c + Vector3(0, h * 0.5, 0.04), col.darkened(0.3))
 
 
@@ -693,15 +694,25 @@ const TRADE_WORDS := [
 	"DENTAL", "INSURANCE", "MARKET", "GRILL", "DONUTS", "FURNITURE", "OPTICAL", "CLEANERS", "BARBER", "THRIFT", "TAVERN",
 	"ANTIQUES", "BIKES", "CANDY", "SPORTS", "HOBBY", "REALTY", "PAINT", "QUILTS", "APPLIANCE", "JEWELRY", "FABRIC",
 	"CELLULAR", "FITNESS", "SEWING",
+	# Big stores' departments, named by the builders, never drawn at random.
+	"GROCERY", "FOODS", "DISCOUNT", "PHARMACY", "SUPERCENTER", "OUTLET",
 ]
+
+
+## Which stand-in trade word a shop at `x` letters, as the sign shader reads
+## it from UV.y (2 * (word + 1) on): its board and awning say the same.
+func _word_slot(x: float) -> float:
+	return 2.0 * (1 + posmod(hash([rng.seed, snappedf(x, 0.1)]), 50))
 
 
 ## Desktop: a strip tenant's name in channel letters, the way strip-centre
 ## leases require them: separate lit letters about 13 cm deep on a raceway
 ## along the fascia, red most often, then white, blue or green; they glow
 ## after dark (sign alpha 1). Takes the same one draw from rng as _sign.
-func _channel_letters(c: Vector3, w: float, h: float) -> void:
+func _channel_letters(c: Vector3, w: float, h: float, named := "") -> void:
 	_pick(SIGNS)  # the same one draw as _sign
+	if w < 1.0:
+		return  # no room for a name (a sliver of shops beside an anchor)
 	var r := RandomNumberGenerator.new()
 	r.seed = hash([rng.seed, 37, snappedf(c.x, 0.1)])
 	var tints := [Color("#e0262e"), Color("#e0262e"), Color("#f4f1ea"), Color("#1f5fbf"), Color("#1f8a4a"), Color("#f2b632")]
@@ -709,7 +720,7 @@ func _channel_letters(c: Vector3, w: float, h: float) -> void:
 	col.a = 1.0
 	var lh := h * r.randf_range(0.7, 0.95)
 	# A trade word (no names) in block capitals built up from strokes.
-	var word: String = TRADE_WORDS[r.randi() % TRADE_WORDS.size()]
+	var word: String = TRADE_WORDS[r.randi() % 50] if named == "" else named
 	var px := minf(lh / 5.0, w * 0.85 / (word.length() * 4.0 - 1.0))
 	lh = px * 5.0
 	var span := word.length() * 4.0 * px - px
@@ -757,7 +768,9 @@ func _awning(cx: float, w: float, zf: float, y: float, col: Color) -> void:
 		# Painted letters (sign alpha 0.5-0.99: unlit, width (a - 0.5) * 60).
 		var v := col.darkened(0.15)
 		v.a = 0.5 + w / 60.0
-		_quad("sign", d, c, c + drop, d + drop, v, [Vector2(0, 1), Vector2(w, 1), Vector2(w, 0), Vector2(0, 0)], Vector3.FORWARD)
+		var v0 := _word_slot(cx)
+		_quad("sign", d, c, c + drop, d + drop, v,
+			[Vector2(0, v0 + 1.0), Vector2(w, v0 + 1.0), Vector2(w, v0), Vector2(0, v0)], Vector3.FORWARD)
 	else:
 		_quad("paint", d, c, c + drop, d + drop, col.darkened(0.15), [], Vector3.FORWARD)
 	if pick > 0.7:
@@ -979,13 +992,22 @@ func _community_center(to_curb: float) -> void:
 			_box("paint", Vector3(10.6, 0.5, 2.0), Vector3(vx, th + 0.1, zf - 0.8), band)  # cornice
 			_box("paint", Vector3(10.2, 0.9, 1.7), Vector3(vx, 0.45, zf - 0.8), Color("#8a7d6b"))  # stone base
 			sign_spec = {}
-			_sign(Vector3(vx, th - 2.4, zf - 1.62), 6.5, 1.0)  # "Grocery" / "Home & Pharmacy"
+			if fine_parts:
+				_channel_letters(Vector3(vx, th - 2.4, zf - 1.62), 6.5, 1.0, "GROCERY" if vx < ex else "PHARMACY")
+			else:
+				_sign(Vector3(vx, th - 2.4, zf - 1.62), 6.5, 1.0)  # "Grocery" / "Home & Pharmacy"
 		sign_spec = spec
-		_sign(Vector3(ex, hd - 2.6, zf - 0.33), minf(ew * 0.7, 16.0), 1.8)
+		if fine_parts and sign_spec.is_empty():
+			_channel_letters(Vector3(ex, hd - 2.6, zf - 0.33), minf(ew * 0.7, 16.0), 1.8, "SUPERCENTER")
+		else:
+			_sign(Vector3(ex, hd - 2.6, zf - 0.33), minf(ew * 0.7, 16.0), 1.8)
 	else:
 		_box("paint", Vector3(ew, eh, 1.4), Vector3(ex, eh * 0.5, zf - 0.7), wall.lightened(0.06))
 		_box("paint", Vector3(ew + 0.4, 0.4, 1.7), Vector3(ex, eh + 0.2, zf - 0.7), band)
-		_sign(Vector3(ex, eh - 2.3, zf - 1.42), ew * 0.75, 1.7)
+		if fine_parts and sign_spec.is_empty():
+			_channel_letters(Vector3(ex, eh - 2.3, zf - 1.42), ew * 0.75, 1.7, "DISCOUNT")
+		else:
+			_sign(Vector3(ex, eh - 2.3, zf - 1.42), ew * 0.75, 1.7)
 	sign_spec = {}
 	for vx: float in vxs:
 		_box("paint", Vector3(5.0, 3.4, 3.0), Vector3(vx, 1.7, zf - 2.9), wall.lightened(0.03))  # vestibule
@@ -1405,6 +1427,7 @@ func _cc_parking(to_curb: float, w: float, zw: float, xg0: float, cr: RandomNumb
 					_box("concrete", Vector3(0.6, 0.9, 0.6), Vector3(x, 0.45, sz), FOUNDATION)
 					_box("paint", Vector3(0.16, 10.0, 0.16), Vector3(x, 5.9, sz), Color("#2e3032"))
 					_box("paint", Vector3(0.6, 0.18, 0.8), Vector3(x, 10.9, sz), Color("#2e3032"))
+					_box("sign", Vector3(0.5, 0.02, 0.7), Vector3(x, 10.8, sz), Color(0.95, 0.96, 1.0, 1.0))  # LED lens
 					_light_pool(Vector3(x, 0.13, sz), 26.0, 26.0, Color(0.95, 0.96, 1.0))
 				x += 30.0
 	for k in [-1.0, 1.0]:
@@ -1419,6 +1442,10 @@ func _cc_parking(to_curb: float, w: float, zw: float, xg0: float, cr: RandomNumb
 			if pad.grow(1.5).has_point(Vector2(x, zc)):
 				continue
 			_flat_rect("mulch", x - 0.9, x + 0.9, zc - 2.5, zc + 2.5, 0.09)
+			# Its curb: 15 cm of concrete all round.
+			for e in [[Vector3(2.0, 0.15, 0.15), Vector3(x, 0.075, zc - 2.55)], [Vector3(2.0, 0.15, 0.15), Vector3(x, 0.075, zc + 2.55)],
+					[Vector3(0.15, 0.15, 4.95), Vector3(x - 0.95, 0.075, zc)], [Vector3(0.15, 0.15, 4.95), Vector3(x + 0.95, 0.075, zc)]]:
+				_box("concrete", e[0], e[1], Color("#cfcac0"))
 			var pick := TreeField.pick(cr, true)
 			trees.append([Vector3(x, 0, zc), pick[0], pick[1], cr.randf_range(0.7, 0.95)])
 
@@ -1458,7 +1485,12 @@ func _grocery_anchor(x0: float, x1: float, zf: float, cz: float, d: float, wall:
 		_box("paint", Vector3(tw + 0.4, 0.6, 1.5), Vector3(tx, th + 0.3, zfa - 0.6), accent)
 	var spec := sign_spec
 	sign_spec = {}
-	_sign(Vector3(tx, th - 2.2, zfa - 1.25), tw * 0.8, 1.6)
+	if fine_parts:
+		# Desktop: the department in big lit channel letters, as grocers do.
+		_channel_letters(Vector3(tx, th - 2.2, zfa - 1.25), tw * 0.8, 1.6,
+			["GROCERY", "FOODS", "MARKET"][posmod(hash([rng.seed, "grocer word"]), 3)])
+	else:
+		_sign(Vector3(tx, th - 2.2, zfa - 1.25), tw * 0.8, 1.6)
 	sign_spec = spec
 	# The vestibule: glass across the tower's foot, in and out doors.
 	_glass(Vector3(tx, 1.7, zfa - 1.23), Vector3(-1, 0, 0), tw - 1.2, 3.0, 0.0)

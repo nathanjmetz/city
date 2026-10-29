@@ -373,6 +373,8 @@ func _spawn(key: String, refill := false) -> void:
 	var fit := _local_lot(lot, xf)
 	if fit.corner and int(b.zone) == ZoneMap.Zone.COMMERCIAL:
 		fit.side = SiteLayout.corner_side(sim.network, lot)
+	if BuildingTypes.type_of(b) in ["row_home", "apartments"]:
+		fit.alley = SiteLayout.back_lane(sim.network, lot)
 	var drawn := _draw(key, lot, b, fit, rng.randi())
 	if drawn.is_empty():
 		return

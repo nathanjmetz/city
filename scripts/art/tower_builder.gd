@@ -1585,9 +1585,21 @@ func _tw_crown(kind: String, w: float, d: float, cz: float, y: float, stone: Col
 				cw -= 3.0
 				cd -= 3.0
 				_box("brick", Vector3(cw, 3.0, cd), Vector3(0, yy + 1.5, cz), stone)
+				if fine_parts and k == 0:
+					# Stone urns on the corners of the setback (the 1980s
+					# borrowing of the 1920s cornice finial).
+					for sx in [-1.0, 1.0]:
+						for sz in [-1.0, 1.0]:
+							var u := Vector3(sx * (w * 0.5 - 0.9), yy, cz + sz * (d * 0.5 - 0.9))
+							_box("brick", Vector3(1.1, 0.5, 1.1), u + Vector3(0, 0.25, 0), stone.lightened(0.08))
+							_tw_pyramid(u + Vector3(0, 0.5, 0), 0.8, 0.8, 1.6, stone.lightened(0.12))
+				elif k == 1:
+					# The top step hides the cooling towers behind louvres.
+					_tw_louvres(cw, cd, cz, yy, 3.0)
 				yy += 3.0
 			var top_col := TW_COPPER if rng.randf() < 0.6 else glass_col.lightened(0.15)
 			_tw_pyramid(Vector3(0, yy, cz), cw, cd, minf(cw, cd) * 0.75, top_col)
+			_tw_pyramid_trim(Vector3(0, yy, cz), cw, cd, minf(cw, cd) * 0.75, top_col)
 		"spires":
 			_box("brick", Vector3(w - 2.0, 4.0, d - 2.0), Vector3(0, y + 2.0, cz), stone)
 			for sx in [-1.0, 1.0]:
@@ -1607,6 +1619,120 @@ func _tw_crown(kind: String, w: float, d: float, cz: float, y: float, stone: Col
 					_glass(face[0] + Vector3(0, yy + 1.8, 0), face[1], face[2] * 0.6, 1.6, 0.0)
 				yy += 3.2
 			_tw_pyramid(Vector3(0, yy, cz), cw, cd, cw * 0.6, TW_COPPER)
+			_tw_pyramid_trim(Vector3(0, yy, cz), cw, cd, cw * 0.6, TW_COPPER)
+
+
+## Up close, a metal roof pyramid's hips are capped with a raised ridge
+## roll, its eaves have a gutter fascia, and a ball and spire finial tops
+## it (as on the copper roofs of the 1980s towers in Indianapolis).
+func _tw_pyramid_trim(base: Vector3, w: float, d: float, h: float, col: Color) -> void:
+	if not fine_parts:
+		return
+	var apex := base + Vector3(0, h, 0)
+	var cap := col.darkened(0.18)
+	for sx in [-1.0, 1.0]:
+		for sz in [-1.0, 1.0]:
+			var hip: Vector3 = apex - (base + Vector3(sx * w * 0.5, 0, sz * d * 0.5))
+			var up := hip.normalized()
+			var side := up.cross(Vector3(sz, 0, -sx).normalized()).normalized()
+			var bs := Basis(side, up, side.cross(up)).orthonormalized()
+			_box("metal", Vector3(0.32, hip.length(), 0.32), apex - hip * 0.5 + Vector3(0, 0.1, 0), cap, bs)
+	for face in _tw_faces(w, d, base.z, base.x):
+		var out: Vector3 = face[1].cross(Vector3.UP)
+		_box("metal", Vector3(face[2] + 0.5, 0.35, 0.2), face[0] + out * 0.1 + Vector3(0, base.y + 0.1, 0), cap, _tw_yaw(face[1]))
+	_box("metal", Vector3(0.6, 0.6, 0.6), apex + Vector3(0, 0.3, 0), Color("#b8963e"))
+	_box("metal", Vector3(0.14, 3.2, 0.14), apex + Vector3(0, 2.2, 0), Color("#b8963e"))
+
+
+## The amenity deck on a podium roof between x0..x1 and z0..z1 at height y,
+## as on the 2010s-20s podium apartments of Indianapolis, Columbus and
+## Chicago: pavers, a glass guard in from the parapet, planters of grasses.
+## For flats, a pool with its coping, loungers and umbrellas, two cabanas,
+## a lawn of turf, a fire pit ringed with chairs and a pergola over the
+## grill station; for offices, a tenant terrace of cafe tables under
+## umbrellas and the rest planted in sedum.
+func _tw_amenity_deck(x0: float, x1: float, z0: float, z1: float, y: float, homes: bool, pool := true) -> void:
+	var r := RandomNumberGenerator.new()
+	r.seed = hash([rng.seed, "amenity deck", pool])
+	var w := x1 - x0
+	var cx := (x0 + x1) * 0.5
+	var flat := func(a: float, b: float, c: float, e: float, h: float, col: Color) -> void:
+		_quad("paint", Vector3(a, y + h, c), Vector3(b, y + h, c), Vector3(b, y + h, e), Vector3(a, y + h, e), col, [], Vector3.UP)
+	flat.call(x0, x1, z0, z1, 0.01, Color("#c4bdb0"))  # pavers
+	# The glass guard round the deck's open sides, set in from the parapet.
+	_glass(Vector3(cx, y + 0.55, z0 - 0.02), Vector3(-1, 0, 0), w, 1.1, 0.0)
+	_glass(Vector3(cx, y + 0.55, z1 + 0.02), Vector3(1, 0, 0), w, 1.1, 0.0)
+	var white := Color("#ece8de")
+	var dark := Color("#2f3133")
+	var z := z0 + 1.5
+	if homes and pool:
+		# The pool along the street side, a white coping round it.
+		var pl := minf((z1 - z0) * 0.45, 16.0)
+		var pwid := minf(w - 5.0, 7.0)
+		var px := x0 + 1.5 + pwid * 0.5
+		_box("concrete", Vector3(pwid + 0.8, 0.12, pl + 0.8), Vector3(px, y + 0.06, z + pl * 0.5), white)
+		flat.call(px - pwid * 0.5, px + pwid * 0.5, z, z + pl, 0.13, Color("#3f9cbf"))
+		var lx := px + pwid * 0.5 + 1.4
+		var n := int(pl / 1.6)
+		for i in n:
+			var lz := z + 0.8 + i * 1.6
+			_box("paint", Vector3(1.9, 0.3, 0.7), Vector3(lx + 0.3, y + 0.3, lz), white)
+			_box("paint", Vector3(0.12, 0.6, 0.66), Vector3(lx + 1.15, y + 0.6, lz), white, Basis(Vector3(0, 0, 1), 0.6))
+			if i % 2 == 1 and lx + 2.6 < x1:
+				_box("metal", Vector3(0.06, 2.3, 0.06), Vector3(lx + 1.8, y + 1.15, lz - 0.8), Color("#8d9194"))
+				_box("paint", Vector3(2.4, 0.08, 2.4), Vector3(lx + 1.8, y + 2.3, lz - 0.8), Color(["#e9e2cf", "#2f5f6f", "#b9643a"][r.randi() % 3]))
+		z += pl + 1.5
+		# Two cabanas past the pool's end.
+		for k in 2:
+			var cbx := x0 + 2.0 + k * 3.2
+			if cbx + 1.4 > x1 or z + 3.0 > z1:
+				break
+			for sx in [-1.2, 1.2]:
+				for sz in [0.0, 2.4]:
+					_box("paint", Vector3(0.1, 2.4, 0.1), Vector3(cbx + sx, y + 1.2, z + sz), dark)
+			_box("paint", Vector3(2.7, 0.15, 2.7), Vector3(cbx, y + 2.45, z + 1.2), white)
+			_box("paint", Vector3(2.0, 0.4, 1.8), Vector3(cbx, y + 0.3, z + 1.2), Color("#d9d3c4"))
+		z += 3.6
+	# A lawn of turf (offices: a planted sedum roof) over the middle.
+	var lz1 := minf(z + maxf((z1 - z) * 0.45, 4.0), z1 - 4.0)
+	if lz1 - z > 2.0:
+		flat.call(x0 + 0.6, x1 - 0.6, z, lz1, 0.03, Color("#5f8a3f") if homes else Color("#7d8a4a"))
+		z = lz1 + 1.0
+	if z1 - z > 3.5:
+		var fx := x0 + minf(w * 0.3, 4.0)
+		var fz := (z + z1) * 0.5
+		if homes:
+			# The fire pit, chairs round it.
+			_cylinder("concrete", Vector3(fx, y, fz), 0.7, 0.45, Color("#6f6a62"), 10)
+			for k in 5:
+				var a := TAU * k / 5.0
+				_box("paint", Vector3(0.6, 0.45, 0.6), Vector3(fx + cos(a) * 1.7, y + 0.22, fz + sin(a) * 1.7), Color("#3b4a52"))
+		else:
+			# Cafe tables under umbrellas.
+			for k in 3:
+				var tx2 := fx + k * 3.0
+				if tx2 + 1.5 > x1:
+					break
+				_cylinder("metal", Vector3(tx2, y, fz), 0.45, 0.75, Color("#2f3133"), 8)
+				_box("metal", Vector3(0.06, 2.3, 0.06), Vector3(tx2, y + 1.15, fz), Color("#8d9194"))
+				_box("paint", Vector3(2.4, 0.08, 2.4), Vector3(tx2, y + 2.3, fz), Color("#e9e2cf"))
+		# A pergola over the grill station along the back.
+		var gx := x1 - minf(w * 0.35, 4.5)
+		var gw := minf(w * 0.4, 6.0)
+		for sx in [-0.5, 0.5]:
+			for sz in [0.0, 1.0]:
+				_box("paint", Vector3(0.2, 2.7, 0.2), Vector3(gx + sx * gw, y + 1.35, z + 0.3 + sz * 2.6), dark)
+		var nb := int(gw / 0.5)
+		for i in nb + 1:
+			_box("paint", Vector3(0.07, 0.18, 3.2), Vector3(gx - gw * 0.5 + i * gw / nb, y + 2.75, z + 1.6), Color("#6b4a32"))
+		_box("concrete", Vector3(gw - 0.6, 0.9, 0.7), Vector3(gx, y + 0.45, z + 2.6), Color("#8f8b84"))
+		_box("metal", Vector3(0.9, 0.1, 0.6), Vector3(gx, y + 0.95, z + 2.6), Color("#b9bcbe"))
+	# Planters of grasses along the guard.
+	var k2 := x0 + 1.0
+	while k2 < x1 - 1.0:
+		_box("concrete", Vector3(1.2, 0.7, 0.9), Vector3(k2 + 0.6, y + 0.35, z1 - 0.6), Color("#7a766f"))
+		_shrub(Vector3(k2 + 0.6, y + 0.7, z1 - 0.6), r.randf_range(0.4, 0.6))
+		k2 += 3.0
 
 
 ## A four-sided pyramid of base w by d rising h from `base`.
@@ -1706,14 +1832,35 @@ func _tw_podium(to_curb: float, width: float, storeys: int) -> void:
 		_quad("paint", Vector3(-pw * 0.5 + 2.0, ph + 0.95, deck_z), Vector3(pw * 0.5 - 2.0, ph + 0.95, deck_z),
 			Vector3(pw * 0.5 - 2.0, ph + 0.95, tz - td * 0.5 - 1.0), Vector3(-pw * 0.5 + 2.0, ph + 0.95, tz - td * 0.5 - 1.0),
 			Color("#6f8a52"), [], Vector3.UP)  # green roof
-	if _homes:
+	# Up close, the widest stretch of podium roof beside the tower is the
+	# residents' amenity deck or the tenants' terrace.
+	var side_l := (tx - tw * 0.5) - (-pw * 0.5) - 2.5
+	var side_r := pw * 0.5 - (tx + tw * 0.5) - 2.5
+	var back_d := zf + pd - 1.0 - (tz + td * 0.5 + 1.5)
+	var amenity := fine_parts and (maxf(side_l, side_r) >= 9.0 or back_d >= 8.0)
+	if amenity and maxf(side_l, side_r) < 9.0:
+		# No room beside the tower: the whole deck goes behind it.
+		_tw_amenity_deck(-pw * 0.5 + 1.0, pw * 0.5 - 1.0, tz + td * 0.5 + 1.5, zf + pd - 1.0, ph + 0.95, _homes)
+	elif amenity:
+		var right := side_r >= side_l
+		var ax0 := tx + tw * 0.5 + 1.5 if right else -pw * 0.5 + 1.0
+		var ax1 := pw * 0.5 - 1.0 if right else tx - tw * 0.5 - 1.5
+		_tw_amenity_deck(ax0, ax1, zf + 1.0, zf + pd - 1.0, ph + 0.95, _homes)
+		# Behind the tower, the rest of the roof: lawn, a fire pit, a pergola.
+		var bz0 := tz + td * 0.5 + 1.5
+		if zf + pd - 1.0 - bz0 >= 6.0:
+			_tw_amenity_deck(-pw * 0.5 + 1.0 if right else ax1 + 1.0, ax0 - 1.0 if right else pw * 0.5 - 1.0,
+				bz0, zf + pd - 1.0, ph + 0.95, _homes, false)
+	elif _homes:
 		var px := -tx * 0.5
 		_quad("paint", Vector3(px - 6.0, ph + 0.97, deck_z + 0.5), Vector3(px + 6.0, ph + 0.97, deck_z + 0.5),
 			Vector3(px + 6.0, ph + 0.97, deck_z + 3.5), Vector3(px - 6.0, ph + 0.97, deck_z + 3.5), Color("#3f8fb0"), [], Vector3.UP)  # the pool
 	var sx := -pw * 0.5 + 3.0
 	while sx < pw * 0.5 - 3.0:
 		if absf(sx - tx) > tw * 0.5 + 1.0:
-			_shrub(Vector3(sx, ph + 0.95, zf + 1.5), rng.randf_range(0.5, 0.8))
+			var sh := rng.randf_range(0.5, 0.8)
+			if not (amenity and maxf(side_l, side_r) >= 9.0 and (sx > tx) == (side_r >= side_l)):
+				_shrub(Vector3(sx, ph + 0.95, zf + 1.5), sh)
 		sx += rng.randf_range(3.0, 5.0)
 	# The tower: a dark core wrapped in glass floor by floor, slab edges between.
 	_box("paint", Vector3(tw, top - ph, td), Vector3(tx, (ph + top) * 0.5, tz), Color("#1c1e20"))

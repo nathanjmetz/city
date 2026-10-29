@@ -58,6 +58,7 @@ static var force := ""
 
 var sim: CitySim
 var _people: MultiMeshInstance3D
+var _women: MultiMeshInstance3D  # the same, in a woman's figure (WalkerView.figure)
 var _dogs: MultiMeshInstance3D
 var _month := 7
 var _desktop := true
@@ -81,6 +82,16 @@ func setup(s: CitySim, walker_material: Material) -> void:
 	_people.material_override = walker_material
 	_people.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(_people)
+	var wm := MultiMesh.new()
+	wm.transform_format = MultiMesh.TRANSFORM_3D
+	wm.use_colors = true
+	wm.use_custom_data = true
+	wm.mesh = WalkerView._person_mesh(1)
+	_women = MultiMeshInstance3D.new()
+	_women.multimesh = wm
+	_women.material_override = walker_material
+	_women.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(_women)
 	# Dogs trot in the walkers' shader too.
 	var dm := MultiMesh.new()
 	dm.transform_format = MultiMesh.TRANSFORM_3D
@@ -325,23 +336,32 @@ func _pick() -> void:
 
 
 ## One person: where, facing, shirt, walk phase (0 standing), size.
-func _person(list: Array, at: Vector3, face: Vector3, seed: int, walked: float, size := 1.0, sit := false) -> void:
-	# Dressed for the month like the town's walkers (age by size: a small
-	# one is a kid).
-	var worn := WalkerView.dress(seed, _month, 10 if size < 0.7 and not sit else 25 + seed % 55)
+func _person(list: Array, at: Vector3, face: Vector3, seed: int, walked: float, size := 1.0, sit := false,
+		lift := 0.0) -> void:
+	# Age by size: a small one is a child, a bit bigger a teenager. Each
+	# one's figure and build as the town's walkers have theirs (CDC and
+	# NHANES heights), dressed for the month like them.
+	var age := 25 + seed % 55
+	if size < 0.7:
+		age = 6 + seed % 5
+	elif size < 0.9:
+		age = 13 + seed % 3
+	var worn := WalkerView.dress(seed, _month, age)
 	var shirt: Color = worn[0]
-	shirt.a = fposmod(walked, STRIDE * size) / (STRIDE * size) if walked >= 0.0 else 0.0
+	var body := WalkerView.build(seed, {"age": age})
+	var stride := STRIDE * body.y
+	shirt.a = fposmod(walked, stride) / stride if walked >= 0.0 else 0.0
 	if _desktop:
 		# Seated people bend into the chair (WalkerView.SEATED).
 		shirt.a = minf(shirt.a, 0.999) + float(int(worn[1]) | (WalkerView.SEATED if sit else 0))
 	elif sit:
-		size *= 0.62  # the browser can't bend them: drawn short instead
+		body.y *= 0.62  # the browser can't bend them: drawn short instead
+		lift = 0.0
 	var f := Vector3(face.x, 0.0, face.z)
 	if f.length() < 0.01:
 		f = Vector3.FORWARD
-	var tall := (0.92 + float(seed % 17) / 100.0) * size
-	list.append([Transform3D(Basis.looking_at(f.normalized(), Vector3.UP).scaled(Vector3(tall, tall, tall)),
-		Terrain.stand(at)), shirt, WalkerView.skin_tone(seed)])
+	list.append([Transform3D(Basis.looking_at(f.normalized(), Vector3.UP).scaled(body),
+		Terrain.stand(at) + Vector3(0, lift, 0)), shirt, WalkerView.skin_tone(seed), WalkerView.figure(seed)])
 
 
 func _draw() -> void:
@@ -430,7 +450,7 @@ func _draw() -> void:
 					(hand + collar) * 0.5))
 			"garden":
 				var p := lawn + along * (width * 0.35)
-				_person(people, p, into, seed, -1.0, 0.8)  # bent over the bed
+				_person(people, p, into, seed, -1.0, 1.0, true, -0.4)  # down on the ground at the bed
 			"catch":
 				var a := back - along * 4.0
 				var b := back + along * 4.0
@@ -476,8 +496,13 @@ func _draw() -> void:
 				# Two kids at a table by the sidewalk; now and then a neighbour buys a cup.
 				var p := walk + into * 1.6 + along * (float(seed % 5) - 2.0)
 				props.table.append(Transform3D(Basis.looking_at(-into, Vector3.UP), Terrain.stand(p) + Vector3(0, 0.38, 0)))
-				_person(people, p + into * 0.7 - along * 0.4, -into, seed, -1.0, 0.62)
-				_person(people, p + into * 0.7 + along * 0.4, -into, seed >> 3, -1.0, 0.6)
+				# On little chairs behind it.
+				for k in [-1.0, 1.0]:
+					var c: Vector3 = p + into * 0.7 + along * 0.4 * k
+					props.chair.append(Transform3D(Basis.looking_at(-into, Vector3.UP).scaled(Vector3.ONE * 0.72),
+						Terrain.stand(c - into * 0.07) + Vector3(0, 0.16, 0)))
+				_person(people, p + into * 0.7 - along * 0.4, -into, seed, -1.0, 0.62, true)
+				_person(people, p + into * 0.7 + along * 0.4, -into, seed >> 3, -1.0, 0.6, true)
 				if fmod(t, 20.0) < 8.0:
 					_person(people, p - into * 0.9, into, seed >> 6, -1.0)
 			"bike":
@@ -522,14 +547,19 @@ func _draw() -> void:
 					dress.a = (people[before][1] as Color).a
 					people[before][1] = dress
 				_person(people, p - heading * 1.8, heading, seed >> 9, t * 1.0)
-	var mm := _people.multimesh
-	if mm.instance_count < people.size():
-		mm.instance_count = maxi(people.size() * 2, 32)
-	for i in people.size():
-		mm.set_instance_transform(i, people[i][0])
-		mm.set_instance_color(i, people[i][2])
-		mm.set_instance_custom_data(i, people[i][1])
-	mm.visible_instance_count = people.size()
+	for k in 2:
+		var mm: MultiMesh = (_people if k == 0 else _women).multimesh
+		var n := 0
+		if mm.instance_count < people.size():
+			mm.instance_count = maxi(people.size() * 2, 32)
+		for p in people:
+			if int(p[3]) != k:
+				continue
+			mm.set_instance_transform(n, p[0])
+			mm.set_instance_color(n, p[2])
+			mm.set_instance_custom_data(n, p[1])
+			n += 1
+		mm.visible_instance_count = n
 	var dm := _dogs.multimesh
 	if dm.instance_count < dogs.size():
 		dm.instance_count = maxi(dogs.size() * 2, 8)
@@ -677,8 +707,10 @@ func _park_scene(people: Array, props: Dictionary, s: Dictionary) -> void:
 				_person(people, spot + side * 0.6 + dir * 0.12, -dir, seed >> 3, -1.0, 1.0, true)
 		"picnic":
 			props.blanket.append(Transform3D(Basis.looking_at(dir, Vector3.UP), Terrain.stand(spot) + Vector3(0, 0.02, 0)))
-			_person(people, spot - side * 0.5, side, seed, -1.0, 0.6)
-			_person(people, spot + side * 0.5, -side, seed >> 4, -1.0, 0.6)
+			# Sitting on the blanket: the seated pose let down to the ground
+			# (the shins go under it, as if cross-legged).
+			_person(people, spot - side * 0.5, side, seed, -1.0, 1.0, true, -0.4)
+			_person(people, spot + side * 0.5, -side, seed >> 4, -1.0, 1.0, true, -0.4)
 		"stroll":
 			var a := t * 0.05 + float(seed % 6)
 			var r := minf(size.x, size.y) * 0.35
@@ -692,7 +724,7 @@ func _park_scene(people: Array, props: Dictionary, s: Dictionary) -> void:
 			if u < 1.0:
 				var p := top.lerp(foot, u)
 				props.sled.append(Transform3D(Basis.looking_at(dir, Vector3.UP), Terrain.stand(p) + Vector3(0, 0.06, 0)))
-				_person(people, p, dir, seed, -1.0, 0.45)  # sitting on the sled
+				_person(people, p, dir, seed, -1.0, 0.62, true, -0.3)  # sitting on the sled
 			else:
 				var p := foot.lerp(top, (u - 1.0) / 2.0)
 				props.sled.append(Transform3D(Basis.looking_at(-dir, Vector3.UP), Terrain.stand(p - dir * 0.8) + Vector3(0, 0.06, 0)))

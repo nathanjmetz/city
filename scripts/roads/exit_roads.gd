@@ -38,7 +38,7 @@ var _mats := {
 	"shoulder": Surfaces.far_road("shoulder"),
 	"yellow": Surfaces.far_road("paint", RoadStyle.MARKING_YELLOW),
 	"white": Surfaces.far_road("paint", RoadStyle.MARKING_WHITE),
-	"concrete": Surfaces.far_road("concrete", Color(0.66, 0.65, 0.62)),
+	"concrete": BridgeMesh.concrete(),
 	"steel": RoadView._galvanized(),
 	"marker": RoadStyle.material(Color(0.95, 0.76, 0.1)),
 	"pole": RoadStyle.material(Color(0.33, 0.27, 0.21)),

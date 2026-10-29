@@ -49,6 +49,10 @@ const TYPES := {
 		# Bloomington now allow on any single-family lot, a one-storey
 		# cottage of 400-800 sq ft behind the house.
 		{"name": "Home with backyard cottage", "storeys": 2, "cap": [6, 8]},
+		# A landlord cuts the house into an up and a down flat (or three),
+		# the outside stair to the upstairs door, as countless older homes
+		# in Marion, Muncie and Indianapolis were from the 1940s on.
+		{"name": "House cut into flats", "storeys": 2, "cap": [7, 10]},
 	]},
 	# A two-family house: a postwar side-by-side ranch duplex, a recent
 	# two-storey one, or on prewar streets an up-and-down two-family
@@ -137,8 +141,10 @@ const TYPES := {
 		# A company that did well here builds its headquarters on the park
 		# (Cummins in Columbus, Lincoln Financial and Steel Dynamics in Fort
 		# Wayne): a six-storey glass building beside the low ones, on land
-		# bought next door. 150,000 sq ft at about 300 sq ft a job.
-		{"name": "Corporate campus", "storeys": 6, "cap": [400, 500], "load": 16, "lot": 10000.0},
+		# bought next door. 150,000 sq ft at about 300 sq ft a job. Its
+		# 450-odd spaces (ITE: about 4 per 1,000 sq ft) take a five-level
+		# deck and a field of rows out front: about 4.5 acres in all.
+		{"name": "Corporate campus", "storeys": 6, "cap": [400, 500], "load": 16, "lot": 18000.0},
 	]},
 	# A small plant that does well buys the empty parcel next door and adds
 	# a wing and more truck docks, the way Indiana's small-town plants grew
@@ -552,6 +558,8 @@ static func _stage_ok(sim, b: Dictionary, type: String, level: int, c: Dictionar
 		["house", 1]: return true
 		["house", 2]: return c.wealth >= Balance.ADDITION_WEALTH
 		["house", 3]: return c.density >= Balance.DUPLEX_DENSITY and c.wealth >= Balance.ADDITION_WEALTH
+		# Conversions come where owners move out and landlords buy in.
+		["house", 4]: return c.density >= Balance.DUPLEX_DENSITY and c.wealth < 0.6
 		["duplex", 0]: return c.density >= Balance.DUPLEX_DENSITY and c.wealth < 0.75
 		["duplex", 1]: return c.density >= Balance.ROW_HOME_DENSITY
 		["row_home", 0]: return c.density >= Balance.ROW_HOME_DENSITY * 2 and c.wealth < 0.7
