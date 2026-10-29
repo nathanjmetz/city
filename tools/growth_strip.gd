@@ -66,7 +66,7 @@ func _init() -> void:
 		if st.size() > 3:
 			meshes = TowerBuilder.build_tower(seed * 100 + i, 3.9, {"width": w, "depth": DEPTH, "era": era}, storeys, {}, st[3], st[0] == "apartments")
 		else:
-			meshes = BuildingView.build_for(st[0], storeys, seed * 100 + i, 3.9, {"width": w, "depth": DEPTH, "era": era}, {}, units)
+			meshes = BuildingView.build_for(st[0], storeys, seed * 100, 3.9, {"width": w, "depth": DEPTH, "era": era}, {}, units)
 		var at := Vector3(x - w * 0.5, 0, 0)
 		x -= w + 6.0
 		for m in meshes.slice(0, 2):
