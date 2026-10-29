@@ -83,6 +83,7 @@ static func office_plan(seed: int, lot: Dictionary, storeys: int) -> Dictionary:
 ## detention pond the county asks for once the site is built out.
 static func build_office_park(seed: int, to_curb: float, lot: Dictionary, level: int, spec := {}) -> Array:
 	var b := _start(seed, lot, spec)
+	b.office_glass = fine  # tinted, reflective office glass
 	b._office_park(to_curb, b.half * 2.0, level)
 	return b._done()
 
@@ -204,10 +205,45 @@ func _park_building(cx: float, bw: float, zf: float, bd: float, storeys: int, wa
 			_glass(c, face[1], float(face[2]) - 1.6, gh, r.randf_range(0.1, 0.4) if dark else r.randf_range(0.0, 0.25))
 		if f > 0:
 			_box("paint", Vector3(bw + 0.06, 0.8, 0.08), Vector3(cx, f * fh + 0.3 + 0.45, zf - 0.04), band)
-	# The entry: a two-storey glass bay with a flat canopy.
-	_glass(Vector3(cx, 2.0, zf - 1.23), Vector3(-1, 0, 0), 5.0, 3.6, 0.0)
-	_box("paint", Vector3(5.4, 4.4, 1.2), Vector3(cx, 2.2, zf - 0.6), Color("#2c2e30"))
-	_box("paint", Vector3(7.0, 0.3, 2.8), Vector3(cx, 3.9, zf - 1.4), band.darkened(0.25))
+	# The entry: a two-storey glass bay with a flat canopy; on about half,
+	# the 1980s office park's raised entry atrium instead, a glazed bay up
+	# the full height under a gable or a barrel vault in the roof's metal
+	# (Keystone at the Crossing, Fort Wayne's and Kokomo's office parks).
+	var er := RandomNumberGenerator.new()
+	er.seed = hash([rng.seed, "park entry", snappedf(cx, 0.1)])
+	if er.randf() < 0.5:
+		var aw := 7.0
+		var ah := deck + 1.6
+		var trim := wall.lightened(0.12)
+		for sx in [-1.0, 1.0]:
+			_box(mat, Vector3(1.0, ah, 2.4), Vector3(cx + sx * (aw * 0.5 + 0.5), ah * 0.5, zf - 1.2), trim)
+		_glass(Vector3(cx, ah * 0.5, zf - 2.3), Vector3(-1, 0, 0), aw, ah - 0.4, 0.0)
+		for k in range(1, 4):
+			_box("paint", Vector3(0.08, ah - 0.4, 0.08), Vector3(cx - aw * 0.5 + k * aw / 4.0, ah * 0.5, zf - 2.36), band.darkened(0.3))
+		var roofc := Color(["#3f5a4a", "#3a4250", "#6b3a2e", "#8e8c86"][er.randi() % 4])
+		var y := ah
+		var hw := aw * 0.5 + 1.1
+		if er.randf() < 0.55:
+			var pk := Vector3(cx, y + 2.6, zf - 2.5)
+			_tri("roof", Vector3(cx - hw, y, zf - 2.5), Vector3(cx + hw, y, zf - 2.5), pk, roofc, [], Vector3.FORWARD)
+			_quad("roof", Vector3(cx - hw, y, zf - 2.5), pk, pk + Vector3(0, 0, 2.6), Vector3(cx - hw, y, zf + 0.1), roofc, [], Vector3(-1, 1, 0))
+			_quad("roof", pk, Vector3(cx + hw, y, zf - 2.5), Vector3(cx + hw, y, zf + 0.1), pk + Vector3(0, 0, 2.6), roofc, [], Vector3(1, 1, 0))
+		else:
+			var segs := 8
+			for i in segs:
+				var a0 := PI * i / segs
+				var a1 := PI * (i + 1) / segs
+				var p0 := Vector3(cx + cos(a0) * hw, y + sin(a0) * 2.2, 0)
+				var p1 := Vector3(cx + cos(a1) * hw, y + sin(a1) * 2.2, 0)
+				_quad("roof", p1 + Vector3(0, 0, zf - 2.5), p0 + Vector3(0, 0, zf - 2.5), p0 + Vector3(0, 0, zf + 0.1),
+					p1 + Vector3(0, 0, zf + 0.1), roofc, [], (p0 + p1 - Vector3(cx * 2.0, y * 2.0, 0)).normalized())
+				_tri("paint", Vector3(cx, y, zf - 2.49), p0 + Vector3(0, 0, zf - 2.49), p1 + Vector3(0, 0, zf - 2.49),
+					trim, [], Vector3.FORWARD)
+		_box("paint", Vector3(aw + 2.0, 0.3, 2.0), Vector3(cx, 3.6, zf - 3.3), band.darkened(0.25))  # canopy
+	else:
+		_glass(Vector3(cx, 2.0, zf - 1.23), Vector3(-1, 0, 0), 5.0, 3.6, 0.0)
+		_box("paint", Vector3(5.4, 4.4, 1.2), Vector3(cx, 2.2, zf - 0.6), Color("#2c2e30"))
+		_box("paint", Vector3(7.0, 0.3, 2.8), Vector3(cx, 3.9, zf - 1.4), band.darkened(0.25))
 	for s in [-1.0, 1.0]:
 		_box("concrete", Vector3(1.2, 0.5, 1.2), Vector3(cx + s * 4.6, 0.25, zf - 3.0), FOUNDATION)
 		_shrub(Vector3(cx + s * 4.6, 0.5, zf - 3.0), 0.45)
