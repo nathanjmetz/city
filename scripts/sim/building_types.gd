@@ -134,6 +134,11 @@ const TYPES := {
 		{"name": "Office park, first building", "storeys": 2, "cap": [50, 70], "load": 3},
 		{"name": "Office park, second building", "storeys": 2, "cap": [100, 140], "load": 5},
 		{"name": "Office park, built out", "storeys": 3, "cap": [190, 250], "load": 9, "lot": 5000.0},
+		# A company that did well here builds its headquarters on the park
+		# (Cummins in Columbus, Lincoln Financial and Steel Dynamics in Fort
+		# Wayne): a six-storey glass building beside the low ones, on land
+		# bought next door. 150,000 sq ft at about 300 sq ft a job.
+		{"name": "Corporate campus", "storeys": 6, "cap": [400, 500], "load": 16, "lot": 10000.0},
 	]},
 	# A small plant that does well buys the empty parcel next door and adds
 	# a wing and more truck docks, the way Indiana's small-town plants grew
