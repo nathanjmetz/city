@@ -85,6 +85,7 @@ jobs:
           run_test tests/test_junction_marks.gd
           run_test tests/test_curbs.gd
           run_test tests/test_country_roads.gd
+          run_test tests/test_county_rail.gd
           run_test tests/test_sim.gd
           run_test tests/test_town_laws.gd
           run_test tests/test_clusters.gd
