@@ -37,6 +37,9 @@ const DIRT := Color("#6e5a43")
 ## Buildings taller than this (metres, about six storeys) go up under a tower crane.
 const CRANE_FROM := 24.0
 const CONCRETE := Color("#b3afa6")
+## Oriented strand board sheathing, and the share of dry-in it takes.
+const OSB := Color("#c29b62")
+const SHEATHE := 0.45
 ## Wall and roof colours of each method's shell while it's being closed in.
 const SHELL := {
 	"house": [Color("#e9eae6"), Color("#2f2e2d")],   # house wrap, roofing felt
@@ -226,10 +229,18 @@ func _show(st: Dictionary) -> void:
 				_param(_shell, "pattern", 0)
 				_param(_shell, "cut", _found_h + span * t)
 				_param(_shell, "floor_cut", _found_h)
+			elif stage == "dry_in" and _frame_kind == "wood" and t < SHEATHE:
+				# Sheathing first: OSB nailed on in 4 x 8 ft sheets, walls
+				# and roof deck, climbing the frame; the wrap and felt follow.
+				_shell_look(OSB, OSB.darkened(0.05), 0.04)
+				_param(_shell, "pattern", 3)
+				_param(_shell, "cut", _found_h + span * t / SHEATHE)
+				_param(_shell, "floor_cut", _found_h)
 			elif stage == "dry_in":
 				_shell_look(colors[0], colors[1], 0.04)
 				_param(_shell, "pattern", _wrap_pattern())
-				_param(_shell, "cut", _found_h + span * t)
+				var w := (t - SHEATHE) / (1.0 - SHEATHE) if _frame_kind == "wood" else t
+				_param(_shell, "cut", _found_h + span * w)
 				_param(_shell, "floor_cut", _found_h)
 			else:
 				# The roof was shingled while it was dried in: only walls are wrapped.
@@ -461,6 +472,15 @@ void fragment() {
 			// Felt laid in 3 ft courses up the roof, each lap a pale line.
 			ALBEDO = mix(ALBEDO, vec3(0.55), step(fract(lp.y / 0.33), 0.04) * 0.5);
 		}
+	} else if (pattern == 3 && !glazing) {
+		// 4 x 8 ft sheets, long side across the studs, joints staggered;
+		// each sheet's strands a touch lighter or darker than the next.
+		float u = abs(ln.y) <= 0.3 ? run : lp.x + lp.z;
+		float course = floor(lp.y / 1.22);
+		float across = floor(u / 2.44 + 0.5 * mod(course, 2.0));
+		float joint = step(fract(lp.y / 1.22), 0.012) + step(fract(u / 2.44 + 0.5 * mod(course, 2.0)), 0.006);
+		float shade = fract(sin(dot(vec2(course, across), vec2(12.9898, 78.233))) * 43758.5453);
+		ALBEDO *= (0.92 + 0.14 * shade) * (1.0 - 0.3 * min(joint, 1.0));
 	} else if (pattern == 2 && !glazing && abs(ln.y) <= 0.3) {
 		// 8 x 16 in concrete block in running bond, mortar a shade darker.
 		float course = floor(lp.y / 0.203);
