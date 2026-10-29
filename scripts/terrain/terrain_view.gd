@@ -565,7 +565,7 @@ static func ground_material() -> ShaderMaterial:
 	if _ground_mat == null:
 		_ground_mat = ShaderMaterial.new()
 		var sh := Shader.new()
-		sh.code = SHADER.replace("// PHOTO_GROUND", PhotoGround.glsl())
+		sh.code = SHADER.replace("// PHOTO_GROUND", PhotoGround.defines() + PhotoGround.glsl())
 		_ground_mat.shader = sh
 		_ground_mat.set_shader_parameter("noise_soft", Ground.noise(512, 0.012, 4, 11))
 		_ground_mat.set_shader_parameter("noise_grain", Ground.noise(256, 0.09, 2, 23))

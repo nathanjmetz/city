@@ -1037,6 +1037,36 @@ vec3 crop_lin(vec3 c) {
 	return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(0.04045, c));
 #endif
 }
+// The till plain's soils as they show from the air (aerial photos of bare
+// Grant County fields each April): dark, wet Pewamo and Brookston in the
+// swales and potholes, a branching network of near-black lines and blots,
+// and pale, eroded Glynwood and Morley clay on the knolls between.
+// x: knoll (0-1), y: swale (0-1). Hash noise, no texture, so every shader
+// that includes the crop table can use it; drawn on the desktop
+// (DESKTOP_DETAIL, PhotoGround.defines()).
+float soil_vn(vec2 q) {
+	vec2 i = floor(q);
+	vec2 f = q - i;
+	f = f * f * (3.0 - 2.0 * f);
+	float a = fract(sin(dot(i, vec2(127.1, 311.7))) * 43758.5453);
+	float b = fract(sin(dot(i + vec2(1.0, 0.0), vec2(127.1, 311.7))) * 43758.5453);
+	float c = fract(sin(dot(i + vec2(0.0, 1.0), vec2(127.1, 311.7))) * 43758.5453);
+	float d = fract(sin(dot(i + vec2(1.0, 1.0), vec2(127.1, 311.7))) * 43758.5453);
+	return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+}
+vec2 soil_at(vec2 p) {
+	vec2 q = vec2(p.x * 0.92 - p.y * 0.39, p.x * 0.39 + p.y * 0.92);
+	float warp = soil_vn(q / 70.0) + 0.5 * soil_vn(q / 31.0);
+	float n = soil_vn(q / 190.0 + warp * 0.55) * 0.7 + soil_vn(q / 83.0 + warp * 0.3) * 0.3;
+	// Swales: the noise's mid-line, a winding branching network ~20-40 m wide.
+	float vein = 1.0 - smoothstep(0.035, 0.085, abs(n - 0.5));
+	// Potholes: closed depressions.
+	float pot = smoothstep(0.78, 0.9, soil_vn(q / 120.0 + 7.3 + warp * 0.2));
+	float swale = max(vein * 0.85, pot);
+	float knoll = smoothstep(0.62, 0.8, n) * (1.0 - swale);
+	return vec2(knoll, swale);
+}
+
 // A field's colour from the table, with its rows: plants in stripes along
 // `along` (metres across the rows), the soil and residue between. Near the
 // camera the stripes are sharp; once they are smaller than a pixel they
@@ -1095,6 +1125,17 @@ vec3 crop_look_bare(ivec2 slot, vec2 at, float across, float aw, float tilt, flo
 	float windrow = 1.0 - smoothstep(0.07, 0.12 + aw / 9.144, abs(fract(pass_at) - 0.5));
 	vec4 t3 = crop_texel(slot, 3);
 	ground = mix(ground, ground * 1.3 + vec3(0.025, 0.022, 0.012), windrow * step(0.5, t3.b) * (1.0 - rowed) * (1.0 - cover));
+	// The soil shows through: dark wet swales, pale eroded knolls; the crop
+	// over them a little lusher in the swales and thinner, yellower on the
+	// knolls (cut residue hides much of it).
+#ifdef DESKTOP_DETAIL
+	vec2 sl = soil_at(at);
+	float showing = 1.0 - 0.6 * t1.a;
+	ground *= mix(vec3(1.0), vec3(0.58, 0.56, 0.56), sl.y * showing);
+	ground = mix(ground, ground * vec3(1.32, 1.24, 1.08) + vec3(0.02, 0.016, 0.008), sl.x * 0.75 * showing);
+	plant *= 1.0 - sl.y * 0.12;
+	plant = mix(plant, plant * vec3(1.16, 1.09, 0.8), sl.x * 0.45);
+#endif
 	bare = 1.0 - share;
 	return mix(ground, plant, share);
 }
