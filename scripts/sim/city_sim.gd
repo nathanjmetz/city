@@ -79,6 +79,14 @@ var calendar_offset := Seasons.NEW_TOWN_OFFSET
 ## one (0 for a town begun on it): ticks before it read on the old calendar,
 ## so a building put up back then keeps the year it was put up in.
 var calendar_from := 0
+## The yard trees of a building begun on or after this tick start already
+## grown, the mixed ages of an established neighbourhood (BuildingView,
+## TreeField.yard_age; Nathan, 2026-10-29: "A. Yes, back-yard trees start
+## grown; street trees still start small and grow"). 0 for a town begun
+## with this; a town saved before it gets the tick after the one it was
+## first loaded on, so every tree it already had keeps the size it had and
+## only new yards come in grown.
+var grown_yards_from := 0
 
 var network := RoadNetwork.new()
 ## The last builds, for Ctrl+Z (not saved).
@@ -1024,6 +1032,7 @@ func _apply_cmd(cmd: Dictionary) -> bool:
 			# after the wipe, with a crossroads to start the town from.
 			var links_kept := _link_roads()
 			undo = UndoLog.new()
+			grown_yards_from = 0  # a new start: every yard comes in grown
 			region_links.clear()
 			trade = Trade.new()
 			traffic.overrides.clear()
@@ -5105,6 +5114,7 @@ func save_steps(postcard := false) -> Array:
 		["tick", func(): return tick_count],
 		["calendar", func(): return calendar_offset],
 		["calendar_from", func(): return calendar_from],
+		["grown_yards_from", func(): return grown_yards_from],
 		["seed", func(): return city_seed],
 		["roads", func(): return network.to_dict()],
 		["buildings", func(): return buildings],
@@ -5292,6 +5302,8 @@ func from_dict(d: Dictionary) -> void:
 	else:
 		calendar_offset = Seasons.offset_from_old(tick_count)
 		calendar_from = tick_count
+	# A town saved before yards came in grown keeps its trees as they were.
+	grown_yards_from = int(d.get("grown_yards_from", tick_count + 1))
 	city_seed = int(d.get("seed", 1))
 	var postcard := bool(d.get("postcard", false))
 	# Parcels: the lots buildings stand on. (A neighbor's postcard has no

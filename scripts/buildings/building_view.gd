@@ -524,6 +524,13 @@ func _set_trees(key: String, always := true) -> int:
 	var b: Dictionary = sim.buildings.get(key, {})
 	var when := {"planted": int(b.get("built", sim.tick_count)) + Construction.duration(
 		CitySim.profile_of(b))}
+	# The yard's own trees come in grown, at mixed ages from the lot's seed
+	# (TreeField.yard_age), unless the building was begun before this came
+	# in (a town saved before keeps its trees as they were:
+	# CitySim.grown_yards_from).
+	# Street trees are the town's and go in as nursery stock.
+	var grown := int(b.get("built", sim.tick_count)) >= sim.grown_yards_from
+	var lot_seed := int(b.get("seed", hash(key)))
 	var mailbox := _mailbox_at(key)
 	# Which trees stand (by number), to tell whether anything changed.
 	var kept := PackedInt32Array()
@@ -531,15 +538,21 @@ func _set_trees(key: String, always := true) -> int:
 		var t: Array = planted[i]
 		var yaw := Basis(Vector3.UP, fposmod(t[0].x * 7.3 + t[0].z * 3.1, TAU))
 		var at := frame * Transform3D(yaw.scaled(Vector3.ONE * t[3]), t[0])
+		var facts := when
 		if t[0].z < -0.5:
 			# Out past the lot line: a tree in the parkway.
 			var q := Vector2(at.origin.x, at.origin.z)
 			if not _parkway_free(q) or q.distance_to(mailbox) < MAILBOX_CLEAR:
 				continue
 			street += 1
+		elif grown:
+			# Its room to spread from its planter (HouseBuilder._yard_room);
+			# other planters' trees no bigger than they were planned at.
+			var room: float = t[4] if t.size() > 4 else 1.0
+			facts = {"planted": when.planted, "start": TreeField.yard_age(t[1], hash([lot_seed, i]), room)}
 		kept.append(i)
 		at.origin.y = Terrain.ground_y(at.origin.x, at.origin.z) + t[0].y
-		trees.append([at, t[1], t[2], when])
+		trees.append([at, t[1], t[2], facts])
 	var side := _side_trees(key)
 	for i in side.size():
 		var q: Vector2 = side[i][0]

@@ -2046,6 +2046,7 @@ func _yard_trees(h: Dictionary, _to_curb: float) -> void:
 	var spots := []
 	var span := half - 2.0
 	var back: float = h.front_z + 13.0
+	var first := trees.size()
 	if rng.randf() < 0.8:
 		spots.append([Vector3(rng.randf_range(-span, span), 0, rng.randf_range(1.5, h.front_z - 3.5)), true])
 	rng.randf()  # was the street tree's roll, kept so the back yard stays as it was
@@ -2080,6 +2081,52 @@ func _yard_trees(h: Dictionary, _to_curb: float) -> void:
 			if _wall_gap(p) < TreeField.SPREAD[pick[0]] * size * 0.9:
 				continue
 		trees.append([p, pick[0], pick[1], size])
+	_yard_room(first, h)
+
+
+## How much room each yard tree from `first` on has to spread, as a share
+## of the crown its size gives it (TreeField.SPREAD at TreeKinds.REF_AGE),
+## added as the tree's fifth entry: a yard that comes in grown
+## (TreeField.yard_age) gets no older tree than this. Kept off the walls as
+## the planting is, its crown short of the shed, pool and garage, at most
+## touching the next yard tree, and over the side and back lot lines by
+## no more than a third. Plain geometry: no random draws, so the lot looks
+## as it always did.
+func _yard_room(first: int, h: Dictionary) -> void:
+	var keep := [_improved, _cottage_at]
+	if h.has("keep_out"):
+		keep.append(h.keep_out)
+	# The side and back lot lines (the front one runs along the sidewalk:
+	# a crown over the walk is any shade tree's).
+	var lines := []
+	var pts := outline
+	if pts.size() < 3:
+		pts = PackedVector2Array([Vector2(-half, 0), Vector2(half, 0), Vector2(half, depth), Vector2(-half, depth)])
+	for i in pts.size():
+		var a := pts[i]
+		var b := pts[(i + 1) % pts.size()]
+		if a.y > 0.5 or b.y > 0.5:
+			lines.append([a, b])
+	for i in range(first, trees.size()):
+		var t: Array = trees[i]
+		var p: Vector3 = t[0]
+		var q := Vector2(p.x, p.z)
+		var r: float = TreeField.SPREAD[t[1]] * float(t[3])
+		var room := _wall_gap(p) / (r * 0.9)
+		for k: Rect2 in keep:
+			if k.has_area():
+				var dx := maxf(maxf(k.position.x - q.x, q.x - k.end.x), 0.0)
+				var dz := maxf(maxf(k.position.y - q.y, q.y - k.end.y), 0.0)
+				room = minf(room, (Vector2(dx, dz).length() + 1.0) / r)
+		for j in range(first, trees.size()):
+			if j != i:
+				var o: Array = trees[j]
+				var d := q.distance_to(Vector2(o[0].x, o[0].z))
+				room = minf(room, 1.15 * d / (r + TreeField.SPREAD[o[1]] * float(o[3])))
+		for l in lines:
+			var c := Geometry2D.get_closest_point_to_segment(q, l[0], l[1])
+			room = minf(room, q.distance_to(c) / (r * 0.67))
+		t.append(room)
 
 
 ## Street trees: shade trees down the middle of the parkway (the grass strip
