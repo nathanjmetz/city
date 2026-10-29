@@ -2188,6 +2188,9 @@ const STATION_LEVY_OF := {"school": 3.0}
 ## (dollars a square metre of lot, about a small Indiana town's improved
 ## residential land with the house on it).
 const STATION_LAND_PER_M2 := 70.0
+## What a park board pays for a home lot it buys next to its park (dollars
+## a square metre of lot, house included, as STATION_LAND_PER_M2).
+const PARK_HOME_PER_M2 := 70.0
 ## Each piece: `cost` dollars from the fund, `grow` metres the lot reaches
 ## further back from the street (0 builds on what it has), `needs` from the
 ## town (population; tall = buildings of 3+ storeys; city = a city charter),
