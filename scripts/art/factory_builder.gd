@@ -154,6 +154,15 @@ func _expand(chain: String) -> void:
 			Vector3(cx + w * 0.5, 0, z0 + d)]
 		if corners.any(func(c): return not _in_lot(c, 1.0)):
 			break
+		if chain == "mill":
+			# An elevator grows its storage, not halls (_elevator_growth).
+			var used_r := _elevator_growth(best, adds)
+			if used_r.get_area() <= 0.0:
+				break
+			box = box.merge(used_r)
+			built += used_r.get_area()
+			adds += 1
+			continue
 		var h := maxf(eave, 8.0) + rng.randf_range(0.5, 2.5)
 		_plant_addition(chain, cx, z0, w, d, h, adds, not wing)
 		if wing:
@@ -172,6 +181,123 @@ func _expand(chain: String) -> void:
 		for i in mini(n, 12):
 			if rng.randf() < 0.65:
 				_dr_trailer(Vector3(-half + 6.0 + i * 4.0, 0, depth - 10.5))
+
+
+## How a country elevator grows when the co-op prospers, in the order
+## Indiana elevators did it: first a big-diameter corrugated steel bin (60
+## to 105 ft across, its own leg and a spout to its peak, stiffeners,
+## aeration fans and a roof ring), then a second, then for record harvests
+## an outdoor ground-pile bunker: concrete push walls round an asphalt pad,
+## the grain heaped inside under a white tarp held down by tire lines, and
+## aeration tubes along the walls. Draws in `band` and returns what it used
+## (empty if the band can't take one).
+func _elevator_growth(band: Rect2, k: int) -> Rect2:
+	var g := RandomNumberGenerator.new()
+	g.seed = hash([rng.seed, "elevator_growth", k])
+	var pile := k >= 2 or (k == 1 and g.randf() < 0.4)
+	if pile and band.size.x >= 40.0 and band.size.y >= 30.0:
+		return _ground_pile(band, g)
+	var dia := clampf(minf(band.size.x, band.size.y) - 8.0, 18.0, 32.0)
+	if band.size.x < dia + 6.0 or band.size.y < dia + 6.0:
+		return Rect2()
+	var r := dia * 0.5
+	var c := Vector3(band.position.x + 3.0 + r, 0, band.position.y + 3.0 + r)
+	var eave := clampf(dia * 0.75, 14.0, 24.0)
+	var rise := r * 0.42
+	_box("paint", Vector3(dia + 1.0, 0.4, dia + 1.0), c + Vector3(0, 0.2, 0), CONCRETE)
+	_cylinder("metal", c + Vector3(0, 0.4, 0), r, eave, STEEL_BIN, 36)
+	_cone_top(c + Vector3(0, eave + 0.4, 0), r + 0.25, rise, STEEL_BIN.lightened(0.08), "metal", 36)
+	for i in 24:  # vertical stiffeners
+		var a := TAU * i / 24.0
+		_box("paint", Vector3(0.12, eave * 0.8, 0.12), c + Vector3(cos(a) * (r + 0.05), 0.4 + eave * 0.4, sin(a) * (r + 0.05)),
+			STEEL_BIN.darkened(0.12))
+	# Roof ring rail, the peak cap and roof vents.
+	var top := c + Vector3(0, eave + 0.4 + rise, 0)
+	_cylinder("metal", top - Vector3(0, 0.3, 0), 1.4, 1.0, STEEL_BIN.darkened(0.05), 12)
+	for i in 6:
+		var a := TAU * i / 6.0 + 0.3
+		_box("metal", Vector3(0.7, 0.6, 0.7), c + Vector3(cos(a) * r * 0.6, eave + 0.4 + rise * 0.4 + 0.3, sin(a) * r * 0.6), Color("#d8d9d6"))
+	# Its own leg beside it, a spout down to the peak, a stair tower up the side.
+	var leg := c + Vector3(-r - 3.0, 0, -r * 0.4)
+	var lh := eave + rise + 9.0
+	_box("metal", Vector3(1.0, lh, 1.7), leg + Vector3(0, lh * 0.5, 0), Color("#9ea3a4"))
+	_box("metal", Vector3(2.0, 2.2, 2.6), leg + Vector3(0, lh + 1.1, 0), Color("#9ea3a4").darkened(0.08))
+	UpgradeKits._strut(self, leg + Vector3(0.6, lh - 0.4, 0), top + Vector3(0, 0.6, 0), 0.4, PIPE.lightened(0.1))
+	var st := c + Vector3(r + 1.2, 0, 0)
+	for e in [[-0.9, -0.9], [0.9, -0.9], [-0.9, 0.9], [0.9, 0.9]]:
+		_box("paint", Vector3(0.12, eave + 0.6, 0.12), st + Vector3(e[0], (eave + 0.6) * 0.5, e[1]), PIPE)
+	var y := 3.0
+	while y < eave:
+		_box("paint", Vector3(2.0, 0.08, 2.0), st + Vector3(0, y, 0), PIPE.darkened(0.1))
+		y += 3.0
+	# Aeration fans at the foot, facing out.
+	for a in [PI * 0.75, PI * 1.25]:
+		var out := Vector3(cos(a), 0, sin(a))
+		var f: Vector3 = c + out * (r + 0.8)
+		_box("metal", Vector3(1.6, 1.4, 1.6), f + Vector3(0, 0.7, 0), Color("#d8d9d6"), Basis(Vector3.UP, atan2(out.x, out.z)))
+		_cylinder("paint", f + out * 1.0, 0.7, 1.4, Color("#5b6064"), 12)
+	return Rect2(c.x - r - 4.5, c.z - r - 1.0, dia + 7.0, dia + 2.0)
+
+
+## The outdoor ground pile (a bunker): see _elevator_growth.
+func _ground_pile(band: Rect2, g: RandomNumberGenerator) -> Rect2:
+	var w := minf(band.size.x - 4.0, 90.0)
+	var d := minf(band.size.y - 4.0, 40.0)
+	var x0 := band.position.x + 2.0
+	var z0 := band.position.y + 2.0
+	var x1 := x0 + w
+	var z1 := z0 + d
+	var wall := 3.0
+	_flat_rect("drive", x0, x1, z0, z1, 0.07)
+	# The push walls: precast panels, open at one end for the trucks.
+	for e in [[Vector3(x0, 0, z0), Vector3(x1, 0, z0)], [Vector3(x0, 0, z1), Vector3(x1, 0, z1)],
+			[Vector3(x0, 0, z0), Vector3(x0, 0, z1)]]:
+		var a: Vector3 = e[0]
+		var b: Vector3 = e[1]
+		var len := a.distance_to(b)
+		var dir := (b - a) / len
+		var n := int(len / 3.0)
+		for i in n:
+			var m := a + dir * (i + 0.5) * len / n
+			_box("paint", Vector3(absf(dir.x) * (len / n - 0.05) + absf(dir.z) * 0.5, wall, absf(dir.z) * (len / n - 0.05) + absf(dir.x) * 0.5),
+				m + Vector3(0, wall * 0.5, 0), CONCRETE.darkened(0.04 * (i % 2)))
+	# The heap: a long ridge from wall top to crown, hipped at the ends.
+	var tarp := Color("#e6e6e0") if g.randf() < 0.7 else Color("#2e3032")
+	var crown := wall + d * 0.5 * 0.42
+	var zc := (z0 + z1) * 0.5
+	var ins := 0.4
+	var a0 := Vector3(x0 + ins, wall, z0 + ins)
+	var a1 := Vector3(x1 - 6.0, wall, z0 + ins)
+	var b0 := Vector3(x0 + ins, wall, z1 - ins)
+	var b1 := Vector3(x1 - 6.0, wall, z1 - ins)
+	var r0 := Vector3(x0 + d * 0.5, crown, zc)
+	var r1 := Vector3(x1 - 6.0 - d * 0.5, crown, zc)
+	_quad("paint", a0, a1, r1, r0, tarp, [], Vector3(0, 1, -1))
+	_quad("paint", b0, b1, r1, r0, tarp, [], Vector3(0, 1, 1))
+	_tri("paint", a0, b0, r0, tarp, [], Vector3(-1, 1, 0))
+	# The open end slumps down to the pad.
+	var e0 := Vector3(x1 - 1.0, 0.1, z0 + ins)
+	var e1 := Vector3(x1 - 1.0, 0.1, z1 - ins)
+	_quad("paint", a1, b1, e1, e0, tarp.darkened(0.04), [], Vector3(1, 1, 0))
+	_tri("paint", a1, e0, r1, tarp, [], Vector3(0.3, 1, -1))
+	_tri("paint", b1, e1, r1, tarp, [], Vector3(0.3, 1, 1))
+	_tri("paint", e0, e1, r1, tarp.darkened(0.06), [], Vector3(1, 1, 0))
+	# Tire lines across the tarp every 3 m, down both slopes.
+	var x := x0 + d * 0.5 + 1.5
+	while x < x1 - 6.0 - d * 0.5 - 1.0:
+		for side in [-1.0, 1.0]:
+			var p: Vector3 = Vector3(x, crown, zc).lerp(Vector3(x, wall, zc + side * (d * 0.5 - ins)), 0.5)
+			var len := Vector3(0, crown - wall, d * 0.5).length()
+			_box("paint", Vector3(0.5, 0.18, len * 0.95), p + Vector3(0, 0.12, 0), Color("#1c1c1e"),
+				Basis(Vector3.RIGHT, side * atan2(crown - wall, d * 0.5 - ins)))
+		x += 3.0
+	# Aeration tubes and fans along the long walls, outside.
+	var t := x0 + 8.0
+	while t < x1 - 8.0:
+		for z in [z0 - 0.9, z1 + 0.9]:
+			_cylinder("paint", Vector3(t, 0, z), 0.45, 0.9, Color("#5b6064"), 10)
+		t += 12.0
+	return Rect2(x0 - 1.0, z0 - 1.5, w + 2.0, d + 3.0)
 
 
 ## One addition: a tilt-up concrete hall (the 1990s on) or a metal one,

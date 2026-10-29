@@ -255,6 +255,10 @@ func _finish(key: Vector2i, p: Dictionary, meshes: Array) -> void:
 		node.add_child(mi)
 	if not p.light.is_empty():
 		_lamp(node, p)
+	var base := Terrain.height(p.at.x, p.at.y)
+	FarmsteadParked.add_to(node, p, FarmsteadParked.month, func(q: Vector2) -> float:
+		var r := FarmsteadPlan.to_region(p, q)
+		return Terrain.height(r.x, r.y) - base)
 	add_child(node)
 	_built[key] = {"plan": p, "node": node, "fade": 0.0, "want": true}
 	built_count += 1
