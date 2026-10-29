@@ -690,7 +690,7 @@ func _props_look(stage: String) -> void:
 	# A porta-john by the front corner, its door to the lot.
 	_cs_john(st, Vector3(left + 0.6, 0.0, front + 1.4), k, fine)
 	if stage != "clear":
-		_cs_power_pole(st, Vector3(left + 1.6, 0.0, front + 1.7), fine)
+		_cs_power_pole(st, Vector3(left + 3.8, 0.0, front + 0.9), fine)
 	if stage in ["clear", "foundation", "frame"]:
 		# Silt fence: black fabric on stakes down the sides and across the back.
 		var corners := [Vector3(b.position.x, 0, front + 2.0), Vector3(b.position.x, 0, b.end.z),
@@ -733,15 +733,30 @@ func _props_look(stage: String) -> void:
 	add_child(_props)
 
 
-## The building's own walls and roof: everything drawn above head height
-## (fences, walks, AC units and the porch steps stay below it), so the
-## machines and stacks are set beside the building, not the whole lot.
+## The building's own walls and roof, from its roofs: the faces up there
+## that look up and are bigger than a lamp head (fences, walks, AC units
+## and porch steps stay below head height; a parking lot's light poles and
+## a sign's pylon are too small), so the machines and stacks are set
+## beside the building, not over the whole lot.
 static func _core_box(mesh: Mesh, fallback: AABB) -> AABB:
 	var lo := Vector3(INF, INF, INF)
 	var hi := Vector3(-INF, -INF, -INF)
 	for i in mesh.get_surface_count():
-		for p: Vector3 in mesh.surface_get_arrays(i)[Mesh.ARRAY_VERTEX]:
-			if p.y > 2.4:
+		var arr := mesh.surface_get_arrays(i)
+		var v: PackedVector3Array = arr[Mesh.ARRAY_VERTEX]
+		var idx = arr[Mesh.ARRAY_INDEX]
+		var indexed: bool = idx != null and idx.size() > 0
+		var count: int = idx.size() if indexed else v.size()
+		for t in range(0, count - 2, 3):
+			var p0: Vector3 = v[idx[t]] if indexed else v[t]
+			var p1: Vector3 = v[idx[t + 1]] if indexed else v[t + 1]
+			var p2: Vector3 = v[idx[t + 2]] if indexed else v[t + 2]
+			if minf(p0.y, minf(p1.y, p2.y)) < 2.4:
+				continue
+			var n := (p1 - p0).cross(p2 - p0)
+			if n.length() < 0.6 or absf(n.normalized().y) < 0.6:
+				continue
+			for p in [p0, p1, p2]:
 				lo = lo.min(p)
 				hi = hi.max(p)
 	if lo.x > hi.x:
@@ -907,7 +922,10 @@ func _cs_machines(st: SurfaceTool, stage: String, k: int, fine: bool) -> void:
 		var cc := _core.get_center()
 		SiteMachines.crawler_crane(st, Transform3D(Basis(Vector3.UP, PI * (0.15 + 0.1 * (k % 5))), Vector3(cc.x, 0.0, cc.z)),
 			Color("#b8322a") if k % 2 == 0 else Color("#e0a81a"), fine)
-	if _profile != "house" and stage in ["frame", "dry_in", "exterior"] and _core.position.z - b.position.z > 4.6:
+	var masonry := _profile in ["shop", "civic"] and stage == "exterior" and _core.position.z - b.position.z > 2.6
+	if masonry:
+		_cs_scaffold(st, k, fine)
+	if _profile != "house" and stage in ["frame", "dry_in", "exterior"] and not masonry and _core.position.z - b.position.z > 4.6:
 		var at := Vector3(_core.get_center().x - _core.size.x * 0.2, 0.0, _core.position.z - 2.0)
 		SiteMachines.boom_lift(st, Transform3D(Basis(Vector3.UP, PI * 0.5), at),
 			Color("#d9661f") if k % 3 == 0 else Color("#3d6fb0"), fine)
@@ -943,6 +961,58 @@ func _cs_sod(st: SurfaceTool, at: Vector3, k: int, fine: bool) -> void:
 		while y < 0.13 + h:
 			_prop(st, Vector3(1.16, 0.035, 1.16), at + Vector3(0, y, 0), Color("#5b7d36"))  # grass at the roll ends
 			y += 0.11
+
+
+## Frame scaffolding across the front while the masons lay the face
+## brick or block: 5 ft wide walk-through frames in 7 ft bays, a lift
+## every 6.5 ft up to the wall's height, X braces on the outside, planks
+## on the working lift; brick on pallets and a mortar mixer at its foot.
+func _cs_scaffold(st: SurfaceTool, k: int, fine: bool) -> void:
+	var frame: Color = [Color("#b8382c"), Color("#8d969b"), Color("#c96a22")][(k >> 2) % 3]
+	var z0 := _core.position.z - 0.35  # the inner uprights, a hand's width off the wall
+	var z1 := z0 - 1.52
+	var top := minf(_height - 0.6, 12.0)
+	var lifts := maxi(1, floori(top / 1.98))
+	var x := _core.position.x + 0.3
+	var bays := maxi(1, floori((_core.size.x - 0.6) / 2.13))
+	var h := lifts * 1.98
+	for i in bays + 1:
+		var bx := x + i * 2.13
+		for z in [z0, z1]:
+			_prop(st, Vector3(0.05, h, 0.05), Vector3(bx, h * 0.5, z), frame)
+			_prop(st, Vector3(0.15, 0.04, 0.15), Vector3(bx, 0.02, z), Color("#6b5a48"))  # base plate on a mud sill
+		for l in lifts:
+			_prop(st, Vector3(0.05, 0.05, 1.52), Vector3(bx, (l + 1) * 1.98, (z0 + z1) * 0.5), frame)
+			if fine:
+				_prop(st, Vector3(0.04, 0.04, 1.52), Vector3(bx, l * 1.98 + 1.55, (z0 + z1) * 0.5), frame)
+	for i in bays:
+		var mid := x + i * 2.13 + 1.065
+		for l in lifts:
+			var y := l * 1.98 + 0.99
+			if fine:
+				# Cross braces in an X on the outside of each bay.
+				for sgn in [-1.0, 1.0]:
+					_prop(st, Vector3(2.9, 0.03, 0.03), Vector3(mid, y, z1 - 0.04), frame.darkened(0.15),
+						Basis(Vector3.BACK, sgn * atan2(1.98, 2.13)))
+		# Planks on the top lift and one below, where the masons stand.
+		for l in [lifts, maxi(1, lifts - 1)]:
+			_prop(st, Vector3(2.1, 0.05, 1.4), Vector3(mid, l * 1.98 + 0.05, (z0 + z1) * 0.5), Color("#b89a6a"))
+		if fine:
+			# Brick on the plank, ready to hand.
+			_prop(st, Vector3(0.5, 0.35, 0.4), Vector3(mid - 0.4, lifts * 1.98 + 0.25, (z0 + z1) * 0.5), Color("#9a4a32"))
+	# Cubes of brick on pallets and the mortar mixer out front.
+	var gz := z1 - 1.6
+	for i in 3:
+		var px := x + 1.0 + i * 1.4
+		_prop(st, Vector3(1.1, 0.12, 1.1), Vector3(px, 0.06, gz), Color("#9c8562"))
+		_prop(st, Vector3(1.0, 0.85, 1.0), Vector3(px, 0.55, gz), Color("#9a4a32") if k % 2 == 0 else Color("#a88e72"))
+		if fine:
+			_prop(st, Vector3(1.02, 0.02, 1.02), Vector3(px, 0.75, gz), Color("#e6e3d8"))  # banding wrap
+	var mx := x + 1.0 + 3 * 1.4 + 0.6
+	_prop(st, Vector3(1.0, 0.75, 1.4), Vector3(mx, 0.85, gz), Color("#d9661f"))  # drum
+	_prop(st, Vector3(0.1, 0.5, 0.1), Vector3(mx, 0.25, gz - 0.5), Color("#2a2a2a"))
+	SiteMachines._wheel(st, Transform3D.IDENTITY, Vector3(mx - 0.6, 0.3, gz + 0.3), 0.3, 0.18, Color("#232323"), 10)
+	SiteMachines._wheel(st, Transform3D.IDENTITY, Vector3(mx + 0.6, 0.3, gz + 0.3), 0.3, 0.18, Color("#232323"), 10)
 
 
 ## A molded-plastic portable toilet (about 44 x 44 in, 7.5 ft tall): skid
