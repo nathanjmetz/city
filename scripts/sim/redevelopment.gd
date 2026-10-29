@@ -15,6 +15,9 @@ extends RefCounted
 ##               convenience center under about 30,000 sq ft, a
 ##               neighborhood center with a grocery anchor up to about
 ##               125,000 sq ft on 3-5 acres)
+##   community   a neighborhood center buys the houses on the lots behind it
+##               and adds a discount store: a community center (ICSC
+##               125,000-400,000 sq ft), what a town of 20,000 or so gets
 ## A real regional mall needs 40-100 acres, so it is farmland a developer
 ## asks for (TownCulture's land-use requests), not a city block.
 ##
@@ -31,7 +34,7 @@ extends RefCounted
 signal changed
 
 const HUB := "developer"
-const KINDS := ["apartments", "highrise", "shopping"]
+const KINDS := ["apartments", "highrise", "shopping", "officepark", "community"]
 
 ## permit id -> {"kind", "keys", "type", "level", ...}
 var asks := {}
@@ -197,6 +200,108 @@ func _plan_shopping(sim, faces: Dictionary) -> Dictionary:
 		"Homes to commercial (shopping center)")
 
 
+## A run of houses or empty lots on a busy road toward the edge of town
+## (the less built-up the better), in a town whose market wants an office park and whose
+## shops and offices are in demand: firms that want room and parking near
+## the highway rather than a downtown floor (the small city's office park).
+func _plan_officepark(sim, faces: Dictionary) -> Dictionary:
+	var market: int = sim.market.people(sim)
+	if not Market.supports(market, "office_park") or float(sim.demand.get(ZoneMap.Zone.COMMERCIAL, 0.0)) < Balance.REDEV_DEMAND:
+		return {}
+	var best := []
+	var best_score := -INF
+	for f in _sorted(faces):
+		var face: Array = faces[f]
+		if face.size() < Balance.REDEV_PARK_LOTS or _zone(sim, face[0]) == ZoneMap.Zone.INDUSTRIAL or not _arterial(sim, face[0]):
+			continue
+		for run in _runs(sim, face, ["house", ""], Balance.REDEV_PARK_LOTS, 8, LotPlanner.MAX_LOT.highway_shop):
+			# Out toward the edge of town, open land first (a greenfield
+			# park), then the oldest houses.
+			var dens := _density(sim, sim.lots[run[0]].pos)
+			var empty: int = run.filter(func(k): return not sim.buildings.has(k)).size()
+			var area := 0.0
+			for k in run:
+				area += float(sim.lots[k].area)
+			var score: float = area / 1000.0 + empty * 3.0 + (1.0 - _avg_cond(sim, run)) * 5.0 - dens * 0.25
+			if score > best_score:
+				best_score = score
+				best = run
+	if best.is_empty():
+		return {}
+	return _plan(sim, "officepark", best, "office_park", 0,
+		"Rezone %d lots on %s for an office park" % [best.size(), _street(sim, best[0])],
+		"Firms want offices with parking near the highway, and town has no room for them. A developer would buy the run and build it in phases.",
+		"Homes and open land to commercial (office park)")
+
+
+## A neighborhood center that a discount store would come to, in a market
+## big enough for one: it buys the houses on the lots behind (or beside)
+## it, rezoned, until the site is big enough.
+func _plan_community(sim, _faces: Dictionary) -> Dictionary:
+	var market: int = sim.market.people(sim)
+	if not Market.supports(market, "shopping_center", 2) or float(sim.demand.get(ZoneMap.Zone.COMMERCIAL, 0.0)) < Balance.REDEV_DEMAND:
+		return {}
+	var need := float(BuildingTypes.TYPES.shopping_center.stages[2].lot)
+	var cap: Array = LotPlanner.MAX_LOT.highway_shop
+	var centers := []
+	for k in sim.buildings:
+		var b: Dictionary = sim.buildings[k]
+		if BuildingTypes.type_of(b) == "shopping_center" and int(b.get("level", 0)) == 1 and sim.lots.has(k) \
+				and sim.construction.is_done("lot:" + k, sim.tick_count) and not sim.heritage.protected(k):
+			centers.append(k)
+	centers.sort()
+	for key in centers:
+		var lot: Dictionary = sim.lots[key]
+		var near := []
+		for k in sim.lots:
+			if k != key and sim.lots[k].pos.distance_to(lot.pos) < BuildingTypes.ASSEMBLE_REACH \
+					and _zone(sim, k) == ZoneMap.Zone.RESIDENTIAL and _for_sale(sim, k, ["house", ""]):
+				near.append(k)
+		near.sort()
+		# Out from the center lot by lot, each touching the site so far, the
+		# nearest first, until the site is big enough.
+		near.sort_custom(func(a, c): return sim.lots[a].pos.distance_to(lot.pos) < sim.lots[c].pos.distance_to(lot.pos))
+		var keys := [key]
+		var area: float = lot.area
+		var width: float = lot.width
+		var grew := true
+		while grew and area < need and keys.size() <= Balance.REDEV_COMMUNITY_HOMES:
+			grew = false
+			for k in near:
+				if k in keys:
+					continue
+				var o: Dictionary = sim.lots[k]
+				var beside: bool = o.seg == lot.seg and o.side == lot.side
+				if area + float(o.area) > cap[1] or (beside and width + float(o.width) > cap[0]):
+					continue
+				if not keys.any(func(j): return _touches(sim.lots[j], o)):
+					continue
+				keys.append(k)
+				area += float(o.area)
+				width += float(o.width) if beside else 0.0
+				grew = true
+				break
+		if area < need or keys.size() < 2:
+			continue
+		return _plan(sim, "community", keys, "shopping_center", 2,
+			"Let the shopping center on %s grow" % _street(sim, key),
+			"A discount store wants to come to town. The center on %s could take it if it buys %d lots behind it." % [
+				_street(sim, key), keys.size() - 1],
+			"Homes to commercial (community shopping center)")
+	return {}
+
+
+## Whether two lots share a stretch of lot line (as LotPlanner.can_merge
+## asks of them once they're zoned alike).
+static func _touches(a: Dictionary, b: Dictionary) -> bool:
+	var shared := Geometry2D.intersect_polygons(
+		Geometry2D.offset_polygon(a.corners, 0.4)[0], Geometry2D.offset_polygon(b.corners, 0.4)[0])
+	for p in shared:
+		if LotPlanner._span(p) >= 3.0:
+			return true
+	return false
+
+
 ## The card: what's built, and what it asks of the town's power, water
 ## and street.
 func _plan(sim, kind: String, keys: Array, type: String, level: int, title: String, why: String, change: String) -> Dictionary:
@@ -226,7 +331,7 @@ func _plan(sim, kind: String, keys: Array, type: String, level: int, title: Stri
 		for k in keys:
 			area += float(sim.lots[k].area)
 		var sqft := area * float(BuildingTypes.TYPES[type].cover) * 10.764
-		trips = roundi(sqft / 1000.0 * Balance.REDEV_TRIPS_PER_KSQFT)
+		trips = roundi(sqft / 1000.0 * (Balance.REDEV_TRIPS_PER_KSQFT_OFFICE if type == "office_park" else Balance.REDEV_TRIPS_PER_KSQFT))
 		what = "%s of about %s sq ft and %d to %d jobs" % [str(st.name).to_lower(), CitySim.money_text(roundi(sqft / 1000.0) * 1000),
 			int(st.cap[0]), int(st.cap[1])]
 	var strain := []
@@ -248,7 +353,7 @@ func _plan(sim, kind: String, keys: Array, type: String, level: int, title: Stri
 		if not fam.is_empty():
 			who = str(fam.head)
 	return {"kind": kind, "keys": keys, "type": type, "level": level, "leader": who, "title": title,
-		"why": why, "change": change, "yes": yes, "no": "The houses stay as they are." if kind != "highrise" else "It stays mid-rise.",
+		"why": why, "change": change, "yes": yes, "no": "It stays mid-rise." if kind == "highrise" else ("The land stays as it is." if kind == "officepark" else "The houses stay as they are."),
 		"was": was}
 
 
@@ -268,7 +373,7 @@ func carry_out(sim) -> void:
 		asks.erase(id)
 		if st == Permits.State.APPROVED:
 			sim.permits.done(id)
-			if build(sim, a) and a.kind == "shopping":
+			if build(sim, a) and a.kind in ["shopping", "community"]:
 				sim.culture.nudge("trade", Balance.CULTURE_YES_LEAN)
 		changed.emit()
 
@@ -284,16 +389,21 @@ func build(sim, a: Dictionary) -> bool:
 	var type := str(a.type)
 	var zone := int(BuildingTypes.TYPES[type].zone)
 	var site: String = keys[0]
-	var cap_kind: String = {"apartments": "apartments", "highrise": "downtown", "shopping": "highway_shop"}[str(a.kind)]
-	if zone != _zone(sim, site):
-		# The rezoning: the whole frontage of every lot changes zone.
-		for k in keys:
-			var lot: Dictionary = sim.lots[k]
-			var w: float = lot.width
-			var x := -w * 0.5 + 2.0
-			while x <= w * 0.5 - 1.0:
-				sim.zones.paint(lot.zone_pt + lot.dir * x, 3.0, zone)
-				x += 3.0
+	var cap_kind: String = {"apartments": "apartments", "highrise": "downtown", "shopping": "highway_shop",
+		"officepark": "highway_shop", "community": "highway_shop"}[str(a.kind)]
+	# The rezoning: the whole frontage of every lot not zoned for it yet.
+	var rezoned := false
+	for k in keys:
+		if _zone(sim, k) == zone:
+			continue
+		var lot: Dictionary = sim.lots[k]
+		var w: float = lot.width
+		var x := -w * 0.5 + 2.0
+		while x <= w * 0.5 - 1.0:
+			sim.zones.paint(lot.zone_pt + lot.dir * x, 3.0, zone)
+			x += 3.0
+		rezoned = true
+	if rezoned:
 		sim.zones_changed.emit()
 	for k in keys.slice(1):
 		if LotPlanner.merge_lots(sim, site, k, 0.0, cap_kind) != site:
@@ -304,7 +414,9 @@ func build(sim, a: Dictionary) -> bool:
 	b = BuildingTypes.make(sim, site, b, type, int(a.level))
 	b.fabric = sim.tick_count
 	b.why = {"apartments": "The town rezoned these houses for apartments",
-		"highrise": "The town approved a high-rise here", "shopping": "The town rezoned this row for shopping"}[str(a.kind)]
+		"highrise": "The town approved a high-rise here", "shopping": "The town rezoned this row for shopping",
+		"officepark": "The town rezoned this land for an office park",
+		"community": "The town let this shopping center grow"}[str(a.kind)]
 	sim.buildings[site] = b
 	sim.care.forget(site)
 	var lot: Dictionary = sim.lots[site]

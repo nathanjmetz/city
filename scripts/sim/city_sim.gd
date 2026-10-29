@@ -2476,6 +2476,9 @@ func hub_area(key: String) -> String:
 				if services.buildings.has(id) and services.key_of(id) == key else ""
 		"bus_depot":
 			return "transit" if buses.depots.has(id) and services.buildings.has(id) else ""
+		"station":
+			return Services.area_of(services.buildings[id].kind) \
+				if stations.depts.has(id) and services.buildings.has(id) else ""
 		"water":
 			return "water" if services.water.utilities.has(id) else ""
 		"post_office":
@@ -5126,6 +5129,8 @@ func from_dict(d: Dictionary) -> void:
 			buildings[key].fabric = int(b.fabric)
 		if b.has("short"):
 			buildings[key].short = int(b.short)
+		if b.has("added_from"):
+			buildings[key].added_from = int(b.added_from)
 		if z == ZoneMap.Zone.INDUSTRIAL and b.has("chain"):
 			buildings[key].chain = str(b.chain)
 	if postcard:

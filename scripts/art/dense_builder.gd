@@ -56,7 +56,7 @@ static func site_plan(seed: int, lot: Dictionary, strip := false, level := 1) ->
 	b._dry = true
 	b.small_store = level == 0 and not strip
 	if strip:
-		force_shop = "strip"
+		force_shop = "community" if level >= 2 else "strip"
 	b._shop(3.9, lot, false)
 	force_shop = ""
 	return b.site
@@ -72,6 +72,186 @@ static func office_plan(seed: int, lot: Dictionary, storeys: int) -> Dictionary:
 	b._dry = true
 	b._postwar_office(3.9, b.half * 2.0, storeys)
 	return b.site
+
+
+## A suburban office park on a site a developer assembled at the edge of
+## town (BuildingTypes "office_park"), built in phases as real ones are:
+## one low office building, then a second beside it, then a third and the
+## detention pond the county asks for once the site is built out.
+static func build_office_park(seed: int, to_curb: float, lot: Dictionary, level: int, spec := {}) -> Array:
+	var b := _start(seed, lot, spec)
+	b._office_park(to_curb, b.half * 2.0, level)
+	return b._done()
+
+
+## Where its cars park and its door is (SiteLayout), from a dry run.
+static func office_park_plan(seed: int, lot: Dictionary, level: int) -> Dictionary:
+	var b := DenseBuilder._start(seed, lot)
+	b._dry = true
+	b._office_park(3.9, b.half * 2.0, level)
+	return b.site
+
+
+## The 1970s-2000s office park of a Midwestern small city (the low brick
+## or EIFS buildings with ribbon windows along Kokomo's and Marion's bypass
+## roads and every Indiana interstate exit; ULI's suburban office park):
+## two- and three-storey buildings across the back of the site, each with
+## its glass entry facing a shared parking field, landscaped islands, a
+## monument sign by the drive, and in the last phase a detention pond
+## with an aerating fountain at the road (county stormwater rules).
+## All from its own random numbers, so each phase keeps the last one's
+## buildings where they stood.
+func _office_park(to_curb: float, width: float, level: int) -> void:
+	var r := RandomNumberGenerator.new()
+	r.seed = hash([rng.seed, "office park"])
+	var brick := r.randf() < 0.55
+	var wall := Color(FACADE_BRICK[r.randi() % FACADE_BRICK.size()]) if brick \
+		else Color(["#d8c9a8", "#cdbb98", "#e0d4ba", "#c9c4b8"][r.randi() % 4])
+	var mat := "brick" if brick else "paint"
+	var band := Color(SPANDREL[r.randi() % SPANDREL.size()])
+	var glass_dark := r.randf() < 0.6
+	var x0 := -width * 0.5 + 0.6
+	var x1 := width * 0.5 - 0.6
+	var n := clampi(int((width - 4.0) / 34.0), 1, 3)
+	var bd := clampf(depth - 30.0, 14.0, 20.0)
+	var zb := depth - 3.0
+	var zfb := zb - bd
+	var slot := (x1 - x0) / n
+	var bw := minf(34.0, slot - 8.0)
+	# The order the slots fill: the middle (or left) first.
+	var order := [0] if n == 1 else ([0, 1] if n == 2 else [1, 0, 2])
+	var built := mini(level + 1, n)
+	var pond := level >= 2
+	var cut_x := x1 - 5.0
+	var pw := minf(26.0, (x1 - x0) * 0.3)
+	var px := x0 + pw * 0.5 + 1.0
+	# The parking field: a row before the buildings, the aisle, and a row
+	# facing the street when there's room.
+	var rowa := zfb - 2.5 - 5.5
+	var aisle := rowa - 7.0
+	var rowb := aisle - 5.5
+	var two := rowb >= 2.0
+	var lot0 := rowb if two else aisle
+	_flat_rect("drive", cut_x - 4.4, cut_x + 4.4, -to_curb, 0.0, 0.08)
+	_flat_rect("asphalt", cut_x - 3.5, cut_x + 3.5, 0.0, lot0, 0.06)
+	_flat_rect("asphalt", x0 + (pw + 2.0 if pond else 0.0), x1, lot0, zfb - 2.5, 0.06)
+	_flat_rect("drive", x0, x1, zfb - 2.5, zfb, 0.07)  # the walk along the fronts
+	site.main_street = false
+	site.cut_x = cut_x
+	site.aisle_z = aisle + 3.5
+	for row in (2 if two else 1):
+		var a := rowa if row == 0 else rowb
+		var x := x0 + 1.0
+		while x + 2.75 <= x1 - 1.0:
+			var mid := x + 1.375
+			var skip := row == 1 and absf(mid - cut_x) < 4.5
+			skip = skip or (pond and mid < px + pw * 0.5 + 1.0)
+			# A landscaped island every ten stalls.
+			var isle := int((x - x0) / 2.75) % 11 == 10
+			if not skip and not isle:
+				_flat_rect("line", x - 0.06, x + 0.06, a, a + 5.5, 0.07, LINE)
+				_flat_rect("line", x + 2.69, x + 2.81, a, a + 5.5, 0.07, LINE)
+				site.stalls.append([Vector2(mid, a + 2.75), Vector2(0, 1) if row == 0 else Vector2(0, -1)])
+			elif isle and not skip:
+				_flat_rect("mulch", x + 0.3, x + 2.45, a + 0.3, a + 5.2, 0.075)
+				if not _dry:
+					var pick := TreeField.pick(r)
+					trees.append([Vector3(mid, 0, a + 2.75), pick[0], pick[1], r.randf_range(0.7, 0.9)])
+			x += 2.75
+	# The buildings, phase by phase.
+	var door := Vector2(0, zfb)
+	for k in built:
+		var cx := x0 + (int(order[k]) + 0.5) * slot
+		var storeys := 3 if k == 2 else 2
+		_park_building(cx, bw, zfb, bd, storeys, wall, mat, band, glass_dark, r)
+		if k == 0:
+			door = Vector2(cx, zfb)
+	site.door = door
+	if _dry:
+		return
+	# The monument sign by the drive, on a brick base in a planting bed.
+	var sx := cut_x - 7.0
+	_flat_rect("mulch", sx - 3.0, sx + 3.0, 0.8, 3.6, 0.075)
+	_box("brick", Vector3(4.2, 0.9, 0.6), Vector3(sx, 0.45, 2.2), wall.darkened(0.15) if brick else Color("#8a4a38"))
+	_sign(Vector3(sx, 0.9, 1.88), 3.6, 0.8)
+	for i in 3:
+		_shrub(Vector3(sx - 2.2 + i * 2.2, 0.1, 3.2), 0.45)
+	if pond:
+		_park_pond(Vector3(px, 0, rowa * 0.5 + 2.0), Vector2(pw, maxf(rowa + 1.0, 9.0)), r)
+
+
+## One office building of the park: a flat-roofed box with ribbon windows
+## all round over spandrel bands, its glass entry with a canopy facing the
+## lot, and rooftop units.
+func _park_building(cx: float, bw: float, zf: float, bd: float, storeys: int, wall: Color, mat: String, band: Color,
+		dark: bool, r: RandomNumberGenerator) -> void:
+	var fh := 3.9
+	var deck := fh * storeys + 0.3
+	if _dry:
+		return
+	var cz := zf + bd * 0.5
+	_block(mat, cx, bw, bd, cz, deck, deck + 1.0, wall)
+	for f in storeys:
+		var y := f * fh + 0.3 + 1.9
+		var gh := 1.7
+		for face in [[Vector3(cx, 0, zf - 0.03), Vector3(-1, 0, 0), bw], [Vector3(cx, 0, zf + bd + 0.03), Vector3(1, 0, 0), bw],
+				[Vector3(cx - bw * 0.5 - 0.03, 0, cz), Vector3(0, 0, 1), bd], [Vector3(cx + bw * 0.5 + 0.03, 0, cz), Vector3(0, 0, -1), bd]]:
+			var c: Vector3 = face[0]
+			c.y = y
+			_glass(c, face[1], float(face[2]) - 1.6, gh, r.randf_range(0.1, 0.4) if dark else r.randf_range(0.0, 0.25))
+		if f > 0:
+			_box("paint", Vector3(bw + 0.06, 0.8, 0.08), Vector3(cx, f * fh + 0.3 + 0.45, zf - 0.04), band)
+	# The entry: a two-storey glass bay with a flat canopy.
+	_glass(Vector3(cx, 2.0, zf - 1.23), Vector3(-1, 0, 0), 5.0, 3.6, 0.0)
+	_box("paint", Vector3(5.4, 4.4, 1.2), Vector3(cx, 2.2, zf - 0.6), Color("#2c2e30"))
+	_box("paint", Vector3(7.0, 0.3, 2.8), Vector3(cx, 3.9, zf - 1.4), band.darkened(0.25))
+	for s in [-1.0, 1.0]:
+		_box("concrete", Vector3(1.2, 0.5, 1.2), Vector3(cx + s * 4.6, 0.25, zf - 3.0), FOUNDATION)
+		_shrub(Vector3(cx + s * 4.6, 0.5, zf - 3.0), 0.45)
+	_flat_rect("mulch", cx - bw * 0.5, cx - 4.2, zf - 1.6, zf, 0.075)
+	_flat_rect("mulch", cx + 4.2, cx + bw * 0.5, zf - 1.6, zf, 0.075)
+	for i in r.randi_range(2, 4):
+		_box("metal", Vector3(2.2, 1.4, 1.6), Vector3(cx + r.randf_range(-bw * 0.3, bw * 0.3), deck + 0.7,
+			cz + r.randf_range(-bd * 0.2, bd * 0.2)), Color("#b9bcbc"))
+
+
+## A detention pond (county stormwater rules for a site this size): a
+## grassy-banked basin with riprap at its inlet and an aerating fountain.
+func _park_pond(c: Vector3, size: Vector2, r: RandomNumberGenerator) -> void:
+	var bank := []
+	var water := []
+	for i in 16:
+		var a := TAU * i / 16.0
+		var k := 0.92 + 0.08 * sin(a * 3.0 + r.randf())
+		bank.append(c + Vector3(cos(a) * size.x * 0.5 * k, 0, sin(a) * size.y * 0.5 * k))
+		water.append(c + Vector3(cos(a) * (size.x * 0.5 * k - 2.2), 0, sin(a) * (size.y * 0.5 * k - 2.2)))
+	_ground_poly(bank, 0.05, Color("#6b6a48"))
+	_ground_poly(water, 0.07, Color("#3e5a52"))
+	_box("paint", Vector3(2.0, 0.3, 1.4), c + Vector3(size.x * 0.36, 0.15, -size.y * 0.3), Color("#8d887c"))  # riprap
+	# The fountain's spray.
+	_box("paint", Vector3(0.5, 2.2, 0.5), c + Vector3(0, 1.15, 0), Color(0.93, 0.95, 0.96))
+	_box("paint", Vector3(1.6, 0.6, 1.6), c + Vector3(0, 0.4, 0), Color(0.9, 0.93, 0.94))
+
+
+## A flat patch of coloured ground (a pond's water, its bank), as
+## CivicBuilder._flat_poly draws them: a fan over the outline.
+func _ground_poly(pts: Array, y: float, col: Color) -> void:
+	col.a = 1.0  # coloured ground in the flat-work shader
+	var c := Vector3.ZERO
+	for p in pts:
+		c += p
+	c /= pts.size()
+	for i in pts.size():
+		var a: Vector3 = pts[i]
+		var b: Vector3 = pts[(i + 1) % pts.size()]
+		var tri := [c, a, b]
+		if (a - c).cross(b - c).y > 0.0:
+			tri = [c, b, a]
+		for p in tri:
+			_flat.set_normal(Vector3.UP)
+			_flat.set_color(col)
+			_flat.set_uv(Vector2(p.x, p.z) * 0.25)
+			_flat.add_vertex(Vector3(p.x, y, p.z))
 
 
 # ---------------------------------------------------------------- row homes

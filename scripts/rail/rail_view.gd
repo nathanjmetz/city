@@ -363,7 +363,7 @@ func _grade_chunks(pid: int, pts: Array) -> void:
 
 ## Crushed rock in a trapezoid, and an earth embankment down to the ground
 ## where the track runs above it.
-func _ballast(st: SurfaceTool, c0: Vector3, c1: Vector3, n0: Vector3, n1: Vector3) -> void:
+static func _ballast(st: SurfaceTool, c0: Vector3, c1: Vector3, n0: Vector3, n1: Vector3) -> void:
 	# A low prism like real in-town track: a 3.2 m crown just wider than the
 	# 2.6 m ties, shoulders falling about 2:1 to a weedy toe at ground level.
 	var y := Vector3(0, BALLAST_Y, 0)
@@ -416,7 +416,7 @@ func _abutment(st: SurfaceTool, c: Vector3, n: Vector3) -> void:
 
 
 ## A deck girder span, with a concrete pier every third point (~30 m).
-func _bridge_span(st: SurfaceTool, c0: Vector3, c1: Vector3, n0: Vector3, n1: Vector3, i: int) -> void:
+static func _bridge_span(st: SurfaceTool, c0: Vector3, c1: Vector3, n0: Vector3, n1: Vector3, i: int) -> void:
 	var y := Vector3(0, BALLAST_Y, 0)
 	_quad(st, c0 - n0 * 2.2 + y, c0 + n0 * 2.2 + y, c1 + n1 * 2.2 + y, c1 - n1 * 2.2 + y, BALLAST_DARK)
 	for side: float in [-1.0, 1.0]:
@@ -437,7 +437,7 @@ func _bridge_span(st: SurfaceTool, c0: Vector3, c1: Vector3, n0: Vector3, n1: Ve
 
 
 ## One rail: a steel bar with a bright, worn running surface.
-func _rail(st: SurfaceTool, a: Vector3, b: Vector3, na: Vector3, nb: Vector3) -> void:
+static func _rail(st: SurfaceTool, a: Vector3, b: Vector3, na: Vector3, nb: Vector3) -> void:
 	var w := 0.036
 	var top := Vector3(0, RAIL_Y, 0)
 	var foot := Vector3(0, TIE_Y, 0)

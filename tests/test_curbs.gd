@@ -18,6 +18,9 @@ func _init() -> void:
 	_check(is_equal_approx(_top(raised, rv._mats.curb), RoadStyle.Y_ASPHALT + RoadMesh.CURB_RISE),
 		"the curb stands 4 in above the pavement")
 	_check(not _has(raised, rv._mats.curb_face), "no flat curb face line under a raised curb")
+	_check(_has(raised, rv._mats.iron) and _has(raised, rv._mats.drain), "inlet grates and a manhole in the street")
+	_check(not _has(flat, rv._mats.iron), "no castings with flat curbs")
+	_check(_top(raised, rv._mats.iron) < RoadStyle.Y_ASPHALT + 0.02, "castings lie flush with the pavement")
 	# Flush at the ramps, full height mid-block.
 	_check(RoadMesh._ramp_rise(1.5, 60.0) < 0.0, "the curb drops at the start's curb ramp")
 	_check(RoadMesh._ramp_rise(58.5, 60.0) < 0.0, "and at the end's")

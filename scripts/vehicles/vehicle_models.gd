@@ -29,6 +29,8 @@ const USPS_BLUE := Color(0.08, 0.17, 0.42, 0.4)
 const USPS_RED := Color(0.75, 0.08, 0.12, 0.4)
 const WHITE := Color(0.92, 0.92, 0.91, 0.4)
 const STEEL := Color(0.62, 0.63, 0.64, 0.2)
+## DOT-C2 conspicuity sheeting: alternating red and white reflective tape.
+const TAPE_RED := Color(0.72, 0.05, 0.04, 0.4)
 const DARK := Color(0.16, 0.16, 0.17, 0.4)
 const RIM := Color(0.72, 0.72, 0.73, 0.2)
 ## Loads: oak bark, freshly sawn log ends, iron ore, dunnage, ratchet straps.
@@ -441,12 +443,12 @@ func _hatchback() -> void:  # Honda Civic hatch
 
 func _crossover() -> void:  # Toyota RAV4
 	_car({"L": 4.6, "W": 1.86, "H": 1.7, "clear": 0.22, "hood": 1.0, "belt": 1.12, "a": 1.15,
-		"b": 1.9, "c": 3.85, "e": 4.42, "tail": 1.14, "wr": 0.37, "axles": [0.95, 3.6], "c_pillar": false})
+		"b": 1.9, "c": 3.85, "e": 4.42, "tail": 1.14, "wr": 0.37, "axles": [0.95, 3.6], "c_pillar": false, "clad": true})
 
 
 func _suv() -> void:  # Chevrolet Tahoe
 	_car({"L": 5.35, "W": 2.06, "H": 1.93, "clear": 0.26, "hood": 1.2, "belt": 1.3, "a": 1.45,
-		"b": 2.15, "c": 4.95, "e": 5.2, "tail": 1.3, "wr": 0.4, "axles": [1.05, 4.15], "c_pillar": false})
+		"b": 2.15, "c": 4.95, "e": 5.2, "tail": 1.3, "wr": 0.4, "axles": [1.05, 4.15], "c_pillar": false, "clad": true})
 	if not _lo:
 		for x in [-0.8, 0.8]:
 			_box(Vector3(x, 1.96, 3.5), Vector3(0.05, 0.05, 2.4), TRIM)
@@ -474,14 +476,14 @@ func _minivan_pacifica() -> void:  # Chrysler Pacifica: lower, sleeker nose
 
 func _crossover_compact() -> void:  # Honda HR-V / Ford Escape
 	_car({"L": 4.39, "W": 1.82, "H": 1.6, "clear": 0.19, "hood": 0.96, "belt": 1.08, "a": 1.1,
-		"b": 1.85, "c": 3.65, "e": 4.22, "tail": 1.1, "wr": 0.35, "axles": [0.92, 3.55], "c_pillar": false})
+		"b": 1.85, "c": 3.65, "e": 4.22, "tail": 1.1, "wr": 0.35, "axles": [0.92, 3.55], "c_pillar": false, "clad": true})
 
 
 ## Jeep Wrangler Unlimited: upright windshield, flat fenders, a spare on
 ## the tailgate and the seven-slot grille.
 func _suv_jeep() -> void:
 	_car({"L": 4.88, "W": 1.89, "H": 1.85, "clear": 0.28, "hood": 1.1, "belt": 1.16, "a": 1.55,
-		"b": 1.75, "c": 4.55, "e": 4.75, "tail": 1.16, "wr": 0.4, "axles": [0.95, 3.95], "c_pillar": false,
+		"b": 1.75, "c": 4.55, "e": 4.75, "tail": 1.16, "wr": 0.4, "axles": [0.95, 3.95], "c_pillar": false, "clad": true,
 		"grille": Color(0.06, 0.06, 0.06, 0.3)})
 	if not _lo:
 		_cyl(Vector3(0, 1.28, 4.9), Vector3(0, 1.28, 5.05), 0.38, TIRE, 10)
@@ -522,7 +524,7 @@ func _sedan_fullsize() -> void:  # Chevrolet Impala: long hood and trunk, chrome
 
 func _suv_mid() -> void:  # Ford Explorer
 	_car({"L": 5.05, "W": 2.0, "H": 1.78, "clear": 0.2, "hood": 1.05, "belt": 1.15, "a": 1.3,
-		"b": 2.0, "c": 4.45, "e": 4.85, "tail": 1.15, "wr": 0.38, "axles": [0.98, 3.9], "c_pillar": false})
+		"b": 2.0, "c": 4.45, "e": 4.85, "tail": 1.15, "wr": 0.38, "axles": [0.98, 3.9], "c_pillar": false, "clad": true})
 	if not _lo:
 		for x in [-0.78, 0.78]:
 			_box(Vector3(x, 1.81, 3.2), Vector3(0.05, 0.05, 2.0), TRIM)
@@ -530,7 +532,7 @@ func _suv_mid() -> void:  # Ford Explorer
 
 func _wagon() -> void:  # Subaru Outback: low wagon roof, rails, cladding
 	_car({"L": 4.87, "W": 1.86, "H": 1.67, "clear": 0.22, "hood": 0.95, "belt": 1.08, "a": 1.25,
-		"b": 2.05, "c": 4.45, "e": 4.72, "tail": 1.1, "wr": 0.36, "axles": [0.95, 3.7], "c_pillar": false})
+		"b": 2.05, "c": 4.45, "e": 4.72, "tail": 1.1, "wr": 0.36, "axles": [0.95, 3.7], "c_pillar": false, "clad": true})
 	if not _lo:
 		for x in [-0.75, 0.75]:
 			_box(Vector3(x, 1.71, 3.2), Vector3(0.05, 0.06, 2.4), TRIM)
@@ -632,6 +634,44 @@ func _car_detail(p: Dictionary) -> void:
 		_box(Vector3(x, belt + 0.03, p.a + 0.1), Vector3(0.5, 0.015, 0.02), seam)
 	_box(Vector3(0, p.hood - 0.42, -0.005), Vector3(0.3, 0.15, 0.02), WHITE)
 	_box(Vector3(0, p.hood - 0.17, -0.008), Vector3(0.1, 0.06, 0.02), CHROME)
+	if p.get("clad", false):
+		_cladding(p)
+
+
+## Ultra: the unpainted black plastic that SUVs and crossovers wear (RAV4,
+## Explorer, Outback, Wrangler): flares round the wheel arches and a rocker
+## strip along the sills between them. It stands 12 mm proud of the body,
+## clear of the dark wheel well (4 mm) and the door seams.
+func _cladding(p: Dictionary) -> void:
+	var hw: float = p.W * 0.5
+	var r: float = p.wr + 0.07
+	var band := 0.075
+	var axles: Array = p.axles
+	for s in [-1.0, 1.0]:
+		for z in axles:
+			_flare(Vector3(s * hw, p.wr, z), r, r + band, s, 0.012)
+		var z0: float = axles[0] + r + band * 0.5
+		var z1: float = axles[1] - r - band * 0.5
+		_box(Vector3(s * (hw - 0.018), p.clear + 0.08, (z0 + z1) * 0.5), Vector3(0.06, 0.16, z1 - z0), TRIM)
+
+
+## A flat half-ring round a wheel arch from radius r0 to r1, `depth` proud
+## of the body side at `c` (x on the body side), with its outer lip
+## running back into the body where it tucks in toward the sill.
+func _flare(c: Vector3, r0: float, r1: float, side: float, depth: float) -> void:
+	var n := 14
+	var x := c.x + side * depth
+	var inside := Vector3(c.x - side, c.y, c.z)
+	for i in n:
+		var a1 := PI * i / n
+		var a2 := PI * (i + 1) / n
+		var d1 := Vector3(0, sin(a1), cos(a1))
+		var d2 := Vector3(0, sin(a2), cos(a2))
+		var o1 := Vector3(x, c.y, c.z) + d1 * r1
+		var o2 := Vector3(x, c.y, c.z) + d2 * r1
+		_quad(Vector3(x, c.y, c.z) + d1 * r0, Vector3(x, c.y, c.z) + d2 * r0, o2, o1, TRIM, inside)
+		var mid := Vector3(c.x, c.y, c.z) + (d1 + d2) * 0.5 * (r1 - 0.05)
+		_quad(o1, o2, o2 - Vector3(side * (depth + 0.04), 0, 0), o1 - Vector3(side * (depth + 0.04), 0, 0), TRIM, mid)
 
 
 # --- Pickups ----------------------------------------------------------------
@@ -1411,6 +1451,19 @@ func _trailer_base(L: float, wheels_at: Array) -> void:
 		_box(Vector3(0, 0.6, L - 0.3), Vector3(2.3, 0.12, 0.12), TRIM)
 		for s in [-1.0, 1.0]:
 			_box(Vector3(s * 0.9, 0.7, 4.0), Vector3(0.15, 0.7, 0.15), TRIM)
+	if _hi:
+		# Ultra: red and white tape across the underride guard (FMVSS 108
+		# asks for it on every trailer 80 in wide), and mud flaps behind
+		# the rear axle.
+		var x := -1.15
+		var k := 0
+		while x < 1.15:
+			var w := minf(0.3, 1.15 - x)
+			_box(Vector3(x + w * 0.5, 0.6, L - 0.237), Vector3(w, 0.06, 0.006), WHITE if k % 2 == 0 else TAPE_RED)
+			x += w
+			k += 1
+		for s in [-1.0, 1.0]:
+			_box(Vector3(s * 1.0, 0.45, float(wheels_at[wheels_at.size() - 1]) + 0.68), Vector3(0.6, 0.6, 0.015), TIRE)
 
 
 func _trailer_box() -> void:
@@ -1419,11 +1472,41 @@ func _trailer_box() -> void:
 		[0.0, 1.25, 4.0, 4.1, 1.3, 1.3, 1.28],
 		[L, 1.25, 4.0, 4.1, 1.3, 1.3, 1.28],
 	], [_edges(WHITE, STEEL)], WHITE, Color(0.85, 0.85, 0.85, 0.4))
-	if not _lo:
+	if _hi:
+		_trailer_box_tape(L)
+	elif not _lo:
 		for s in [-1.0, 1.0]:
 			_box(Vector3(s * 1.304, 1.3, L * 0.5), Vector3(0.006, 0.05, L), Color(0.85, 0.2, 0.05, 0.4))
+	if not _lo:
 		_box(Vector3(0, 2.6, L + 0.01), Vector3(0.03, 2.6, 0.01), STEEL)
 	_trailer_base(L, [13.9, 15.15])
+
+
+## Ultra: the conspicuity tape a dry van carries by law (DOT-C2, 7 in red
+## and 11 in white) along both sills and across the rear, white corner
+## marks up top, and the four lock rods on the swing doors.
+func _trailer_box_tape(L: float) -> void:
+	for s in [-1.0, 1.0]:
+		var z := 0.3
+		var k := 0
+		while z < L - 0.3:
+			var seg := 0.18 if k % 2 == 0 else 0.28
+			seg = minf(seg, L - 0.3 - z)
+			_box(Vector3(s * 1.304, 1.32, z + seg * 0.5), Vector3(0.006, 0.05, seg), TAPE_RED if k % 2 == 0 else WHITE)
+			z += seg
+			k += 1
+		# Upper rear corners: an inverted L of white.
+		_box(Vector3(s * 1.1, 3.93, L + 0.022), Vector3(0.3, 0.05, 0.006), WHITE)
+		_box(Vector3(s * 1.225, 3.75, L + 0.022), Vector3(0.05, 0.3, 0.006), WHITE)
+	var x := -1.2
+	var k2 := 0
+	while x < 1.2:
+		var w := minf(0.18 if k2 % 2 == 0 else 0.28, 1.2 - x)
+		_box(Vector3(x + w * 0.5, 1.36, L + 0.022), Vector3(w, 0.05, 0.006), TAPE_RED if k2 % 2 == 0 else WHITE)
+		x += w
+		k2 += 1
+	for rx in [-0.9, -0.35, 0.35, 0.9]:
+		_box(Vector3(rx, 2.68, L + 0.03), Vector3(0.03, 2.5, 0.03), STEEL)
 
 
 ## A 53 ft USPS contract trailer: white with the blue and red stripe.

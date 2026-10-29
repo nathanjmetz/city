@@ -223,7 +223,11 @@ const MARKET_MIN := {
 	# (Wabash ~10,000, Huntington ~17,000; a town of 3,000 has a few).
 	"commercial_block": [5000, 15_000],
 	"office": [10_000, 25_000, 50_000, 150_000, 1_000_000],
-	"shopping_center": [5000, 10_000],
+	# A small city's office park (micropolitan towns, OMB 10,000-50,000:
+	# Kokomo, Marion and Wabash each have one on a bypass road); fully
+	# built out once the market is a county's worth of people.
+	"office_park": [10_000, 15_000, 25_000],
+	"shopping_center": [5000, 10_000, 20_000],  # a discount store wants a trade area of about 20,000 (1980s Walmart/Kmart small-town siting)
 	# A town of 1,500-2,000 (Upland, Fairmount) keeps a few 30-60 job shops;
 	# a 100-job plant wants a county's labor shed of 5,000 or more.
 	"factory": [0, 1500, 5000],
@@ -262,6 +266,12 @@ const DEVELOP_CHANCE := 0.35
 ## days) drops a level. The gap between the two keeps it from flickering.
 const LEVEL_UP_MET := 50
 const LEVEL_DOWN_AFTER := 2880
+## Out of 100, how many owners whose building grows a stage on its own lot
+## add floors on top of it rather than tear it down and build new (its
+## frame carries them, as many prewar blocks' did), for these types. The
+## rest rebuild. A guess at a real mix; no survey counts additions.
+const ADD_ON_PERCENT := 50
+const ADD_ON_TYPES := ["office"]
 ## Share of owners keen to build on: DEVELOP_KEEN plus DEVELOP_KEEN_WEALTH
 ## times the neighborhood's wealth (0 to 1), so about half at 0.5.
 const DEVELOP_KEEN := 0.25
@@ -311,10 +321,19 @@ const REDEV_HIGHRISE_FAR := 4.4
 ## past which it's a neighborhood center with a grocery anchor.
 const REDEV_SHOP_LOTS := 4
 const REDEV_CENTER_AREA := 12_000.0
+## A neighborhood center grows into a community center by buying up to
+## this many houses on the lots behind and beside it (developers' "backlot"
+## assembly: a block's two rows of lots, about 120 by 60 m).
+const REDEV_COMMUNITY_HOMES := 10
 ## ITE Trip Generation (10th ed.): low-rise multifamily (220) about 6.7
 ## weekday trips per unit; shopping center (820) about 37.75 per 1,000 sq ft.
 const REDEV_TRIPS_PER_FLAT := 6.7
 const REDEV_TRIPS_PER_KSQFT := 37.75
+## ITE general office building (710): about 9.74 weekday trips per 1,000
+## sq ft. An office park buys at least this many lots in a row on a busy
+## road, as far out of the built-up core as it can.
+const REDEV_TRIPS_PER_KSQFT_OFFICE := 9.74
+const REDEV_PARK_LOTS := 3
 
 ## Home builders and their subdivisions (Subdivisions, Brawn 2026-10-23).
 ## Who comes at each size: [population, phases, who]. A local builder does a
@@ -2165,6 +2184,13 @@ const STATION_BOND_DOWN := 0.25
 ## A school's capital comes from its Operations Fund (IC 20-46-8), a
 ## bigger levy than a town's cumulative funds: dollars a resident a month.
 const STATION_LEVY_OF := {"school": 3.0}
+## What a department pays for the homes or shops it buys behind its station
+## (dollars a square metre of lot, about a small Indiana town's improved
+## residential land with the house on it).
+const STATION_LAND_PER_M2 := 70.0
+## What a park board pays for a home lot it buys next to its park (dollars
+## a square metre of lot, house included, as STATION_LAND_PER_M2).
+const PARK_HOME_PER_M2 := 70.0
 ## Each piece: `cost` dollars from the fund, `grow` metres the lot reaches
 ## further back from the street (0 builds on what it has), `needs` from the
 ## town (population; tall = buildings of 3+ storeys; city = a city charter),
@@ -2230,6 +2256,31 @@ const STATION_TREES := {
 			"needs": {"population": 6000}, "effects": {"reach*": 0.2}, "note": "eight classrooms on two floors, the portables go"},
 		{"id": "aux_gym", "name": "Second gym", "cost": 2_800_000, "grow": 24.0, "requires": ["addition"],
 			"needs": {"population": 8000}, "effects": {"reach*": 0.05}, "note": "practice space and community leagues"},
+	],
+	# A nursing home: most of Indiana's are owned by county hospitals
+	# (the state's nursing facility supplemental payment program), which
+	# grow them into a senior campus as the town ages: a rehab gym for
+	# short Medicare stays, assisted living (410 IAC 16.2-5), memory care
+	# and independent living cottages.
+	"nursing": [
+		{"id": "therapy_gym", "name": "Rehab therapy gym", "cost": 1_200_000, "grow": 14.0,
+			"needs": {"population": 2000}, "effects": {"reach*": 0.05}, "note": "therapy to get people home after a hospital stay"},
+		{"id": "assisted", "name": "Assisted living wing", "cost": 6_000_000, "grow": 24.0,
+			"needs": {"population": 4000}, "effects": {"reach*": 0.15}, "note": "apartments with help close by"},
+		{"id": "memory_care", "name": "Memory care unit", "cost": 3_000_000, "grow": 22.0, "requires": ["assisted"],
+			"needs": {"population": 6000}, "effects": {"reach*": 0.05}, "note": "a secure wing and garden for dementia care"},
+		{"id": "cottages", "name": "Independent living cottages", "cost": 3_500_000, "grow": 24.0,
+			"needs": {"population": 8000}, "effects": {"reach*": 0.05}, "note": "duplex cottages for couples who want less house"},
+	],
+	# A daycare adds rooms as families move in (Indiana licenses centers by
+	# age group, 470 IAC 3-4.7).
+	"daycare": [
+		{"id": "infant_room", "name": "Infant and toddler room", "cost": 250_000, "grow": 10.0,
+			"needs": {"population": 1500}, "effects": {"reach*": 0.1}, "note": "room for babies and its own small yard"},
+		{"id": "garden", "name": "Outdoor classroom", "cost": 60_000, "grow": 8.0,
+			"needs": {"population": 2500}, "effects": {"reach*": 0.02}, "note": "raised beds under a shade sail"},
+		{"id": "school_age", "name": "Before and after school room", "cost": 350_000, "grow": 12.0,
+			"needs": {"population": 3000}, "effects": {"reach*": 0.1}, "note": "kids from the school come over until pickup"},
 	],
 	"police": [
 		{"id": "sally_port", "name": "Sally port", "cost": 300_000, "grow": 10.0,
