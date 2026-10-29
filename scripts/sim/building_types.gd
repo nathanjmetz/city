@@ -109,6 +109,13 @@ const TYPES := {
 	"shopping_center": {"zone": COM, "name": "Shopping center", "cover": 0.25, "stages": [
 		{"name": "Strip shopping center", "storeys": 1, "cap": [25, 45], "load": 3},
 		{"name": "Neighborhood shopping center", "storeys": 1, "cap": [80, 140], "load": 8},
+		# A community center: a discount store joins the grocer (ICSC 125,000-
+		# 400,000 sq ft on 10-30 acres; scaled down, as the game's blocks
+		# are). It needs about 1.6 acres, a whole block's depth from the
+		# road: the center buys the houses behind it (Redevelopment) or
+		# commercial lots next door.
+		# Discount stores staffed about 1 job per 400-500 sq ft.
+		{"name": "Community shopping center", "storeys": 1, "cap": [170, 240], "load": 12, "lot": 6500.0},
 	]},
 	# Only a rezoning makes one (Redevelopment): a developer buys a run of
 	# lots on a busy road at the edge of town and builds it in phases, as

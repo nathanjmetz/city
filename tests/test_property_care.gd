@@ -136,8 +136,64 @@ func _init() -> void:
 		_check(lay.spots.size() >= 20 and not lay.main_street, "with its own parking lot (%d stalls)" % lay.spots.size())
 	else:
 		_check(false, "a developer finds land on the avenue for an office park")
+	_community()
 	print("ALL TESTS PASSED" if not _failed else "SOME TESTS FAILED")
 	quit(1 if _failed else 0)
+
+
+## A neighborhood center buys the houses behind it for a discount store,
+## once the market is a town of 20,000's.
+func _community() -> void:
+	var sim := CitySim.new()
+	sim.city_seed = 9
+	sim.simulate_traffic = false
+	sim.apply({"type": "build_road", "start": [-300, 0], "ctrl": [0, 0], "end": [300, 0], "road": RoadStyle.Type.AVENUE})
+	sim.apply({"type": "build_road", "start": [-300, -80], "ctrl": [0, -80], "end": [300, -80]})
+	for x in range(-290, 291, 10):
+		for z in [-20, -35, -50, -62]:
+			sim.apply({"type": "paint_zone", "center": [x, z], "radius": 12, "zone": ZoneMap.Zone.RESIDENTIAL})
+	for i in 600:
+		sim.tick()
+	var empty: Array = sim.empty_zoned_lots()
+	empty.sort()
+	for key in empty:
+		var b := {"zone": ZoneMap.Zone.RESIDENTIAL, "seed": hash([9, key]), "built": sim.tick_count, "changed": sim.tick_count, "occ": 2}
+		sim.buildings[key] = BuildingTypes.make(sim, key, b, "house", 0)
+	for i in 600:
+		sim.tick()
+	sim.tick_count += 6 * MONTH
+	_care_month(sim)
+	sim.stats.population = 6000
+	sim.demand[ZoneMap.Zone.COMMERCIAL] = 1.0
+	sim.market.regional = 6000
+	var plan := sim.redevelopment._plan_shopping(sim, Redevelopment._faces(sim))
+	if plan.is_empty():
+		_check(false, "a row of homes on the avenue for a shopping center")
+		return
+	sim.redevelopment.build(sim, {"kind": "shopping", "keys": plan.keys, "type": plan.type, "level": 1, "was": plan.was})
+	var site: String = plan.keys[0]
+	sim.tick_count += 6 * MONTH
+	_check(sim.redevelopment._plan_community(sim, {}).is_empty(), "a town of 12,000's market gets no discount store")
+	sim.market.regional = 16_000
+	plan = sim.redevelopment._plan_community(sim, {})
+	print("  community ask: ", plan.get("title", "(none)"), " / ", plan.get("why", ""), " / ", plan.get("yes", ""))
+	if plan.is_empty():
+		_check(false, "the center finds houses behind it to buy")
+		return
+	_check(plan.keys[0] == site and plan.keys.size() >= 2, "the center buys %d lots behind it" % (plan.keys.size() - 1))
+	_check(sim.redevelopment.build(sim, {"kind": "community", "keys": plan.keys, "type": plan.type,
+		"level": plan.level, "was": plan.was}), "a yes rezones and merges them")
+	var b: Dictionary = sim.buildings[site]
+	var lot: Dictionary = sim.lots[site]
+	_check(BuildingTypes.type_of(b) == "shopping_center" and int(b.level) == 2,
+		"a %s on %.0f m² (%.0f m deep)" % [BuildingTypes.name_of(b), lot.area, SiteLayout._fit(lot).depth])
+	for k in plan.keys.slice(1):
+		_check(not sim.lots.has(k), "lot %s is part of the site" % k)
+	var lay := SiteLayout.for_building(ZoneMap.Zone.COMMERCIAL, int(b.seed), lot, 1, "shopping_center", 2)
+	var aisles := {}
+	for sp in lay.spots:
+		aisles[sp.get("aisle", lay.aisle_z)] = true
+	_check(lay.spots.size() >= 50 and aisles.size() >= 2, "its field has %d stalls off %d aisles" % [lay.spots.size(), aisles.size()])
 
 
 func _art() -> void:
