@@ -29,6 +29,9 @@ const LADDERS := {
 	"sites": [["office", 3, 12.0, "chicago", 30.0], ["office", 3, 12.0, "chicago", 62.0], ["office", 4, 16.0, "deco", 36.0], ["office", 4, 16.0, "deco", 66.0]],
 	# A row of houses bought for a strip center, then a grocer-anchored one.
 	"retail": [["shop", 0, 2.2], ["shop", 1, 2.2], ["shopping_center", 0, 2.2, "", 70.0], ["shopping_center", 1, 2.2, "", 150.0]],
+	# A neighborhood center, then grown into a community center on the
+	# block behind it (a block's depth, and a deeper one).
+	"community": [["shopping_center", 1, 2.2, "", 120.0], ["shopping_center", 2, 2.2, "", 120.0, 0, 62.0], ["shopping_center", 2, 2.2, "", 120.0, 0, 85.0]],
 	"homes": [["house", 0, 0.9], ["house", 1, 0.9], ["row_home", 0, 1.2], ["row_home", 1, 1.2], ["apartments", 0, 2.0]],
 	# A house building on, then turned into a duplex and a fourplex.
 	# A corner store to shop with flats, then bought out next door: a
@@ -88,8 +91,8 @@ func _init() -> void:
 		var spec := {}
 		if OS.get_environment("SIGN") == "1":
 			spec = {"text": "Overman Mutual", "style": "franklin", "panel": Color("#1f4e8a"), "letter": Color("#f3efe4"), "since": -1}
-		var fit := {"width": w, "depth": DEPTH, "era": era}
-		if st.size() > 5:
+		var fit := {"width": w, "depth": st[6] if st.size() > 6 else DEPTH, "era": era}
+		if st.size() > 5 and st[5] > 0:
 			fit.added_from = st[5]  # floors added on top of a block this tall
 		if st.size() > 3 and st[3] != "":
 			meshes = TowerBuilder.build_tower(seed * 100 + i, 3.9, fit, storeys, spec, st[3], st[0] == "apartments")

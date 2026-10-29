@@ -9,7 +9,9 @@ extends RefCounted
 ## (lot.front), +Z runs back into the lot, local -Z faces the street.
 ## Each spot is {"pos": Vector2(x, z), "face": Vector2 (nose direction),
 ## "kind": "stall"|"drive"|"garage"|"dock"|"bay"}; "garage" and "bay" are
-## inside a building, so a vehicle there is out of sight.
+## inside a building, so a vehicle there is out of sight. A stall in a lot
+## of several rows also has "aisle": the z of the aisle it is reached from
+## (otherwise the layout's one aisle_z).
 
 const STALL := 2.75     # 9 ft stall, as painted
 const STALL_DEPTH := 5.5
@@ -48,7 +50,7 @@ static func for_building(zone: int, bseed: int, lot := {}, storeys := 0, type :=
 				return office_park(art_seed, fit, level)
 			if type in ["mixed_use", "commercial_block", "office"]:
 				return main_street()  # built to the sidewalk; its lot (if any) is out back
-			return shop(art_seed, fit, type == "shopping_center", level if type == "shop" else 1)
+			return shop(art_seed, fit, type == "shopping_center", level if type in ["shop", "shopping_center"] else 1)
 		ZoneMap.Zone.INDUSTRIAL:
 			return factory(art_seed, fit)
 	return empty_lot()
@@ -123,7 +125,10 @@ static func shop(art_seed: int, fit := {"half": LOT_HALF, "depth": 32.0}, strip 
 		return out
 	var spots := []
 	for st in plan.stalls:
-		spots.append({"pos": st[0], "face": st[1], "kind": "stall"})
+		var spot := {"pos": st[0], "face": st[1], "kind": "stall"}
+		if st.size() > 2:
+			spot.aisle = st[2]  # a big lot's own aisle for this row
+		spots.append(spot)
 	var door: Vector2 = plan.door
 	return {"spots": spots, "door": door, "cut_x": plan.cut_x, "aisle_z": plan.aisle_z,
 		"walk_z": door.y - 1.1, "main_street": false}

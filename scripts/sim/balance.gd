@@ -227,7 +227,7 @@ const MARKET_MIN := {
 	# Kokomo, Marion and Wabash each have one on a bypass road); fully
 	# built out once the market is a county's worth of people.
 	"office_park": [10_000, 15_000, 25_000],
-	"shopping_center": [5000, 10_000],
+	"shopping_center": [5000, 10_000, 20_000],  # a discount store wants a trade area of about 20,000 (1980s Walmart/Kmart small-town siting)
 	# A town of 1,500-2,000 (Upland, Fairmount) keeps a few 30-60 job shops;
 	# a 100-job plant wants a county's labor shed of 5,000 or more.
 	"factory": [0, 1500, 5000],
@@ -321,6 +321,10 @@ const REDEV_HIGHRISE_FAR := 4.4
 ## past which it's a neighborhood center with a grocery anchor.
 const REDEV_SHOP_LOTS := 4
 const REDEV_CENTER_AREA := 12_000.0
+## A neighborhood center grows into a community center by buying up to
+## this many houses on the lots behind and beside it (developers' "backlot"
+## assembly: a block's two rows of lots, about 120 by 60 m).
+const REDEV_COMMUNITY_HOMES := 10
 ## ITE Trip Generation (10th ed.): low-rise multifamily (220) about 6.7
 ## weekday trips per unit; shopping center (820) about 37.75 per 1,000 sq ft.
 const REDEV_TRIPS_PER_FLAT := 6.7

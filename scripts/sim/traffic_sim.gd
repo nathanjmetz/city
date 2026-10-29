@@ -2944,7 +2944,8 @@ func _lot_place(ref: String) -> Dictionary:
 	var spots := []
 	for s in lay.spots:
 		spots.append({"pos": SiteLayout.world(lot, s.pos), "face": SiteLayout.world_dir(lot, s.face),
-			"kind": s.kind, "hidden": s.kind == "garage" or s.kind == "bay", "local": s.pos})
+			"kind": s.kind, "hidden": s.kind == "garage" or s.kind == "bay", "local": s.pos,
+			"aisle": float(s.get("aisle", lay.aisle_z))})
 	var stop := _canon(lot)
 	stop["ref"] = ref
 	return {"ref": ref, "stop": stop, "lot": lot, "lay": lay, "spots": spots, "taken": _fill(spots.size()),
@@ -3698,13 +3699,14 @@ func _approach_pts(pl: Dictionary, spot: int, car_len: float) -> Array:
 	var pts := [Vector2(cut, -lot.to_curb)]
 	match s.kind:
 		"stall":
-			pts.append(Vector2(cut, lay.aisle_z))
-			pts.append(Vector2(sp.x, lay.aisle_z))
+			var az: float = s.get("aisle", lay.aisle_z)
+			pts.append(Vector2(cut, az))
+			pts.append(Vector2(sp.x, az))
 			# Square to the stall at its mouth, then straight in, clear of
 			# the cars either side.
 			var mouth := sp - Vector2(s.face.dot(SiteLayout.world_dir(lot, Vector2(1, 0))),
 				s.face.dot(SiteLayout.world_dir(lot, Vector2(0, 1)))) * (SiteLayout.STALL_DEPTH * 0.5 + 0.3)
-			if mouth.distance_to(Vector2(sp.x, lay.aisle_z)) > 1.0:
+			if mouth.distance_to(Vector2(sp.x, az)) > 1.0:
 				pts.append(mouth)
 		"bay":
 			pts.append(Vector2(cut, sp.y - 13.0))
@@ -3845,7 +3847,7 @@ func _out_path(car: Dictionary, pl: Dictionary, spot: int, w: Dictionary, lane: 
 			fwd.append(pl.drive[i])
 	elif not pl.lay.is_empty():
 		if s.kind == "stall":
-			fwd.append(SiteLayout.world(pl.lot, Vector2(pl.lay.cut_x, pl.lay.aisle_z)))
+			fwd.append(SiteLayout.world(pl.lot, Vector2(pl.lay.cut_x, float(s.get("aisle", pl.lay.aisle_z)))))
 		fwd.append(entry)
 	de = minf(de, maxf(top - DRIVEWAY_LEAD - 2.0, bot))
 	var exit_d := clampf(de + DRIVEWAY_LEAD + 2.0, bot, top)
