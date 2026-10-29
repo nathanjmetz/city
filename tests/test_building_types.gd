@@ -221,6 +221,7 @@ func _init() -> void:
 	_check(grown > 0, "buildings grow along their paths over time (%d stages up)" % grown)
 	_test_far()
 	_test_factory()
+	_test_add_on(sim)
 	print("ALL TESTS PASSED" if not failed else "TESTS FAILED")
 	quit(1 if failed else 0)
 
@@ -364,6 +365,27 @@ func _crowd(sim: CitySim, key: String, n: int) -> Array:
 			sim.buildings[k] = {"zone": ZoneMap.Zone.RESIDENTIAL, "seed": 1, "built": 0, "cap": 3, "occ": 3}
 			added.append(k)
 	return added
+
+
+## An office that grows a stage on its own lot sometimes adds floors on top
+## (added_from), never when it moves to a bigger site or another type, and
+## loses the mark when it drops a level.
+func _test_add_on(sim) -> void:
+	var adds := 0
+	var ok := true
+	for i in 200:
+		var b := {"zone": ZoneMap.Zone.COMMERCIAL, "seed": 1000 + i * 7919, "built": 0, "type": "office", "level": 0, "cap": 40}
+		var up := BuildingTypes.make(sim, "k", b, "office", 1)
+		if up.has("added_from"):
+			adds += 1
+			ok = ok and int(up.added_from) == 3
+			var up2 := BuildingTypes.make(sim, "k", up, "office", 2)
+			ok = ok and (not up2.has("added_from") or int(up2.added_from) == 5)
+			ok = ok and not BuildingTypes.make(sim, "k", up, "office", 0).has("added_from")
+			ok = ok and not BuildingTypes.make(sim, "k", up, "shop", 0).has("added_from")
+		var high := BuildingTypes.make(sim, "k", BuildingTypes.make(sim, "k", b, "office", 2), "office", 3)
+		ok = ok and not high.has("added_from")  # a high-rise needs an assembled site
+	_check(ok and adds > 60 and adds < 140, "about half of offices growing in place add floors on top (%d of 200)" % adds)
 
 
 func _check(ok: bool, what: String) -> void:

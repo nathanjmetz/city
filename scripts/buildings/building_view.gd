@@ -288,7 +288,7 @@ func _sort_pending() -> void:
 ## What the drawing depends on: type, stage, size and how well it's kept.
 func _look(b: Dictionary, key: String) -> Array:
 	return [BuildingTypes.type_of(b), int(b.get("level", 0)), int(b.get("units", 1)), sim.care.tier_of(key),
-		sim.heritage.protected(key)]
+		sim.heritage.protected(key), int(b.get("added_from", 0))]
 
 
 ## The building on lot `key` as its builder draws it, as plain arrays
@@ -298,6 +298,9 @@ func _draw(key: String, lot: Dictionary, b: Dictionary, fit: Dictionary, s: int)
 	var storeys := BuildingTypes.storeys(b)
 	HouseBuilder.owner_care = sim.care.tier_of(key)
 	HouseBuilder.restored = sim.heritage.protected(key)
+	if b.has("added_from"):
+		fit = fit.duplicate()
+		fit.added_from = int(b.added_from)  # floors added on top of a block this tall
 	HouseBuilder.keep_arrays = true
 	var built := build_for(BuildingTypes.type_of(b), storeys, s, lot.to_curb, fit, spec, int(b.get("units", 2)), b.get("chain", "general"), int(b.get("level", 0)))
 	HouseBuilder.keep_arrays = false
