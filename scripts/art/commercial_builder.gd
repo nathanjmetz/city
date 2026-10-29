@@ -500,11 +500,27 @@ func _strip_center(to_curb: float, anchor := false) -> void:
 	var cz := zf + d * 0.5
 	var wall := Color(_pick(BLOCK + ["#c9b79a", "#b8a58a"]))
 	var mull: Color = MULLION[rng.randi() % 2]
+	# Its front as built in its decade (own random numbers, so the builder's
+	# don't move): the 1960s flat canopy on square columns; the 1970s-80s
+	# mansard, a steep shingled slope over the walk on a brown brick front;
+	# or the 1990s-2010s front of tenant towers in EIFS, each a different
+	# height with its own cornice, on stone-veneer piers.
+	var sr := RandomNumberGenerator.new()
+	sr.seed = hash([rng.seed, "strip style"])
+	var style: String = ["flat", "flat", "mansard", "mansard", "towers"][sr.randi() % 5]
+	if era == "recent":
+		style = ["mansard", "towers", "towers"][sr.randi() % 3]
+	var mat := "paint"
+	if style == "mansard":
+		wall = Color(FACADE_BRICK[sr.randi() % FACADE_BRICK.size()])
+		mat = "brick"
+	elif style == "towers":
+		wall = Color(["#d8c9a8", "#cdbb98", "#e0d4ba", "#c4b391"][sr.randi() % 4])
 	# A neighborhood center: a supermarket anchors the +x end.
 	var aw := clampf(w * 0.4, 32.0, 56.0) if anchor and w >= 70.0 else 0.0
 	var ax0 := w * 0.5 - aw
 	_box("paint", Vector3(w + 0.1, 0.3, d + 0.1), Vector3(0, 0.15, cz), FOUNDATION)
-	_flat_roofed("paint", w, d, cz, h, h + 1.2, wall)
+	_flat_roofed(mat, w, d, cz, h, h + 1.2, wall)
 	var n := clampi(int(w / 7.0), 3, 14)
 	var bay := w / n
 	site.door = Vector2(-w * 0.5 + bay * 0.5, zf)
@@ -527,25 +543,89 @@ func _strip_center(to_curb: float, anchor := false) -> void:
 			sign_spec = {}
 		_sign(Vector3(x, 3.9, zf - 2.55), sw * rng.randf_range(0.5, 0.8), 0.7)
 		sign_spec = spec
-	# Canopy over the walk on square columns.
-	_box("paint", Vector3(w + 0.4, 0.5, 2.6), Vector3(0, 3.65, zf - 1.3), wall.lightened(0.1))
-	_quad("paint", Vector3(-w * 0.5 - 0.2, 3.39, zf - 2.6), Vector3(w * 0.5 + 0.2, 3.39, zf - 2.6),
-		Vector3(w * 0.5 + 0.2, 3.39, zf), Vector3(-w * 0.5 - 0.2, 3.39, zf), SOFFIT, [], Vector3.DOWN)
+	# Canopy over the walk on square columns (a mansard's slope instead).
+	var x1 := w * 0.5 - aw if style == "mansard" and aw > 0.0 else w * 0.5
+	if style == "mansard":
+		_strip_mansard(-w * 0.5 - 0.2, x1 + 0.2, zf, h + 1.2, Color(["#4a3f36", "#3e3e3c", "#5a4a3c", "#6b5a45"][sr.randi() % 4]))
+	else:
+		_box("paint", Vector3(w + 0.4, 0.5, 2.6), Vector3(0, 3.65, zf - 1.3), wall.lightened(0.1))
+		_quad("paint", Vector3(-w * 0.5 - 0.2, 3.39, zf - 2.6), Vector3(w * 0.5 + 0.2, 3.39, zf - 2.6),
+			Vector3(w * 0.5 + 0.2, 3.39, zf), Vector3(-w * 0.5 - 0.2, 3.39, zf), SOFFIT, [], Vector3.DOWN)
+	var pier := Color(["#9c8f7a", "#b3a58c", "#8a7f70"][sr.randi() % 3])
 	var x := -w * 0.5
-	while x <= w * 0.5 + 0.01:
-		_box("paint", Vector3(0.45, 3.0, 0.45), Vector3(clampf(x, -w * 0.5 + 0.3, w * 0.5 - 0.3), 1.9, zf - 2.3), wall.lightened(0.1))
+	while x <= x1 + 0.01:
+		var px := clampf(x, -w * 0.5 + 0.3, w * 0.5 - 0.3)
+		_box(mat, Vector3(0.45, 3.0, 0.45), Vector3(px, 1.9, zf - 2.3), wall.lightened(0.1) if mat == "paint" else wall)
+		if style == "towers":
+			_box("paint", Vector3(0.65, 1.1, 0.65), Vector3(px, 0.55, zf - 2.3), pier)  # cultured stone
 		x += bay
 	if aw > 0.0:
 		_grocery_anchor(ax0, w * 0.5, zf, cz, d, wall, mull)
 	_rooftop(w, d, cz, h, n)
-	# A raised false front over the end store, and over the middle on a
-	# long centre: what a strip centre's parapet does to break up its length.
-	_raised_front(-w * 0.5 + bay * 0.5, bay, zf, h + 1.2, wall, "paint")
-	if n >= 5:
-		_raised_front(-w * 0.5 + (n / 2 + 0.5) * bay, bay, zf, h + 1.2, wall, "paint")
+	if style == "towers":
+		_strip_towers(w, bay, n, ax0 if aw > 0.0 else INF, zf, h + 1.2, wall, sr)
+	elif style == "flat":
+		# A raised false front over the end store, and over the middle on a
+		# long centre: what a strip centre's parapet does to break up its length.
+		_raised_front(-w * 0.5 + bay * 0.5, bay, zf, h + 1.2, wall, "paint")
+		if n >= 5:
+			_raised_front(-w * 0.5 + (n / 2 + 0.5) * bay, bay, zf, h + 1.2, wall, "paint")
 	_shop_parking(to_curb, w, zf - 2.6, 0.0)
 	if fine_parts:
 		_strip_lot_dress(to_curb, zf - 4.6, n, wall)
+
+
+## A 1970s-80s strip's mansard: a steep slope of asphalt shingles from the
+## canopy's edge over the walk up to the parapet, closed at the ends, a
+## fascia at its foot and the walk's soffit under it.
+func _strip_mansard(x0: float, x1: float, zf: float, top: float, col: Color) -> void:
+	var zo := zf - 2.6
+	var y0 := 3.35
+	var zt := zf - 1.4
+	_quad("roof", Vector3(x0, y0, zo), Vector3(x1, y0, zo), Vector3(x1, top, zt), Vector3(x0, top, zt), col, [],
+		Vector3(0, zt - zo, -(top - y0)).normalized())
+	_quad("paint", Vector3(x0, top, zt), Vector3(x1, top, zt), Vector3(x1, top, zf), Vector3(x0, top, zf), col.darkened(0.2), [], Vector3.UP)
+	for e in [x0, x1]:
+		_quad("roof", Vector3(e, y0, zo), Vector3(e, top, zt), Vector3(e, top, zf), Vector3(e, y0, zf), col.darkened(0.08), [],
+			Vector3(signf(e), 0, 0))
+	_box("paint", Vector3(x1 - x0 + 0.05, 0.3, 0.12), Vector3((x0 + x1) * 0.5, y0 + 0.1, zo - 0.04), Color("#3a3430"))
+	_quad("paint", Vector3(x0, y0 - 0.01, zo), Vector3(x1, y0 - 0.01, zo), Vector3(x1, y0 - 0.01, zf), Vector3(x0, y0 - 0.01, zf), SOFFIT, [], Vector3.DOWN)
+
+
+## A 1990s-2010s strip's front: a tower over every other tenant, each its
+## own height and its own cornice (some with a standing-seam hip cap), in
+## EIFS a shade off the wall, and gooseneck lamps over the signs.
+func _strip_towers(w: float, bay: float, n: int, stop: float, zf: float, top: float, wall: Color, sr: RandomNumberGenerator) -> void:
+	var cap := Color(["#e7e1d2", "#d6cdb8", "#5a5048"][sr.randi() % 3])
+	var seam := Color(["#3f5a4a", "#6b3a2e", "#3a4250", "#4a4038"][sr.randi() % 4])
+	for i in n:
+		var cx := -w * 0.5 + (i + 0.5) * bay
+		if cx + bay * 0.5 > stop + 0.01:
+			break
+		if fine_parts:
+			for s in [-1.0, 1.0]:
+				_box("paint", Vector3(0.06, 0.06, 0.6), Vector3(cx + s * bay * 0.3, 4.75, zf - 2.85), Color("#2a2c2e"))
+				_box("paint", Vector3(0.25, 0.12, 0.25), Vector3(cx + s * bay * 0.3, 4.68, zf - 3.1), Color("#2a2c2e"))
+		if i % 2 == 1 and i != 0:
+			continue
+		var fw := bay * sr.randf_range(0.55, 0.85)
+		var rise := sr.randf_range(1.4, 3.2)
+		var tint := wall.lightened(sr.randf_range(-0.08, 0.1))
+		_box("paint", Vector3(fw, rise + 0.6, 1.0), Vector3(cx, top + rise * 0.5 - 0.3, zf - 0.4), tint)
+		_box("paint", Vector3(fw + 0.5, 0.35, 1.4), Vector3(cx, top + rise + 0.12, zf - 0.4), cap)
+		_box("paint", Vector3(fw + 0.2, 0.2, 1.15), Vector3(cx, top + rise - 0.6, zf - 0.4), cap)
+		if sr.randf() < 0.4:
+			var y := top + rise + 0.3
+			var hx := fw * 0.5 + 0.2
+			var a := Vector3(cx - hx, y, zf - 1.1)
+			var b := Vector3(cx + hx, y, zf - 1.1)
+			var c := Vector3(cx + hx, y, zf + 0.3)
+			var d := Vector3(cx - hx, y, zf + 0.3)
+			var p := Vector3(cx, y + minf(fw, 1.4) * 0.5, zf - 0.4)
+			_tri("roof", a, b, p, seam, [], Vector3(0, 1, -1))
+			_tri("roof", b, c, p, seam, [], Vector3(1, 1, 0))
+			_tri("roof", c, d, p, seam, [], Vector3(0, 1, 1))
+			_tri("roof", d, a, p, seam, [], Vector3(-1, 1, 0))
 
 
 ## The supermarket that anchors a neighborhood center (ICSC: 30,000 to
