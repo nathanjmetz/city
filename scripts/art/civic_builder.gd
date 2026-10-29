@@ -69,7 +69,16 @@ static func build_service(kind: int, seed: int, size: Vector2, to_curb: float, b
 	b.half = size.x * 0.5
 	b.depth = size.y * 0.5
 	b._dress(false, true)
-	return [b._commit_house(), b._commit_flat(), b.trees]
+	return [b._commit_house(), b._commit_flat(), b.trees, b.labels]
+
+
+## A civic building's own sign: what it is, lettered (a station sign or
+## cast letters on a panel), never a shop's stand-in trade word.
+func _civic_sign(c: Vector3, w: float, h: float, text: String, panel: String, letter: String, style: String) -> void:
+	var was := sign_spec
+	sign_spec = {"text": text, "style": style, "panel": Color(panel), "letter": Color(letter)}
+	_sign(c, w, h)
+	sign_spec = was
 
 
 # ---------------------------------------------------------------- fire
@@ -94,7 +103,7 @@ func _fire(front: float, to_curb: float) -> void:
 		_flat_rect("drive", x - 2.4, x + 2.4, -to_curb + front, zf, 0.09)
 	# Stone band, sign and lights over the doors.
 	_box("paint", Vector3(aw + 0.1, 0.3, 0.18), Vector3(ax, 5.15, zf - 0.09), trim)
-	_sign(Vector3(ax, 5.55, zf - 0.12), aw * 0.6, 0.75)
+	_civic_sign(Vector3(ax, 5.55, zf - 0.12), aw * 0.6, 0.75, "FIRE DEPARTMENT", "#7a1f1f", "#f2efe6", "slab")
 	# Office and day room: a lower wing beside the bays. Its back wall takes
 	# the meters and transformer, clear of the drive-through apron.
 	_dr_main = _dr_halls.size()
@@ -134,7 +143,7 @@ func _police(front: float, to_curb: float) -> void:
 	_box("paint", Vector3(w + 0.1, 0.25, 0.16), Vector3(0, h - 0.3, zf - 0.08), trim)
 	var ex := rng.randf_range(-w * 0.2, w * 0.2)
 	_vestibule(ex, zf, 4.2, 2.6, h - 0.6)
-	_sign(Vector3(ex, h - 0.05, zf - 2.75), 3.6, 0.5)
+	_civic_sign(Vector3(ex, h - 0.05, zf - 2.75), 3.6, 0.5, "POLICE", "#1f3b6e", "#f2efe6", "franklin")
 	_window_row(ex - 2.1 - (w * 0.5 + ex - 2.1) * 0.5, zf, w * 0.5 + ex - 3.5, 1.7, 1.2, 3, trim)
 	_window_row(ex + 2.1 + (w * 0.5 - ex - 2.1) * 0.5, zf, w * 0.5 - ex - 3.5, 1.7, 1.2, 3, trim)
 	for s in [-1.0, 1.0]:
@@ -453,7 +462,7 @@ func _clinic_wing(w: float, z: float, g: float, what: String) -> void:
 				_box("paint", Vector3(0.3, 3.4, 0.3), Vector3(side + 4.1, 1.7, zf + wd * 0.5 + e * 2.6), eifs.darkened(0.1))
 			_box("paint", Vector3(0.06, 1.0, 1.2), Vector3(side + 0.04, 1.3, zf + wd * 0.5 + 1.4), Color("#2a3a44"))
 			_flat_rect("line", side + 4.3, side + 4.4, zf - 1.0, zf + wd + 1.0, 0.07, LINE)
-			_sign(Vector3(x, h + 0.2, zf - 0.04), ww * 0.5, 0.6)
+			_civic_sign(Vector3(x, h + 0.2, zf - 0.04), ww * 0.5, 0.6, what.replace("_", " "), "#1d5a66", "#f2efe6", "franklin")
 		"urgent_care":
 			_box("paint", Vector3(5.0, 0.5, 6.5), Vector3(side + 2.5, 4.6, zf + wd * 0.5), eifs)
 			for e in [-1.0, 1.0]:
@@ -464,7 +473,7 @@ func _clinic_wing(w: float, z: float, g: float, what: String) -> void:
 			for i in 3:
 				_box("paint", Vector3(1.6, 0.45, 0.45), Vector3(side + 1.2, 0.45, zf + 1.5 + i * 2.5), Color("#6b5a48"))
 		_:
-			_sign(Vector3(x, h + 0.2, zf - 0.04), ww * 0.5, 0.6)
+			_civic_sign(Vector3(x, h + 0.2, zf - 0.04), ww * 0.5, 0.6, what.replace("_", " "), "#1d5a66", "#f2efe6", "franklin")
 	var pick := TreeField.pick(rng, true)
 	trees.append([Vector3(-w * 0.5 + 1.5, 0, z + g - 1.0), pick[0], pick[1], rng.randf_range(0.7, 0.9)])
 
@@ -644,7 +653,7 @@ func _traffic_center(front: float, to_curb: float) -> void:
 	_box("paint", Vector3(w + 0.1, 0.2, 0.14), Vector3(0, 3.7, zf - 0.07), trim)
 	var ex := rng.randf_range(-w * 0.2, w * 0.2)
 	_vestibule(ex, zf, 4.2, 2.6, 3.4)
-	_sign(Vector3(ex, 3.45, zf - 2.75), 3.6, 0.5)
+	_civic_sign(Vector3(ex, 3.45, zf - 2.75), 3.6, 0.5, "TRAFFIC OPERATIONS", "#2a2a2c", "#f0c23a", "franklin")
 	# Ground floor: offices either side of the door; upstairs, the control
 	# room's long window band.
 	_window_row(ex - 2.1 - (w * 0.5 + ex - 2.1) * 0.5, zf, w * 0.5 + ex - 3.5, 1.6, 1.2, 3, trim)
@@ -704,7 +713,7 @@ func _clinic(front: float, to_curb: float) -> void:
 	_box("paint", Vector3(6.4, 0.04, 5.8), Vector3(ex, 3.49, zf - 3.0), SOFFIT)
 	for s in [-1.0, 1.0]:
 		_box("paint", Vector3(0.4, 3.5, 0.4), Vector3(ex + s * 2.9, 1.75, zf - 5.6), eifs)
-	_sign(Vector3(ex, 4.0, zf - 6.02), 4.0, 0.5)
+	_civic_sign(Vector3(ex, 4.0, zf - 6.02), 4.0, 0.5, "HEALTH CLINIC", "#1d5a66", "#f2efe6", "franklin")
 	_flat_rect("drive", ex - 3.3, ex + 3.3, zf - 6.0, zf, 0.09)
 	_window_row(ex - 3.5 - (w * 0.5 + ex - 3.5) * 0.5, zf, w * 0.5 + ex - 4.5, 1.6, 1.5, 3, eifs)
 	_window_row(ex + 3.5 + (w * 0.5 - ex - 3.5) * 0.5, zf, w * 0.5 - ex - 4.5, 1.6, 1.5, 3, eifs)
@@ -756,7 +765,7 @@ func _school(front: float, to_curb: float) -> void:
 	_box("paint", Vector3(10.0, 0.4, 5.0), Vector3(ex, 3.3, z0 - 4.4), trim)
 	for s in [-1.0, 1.0]:
 		_box("paint", Vector3(0.3, 3.1, 0.3), Vector3(ex + s * 4.6, 1.55, z0 - 6.6), DARK)
-	_sign(Vector3(ex, 4.2, z0 - 2.05), 7.0, 0.7)
+	_civic_sign(Vector3(ex, 4.2, z0 - 2.05), 7.0, 0.7, "SCHOOL", "#5a1f24", "#f2efe6", "serif")
 	_rooftop_units(0.0, 50.0, z0, wd, h, 4)
 	_rooftop_units(gx, 18.0, gz, 24.0, 8.2, 2)
 	# Bus loop and staff parking in front, the walk to the doors.
@@ -918,7 +927,7 @@ func _substation(front: float, to_curb: float) -> void:
 	_box("brick", Vector3(4.6, 3.0, 3.2), Vector3(9.5, 1.8, front + 4.5), Color(_pick(["#b8b2a4", "#a49d8f", "#8a4a38"])))
 	_box("paint", Vector3(4.9, 0.15, 3.5), Vector3(9.5, 3.35, front + 4.5), Color("#cfcbc2"))
 	_steel_door(Vector3(8.6, 1.35, front + 2.88), -1.0)
-	_sign(Vector3(-1.6, 1.2, front + 1.9), 1.2, 0.4)
+	_civic_sign(Vector3(-1.6, 1.2, front + 1.9), 1.2, 0.4, "DANGER HIGH VOLTAGE", "#f2f2ee", "#b8322a", "franklin")
 
 
 func _lattice(p: Vector3, h: float) -> void:
@@ -1137,7 +1146,7 @@ func _bus_depot(size: Vector2, front: float, to_curb: float) -> void:
 	_box("brick", Vector3(ow, 3.6, 3.2), Vector3(ox, 1.8, gz - 1.0), brick)
 	_box("paint", Vector3(ow + 0.2, 0.25, 3.4), Vector3(ox, 3.7, gz - 1.0), trim)
 	_entry(ox, gz - 2.6, trim)
-	_sign(Vector3(gx + gw * 0.2, 5.2, gz - 0.04), gw * 0.4, 0.9)
+	_civic_sign(Vector3(gx + gw * 0.2, 5.2, gz - 0.04), gw * 0.4, 0.9, "TRANSIT", "#1f3b6e", "#f2efe6", "franklin")
 	# Fuel and wash island by the yard gate.
 	var fz := yard_z + 1.5
 	_box("paint", Vector3(1.2, 0.9, 3.0), Vector3(drive_x, 0.45, fz + 1.5), CONCRETE)
@@ -1324,7 +1333,7 @@ func _taxi_company(size: Vector2, front: float, to_curb: float) -> void:
 	_flat_roofed_at("brick", ox, ow, od, oz + od * 0.5, 4.0, 4.8, brick)
 	_glass(Vector3(ox - ow * 0.2, 1.6, oz - 0.03), Vector3(-1, 0, 0), ow * 0.45, 2.0, 0.0)
 	_entry(ox + ow * 0.25, oz, trim)
-	_sign(Vector3(ox, 4.3, oz - 0.04), ow * 0.5, 0.7)
+	_civic_sign(Vector3(ox, 4.3, oz - 0.04), ow * 0.5, 0.7, "TAXI", "#e0b020", "#1a1a1a", "condensed")
 	_fence(Vector2(-w * 0.5 + 0.2, lot_z), Vector2(-w * 0.5 + 0.4, back - 0.3), 1.2)
 	_fence(Vector2(-w * 0.5 + 0.2, back - 0.5), Vector2(w * 0.5 - 0.2, back - 0.3), 1.2)
 
@@ -1361,7 +1370,7 @@ func _builder_yard(size: Vector2, front: float, to_curb: float) -> void:
 	_glass(Vector3(ox - ow * 0.28, 1.6, oz - 0.03), Vector3(-1, 0, 0), ow * 0.3, 1.4, 0.0)
 	_entry(ox - ow * 0.05, oz, trim)
 	_overhead_door(ox + ow * 0.3, oz, 3.7, 3.7, steel)
-	_sign(Vector3(ox - ow * 0.2, 4.0, oz - 0.04), ow * 0.45, 0.6)
+	_civic_sign(Vector3(ox - ow * 0.2, 4.0, oz - 0.04), ow * 0.45, 0.6, "CONSTRUCTION", "#8a5a12", "#f2efe6", "slab")
 	# A lumber rack along the far fence: steel uprights and stacked boards.
 	var rz := lot_z + 1.5
 	var rx := -w * 0.5 + 1.4

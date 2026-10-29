@@ -148,7 +148,7 @@ func _init() -> void:
 			lot_front = true
 			var hub := HubBuilder.build_hub({"kind": "recycling_" + ("1" if name == "recycling" else name.right(1)) if name.begins_with("recycling") else name, "cells": cells,
 				"cell": 50.0, "built": Array(OS.get_environment("DEV").split(",", false)), "received": 40_000_000}, sd, to_curb)
-			built = [hub[0], hub[1], hub[2], [], hub[3]]
+			built = [hub[0], hub[1], hub[2], hub[4], hub[3]]
 		elif name == "warehouse":
 			size = Vector2(80, 90)
 			built = WarehouseBuilder.build_warehouse({"kind": "medium", "bays": 0, "level": 1, "built": []}, sd, to_curb)
@@ -168,6 +168,11 @@ func _init() -> void:
 			mi.mesh = built[i]
 			mi.position = at
 			world.add_child(mi)
+		if built.size() > 3 and built[3] is Array and not built[3].is_empty():
+			var signs := Node3D.new()
+			signs.position = at
+			SignText.add(signs, built[3])
+			world.add_child(signs)
 		if built.size() > 4 and built[4] is Mesh:
 			var lawn := MeshInstance3D.new()
 			lawn.mesh = built[4]

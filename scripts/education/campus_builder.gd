@@ -32,7 +32,7 @@ static func build_main(kind: String, seed: int, to_curb: float) -> Array:
 	b.half = 60.0
 	b.depth = 60.0
 	b._dress(false, true)
-	return [b._commit_house(), b._commit_flat(), b.trees]
+	return [b._commit_house(), b._commit_flat(), b.trees, b.labels]
 
 
 ## The same for one block of campus, built up `levels` times.
@@ -135,7 +135,7 @@ func _high_school(to_curb: float) -> void:
 	# Glass entry with the school's sign over a flat canopy.
 	_vestibule(0.0, zf, 10.0, 4.0, 4.0)
 	_box("paint", Vector3(14.0, 0.45, 7.0), Vector3(0.0, 4.4, zf - 5.5), LIMESTONE)
-	_sign(Vector3(0.0, 6.0, zf - 0.1), 12.0, 1.0)
+	_civic_sign(Vector3(0.0, 6.0, zf - 0.1), 12.0, 1.0, "HIGH SCHOOL", "#5a1f24", "#f2efe6", "serif")
 	# Bus loop and the walk up to the doors; staff parking to one side.
 	_flat_rect("asphalt", -50.0, 50.0, front + 6.0, front + 16.0, 0.06)
 	for x in [-50.0, 43.0]:
@@ -153,7 +153,7 @@ func _college(to_curb: float) -> void:
 	_hall(0.0, zf, 70.0, 26.0, 2, brick, true)
 	_hall(26.0, zf + 26.0, 18.0, 34.0, 1, brick)
 	_vestibule(0.0, zf, 12.0, 4.0, 4.5)
-	_sign(Vector3(0.0, 8.6, zf - 0.1), 14.0, 1.0)
+	_civic_sign(Vector3(0.0, 8.6, zf - 0.1), 14.0, 1.0, "COMMUNITY COLLEGE", "#1f3b6e", "#f2efe6", "serif")
 	# Commuter college: the parking comes first.
 	_parking(-56.0, 56.0, front + 4.0, zf - 4.0, to_curb, -40.0)
 	_flat_rect("asphalt", 40.0, 47.0, front - to_curb, front + 4.0, 0.1)
