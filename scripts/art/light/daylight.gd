@@ -44,6 +44,21 @@ const HAZE_THIN := 0.75
 const HAZE_THICK := 1.25
 
 
+## The desktop app's night (Forward+, CloudSky; the browser keeps the rows
+## above). Benchmark: an 11 pm July sky over a small Indiana town, eyes used
+## to the dark. Overhead it is a deep navy, never black; low down the town's
+## lights glow warm grey-orange in the haze (skyglow), about 3 times brighter
+## than the zenith. Houses are dark: the moon and sky give a faint, greyish
+## light, a few percent of daylight's fill once the eye has adapted, and
+## lamps and lit windows do the rest. NIGHT_FILL is the shade light's share
+## of its daytime strength at full night (the table's night rows keep 0.97,
+## which lit walls a bright day-for-night blue).
+const NIGHT_ZENITH := Color(0.075, 0.1, 0.21)
+const NIGHT_GLOW := Color(0.25, 0.22, 0.2)
+const NIGHT_SHADE := Color(0.42, 0.47, 0.6)
+const NIGHT_FILL := 0.3
+
+
 ## How humid the air is at this point in the year (months from January, any
 ## year): 0 in mid-January, 1 in mid-July, when Indiana's dew points peak.
 static func humidity(months: float) -> float:
@@ -53,7 +68,9 @@ static func humidity(months: float) -> float:
 ## The light for a sun at height `e` (degrees, as seen) on air of humidity
 ## `humid` (0 to 1). Colours are as the editor shows them (sRGB), like
 ## SkyLight's own; strengths are relative to the tuned 40-degree look.
-static func at(e: float, humid: float) -> Dictionary:
+## `rich`: the desktop app's dusk and night (NIGHT_ZENITH and the rest);
+## the same light as the browser's while the sun is 8 degrees or more up.
+static func at(e: float, humid: float, rich := false) -> Dictionary:
 	var row := _sky_row(e)
 	var haze := HAZE_WINTER.lerp(HAZE_SUMMER, humid)
 	# Haze shows most in a high sun's sky and fades into the sunset colours.
@@ -65,7 +82,7 @@ static func at(e: float, humid: float) -> Dictionary:
 	zenith = zenith.lerp(zenith.lerp(Color(0.32, 0.47, 0.72), 0.12), humid * haze_share)
 	var day := smoothstep(-8.0, 5.0, e)
 	var sun := sun_strength(e)
-	return {
+	var l := {
 		"sun_color": kelvin_color(sun_kelvin(e) - 250.0 * humid * (1.0 - smoothstep(5.0, 30.0, e))),
 		"sun_energy": sun,
 		"exposure": exposure(e, sun, row[3]),
@@ -82,6 +99,25 @@ static func at(e: float, humid: float) -> Dictionary:
 		# First stars at the end of civil twilight, most of them by nautical.
 		"stars": 0.9 * (1.0 - smoothstep(-13.0, -5.0, e)),
 	}
+	if rich and e < 8.0:
+		# Overhead, twilight's blue has a little more green in it than the
+		# table's: the desktop's tone curve (AgX) turns so pure a blue
+		# purple. Then the zenith darkens no further than the night's navy.
+		var z: Color = l.zenith
+		var dusk := smoothstep(-9.0, -3.0, e) * (1.0 - smoothstep(2.0, 8.0, e))
+		z.r *= 1.0 - 0.25 * dusk
+		z.g *= 1.0 + 0.4 * dusk
+		l.zenith = Color(maxf(z.r, NIGHT_ZENITH.r), maxf(z.g, NIGHT_ZENITH.g), maxf(z.b, NIGHT_ZENITH.b)) \
+			if e < 0.0 else z
+	if rich and e < -2.0:
+		# Past blue hour the horizon turns to the town's glow.
+		var night := 1.0 - smoothstep(-12.0, -4.0, e)
+		l.horizon = (l.horizon as Color).lerp(NIGHT_GLOW, night)
+		l.fog_color = (l.fog_color as Color).lerp(NIGHT_GLOW.darkened(0.3), night)
+		var dark := 1.0 - smoothstep(-10.0, -2.0, e)
+		l.shade_color = (l.shade_color as Color).lerp(NIGHT_SHADE, dark)
+		l.shade_energy = float(l.shade_energy) * lerpf(1.0, NIGHT_FILL, dark)
+	return l
 
 
 ## How the eye (or a camera) opens up as daylight fades: light on open

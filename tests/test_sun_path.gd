@@ -143,6 +143,22 @@ func _light() -> void:
 	_check(Daylight.at(-15.0, 0.5).stars > 0.85, "stars out at night")
 	_check(Daylight.at(0.0, 0.5).horizon.r > Daylight.at(0.0, 0.5).horizon.b * 2.0, "orange horizon at sunset")
 	_check(Daylight.humidity(6.5) > 0.99 and Daylight.humidity(0.5) < 0.01, "humid July, dry January")
+	# The desktop's night (rich): navy overhead, the town's glow low down,
+	# dark walls; the same light as the browser's by day.
+	var rn := Daylight.at(-15.0, 0.5, true)
+	var pn := Daylight.at(-15.0, 0.5)
+	_check(rn.zenith.b > rn.zenith.r * 2.0 and rn.zenith.v > pn.zenith.v, "desktop night: a navy sky, not black")
+	_check(rn.horizon.r > rn.horizon.b and rn.horizon.v > rn.zenith.v, "desktop night: a warm glow over the town")
+	_check(rn.shade_energy < pn.shade_energy * 0.5, "desktop night: dark walls, lamps and windows do the lighting")
+	_check(str(Daylight.at(40.0, 0.5, true)) == str(Daylight.at(40.0, 0.5))
+		and str(Daylight.at(8.0, 1.0, true)) == str(Daylight.at(8.0, 1.0)), "desktop daylight unchanged")
+	var darkening := true
+	var last := 2.0
+	for i in 57:
+		var b: float = Daylight.at(8.0 - i * 0.5, 0.5, true).zenith.b
+		darkening = darkening and b <= last + 1e-6
+		last = b
+	_check(darkening, "desktop sky overhead never brightens as the sun sinks")
 	var summer := Daylight.at(50.0, 1.0)
 	var winter := Daylight.at(50.0, 0.0)
 	_check(summer.haze > winter.haze and summer.horizon.b - summer.horizon.r < winter.horizon.b - winter.horizon.r,

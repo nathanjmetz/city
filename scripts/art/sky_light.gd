@@ -28,6 +28,12 @@ const SUN_ENERGY := 1.7
 const SHADE_ENERGY := 0.62
 
 const MOON_COLOR := Color(0.62, 0.72, 0.95)
+## The desktop's moonlight (Daylight.NIGHT_ZENITH and the rest): a faint,
+## greyer light. Moonlight is really sunlight, a little warmer if anything;
+## it reads cool only because the eye loses colour in the dark. At the
+## browser's 0.7 (about 40% of the midday sun) house walls glowed blue.
+const MOON_COLOR_RICH := Color(0.72, 0.8, 0.95)
+const MOON_RICH := 0.25
 
 var sun := DirectionalLight3D.new()
 var env := Environment.new()
@@ -39,6 +45,7 @@ var clouds: ShaderMaterial
 var cloud_shadows: MeshInstance3D
 var _sky: Sky
 var _moving := false
+var _sun_dir := Vector3.UP  # the sun as the desktop sky last heard (_twilight_sun)
 ## 0 in full daylight, 1 at full night. DayNight reads it.
 var darkness := 0.0
 var _day := {}  # the fixed late-morning look, to go back to
@@ -72,6 +79,8 @@ var _shade_k := 1.0 if _gl else 2.1
 ## Depth fog at street level (see _ready) and how high the haze reaches.
 const HAZE_DENSITY := 0.00016
 const HAZE_LAYER := 600.0
+## How much the depth fog veils the desktop's sky dome by day (see _ready).
+const SKY_FOG := 0.14
 
 
 func _ready() -> void:
@@ -148,7 +157,7 @@ func _ready() -> void:
 		# over the whole dome greyed the blue overhead to slate (a quarter
 		# of the haze colour at every height); about half that keeps a hazy
 		# summer sky pale but blue.
-		env.fog_sky_affect = 0.14
+		env.fog_sky_affect = SKY_FOG
 		# AgX's default curve left the town under a grey veil from the
 		# heights it's played at: woods olive-grey, lawns khaki, shade
 		# lifted. Aerial photos of a Grant County town in July have dark
@@ -236,6 +245,8 @@ func set_fixed() -> void:
 	darkness = 0.0
 	_sky_colors(_day.top, _day.horizon, 0.0)
 	env.fog_light_color = _day.horizon
+	if not _gl:
+		env.fog_sky_affect = SKY_FOG
 	env.ambient_light_energy = _day.ambient
 	env.ambient_light_color = _day.ambient_color
 	env.ambient_light_sky_contribution = _sky_share
@@ -246,6 +257,7 @@ func set_fixed() -> void:
 	sun.rotation_degrees = _day.rot
 	_fixed = true
 	_humid = -1.0
+	_twilight_sun(Vector3.UP)
 	set_season(_season_months)
 
 
@@ -275,11 +287,19 @@ static func sun_position(hour: float, months: float) -> Vector2:
 func set_time(hour: float, months: float) -> void:
 	var pos := sun_position(hour, months)
 	var elev := pos.x
-	var l := Daylight.at(elev, Daylight.humidity(months))
+	var l := Daylight.at(elev, Daylight.humidity(months), not _gl)
 	_fixed = false
+	_twilight_sun(SunPath.toward(pos))
 	darkness = l.darkness
 	_sky_colors(l.zenith, l.horizon, l.stars)
 	env.fog_light_color = l.fog_color
+	if not _gl:
+		# The fog's even veil over the dome greyed dusk's blue overhead to
+		# purple and the night's navy to brown; it fades out from a low sun,
+		# leaving the haze to the sky's own horizon (CloudSky).
+		var veil := SKY_FOG * smoothstep(-4.0, 8.0, elev)
+		if absf(env.fog_sky_affect - veil) > 0.001:
+			env.fog_sky_affect = veil
 	haze_scale = l.haze
 	env.ambient_light_color = l.shade_color
 	# Moonlit shade keeps its own tuned strength.
@@ -297,8 +317,8 @@ func set_time(hour: float, months: float) -> void:
 		var moon := Vector2(maxf(-elev, 25.0), fposmod(pos.y + 180.0, 360.0))
 		var dir := SunPath.toward(moon)
 		sun.look_at_from_position(Vector3.ZERO, -dir, Vector3.UP)
-		sun.light_color = MOON_COLOR
-		sun.light_energy = 0.7 * _light * smoothstep(-2.0, -10.0, elev)
+		sun.light_color = MOON_COLOR if _gl else MOON_COLOR_RICH
+		sun.light_energy = (0.7 if _gl else MOON_RICH) * _light * smoothstep(-2.0, -10.0, elev)
 
 
 ## Sky colours and stars, sent on only when they change enough to see: each
@@ -324,8 +344,8 @@ func _use_clouds(moving: bool) -> void:
 		off = clouds.get_shader_parameter("drift")
 	_moving = moving
 	clouds = CloudSky.make(moving)
-	clouds.set_shader_parameter("stars", sky_mat.sky_cover)
 	clouds.set_shader_parameter("cover", cov)
+	clouds.set_shader_parameter("sun_dir", _sun_dir)
 	clouds.set_shader_parameter("drift", off)
 	_clouds_colors()
 	_sky.sky_material = clouds
@@ -335,6 +355,22 @@ func _use_clouds(moving: bool) -> void:
 	add_child(cloud_shadows)
 	_shadow_param("cover", cov)
 	_shadow_param("drift", off)
+
+
+## Where the sun really is, for the desktop sky's twilight (CloudSky's
+## sun_dir): after sunset the light is the moon's, so the sky can't read the
+## sun off its light. Sent on only while the sun is under 13 degrees (above
+## that the sky has no twilight to draw) and when it has moved half a
+## degree: each change re-renders the sky's lighting.
+func _twilight_sun(dir: Vector3) -> void:
+	if clouds == null:
+		return
+	if dir.y > sin(deg_to_rad(13.0)):
+		dir = Vector3.UP
+	if dir.dot(_sun_dir) > cos(deg_to_rad(0.5)):
+		return
+	_sun_dir = dir
+	clouds.set_shader_parameter("sun_dir", dir)
 
 
 func _clouds_colors() -> void:
