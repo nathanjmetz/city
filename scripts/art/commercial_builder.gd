@@ -451,6 +451,76 @@ func _strip_center(to_curb: float) -> void:
 	if n >= 5:
 		_raised_front(-w * 0.5 + (n / 2 + 0.5) * bay, bay, zf, h + 1.2, wall, "paint")
 	_shop_parking(to_curb, w, zf - 2.6, 0.0)
+	if fine_parts:
+		_strip_lot_dress(to_curb, zf - 4.6, n, wall)
+
+
+## What a real strip centre's lot has that a bare one doesn't (Marion's
+## Eastbrook and Gas City strips, any Indiana US-route centre): two
+## accessible stalls painted blue with the wheelchair symbol, a hatched
+## access aisle and the R7-8 sign at their heads, by the centre door (ADA
+## 208: 1 per 25 stalls); twin-head shoebox lights on 9 m poles along the
+## front of the lot about every 28 m; and a multi-tenant pylon sign by the
+## curb cut, a panel per tenant on a masonry base. Desktop only, with its
+## own random numbers so the builder's don't move.
+func _strip_lot_dress(to_curb: float, back: float, n: int, wall: Color) -> void:
+	var r := RandomNumberGenerator.new()
+	r.seed = hash([rng.seed, 9127])
+	var lot0 := -half + 0.6
+	var lot1 := half - 0.6
+	if back > 6.0:
+		# Stalls run every 2.75 m from lot0: take the pair nearest the middle.
+		var k := int((0.0 - lot0) / 2.75)
+		var blue := Color("#2457a6")
+		for j in 2:
+			var x := lot0 + (k + j) * 2.75
+			if j == 0:
+				_flat_rect("line", x + 0.07, x + 2.68, back - 5.4, back - 0.1, 0.065, blue)
+				_flat_rect("line", x + 1.05, x + 1.7, back - 3.1, back - 2.4, 0.075, LINE)  # the symbol
+				_box("metal", Vector3(0.06, 2.3, 0.06), Vector3(x + 1.375, 1.15, back + 0.4), Color("#7d8184"))
+				_box("paint", Vector3(0.3, 0.45, 0.03), Vector3(x + 1.375, 2.05, back + 0.36), Color("#f2f2ee"))
+				_box("paint", Vector3(0.2, 0.2, 0.01), Vector3(x + 1.375, 2.12, back + 0.34), blue)
+			else:
+				# The hatched aisle beside it.
+				for h in 7:
+					var z := back - 5.2 + h * 0.75
+					_flat_rect("line", x + 0.2, x + 2.55, z, z + 0.12, 0.072, LINE)
+	# Lot lights along the front of the lot.
+	var poles := maxi(1, int((lot1 - lot0) / 28.0))
+	var dark := Color("#2e3032")
+	for i in poles:
+		var px := lerpf(lot0, lot1, (i + 0.5) / poles)
+		if absf(px) < 4.5:
+			px += 6.0  # clear of the curb cut
+		_box("concrete", Vector3(0.6, 0.6, 0.6), Vector3(px, 0.3, 0.7), FOUNDATION)
+		_box("paint", Vector3(0.15, 8.6, 0.15), Vector3(px, 4.9, 0.7), dark)
+		for s in [-1.0, 1.0]:
+			_box("paint", Vector3(0.08, 0.08, 0.7), Vector3(px, 9.1, 0.7 + s * 0.35), dark)
+			_box("paint", Vector3(0.55, 0.16, 0.75), Vector3(px, 9.1, 0.7 + s * 1.0), dark)
+			_box("paint", Vector3(0.45, 0.02, 0.6), Vector3(px, 9.01, 0.7 + s * 1.0), Color("#efeee6"))
+	# Pylon sign at the curb cut's side, set back from the right of way.
+	var sx := 6.5 if r.randf() < 0.5 else -6.5
+	var sz := -to_curb + 3.0
+	if sz > -0.8:
+		return
+	var tenants := clampi(n - 1, 2, 5)
+	var ph := 0.55
+	var base := 1.2
+	var cab_h := tenants * ph + 1.0
+	var caps := ["#2c3e5c", "#5b2a2a", "#3a3c3e"]
+	var cap := Color(caps[r.randi() % caps.size()])
+	for s in [-1.0, 1.0]:
+		_box("brick", Vector3(0.6, base + cab_h + 0.4, 0.6), Vector3(sx + s * 1.5, (base + cab_h + 0.4) * 0.5, sz), wall.darkened(0.25))
+	_box("paint", Vector3(2.5, cab_h, 0.4), Vector3(sx, base + cab_h * 0.5, sz), Color("#d9d6cc"))
+	_box("paint", Vector3(2.5, 1.0, 0.44), Vector3(sx, base + cab_h - 0.5, sz), cap)  # the centre's name
+	for side in [-1.0, 1.0]:
+		_box("paint", Vector3(1.6, 0.18, 0.02), Vector3(sx, base + cab_h - 0.5, sz + side * 0.23), Color("#f2efe4"))
+		for t in tenants:
+			var y := base + 0.3 + t * ph
+			var col := Color(AWNING[r.randi() % AWNING.size()]).lightened(r.randf_range(0.0, 0.15))
+			_box("paint", Vector3(2.3, ph - 0.08, 0.02), Vector3(sx, y, sz + side * 0.21), col)
+			_box("paint", Vector3(r.randf_range(0.9, 1.7), 0.14, 0.01), Vector3(sx, y, sz + side * 0.225), Color("#f4f2ea"))
+	_box("concrete", Vector3(4.2, 0.25, 1.2), Vector3(sx, 0.125, sz), FOUNDATION)
 
 
 ## A gas station: a lit canopy over two or three pump islands, a
