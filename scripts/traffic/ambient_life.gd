@@ -337,7 +337,7 @@ func _pick() -> void:
 
 ## One person: where, facing, shirt, walk phase (0 standing), size.
 func _person(list: Array, at: Vector3, face: Vector3, seed: int, walked: float, size := 1.0, sit := false,
-		lift := 0.0, talk := false) -> void:
+		lift := 0.0, doing := 0) -> void:
 	# Age by size: a small one is a child, a bit bigger a teenager. Each
 	# one's figure and build as the town's walkers have theirs (CDC and
 	# NHANES heights), dressed for the month like them.
@@ -353,9 +353,9 @@ func _person(list: Array, at: Vector3, face: Vector3, seed: int, walked: float, 
 	shirt.a = fposmod(walked, stride) / stride if walked >= 0.0 else 0.0
 	if _desktop:
 		# Seated people bend into the chair (WalkerView.SEATED).
-		# Standing about, they shift their weight (WalkerView.STANDING) and,
-		# talking, talk with their hands.
-		var still := 0 if sit or walked >= 0.0 else WalkerView.STANDING | (WalkerView.TALKING if talk else 0)
+		# Standing about, they shift their weight (WalkerView.STANDING) and
+		# talk with their hands (TALKING) or look at their phone (PHONE).
+		var still := 0 if sit or walked >= 0.0 else WalkerView.STANDING | doing
 		shirt.a = minf(shirt.a, 0.999) + float(int(worn[1]) | (WalkerView.SEATED if sit else 0) | still)
 	elif sit:
 		body.y *= 0.62  # the browser can't bend them: drawn short instead
@@ -403,8 +403,8 @@ func _draw() -> void:
 		match s.kind:
 			"talk":
 				var mid := walk + along * (float(seed % 9) - 4.0)
-				_person(people, mid - along * 0.45, along, seed, -1.0, 1.0, false, 0.0, true)
-				_person(people, mid + along * 0.45, -along, seed >> 5, -1.0, 1.0, false, 0.0, true)
+				_person(people, mid - along * 0.45, along, seed, -1.0, 1.0, false, 0.0, WalkerView.TALKING)
+				_person(people, mid + along * 0.45, -along, seed >> 5, -1.0, 1.0, false, 0.0, WalkerView.TALKING)
 			"grill":
 				var g := back + along * width * 0.15
 				props.grill.append(Transform3D(Basis(), Terrain.stand(g) + Vector3(0, 0.45, 0)))
@@ -482,7 +482,7 @@ func _draw() -> void:
 				var p := walk + into * 0.6 + along * (float(seed % 11) - 5.0)
 				_person(people, p, into, seed, -1.0)
 			"break":
-				_person(people, back + along * (width * 0.3), -along, seed, -1.0)
+				_person(people, back + along * (width * 0.3), -along, seed, -1.0, 1.0, false, 0.0, WalkerView.PHONE)
 			"leaves":
 				var p := lawn + along * (float(seed % 7) - 3.0)
 				_person(people, p + into * 0.6 * sin(t * 1.4), along, seed, -1.0)
@@ -532,10 +532,10 @@ func _draw() -> void:
 				for i in 2:
 					var p := lawn + along * (i * 2.4 - 1.2)
 					props.table.append(Transform3D(Basis.looking_at(-into, Vector3.UP), Terrain.stand(p) + Vector3(0, 0.38, 0)))
-				_person(people, lawn + into * 1.0, -into, seed, -1.0, 1.0, false, 0.0, true)
+				_person(people, lawn + into * 1.0, -into, seed, -1.0, 1.0, false, 0.0, WalkerView.TALKING)
 				var k := fposmod(t * 0.3, 8.0)
 				_person(people, lawn - into * 1.0 + along * (k - 4.0) * 0.6, along, seed >> 3, t * 0.3)
-				_person(people, lawn - into * 1.1 - along * 1.5, into, seed >> 6, -1.0, 1.0, false, 0.0, true)
+				_person(people, lawn - into * 1.1 - along * 1.5, into, seed >> 6, -1.0, 1.0, false, 0.0, WalkerView.TALKING)
 			"costumes":
 				# Little ones in costumes going door to door, a parent behind.
 				var u := fposmod(t * 1.0, 60.0)
@@ -684,7 +684,10 @@ func _stop_scene(people: Array, s: Dictionary) -> void:
 			continue
 		var at := walk + along * (-0.8 - standing * 0.9 + float((seed >> (i * 2)) % 5) * 0.1) \
 			+ out * (float((seed >> (i * 3)) % 3) - 1.0) * 0.35
-		_person(people, at, (-out * 0.6 + coming).normalized(), seed >> (i * 3), -1.0)
+		# Most riders waiting look at their phones (nine in ten US adults
+		# carry a smartphone, Pew 2024); the rest watch for the bus.
+		_person(people, at, (-out * 0.6 + coming).normalized(), seed >> (i * 3), -1.0, 1.0, false, 0.0,
+			WalkerView.PHONE if hash([seed, i, "phone"]) % 5 < 3 else 0)
 		standing += 1
 
 

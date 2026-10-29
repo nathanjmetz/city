@@ -757,8 +757,21 @@ func _props_look(stage: String) -> void:
 			if not AABB(at - Vector3(m[1], 0, m[2]), Vector3(m[1] * 2.0, 1.0, m[2] * 2.0)).intersects(keep):
 				_cs_mound(st, at, m[1], m[2], m[3], m[4], k)
 	if stage in ["frame", "dry_in", "exterior", "interior"]:
-		# A 20-yard roll-off dumpster along the side, nose to the street.
-		_cs_dumpster(st, Vector3(right - 1.3, 0.0, front + 7.85), k, fine, stage != "frame")
+		# A 20-yard roll-off dumpster along the side, nose to the street;
+		# a lot too small to hold one (22 ft long) has its waste hauled
+		# off in the crew's trailers instead.
+		# (It rolls in under an eave, so the walls are what it must miss.)
+		var walls := _core.grow(-0.6)
+		# The far side first; the near side once the lumber's gone up.
+		var spots := []
+		for x in [right - 1.3] + ([left + 1.3] if stage != "frame" else []):
+			for z in [front + 7.85, front + 4.55]:
+				spots.append(Vector3(x, 0.0, z))
+		for c: Vector3 in spots:
+			var bin := AABB(c - Vector3(1.2, 0.0, 3.35), Vector3(2.4, 1.6, 6.7))
+			if bin.end.z <= b.end.z and not bin.intersects(walls):
+				_cs_dumpster(st, c, k, fine, stage != "frame")
+				break
 	if stage == "frame":
 		if _frame_kind == "wood":
 			# Banded lumber units on dunnage, a stack of OSB, and the roof
