@@ -271,6 +271,8 @@ func _wild_trees(c: Vector2i, detail: bool) -> Array:
 ## exactly the chunk's trees).
 func _wild_trees_in(area: Rect2, detail: bool) -> Array:
 	var plants := sim.vegetation.plants_in(area, sim.tick_count, detail)
+	if detail and _understory_on():
+		plants.append_array(_understory(area))
 	# Roads the town doesn't own (a neighbor's, the county highways out to
 	# the horizon) keep their mowed verges clear too.
 	var mowed := Terrain.any_mowed(area)
@@ -309,6 +311,46 @@ func _wild_trees_in(area: Rect2, detail: bool) -> Array:
 			continue
 		trees.append(facts(p, low))
 	return trees
+
+
+## The desktop's understory: shrubs and saplings 1-3 m tall under the
+## woods' canopy, as in Indiana's upland woodlots (spicebush, pawpaw, sugar
+## maple seedlings, and Amur honeysuckle thickest toward the edges, which
+## the sim's brush, thin under a closed canopy, leaves out). Scenery only,
+## drawn with the brush near the camera, never on land the town has built.
+const UNDERSTORY_SPACING := 5.0
+
+
+static func _understory_on() -> bool:
+	return not OS.has_feature("web") and bool(GraphicsQuality.knob("understory", false))
+
+
+func _understory(area: Rect2) -> Array:
+	var out := []
+	var o := Terrain.view_origin
+	var s := UNDERSTORY_SPACING
+	for ix in range(floori(area.position.x / s), floori(area.end.x / s) + 1):
+		for iz in range(floori(area.position.y / s), floori(area.end.y / s) + 1):
+			var r := Vector2(ix * s + o.x, iz * s + o.y)
+			var h := CropCalendar.h01(floori(r.x / s), floori(r.y / s), 61)
+			var p := Vector3((ix + 0.15 + 0.7 * h) * s, 0.0,
+				(iz + 0.15 + 0.7 * CropCalendar.h01(floori(r.x / s), floori(r.y / s), 62)) * s)
+			if not area.has_point(Vector2(p.x, p.z)):
+				continue
+			var t := Terrain.trees(p.x + o.x, p.z + o.y)
+			# Under a closed canopy about one spot in three; more toward the
+			# edge, where light gets in (cover 0.55-0.75).
+			var chance := smoothstep(0.5, 0.62, t) * lerpf(0.65, 0.35, smoothstep(0.7, 0.9, t))
+			if CropCalendar.h01(floori(r.x / s), floori(r.y / s), 63) >= chance:
+				continue
+			if sim.vegetation.is_occupied(Vegetation.cell_of(p)):
+				continue
+			var k := CropCalendar.h01(floori(r.x / s), floori(r.y / s), 64)
+			# Spicebush and honeysuckle a fresh mid green; seedling maples darker.
+			var tint := Color("#4d6a28").lerp(Color("#3a5220"), k)
+			out.append({"pos": p, "kind": Vegetation.Kind.SHRUB, "species": TreeField.Species.CRABAPPLE,
+				"size": 0.55 + 0.55 * h, "tint": tint})
+	return out
 
 
 ## A wild plant as TreeField draws it: [placement, kind, tint, facts]. The

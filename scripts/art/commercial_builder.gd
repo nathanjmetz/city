@@ -190,6 +190,17 @@ func _retail(to_curb: float) -> void:
 	_box("paint", Vector3(0.6, 0.5, 0.6), Vector3(lx, 0.25, 0.8), FOUNDATION)
 	_box("paint", Vector3(0.16, 7.5, 0.16), Vector3(lx, 4.0, 0.8), Color("#3a3c3e"))
 	_box("paint", Vector3(0.5, 0.18, 0.9), Vector3(lx, 7.7, 0.8 + 0.3), Color("#3a3c3e"))
+	if fine_parts:
+		# Its LED lens and light on the lot, and the accessible stall by the
+		# door that every lot needs (ADA 208: one for up to 25 stalls).
+		_box("sign", Vector3(0.4, 0.02, 0.7), Vector3(lx, 7.6, 1.1), Color(0.95, 0.96, 1.0, 1.0))
+		var lot_d := zf - 2.2 - 0.8
+		var pw := minf(18.0, lot1 - lot0)
+		_light_pool(Vector3(clampf(lx - 3.0, lot0 + pw * 0.5, lot1 - pw * 0.5), 0.13, 0.8 + lot_d * 0.5), pw, lot_d,
+			Color(0.95, 0.96, 1.0))
+		var ka := clampi(int((site.door.x - lot0) / stall), 0, int((lot1 - lot0) / stall) - 2)
+		if lot1 - lot0 >= stall * 2.0:
+			_ada_stalls(lot0 + ka * stall, zf - 2.2)
 	if not small_store:
 		_rt_grown(w, d, h, zf, site.door.x, sw)
 
@@ -1082,7 +1093,24 @@ func _cc_parking(to_curb: float, w: float, zw: float, xg0: float, cr: RandomNumb
 	_box("paint", Vector3(12.3, 0.55, 9.3), Vector3(pc.x, 4.45, pc.y + 1.0), accent)
 	_glass(Vector3(pc.x, 1.6, pc.y - 3.53), Vector3(-1, 0, 0), 8.0, 2.0, 0.1)
 	_sign(Vector3(pc.x, 3.0, pc.y - 3.6), 5.0, 0.8)
-	_box("paint", Vector3(2.0, 2.4, 6.0), Vector3(pc.x + 6.9, 2.6, pc.y + 1.0), accent.darkened(0.2))  # pickup window canopy
+	# The drive-through: a 3.5 m lane down the east side, cars heading for
+	# the road with the building on the driver's side; the pickup window
+	# under a slim canopy, and behind the building the menu board and
+	# order speaker (any McDonald's, Wendy's or Taco Bell pad).
+	_box("paint", Vector3(1.6, 0.3, 4.5), Vector3(pc.x + 6.8, 3.3, pc.y + 1.0), accent.darkened(0.2))  # pickup window canopy
+	_glass(Vector3(pc.x + 6.03, 1.5, pc.y + 1.0), Vector3(0, 0, -1), 1.6, 1.2, 0.0)
+	_box("paint", Vector3(0.1, 0.12, 1.9), Vector3(pc.x + 6.1, 0.85, pc.y + 1.0), Color("#8f9396"))  # sill
+	_flat_rect("line", pc.x + 9.5, pc.x + 9.62, pc.y - 3.5, pc.y + 7.4, 0.07, Color("#e9e6da"))
+	if fine_parts:
+		var dark := Color("#2a2c2e")
+		_box("paint", Vector3(0.3, 1.8, 2.6), Vector3(pc.x + 6.4, 1.8, pc.y + 6.6), dark)  # menu board
+		_box("paint", Vector3(0.04, 1.5, 2.3), Vector3(pc.x + 6.56, 1.85, pc.y + 6.6), Color("#e8ddc4"))
+		for k in 3:
+			_box("paint", Vector3(0.05, 0.3, 0.6), Vector3(pc.x + 6.6, 2.3 - k * 0.45, pc.y + 5.9 + k * 0.35), accent)
+		_box("paint", Vector3(0.25, 0.9, 0.12), Vector3(pc.x + 6.4, 0.45, pc.y + 6.6), dark)
+		_box("paint", Vector3(0.35, 1.3, 0.35), Vector3(pc.x + 6.5, 0.65, pc.y + 5.4), dark)  # order speaker
+		_box("paint", Vector3(0.45, 0.6, 0.6), Vector3(pc.x + 6.5, 1.15, pc.y + 5.1), accent)  # its little canopy
+	_flat_rect("mulch", pad.position.x + 0.6, pad.position.x + 9.4, pad.position.y - 0.2, pad.position.y + 1.6, 0.075)  # their bed
 	for i in 3:
 		_shrub(Vector3(pad.position.x + 2.0 + i * 3.0, 0, pad.position.y + 0.6), 0.7)
 	# Rows: the fire lane is the first aisle, then 18.3 m modules.
@@ -1209,6 +1237,26 @@ func _grocery_anchor(x0: float, x1: float, zf: float, cz: float, d: float, wall:
 			_box("paint", Vector3(3.6, 1.2, 0.5), Vector3(x0 + 6.0 + k * 6.0, 1.2, dock_z + 0.3), Color("#1e1f20"))  # seals
 
 
+## An accessible stall painted blue with the wheelchair symbol and the
+## R7-8 sign at its head, and the hatched access aisle beside it (ADA 502),
+## on two stalls starting at `x`, their heads on the walk at `back`.
+func _ada_stalls(x0: float, back: float) -> void:
+	var blue := Color("#2457a6")
+	for j in 2:
+		var x := x0 + j * 2.75
+		if j == 0:
+			_flat_rect("line", x + 0.07, x + 2.68, back - 5.4, back - 0.1, 0.065, blue)
+			_flat_rect("line", x + 1.05, x + 1.7, back - 3.1, back - 2.4, 0.075, LINE)  # the symbol
+			_box("metal", Vector3(0.06, 2.3, 0.06), Vector3(x + 1.375, 1.15, back + 0.4), Color("#7d8184"))
+			_box("paint", Vector3(0.3, 0.45, 0.03), Vector3(x + 1.375, 2.05, back + 0.36), Color("#f2f2ee"))
+			_box("paint", Vector3(0.2, 0.2, 0.01), Vector3(x + 1.375, 2.12, back + 0.34), blue)
+		else:
+			# The hatched aisle beside it.
+			for h in 7:
+				var z := back - 5.2 + h * 0.75
+				_flat_rect("line", x + 0.2, x + 2.55, z, z + 0.12, 0.072, LINE)
+
+
 ## What a real strip centre's lot has that a bare one doesn't (Marion's
 ## Eastbrook and Gas City strips, any Indiana US-route centre): two
 ## accessible stalls painted blue with the wheelchair symbol, a hatched
@@ -1225,20 +1273,7 @@ func _strip_lot_dress(to_curb: float, back: float, n: int, wall: Color) -> void:
 	if back > 6.0:
 		# Stalls run every 2.75 m from lot0: take the pair nearest the middle.
 		var k := int((0.0 - lot0) / 2.75)
-		var blue := Color("#2457a6")
-		for j in 2:
-			var x := lot0 + (k + j) * 2.75
-			if j == 0:
-				_flat_rect("line", x + 0.07, x + 2.68, back - 5.4, back - 0.1, 0.065, blue)
-				_flat_rect("line", x + 1.05, x + 1.7, back - 3.1, back - 2.4, 0.075, LINE)  # the symbol
-				_box("metal", Vector3(0.06, 2.3, 0.06), Vector3(x + 1.375, 1.15, back + 0.4), Color("#7d8184"))
-				_box("paint", Vector3(0.3, 0.45, 0.03), Vector3(x + 1.375, 2.05, back + 0.36), Color("#f2f2ee"))
-				_box("paint", Vector3(0.2, 0.2, 0.01), Vector3(x + 1.375, 2.12, back + 0.34), blue)
-			else:
-				# The hatched aisle beside it.
-				for h in 7:
-					var z := back - 5.2 + h * 0.75
-					_flat_rect("line", x + 0.2, x + 2.55, z, z + 0.12, 0.072, LINE)
+		_ada_stalls(lot0 + k * 2.75, back)
 	# Lot lights along the front of the lot.
 	var poles := maxi(1, int((lot1 - lot0) / 28.0))
 	var dark := Color("#2e3032")

@@ -125,6 +125,7 @@ jobs:
           run_test tests/test_connections.gd
           run_test tests/test_road_tools.gd
           run_test tests/test_bridges.gd
+          run_test tests/test_water_crossings.gd
           run_test tests/test_route_lines.gd
           run_test tests/test_lane_rules.gd
           run_test tests/test_detail_floor.gd

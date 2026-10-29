@@ -83,6 +83,25 @@ func _demo_town() -> void:
 					if args.size() >= 7 else Vector3.ZERO)
 				c.set_view(deg_to_rad(float(args[1])), deg_to_rad(float(args[2])), float(args[3]))
 		return
+	if args0.size() >= 5 and args0[4] == "crossing":
+		# A county road or highway over the water (WaterCrossings), by its
+		# key in CROSSING (the nearest one if none is given).
+		var want := OS.get_environment("CROSSING")
+		var o := sim.terrain_offset
+		var best := {}
+		for x in WaterCrossings.near(o, 20000.0):
+			if x.key == want or (want == "" and (best.is_empty() or x.mid.distance_to(o) < best.mid.distance_to(o))):
+				best = x
+		print("crossing ", best.get("key", "none"), " ", best.get("kind", ""), " at ", best.get("mid", ""))
+		if not best.is_empty():
+			var args := OS.get_cmdline_user_args()
+			var i: int = best.pts.size() / 2
+			var at := Vector3(best.mid.x - o.x, best.deck[i], best.mid.y - o.y)
+			for c in _main.get_children():
+				if c is CityCamera:
+					c.look_at_point(at + (Vector3(float(args[5]), 0, float(args[6])) if args.size() >= 7 else Vector3.ZERO))
+					c.set_view(deg_to_rad(float(args[1])), deg_to_rad(float(args[2])), float(args[3]))
+		return
 	if args0.size() >= 5 and args0[4] == "ramp":
 		# The Critic's repro: a straight exit ramp off a one-way highway.
 		sim.apply({"type": "build_road", "start": [-250, 200], "ctrl": [0, 200], "end": [250, 200], "road": 3})
