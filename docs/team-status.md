@@ -2,23 +2,26 @@
 
 Updated 2026-10-26 (night) by the month-is-a-day session. This file is the state, not a diary: rewrite it at each stop.
 
-## Look loop (2026-10-29, desktop first)
+## Look loop (2026-10-29 to 10-30, desktop first)
 
-Nathan: "send out a critic to play the game, find a problem and report it. then we should have agents working to fix those problems. we should primarily only build the desktop download, not the browser. lets make this game look totally real. better than CS2." Also: "every intersection is exactly the same shape. every lawn is the same color", a "state layer" of items that show an area improving or slipping ("a car on cinder blocks in the front yard... an overflowing dumpster"), and "working doors and garage doors... one way we could visualize trade."
+Nathan: "send out a critic to play the game, find a problem and report it. then we should have agents working to fix those problems. we should primarily only build the desktop download, not the browser. lets make this game look totally real. better than CS2." Also: "every intersection is exactly the same shape. every lawn is the same color", a "state layer" ("a car on cinder blocks in the front yard... an overflowing dumpster"), "working doors and garage doors... one way we could visualize trade", road treatments ("If you build a road and then put factories on it then the factory treatment might get applied to the road"), and on 2026-10-29: "railroad tracks... run right underneath the buildings. I also noticed street signs in the middle of driveways... bus stops and items that will need to immediately make changes to the immediate environment like adjustments to the curb... should be very smooth and simple in our game."
 
-**How it runs:** `tools/look_round.gd` (#920) shoots the same 10 camera spots in a fixed test town at cinematic and medium. A critic scores them 1-10 per category against real Indiana towns and CS2, and the biggest gaps go to fixers. Each fix: tests pass locally (CI only runs on main), a second reviewer, before/after shots, and ms cost. Round 0: 3.55. Round 1 (first 7 fixes combined): 3.62; small fixes barely show from 40 m up while the test town is brand new.
+**How it runs:** `tools/look_round.gd` (#920) shoots the same 10 spots at cinematic and medium. A critic scores 1-10 against real Indiana towns and CS2; fixers take the biggest gaps. Each fix: all web-preview tests pass locally (CI only runs on main), a second reviewer who gets the diff, before/after shots, ms cost, and game-day before/after for any sim change. Round 0: 3.55. Round 1: 3.62 (from 40 m up the town still looks brand new).
 
-**Rules learned today:**
-- No windowed Godot while Nathan uses the Mac ("i need you to pause using the full screen godot thing. i have to be able to use my computer"). Headless only; take screenshots in one batch when he says the screen is free.
-- This session can't merge (a safety check blocks `gh pr merge`); reviewed PRs wait for Nathan.
+**Rules learned:**
+- No windowed Godot while Nathan uses the Mac ("i need you to pause using the full screen godot thing. i have to be able to use my computer"). Headless only; shots in one batch when he says he's away.
+- Every saved town is test data (Nathan: "The only stuff that exist in the game right now is test stuff"). Old towns moved, not erased, to `Neighbors-old-towns-2026-10-29/`. Loads must not crash; no rescue code for old layouts.
+- Nathan allowed this loop to merge reviewed PRs ("You can also do any emerging that you need to").
 
-**Ready to merge** (reviewed, tested together on main, 134/134): #920 shot tool; #917 -> #918 -> #919 -> #924 road options in that order (S-curve, snapping, car-free, No Right Turn on main's No Left); #925 leaf colour; #923 cars on drives (desktop); #927 garage doors (after #923; costs the sim nothing over a game day); #926 dusk and night.
+**Merged:** #920 shot tool; #917 #918 #919 #924 road options; #925 tree greens; #926 dusk and night; #923 cars on drives; #927 garage doors; #936 sky-lit shade; #935 yard trees grown (Nathan: A); #929 lawns; #930 wet roads, streetlight pools; #931 junctions vary; #932 tree shadows; #938 state layer step 1; #937 dock doors, 30 s (Nathan: A); #939 All roads screen (Nathan: A); #940 overlap auditor; #944 curb claims (no signs in drives); #943 rail first (lots, buildings and streets keep off the track). Clashes the auditor counts: 2898 -> 420 in the look town, 647 -> 30 in the county.
 
-**Reviewed, waiting for pictures:** #928 state layer step 1 (after #920); #929 lawn variety; #930 wet roads and streetlight pools; #931 junction variety (nudges traffic: flow 0.668 -> 0.694, money -0.4% over a game day); #932 tree shadows (after #925). Shot tool warm-up fix on #920's branch.
+**About to merge:** #942 road treatments step 1 (factory and main street sides), main streets 25 mph (Nathan: A, 2026-10-30).
 
-**Waiting on Nathan:** back-yard trees start grown? (pick: yes); truck time at a dock for doors step 2 (pick: about 30 s); allow this loop to merge reviewed PRs itself? Specs: `docs/spec-state-layer.md` (#921), `docs/spec-working-doors.md` (#922).
+**Specs (docs only, drafts):** #921 state layer, #922 working doors, #934 road treatments (Nathan's six answers recorded), #941 the ground map (one shared map of what owns each patch of ground; fixes the root cause of rail under buildings and signs in drives).
 
-**Next, after the pictures:** shade is near-black on grass and asphalt everywhere (likely the 1.3 AgX contrast in sky_light.gd); shop and work lots empty; state layer step 2 (street condition); doors step 2 (docks); snow blotches; pavement all one age. Farm fields belong to the countryside session; building detail in `scripts/art/` belongs to the other session.
+**Next, most useful first:** ground map steps 1-6 (then bus stops can claim curb); state layer step 2 (street condition); doors step 3 (factory bays, shop roll-ups); shop lots empty; snow blotches; pavement all one age; derelict brush draws as teal octagons; look_round needs a wetness line for rain shots; grown trees add about 12% draw calls. 11 of 912 stop signs in the big town still stand in shop drives where no clear spot exists (allowed, with a reason). Farm fields belong to the countryside session; building detail in `scripts/art/` belongs to the other session.
+
+**Still open, Nathan said later:** #915 test PIN for playtests.
 
 ## Standing orders from Nathan (2026-10-25)
 
