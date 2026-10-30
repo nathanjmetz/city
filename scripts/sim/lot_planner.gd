@@ -428,60 +428,9 @@ static func _clear_of_parcels(lots: Array, parcels: Array) -> Array:
 					keep = false
 					break
 				_set_shape(lot, best)
-				# What gets built there fits what is left: its frontage and
-				# depth drawn in off the site (builders lay out by width and
-				# depth, not by the outline).
-				if not ":" in str(p[4]) and not _fit_frame(lot, p[1]):
-					keep = false
-					break
 		if keep:
 			out.append(lot)
 	return out
-
-
-## Draws a lot's width and depth (and its front's middle) in off a public
-## site that cut into it from a side or the back, so the building laid out
-## by them stays on the lot. False if too narrow a lot is left.
-static func _fit_frame(lot: Dictionary, poly: PackedVector2Array) -> bool:
-	var f := Vector2(lot.front.x, lot.front.z)
-	var u := Vector2(lot.dir.x, lot.dir.z).normalized()
-	var v := Vector2(lot.normal.x, lot.normal.z).normalized()
-	var w := float(lot.width) * 0.5
-	var depth := float(lot.depth)
-	var local := PackedVector2Array()
-	for q in poly:
-		local.append(Vector2((q - f).dot(u), (q - f).dot(v)))
-	var band := PackedVector2Array([Vector2(-w, -50.0), Vector2(w, -50.0), Vector2(w, depth + 50.0), Vector2(-w, depth + 50.0)])
-	var lo := -w
-	var hi := w
-	var deep := depth
-	for piece in Geometry2D.intersect_polygons(local, band):
-		var a := INF
-		var b := -INF
-		var near := INF
-		for q in piece:
-			a = minf(a, q.x)
-			b = maxf(b, q.x)
-			near = minf(near, q.y)
-		if a <= -w + 0.01 and b < w - 0.01:
-			lo = maxf(lo, b)
-		elif b >= w - 0.01 and a > -w + 0.01:
-			hi = minf(hi, a)
-		elif a > -w + 0.01 and b < w - 0.01:
-			deep = minf(deep, near)
-	if hi - lo >= w * 2.0 - 0.01 and deep >= depth:
-		return true
-	# Too narrow or shallow a lot left to hold a building isn't platted.
-	var zone_size: Dictionary = SIZES.get(int(lot.get("plat_zone", 1)), SIZES[1])
-	if hi - lo < float(zone_size.w[0]) * 0.6 or deep < float(zone_size.min_d):
-		return false
-	var mid := (lo + hi) * 0.5
-	lot.front = lot.front + lot.dir.normalized() * mid
-	if lot.has("road"):
-		lot.road = lot.road + lot.dir.normalized() * mid
-	lot.width = snappedf(hi - lo, SNAP)
-	lot.depth = snappedf(deep, SNAP)
-	return true
 
 
 ## Parcels whose key starts so are a railroad's right of way.

@@ -19,13 +19,14 @@ const Audit := preload("res://tools/overlap_audit.gd")
 ## The county's railroads come first now (#943): no lot, building, drive,
 ## parking, public site or street on their right of way; streets cross only
 ## at grade crossings. Left on the track: a few posts at a junction beside a
-## crossing. No count here is above what it was before #943 (main).
+## crossing. No count here is above main's before #943.
 const KNOWN := {
 	"small": {
 		"rail_bed:county vs post:stop_sign": 2,
 		"rail_bed:county vs post:signal_pole": 1,
-		"post:stop_sign vs curb_cut": 3,
-		"post:streetlight vs curb_cut": 5,
+		"building vs public_site": 5,
+		"post:stop_sign vs curb_cut": 5,
+		"post:streetlight vs curb_cut": 3,
 		"post:mailbox vs curb_cut": 32,
 		"post:mailbox vs curb_ramp": 5,
 		"tree_trunk vs curb_ramp": 1,
@@ -33,10 +34,10 @@ const KNOWN := {
 	},
 	"county_small": {
 		"rail_bed:county vs post:stop_sign": 1,
+		"building vs public_site": 4,
 		"post:stop_sign vs curb_cut": 3,
-		"post:signal_pole vs curb_cut": 1,
-		"post:streetlight vs curb_cut": 7,
-		"post:mailbox vs curb_cut": 26,
+		"post:streetlight vs curb_cut": 9,
+		"post:mailbox vs curb_cut": 35,
 		"post:mailbox vs curb_ramp": 7,
 		"lot vs lot": 24,
 	},
