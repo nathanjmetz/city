@@ -5445,6 +5445,10 @@ func from_dict(d: Dictionary) -> void:
 			var want := Policies.growth_for(str(permits.guided[key].stance), now)
 			if want != now:
 				policies.set_step(key, "growth", want)
+	# What's built along each road, added up behind the loading screen (a
+	# neighbor's postcard is drawn, never judged).
+	if not postcard:
+		treatments.warm(self)
 	buildings_changed.emit()
 
 

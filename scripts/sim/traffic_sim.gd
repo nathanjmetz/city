@@ -292,6 +292,12 @@ var _tpen_key := []
 ## side) with no car parking or no driveway cuts.
 var treat_mph := {}
 var treat_trucks := {}
+## How much of the law's extra a truck route still costs a through truck:
+## a preference, not a free road. Free, every through truck in town took
+## the factory streets and they jammed at their one link to the county
+## road (road treatments, 2026-10-29).
+var truck_route_share := TRUCK_ROUTE_SHARE
+const TRUCK_ROUTE_SHARE := 0.5
 var no_parking := {}
 var no_aprons := {}
 ## The route being planned is for a golf cart (TownLaws golf_carts): roads
@@ -2186,10 +2192,12 @@ func _truck_pen() -> Dictionary:
 		_tpen.clear()
 		for wid in ways:
 			var seg: int = int(wid) >> 1
-			if network.segments.has(seg) and int(network.segments[seg].type) in TownLaws.LOCAL_STREETS \
-					and not treat_trucks.has(seg):
+			if network.segments.has(seg) and int(network.segments[seg].type) in TownLaws.LOCAL_STREETS:
 				var w: Dictionary = ways[wid]
-				_tpen[wid] = w.len / w.vmax * (Balance.LAW_TRUCK_STREET_MULT - 1.0)
+				var extra := Balance.LAW_TRUCK_STREET_MULT - 1.0
+				if treat_trucks.has(seg):
+					extra *= truck_route_share
+				_tpen[wid] = w.len / w.vmax * extra
 	return _tpen
 
 

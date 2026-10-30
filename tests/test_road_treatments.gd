@@ -135,11 +135,23 @@ func _rules(sim: CitySim, seg: int) -> void:
 	var w: Dictionary = tr.ways.get(seg * 2 + 1, {})
 	_check(not w.is_empty() and absf(float(w.vmax) - 20.0 * RoadStyle.MPH) < 0.01,
 		"its lanes run at 20 mph (%.2f m/s)" % float(w.get("vmax", 0.0)))
-	# Truck routes law: no extra time for through trucks on the factory street.
+	# Truck routes law: the factory street is a preference for through
+	# trucks (half the extra a home street costs), never free and never
+	# shut, so trucks spread over the town's roads instead of all taking it.
 	tr.truck_routes = true
 	tr._tpen_key = []
 	var pen := tr._truck_pen()
-	_check(not pen.has(seg * 2 + 1) and not pen.is_empty(), "under the Truck routes law the factory street costs trucks nothing extra")
+	var home_seg := -1
+	for id in sim.network.segments:
+		if sim.treatments.kind(id, -1) == RoadTreatments.HOMES and sim.treatments.kind(id, 1) == RoadTreatments.HOMES \
+				and not tr.treat_trucks.has(id) and pen.has(id * 2 + 1):
+			home_seg = id
+			break
+	var per_m_route := _extra_per_m(tr, pen, seg * 2 + 1)
+	var per_m_home := _extra_per_m(tr, pen, home_seg * 2 + 1)
+	_check(home_seg >= 0 and per_m_route > 0.0 and absf(per_m_route - per_m_home * TrafficSim.TRUCK_ROUTE_SHARE) < 0.01,
+		"under the Truck routes law the factory street costs through trucks half a home street's extra (%.2f vs %.2f)"
+		% [per_m_route, per_m_home])
 	tr.truck_routes = false
 	# A car parks across the street from a factory; a truck may stand to load.
 	var stop := {"seg": seg, "at_frac": 0.5, "side": -1}
@@ -156,6 +168,14 @@ func _rules(sim: CitySim, seg: int) -> void:
 		var truck_side := signf((pl.spots[truck].pos - mid).dot(n))
 		_check(car_side != truck_side, "the car parks on the far curb, the truck at the factory's")
 	tr._places.erase("lot:test")
+
+
+## A way's extra seconds for a truck under the law, per second of driving.
+static func _extra_per_m(tr: TrafficSim, pen: Dictionary, wid: int) -> float:
+	if not tr.ways.has(wid):
+		return 0.0
+	var w: Dictionary = tr.ways[wid]
+	return float(pen.get(wid, 0.0)) / (float(w.len) / float(w.vmax))
 
 
 ## The same town built twice comes out the same; the kept sums match a

@@ -60,6 +60,9 @@ const PHASE := 3
 ## Main street speed limits, mph: a street, and anything bigger.
 const MAIN_MPH_STREET := 20
 const MAIN_MPH_ROAD := 25
+## The main street limit on a street in use (20, or 25 to leave streets at
+## their own limit: Nathan's call, 2026-10-29; game_day compares them).
+var main_mph_street := MAIN_MPH_STREET
 
 ## Side key (seg * 2, +1 for the right-hand side) -> {"kind", "at": tick it
 ## changed, "fade": tick its kind stopped holding the side, or -1}.
@@ -84,8 +87,13 @@ var _by_key := {}
 var _site_cm := {}
 var _net_rev := -1
 var _next_done := -1  # tick the next building under way along a road is done
-var _len := {}  # seg -> metres, for the roads as they are
-var _len_rev := -1
+var _len := {}  # seg -> [its curve, metres]
+## A town loaded from a save before treatments: every side is judged on the
+## first look, not just the ones that changed.
+var _judge_all := false
+## Buildings or lots changed since the last look (or a building is done).
+var _scan := true
+var _going := {}  # what's going up, as the last scan saw it
 
 
 static func key_of(seg: int, side: int) -> int:
@@ -134,7 +142,7 @@ func mph(seg: int, type: int) -> int:
 	var cap := 0
 	for side in [-1, 1]:
 		if kind(seg, side) == MAIN:
-			var m := MAIN_MPH_STREET if RoadStyle.group(type) == RoadStyle.Type.STREET else MAIN_MPH_ROAD
+			var m := main_mph_street if RoadStyle.group(type) == RoadStyle.Type.STREET else MAIN_MPH_ROAD
 			cap = m if cap == 0 else mini(cap, m)
 	return cap if cap > 0 and cap < own else 0
 
@@ -159,6 +167,7 @@ func no_aprons(seg: int, side: int) -> bool:
 ## Something along the roads changed: look again on the next boundary.
 func touch() -> void:
 	_dirty = true
+	_scan = true
 
 
 func tick(sim) -> void:
@@ -167,6 +176,7 @@ func tick(sim) -> void:
 		return
 	if _next_done >= 0 and now >= _next_done:
 		_dirty = true
+		_scan = true
 	if _dirty:
 		_dirty = false
 		update(sim)
@@ -178,8 +188,13 @@ func tick(sim) -> void:
 func update(sim) -> void:
 	var t := Perf.now()
 	var keys := _frontage_changes(sim)
+	Perf.add("sim.treatments.sums", t)
 	for k in _fading:
 		keys[k] = true
+	if _judge_all:
+		_judge_all = false
+		for k in shares:
+			keys[k] = true
 	_decide_all(sim, keys.keys())
 	Perf.add("sim.treatments", t)
 
@@ -274,6 +289,16 @@ static func decide(cur: String, side_shares: Dictionary) -> Array:
 	return [cur, cur != "" and cur_s < WIN, fallback]
 
 
+## Adds up what's built along every road once, as a town loads, so its
+## first look in play only looks at what changed (the whole town's sums
+## cost the big town 6.5-9 ms, too long for a frame: review, 2026-10-29).
+## Decides nothing, so it changes nothing a copy of the town would see.
+func warm(sim) -> void:
+	var t := Perf.now()
+	_frontage_changes(sim)
+	Perf.add("load.treatments", t)
+
+
 ## Every side's frontage: side key -> {kind: share of its length}, worked
 ## out afresh (what the kept sums add up to; for tests).
 func frontage(sim) -> Dictionary:
@@ -290,21 +315,60 @@ func frontage(sim) -> Dictionary:
 ## Only finished buildings count; empty lots count as length, not a kind.
 ## Returns the side keys that changed, as a set.
 func _frontage_changes(sim) -> Dictionary:
-	var now: int = sim.tick_count
 	var changed := {}
 	if _net_rev != int(sim.network.revision):
-		# The roads changed: their lengths, and which lot faces which.
+		# The roads changed: only the sides of road pieces that are gone or
+		# reshaped are looked at again (a lot cut afresh along a new road is
+		# a new lot, so its building's part moves over below). Wiping it all
+		# cost the big town 6.5-9 ms on every road drawn (review,
+		# 2026-10-29).
 		_net_rev = int(sim.network.revision)
+		var keys := {}
 		for k in _cm:
-			changed[k] = true
+			keys[k] = true
 		for k in shares:
-			changed[k] = true
-		_cm.clear()
-		_shops.clear()
-		_by_key.clear()
-		shares.clear()
+			keys[k] = true
+		for k in keys:
+			var seg: int = int(k) >> 1
+			if not sim.network.segments.has(seg):
+				changed[k] = true
+				_len.erase(seg)
+			elif _len.has(seg) and not is_same(_len[seg][2], sim.network.segments[seg]):
+				changed[k] = true
+	if _scan:
+		_scan = false
+		_scan_buildings(sim, changed)
+	# Warehouses and big factories face their road too (a handful: worked
+	# out afresh each time).
+	var sites := {}
+	for id in sim.warehouses.buildings:
+		var w: Dictionary = sim.warehouses.buildings[id]
+		if not Warehouses.is_store(w) and not _going.has("wh:%d" % id):
+			_add_site(sim, sites, w.pos, w.dir, Warehouses.site_width(w))
+	for id in sim.big.sites:
+		var f: Dictionary = sim.big.sites[id]
+		_add_site(sim, sites, f.pos, f.dir, BigFactories.site_width(f))
+	if sites != _site_cm:
+		for k in sites:
+			if int(sites[k]) != int(_site_cm.get(k, -1)):
+				changed[k] = true
+		for k in _site_cm:
+			if not sites.has(k):
+				changed[k] = true
+		_site_cm = sites
+	for k in changed:
+		_share(sim, k)
+	return changed
+
+
+## Brings each building's part up to date (built, gone, rezoned, done going
+## up, its lot cut afresh). Only when buildings or lots changed: a road drawn
+## alone needs just its own sides looked at.
+func _scan_buildings(sim, changed: Dictionary) -> void:
 	var going := {}  # lot key -> true while it's going up
+	_going = going
 	_next_done = -1
+	var now: int = sim.tick_count
 	for ref: String in sim.construction.sites:
 		var lot_ref := ref.begins_with("lot:")
 		if not lot_ref and not ref.begins_with("wh:"):
@@ -317,11 +381,16 @@ func _frontage_changes(sim) -> Dictionary:
 		if done > now:
 			going[ref.substr(4) if lot_ref else ref] = true
 			_next_done = done if _next_done < 0 else mini(_next_done, done)
-	for key: String in sim.buildings:
-		var lot = sim.lots.get(key)
-		var z := int(sim.buildings[key].zone)
+	# Every building is looked at, so this loop is kept lean (2,800 in the
+	# big town): most are unchanged.
+	var lots: Dictionary = sim.lots
+	var blds: Dictionary = sim.buildings
+	var any_going := not going.is_empty()
+	for key: String in blds:
+		var lot = lots.get(key)
+		var z = blds[key].zone
 		var part = _by_key.get(key)
-		var counts: bool = lot != null and not going.has(key)
+		var counts: bool = lot != null and not (any_going and going.has(key))
 		if part != null:
 			if is_same(part[0], lot) and part[1] == z and part[2] == counts:
 				continue
@@ -346,27 +415,6 @@ func _frontage_changes(sim) -> Dictionary:
 			if not sim.buildings.has(key):
 				_take(_by_key[key], changed)
 				_by_key.erase(key)
-	# Warehouses and big factories face their road too (a handful: worked
-	# out afresh each time).
-	var sites := {}
-	for id in sim.warehouses.buildings:
-		var w: Dictionary = sim.warehouses.buildings[id]
-		if not Warehouses.is_store(w) and not going.has("wh:%d" % id):
-			_add_site(sim, sites, w.pos, w.dir, Warehouses.site_width(w))
-	for id in sim.big.sites:
-		var f: Dictionary = sim.big.sites[id]
-		_add_site(sim, sites, f.pos, f.dir, BigFactories.site_width(f))
-	if sites != _site_cm:
-		for k in sites:
-			if int(sites[k]) != int(_site_cm.get(k, -1)):
-				changed[k] = true
-		for k in _site_cm:
-			if not sites.has(k):
-				changed[k] = true
-		_site_cm = sites
-	for k in changed:
-		_share(sim, k)
-	return changed
 
 
 func _put(part: Array, changed: Dictionary) -> void:
@@ -429,15 +477,18 @@ static func _add_site(sim, sites: Dictionary, pos: Vector3, dir: Vector3, width:
 	sites[k] = int(sites.get(k, 0)) + roundi(width * 100.0)
 
 
-## A road piece's length, kept until the roads change.
+## A road piece's length, kept until that piece changes shape.
 func seg_length(sim, seg: int) -> float:
-	if _len_rev != int(sim.network.revision):
-		_len_rev = int(sim.network.revision)
-		_len.clear()
-	if not _len.has(seg):
-		_len[seg] = RoadNetwork.polyline_length(sim.network.sample_segment(seg)) \
-			if sim.network.segments.has(seg) else 0.0
-	return _len[seg]
+	if not sim.network.segments.has(seg):
+		return 0.0
+	var had: Array = _len.get(seg, [])
+	if had.is_empty() or not is_same(had[2], sim.network.segments[seg]):
+		var c: Array = sim.network.curve_of(seg)
+		if had.is_empty() or had[0] != c:
+			had = [c, RoadNetwork.polyline_length(sim.network.sample_segment(seg)), null]
+		had[2] = sim.network.segments[seg]
+		_len[seg] = had
+	return float(had[1])
 
 
 ## Hands the rules for these road pieces to the traffic.
@@ -659,4 +710,8 @@ func from_dict(d: Dictionary) -> void:
 	_by_key.clear()
 	_site_cm.clear()
 	_net_rev = -1
+	_len.clear()
+	_scan = true
+	_going = {}
+	_judge_all = d.is_empty()
 	revision += 1
