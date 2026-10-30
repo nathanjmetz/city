@@ -312,6 +312,11 @@ static func _free(r: Rect2, yard: Dictionary, taken: Array, curb := false, on_si
 	var sw: Vector2 = yard.sidewalk
 	if not on_sidewalk and r.end.y > sw.x - 0.05 and r.position.y < sw.y + 0.05:
 		return false
+	# On the walk (a shop built to it), the line people walk down its middle
+	# stays clear: an accessible route runs the length of a sidewalk (ADA).
+	var walk_mid := (sw.x + sw.y) * 0.5
+	if on_sidewalk and r.end.y > walk_mid - 0.4 and r.position.y < walk_mid + 0.4:
+		return false
 	for m: Rect2 in yard.masses:
 		if m.grow(0.35).intersects(r):
 			return false

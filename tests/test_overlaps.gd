@@ -15,39 +15,29 @@ extends SceneTree
 
 const Audit := preload("res://tools/overlap_audit.gd")
 
-## Today's known clashes (2026-10-29), per town: "a vs b" -> the most allowed.
-## The county's railroads come first now (fix-rail-overlaps): no lot,
-## building, drive, parking or public site on their right of way, and
-## streets cross them only at grade crossings. What rail clashes are left
-## in "small" are the test town's own county road (PerfTown's
-## build_county_road, not the player's road tool) meeting the line at a
-## shallow angle, and a few posts at junctions next to a crossing. A few
-## other counts rose a little as the towns' streets now stop short of the
-## track (marked "was").
+## Today's known clashes (2026-10-30), per town: "a vs b" -> the most allowed.
+## The county's railroads come first now (#943): no lot, building, drive,
+## parking, public site or street on their right of way; streets cross only
+## at grade crossings. Left on the track: a few posts at a junction beside a
+## crossing. No count here is above what it was before #943 (main).
 const KNOWN := {
 	"small": {
-		"rail_bed:county vs road": 22,
 		"rail_bed:county vs post:stop_sign": 2,
 		"rail_bed:county vs post:signal_pole": 1,
-		"rail_bed:county vs post:utility_pole": 1,
-		"building vs public_site": 3,
-		"post:stop_sign vs curb_cut": 2,
-		"post:streetlight vs curb_cut": 7,
-		"post:mailbox vs curb_cut": 20,
-		"post:mailbox vs curb_ramp": 6,  # was 5
-		"prop vs sidewalk_line": 16,  # was 8
+		"post:stop_sign vs curb_cut": 3,
+		"post:streetlight vs curb_cut": 5,
+		"post:mailbox vs curb_cut": 32,
+		"post:mailbox vs curb_ramp": 5,
 		"tree_trunk vs curb_ramp": 1,
-		"lot vs lot": 25,
+		"lot vs lot": 31,
 	},
 	"county_small": {
 		"rail_bed:county vs post:stop_sign": 1,
-		"building vs public_site": 4,
 		"post:stop_sign vs curb_cut": 3,
-		"post:stop_sign vs curb_ramp": 1,  # was 0
-		"post:streetlight vs curb_cut": 9,
-		"post:mailbox vs curb_cut": 40,  # was 35
-		"post:mailbox vs curb_ramp": 8,  # was 7
-		"prop vs sidewalk_line": 12,  # was 8
+		"post:signal_pole vs curb_cut": 1,
+		"post:streetlight vs curb_cut": 7,
+		"post:mailbox vs curb_cut": 26,
+		"post:mailbox vs curb_ramp": 7,
 		"lot vs lot": 24,
 	},
 }

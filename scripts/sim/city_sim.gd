@@ -318,6 +318,7 @@ var _zone_check_lots := {}
 
 func _init() -> void:
 	Resources.follow(terrain_offset)
+	network.ground_check = road_ground
 	lots_changed.connect(func(): _lot_rev += 1)
 	# The water utility's manager takes the player's word (Permits guidance).
 	permits.locators["water"] = func(c: CitySim, id: int) -> Vector2:
@@ -521,6 +522,10 @@ func _apply_cmd(cmd: Dictionary) -> bool:
 			var arcs := RoadShapes.roundabout(_v(cmd.center), radius)
 			if not _can_afford(arcs, ring) or land_problem(arcs) != "":
 				return false
+			# All of it or none: no ring half laid round a railroad.
+			for arc in arcs:
+				if road_ground(arc, ring) != "":
+					return false
 			ok = _build_roundabout(_v(cmd.center), radius, ring)
 			if ok:
 				economy.money -= shapes_cost(arcs, ring)
@@ -1060,6 +1065,8 @@ func _apply_cmd(cmd: Dictionary) -> bool:
 			economy = Economy.new()
 			economy.set_difficulty(diff, true)
 			services = Services.new()
+			services.terrain_offset = terrain_offset
+			services.county_rail = county_rail
 			farms = Farms.new()
 			industry = Industry.new()
 			power = Power.new()
@@ -3881,8 +3888,8 @@ func road_problem(c: Array, type: int) -> String:
 	var saved := reserves.crosses(RoadNetwork.sample_curve(c[0], c[1], c[2], 24))
 	if problem == "" and saved != "":
 		problem = "That land is reserved for %s. Clear the reserve first." % Reserves.KINDS[saved]
-	if problem == "" and county_rail:
-		problem = CountyRail.road_problem(c, RoadStyle.half_width(type), terrain_offset)
+	if problem == "":
+		problem = road_ground(c, type)
 	if problem == "" and Economy.road_cost(c, type) > economy.money:
 		return "Not enough money: this road costs $%s." % money_text(Economy.road_cost(c, type))
 	return problem
@@ -3901,6 +3908,16 @@ func pieces_problem(pieces: Array, type: int) -> String:
 	if shapes_cost(pieces, type) > economy.money:
 		return "Not enough money: this road costs $%s." % money_text(shapes_cost(pieces, type))
 	return ""
+
+
+## Why a road of this shape (curve, town coordinates) can't go on the ground
+## here, or "": it keeps back from a county railroad's track and crosses it
+## only at a grade crossing (CountyRail.road_check). Every road the network
+## builds is asked (RoadNetwork.ground_check), whoever builds it.
+func road_ground(c: Array, type: int) -> String:
+	if not county_rail:
+		return ""
+	return CountyRail.road_problem(c, RoadStyle.half_width(type), terrain_offset)
 
 
 ## Grid streets with the stretches that would run along a county railroad,
@@ -4979,15 +4996,22 @@ static func _touch(touch: Dictionary, key: String, along: float, q: Vector3) -> 
 
 func _county_road(a: Vector2, b: Vector2, link_ends: Array) -> Array:
 	var money := economy.money
-	var n := maxi(1, ceili(a.distance_to(b) / 400.0))
-	var pts := []
-	for i in n + 1:
-		var p := a.lerp(b, float(i) / n)
-		pts.append(Vector3(p.x, 0.0, p.y))
+	# Bent where it would run along a county railroad or cross it too
+	# shallow (CountyRail.detour), in pieces of 400 m at most.
+	var bends := [Vector3(a.x, 0.0, a.y), Vector3(b.x, 0.0, b.y)]
+	if county_rail:
+		bends = CountyRail.detour(bends[0], bends[1], RoadStyle.half_width(RoadStyle.Type.STREET), terrain_offset)
+	var pts := [bends[0]]
+	for k in range(1, bends.size()):
+		var p0: Vector3 = bends[k - 1]
+		var p1: Vector3 = bends[k]
+		var n := maxi(1, ceili(p0.distance_to(p1) / 400.0))
+		for i in range(1, n + 1):
+			pts.append(p0.lerp(p1, float(i) / n))
 	var before := network.segments.keys()
 	streets.hold = true
 	network.begin_batch()
-	for i in n:
+	for i in pts.size() - 1:
 		network.build_road(pts[i], (pts[i] + pts[i + 1]) * 0.5, pts[i + 1], RoadStyle.Type.STREET)
 	network.end_batch()
 	streets.hold = false

@@ -51,6 +51,9 @@ const ROAD_RAISED := 4.0
 ## Crossing Handbook). 70° here left a grid town with a diagonal line no
 ## crossing at all.
 const ROAD_CROSS_ANGLE := 45.0
+## Metres past the limit a county highway bent round the track keeps from
+## it (detour).
+const DETOUR_GAP := 6.0
 ## Metres along a road between the points the railroad rules look at.
 const ROAD_STEP := 2.0
 ## From the track's level up to the top of the rail (RailView draws the
@@ -459,6 +462,72 @@ static func road_problem(c: Array, half: float, off: Vector2) -> String:
 ## rules left out: a straight street that runs along the track or crosses
 ## it too shallow stops short of it each side, as streets do at the tracks
 ## in a real town; a curved one that breaks them is left out.
+## The points a long straight road a-b (town coordinates; a county highway
+## out of town) is built through so it keeps the railroad's rules
+## (road_check): where it would run along the track or cross it too
+## shallow, it bends to keep DETOUR_GAP metres past the limit off the track
+## and crosses square, as county roads were realigned at railroads. a
+## first, b last; [a, b] where the straight road is fine.
+static func detour(a: Vector3, b: Vector3, half: float, off: Vector2) -> Array:
+	var chk := road_check([a, (a + b) * 0.5, b], half, off)
+	var bad: Array = chk.bad
+	if not true in bad:
+		return [a, b]
+	var pts: PackedVector3Array = chk.pts
+	var gap := half + ROAD_GAP + DETOUR_GAP
+	var out := [a]
+	var i := 0
+	var last := 0
+	while i < pts.size():
+		if not bad[i]:
+			i += 1
+			continue
+		var j := i
+		while j + 1 < pts.size() and bad[j + 1]:
+			j += 1
+		var i0 := maxi(last, i - 3)
+		var j1 := mini(pts.size() - 1, j + 3)
+		var mid := pts[(i + j) / 2]
+		var nr := near(mid.x + off.x, mid.z + off.y, gap)
+		if not nr.is_empty():
+			var r: Dictionary = routes[nr.route]
+			var t: Vector2 = (r.pts[nr.seg + 1] - r.pts[nr.seg]).normalized()
+			var n := Vector2(-t.y, t.x)
+			var on: Vector2 = nr.on - off
+			var q_in := Vector2(pts[i0].x, pts[i0].z)
+			var q_out := Vector2(pts[j1].x, pts[j1].z)
+			var s_in := 1.0 if n.dot(q_in - on) >= 0.0 else -1.0
+			var s_out := 1.0 if n.dot(q_out - on) >= 0.0 else -1.0
+			var u_in := t.dot(q_in - on)
+			var u_out := t.dot(q_out - on)
+			var y := pts[i0].y
+			var leg := []
+			if s_in != s_out:
+				# It crosses: up to the track on its side, square across.
+				var u := (u_in + u_out) * 0.5
+				leg = [on + t * u + n * s_in * gap, on + t * u + n * s_out * gap]
+			else:
+				# Alongside: kept off the track on its own side.
+				leg = [on + t * u_in + n * s_in * gap, on + t * u_out + n * s_in * gap]
+			out.append(pts[i0])
+			for q: Vector2 in leg:
+				out.append(Vector3(q.x, y, q.y))
+			out.append(pts[j1])
+		last = j1
+		i = j1 + 1
+	out.append(b)
+	# No two points nearer than a road can be.
+	var kept := [out[0]]
+	for k in range(1, out.size()):
+		var p: Vector3 = out[k]
+		if Vector2(p.x - kept[-1].x, p.z - kept[-1].z).length() >= RoadNetwork.MIN_LENGTH * 2.0 or k == out.size() - 1:
+			if k == out.size() - 1 and kept.size() > 1 and Vector2(p.x - kept[-1].x, p.z - kept[-1].z).length() < RoadNetwork.MIN_LENGTH * 2.0:
+				kept[-1] = p
+			else:
+				kept.append(p)
+	return kept
+
+
 static func trim_lines(lines: Array, half: float, off: Vector2) -> Array:
 	var out := []
 	for l in lines:

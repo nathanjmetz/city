@@ -103,6 +103,50 @@ func _init() -> void:
 	_check("right of way" in town.warehouse_problem("small", site, dir) or not Warehouses.KINDS.has("small"),
 		"so is a warehouse")
 
+	# Every road builder lays its roads through the network, and the network
+	# asks the ground first (RoadNetwork.ground_check): no builder can lay a
+	# street along the track.
+	var segs0 := town.network.segments.size()
+	_check(not town.network.build_road(along[0], along[1], along[2]) and "railroad" in town.network.refused,
+		"the road network itself refuses a street along the track, whoever builds it (%s)" % town.network.refused)
+	_check(not town.network.build_road(shallow[0], shallow[1], shallow[2]), "and one crossing it at 20 degrees")
+	_check(town.network.build_road(square[0], square[1], square[2]) and town.network.segments.size() > segs0,
+		"and lets one cross it square on")
+	var ring_at := p + t * 300.0
+	var rings := town.network.segments.size()
+	town.apply({"type": "build_roundabout", "center": [ring_at.x, ring_at.y], "radius": 30.0})
+	_check(town.network.segments.size() == rings, "a roundabout over the track is refused, all of it")
+	# Subdivisions and the town engineer's links ask before they plan.
+	_check(not town.subdivisions._line_clear(town, along[0], along[2]), "a subdivision street along the track is refused")
+	var sub_site := {"o": [p.x - across.x * 5.0, p.y - across.y * 5.0], "t": [t.x, t.y], "n": [across.x, across.y], "hw": 5.0}
+	_check(town.subdivisions._clear(town, sub_site, 120.0, {}) == "a railroad", "a subdivision site across the track is turned down")
+	# Hubs' roads too.
+	var hub := HubRoads.check(town, [along[0], along[2]], "")
+	_check(not hub.ok and "railroad" in str(hub.why), "a hub's road along the track is turned down (%s)" % hub.why)
+	# The county highway every new town starts with bends to cross the
+	# track square instead of running along it (here: the test town's spot,
+	# where a line runs beside and across the highway).
+	for spot in [Vector2.ZERO, sim.terrain_offset]:
+		var fresh := CitySim.new()
+		fresh.county_rail = true
+		fresh.terrain_offset = spot
+		var ends := fresh.build_county_road(Vector2(-2000, 0), Vector2(2000, 0), [0, 1])
+		var bad := 0
+		for id in fresh.network.segments:
+			if fresh.road_ground(fresh.network.curve_of(id), fresh.network.segments[id].type) != "":
+				bad += 1
+		_check(bad == 0 and ends[0] != -1 and ends[1] != -1 and _joined(fresh.network, ends[0], ends[1]),
+			"the starter highway at %s keeps the track's rules and runs end to end (%d segments, %d break them)" \
+				% [spot, fresh.network.segments.size(), bad])
+	# Starting over keeps the rules for public buildings.
+	var again := CitySim.new()
+	again.county_rail = true
+	again.terrain_offset = off
+	again.apply({"type": "clear"})
+	_check(again.services.county_rail and again.services.terrain_offset == off, "starting over keeps the railroads on")
+	why = again.services.site_problem(again.network, Services.Kind.FIRE, site_at(p), Vector3(across.x, 0.0, across.y))
+	_check("right of way" in why, "and a fire station on the track is still refused (%s)" % why)
+
 	# An older save, grown before the rule (here: with the rule off), with
 	# homes and shops on the track: it loads and runs, and at its first full
 	# lot check those lots go, like lots a new road runs through (Nathan,
@@ -124,6 +168,27 @@ func _init() -> void:
 	_check(_on_row(copy) == 0, "after loading it with the railroads on, none are left (%d)" % _on_row(copy))
 	_check(copy.buildings.size() > 150, "and the rest of the town stands (%d of %d buildings)" % [copy.buildings.size(), old.buildings.size()])
 	quit(1 if _failed else 0)
+
+
+static func site_at(p: Vector2) -> Vector3:
+	return Vector3(p.x, 0.0, p.y)
+
+
+## True when nodes a and b are joined by roads.
+static func _joined(net: RoadNetwork, a: int, b: int) -> bool:
+	var seen := {a: true}
+	var todo := [a]
+	while not todo.is_empty():
+		var n: int = todo.pop_back()
+		if n == b:
+			return true
+		for s in net.segments_at(n):
+			var seg: Dictionary = net.segments[s]
+			for m in [int(seg.a), int(seg.b)]:
+				if not seen.has(m):
+					seen[m] = true
+					todo.append(m)
+	return false
 
 
 ## Buildings whose lot reaches onto the right of way.

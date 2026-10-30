@@ -439,6 +439,13 @@ func _clear(sim, site: Dictionary, depth: float, roads: Dictionary) -> String:
 				for r in roads.get(k + Vector2i(dx, dz), []):
 					if flat.distance_to(r[0]) < float(r[1]) + 28.0 and (r[0] - o).dot(n) - hw > -1.0:
 						return "a road"
+	# Nor across a county railroad's right of way (CitySim._rail_under).
+	var outline := PackedVector2Array()
+	for uv in [[-half, 0.0], [half, 0.0], [half, depth], [-half, depth]]:
+		var c := local(site, uv[0], uv[1])
+		outline.append(Vector2(c.x, c.z))
+	if sim._rail_under(outline, CountyRail.ROW_HALF):
+		return "a railroad"
 	for uv in order:
 		var p := local(site, uv[0], uv[1])
 		if fmod(absf(float(uv[0])) + float(uv[1]) - 4.0, 100.0) > 0.01 and uv[1] != depth * 0.5:
@@ -747,6 +754,9 @@ func _line_clear(sim, a: Vector3, b: Vector3) -> bool:
 			var keep := RoadStyle.half_width(int(sim.network.segments[seg].get("type", 0))) + RoadStyle.half_width(TYPE)
 			for q in sim.network.sample_segment(seg, 24):
 				near.append([Vector2(q.x, q.z), keep])
+	# The ground rules every road is built by (a county railroad's track).
+	if sim.road_ground([a, (a + b) * 0.5, b], TYPE) != "":
+		return false
 	var length := a.distance_to(b)
 	var d := HubRoads.JUNCTION
 	while d <= length - HubRoads.JUNCTION:
