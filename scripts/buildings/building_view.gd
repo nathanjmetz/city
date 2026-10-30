@@ -524,7 +524,7 @@ func _set_trees(key: String, always := true) -> int:
 	var b: Dictionary = sim.buildings.get(key, {})
 	var when := {"planted": int(b.get("built", sim.tick_count)) + Construction.duration(
 		CitySim.profile_of(b))}
-	# The yard's own trees come in grown, at mixed ages from the lot's seed
+	# A home's own yard trees come in grown, at mixed ages from the lot's seed
 	# (TreeField.yard_age), unless the building was begun before this came
 	# in (a town saved before keeps its trees as they were:
 	# CitySim.grown_yards_from).
@@ -545,11 +545,11 @@ func _set_trees(key: String, always := true) -> int:
 			if not _parkway_free(q) or q.distance_to(mailbox) < MAILBOX_CLEAR:
 				continue
 			street += 1
-		elif grown:
-			# Its room to spread from its planter (HouseBuilder._yard_room);
-			# other planters' trees no bigger than they were planned at.
-			var room: float = t[4] if t.size() > 4 else 1.0
-			facts = {"planted": when.planted, "start": TreeField.yard_age(t[1], hash([lot_seed, i]), room)}
+		elif grown and t.size() > 4:
+			# A home's yard tree, with its room to spread (HouseBuilder._yard_room).
+			# Shops', factories', civic and apartment lots' trees go in as
+			# nursery stock, as before.
+			facts = {"planted": when.planted, "start": TreeField.yard_age(t[1], hash([lot_seed, i]), float(t[4]))}
 		kept.append(i)
 		at.origin.y = Terrain.ground_y(at.origin.x, at.origin.z) + t[0].y
 		trees.append([at, t[1], t[2], facts])

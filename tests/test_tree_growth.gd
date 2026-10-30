@@ -309,6 +309,8 @@ func _grown_yards() -> void:
 	var most := ages.filter(func(a): return a >= 15.0 and a <= 40.0).size()
 	var old := ages.filter(func(a): return a > 40.0).size()
 	_check(same, "the same lot's seed gives the same yard tree ages")
+	var off_step := ages.filter(func(a): return not GrownTrees.BUCKETS.has(a))
+	_check(off_step.is_empty(), "every yard tree starts at a grown mesh's own age, so they share meshes %s" % [off_step.slice(0, 3)])
 	_check(young > 300 and young < 600 and most > 2000 and old > 200 and old < 500 and ages.min() >= TreeKinds.nursery_age(sp) - 0.001
 		and ages.max() <= 75.001,
 		"yard trees start mostly 15 to 40 years old, some young, a few big old ones (%d young, %d 15-40, %d old of 3000)" % [young, most, old])

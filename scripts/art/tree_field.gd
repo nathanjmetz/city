@@ -199,12 +199,16 @@ static func resolve(t: Array, world := Transform3D.IDENTITY) -> Array:
 ## Yard trees in a new neighbourhood start already grown (Nathan,
 ## 2026-10-29: "A. Yes, back-yard trees start grown; street trees still
 ## start small and grow"), at the mixed ages of an established Indiana
-## street: about one in seven a young tree (nursery stock to 14 years),
-## most 15 to 40 years, and about one in eight a big old one (45 to 75).
-## Street trees are the town's and go in as nursery stock.
+## street: about one in seven a young tree (13 years), most 18, 25 or 33
+## years, and about one in eight a big old one (56). Street trees are the
+## town's and go in as nursery stock. The ages are grown trees' own mesh
+## ages (GrownTrees.BUCKETS), so a new street's yard trees share a few
+## meshes (fewer draw calls) instead of each being its own.
 const YARD_YOUNG := 0.14
 const YARD_OLD := 0.88
-const YARD_AGES := [14.0, 15.0, 40.0, 45.0, 75.0]
+const YARD_PICKS := [13.0, 18.0, 25.0, 33.0, 56.0]
+## The ages a tree kept younger to fit is put back to (the largest that fits).
+const YARD_STEPS := [9.0, 13.0, 18.0, 25.0, 33.0, 43.0, 56.0]
 
 
 ## How old a yard tree of kind `sp` is the day its yard is finished, from
@@ -220,14 +224,19 @@ static func yard_age(sp: int, seed: int, room := 1.0) -> float:
 	var young := TreeKinds.nursery_age(sp)
 	var age: float
 	if u < YARD_YOUNG:
-		age = lerpf(young, YARD_AGES[0], v)
+		age = YARD_PICKS[0]
 	elif u < YARD_OLD:
-		age = lerpf(YARD_AGES[1], YARD_AGES[2], v)
+		age = YARD_PICKS[1 + mini(int(v * 3.0), 2)]
 	else:
-		age = lerpf(YARD_AGES[3], YARD_AGES[4], v)
-	# No older than the crown has room for.
+		age = YARD_PICKS[4]
+	# No older than the crown has room for: the oldest step that fits, or
+	# nursery stock.
 	if room < TreeKinds.size_at(sp, age):
-		age = TreeKinds.age_for_size(sp, room)
+		var fits := TreeKinds.age_for_size(sp, room)
+		age = young
+		for s in YARD_STEPS:
+			if s <= fits:
+				age = s
 	return maxf(age, young)
 
 
