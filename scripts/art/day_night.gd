@@ -55,6 +55,7 @@ func _ready() -> void:
 	load_settings()
 	_lamps = StreetLights.new()
 	_lamps.setup(sim.network)
+	_lamps.claims = CurbClaims.of(sim)
 	add_child(_lamps)
 	_beams = Headlights.new()
 	_beams.setup(sim.traffic, tick_fraction)

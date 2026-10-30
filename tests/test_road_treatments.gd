@@ -25,6 +25,7 @@ func _init() -> void:
 	var seg: int = made[1]
 	_mixed(sim, seg)
 	_rules(sim, seg)
+	_curb_furniture(sim)
 	_same_town(sim)
 	_saves(sim, seg)
 	_new_factory()
@@ -124,6 +125,28 @@ func _mixed(sim: CitySim, seg: int) -> void:
 	var card := Inspect.describe(sim, {"type": "road", "id": seg})
 	_check(str(card.rows).contains("20 mph") and not card.get("actions", []).is_empty(),
 		"the click card shows it, with the lock buttons")
+
+
+## Lanterns, benches, bins and NO PARKING signs are curb furniture: each
+## stands where CurbClaims says the curb is free (off drive cuts, ramps and
+## crosswalks).
+func _curb_furniture(sim: CitySim) -> void:
+	var claims := CurbClaims.of(sim)
+	var p := TreatmentView.plan(sim)
+	var bad := []
+	var n := 0
+	for xf: Transform3D in p.lanterns:
+		n += 1
+		if not claims.is_free(Vector2(xf.origin.x, xf.origin.z), TreatmentView.LANTERN_HALF):
+			bad.append(["lantern", xf.origin])
+	var halves := {"bench": TreatmentView.BENCH_HALF, "bin": TreatmentView.BIN_HALF, "no_parking": TreatmentView.SIGN_HALF}
+	for sq in p.props:
+		for e in p.props[sq]:
+			n += 1
+			var o: Vector3 = e[1].origin
+			if not claims.is_free(Vector2(o.x, o.z), halves[e[0]]):
+				bad.append([e[0], o])
+	_check(n > 0 and bad.is_empty(), "curb furniture stands only on free curb (%d placed, in the way: %s)" % [n, bad.slice(0, 4)])
 
 
 func _rules(sim: CitySim, seg: int) -> void:

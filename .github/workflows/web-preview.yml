@@ -254,6 +254,7 @@ jobs:
           run_test tests/test_lot_grade.gd
           run_test tests/test_state_layer.gd
           run_test tests/test_overlaps.gd
+          run_test tests/test_curb_claims.gd
 
       - name: Stamp the build
         run: |

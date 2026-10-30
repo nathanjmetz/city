@@ -93,6 +93,21 @@ static var last_masses := []
 ## The plan info of the last house built (drive, garage, door, porch and the
 ## front walk as drawn: "walk", a Rect2), for the yard props (StateView).
 static var last_info := {}
+## What a building paves out across the parkway to the curb, while
+## BuildingView.curb_paving lays a lot out for CurbClaims (null otherwise):
+## [x0, x1, curb z, flare] each, a commercial apron (_curb_cut, flared) or a
+## drive drawn straight out to the street.
+static var cuts_drawn = null
+var _in_cut := false
+## Every builder made while this is set lays its building out without
+## making any surfaces (_dry), as plan_info does (curb_paving).
+static var dry_all := false
+
+
+func _init() -> void:
+	_dry = dry_all
+
+
 ## Plan info alone (where the drive, garage and door are), by plan without
 ## the care tier or paint: what the traffic sim asks for, worked out without drawing.
 static var _infos := {}
@@ -184,6 +199,9 @@ var _yard_from := 0  # the home's yard trees: trees[_yard_from] up to _yard_to
 var _yard_to := 0
 ## Where the home's curbside mailbox stands across the lot (local x), or INF.
 var mail_x := INF
+## A corner house's garage and drive go on this side (local x, +1 or -1),
+## away from the corner (SiteLayout.drive_away); 0 to let the dice pick.
+var drive_away := 0.0
 var rng: RandomNumberGenerator
 ## Set around a shop's display windows on the desktop: the glass shows a
 ## lit sales floor behind it (HouseMaterials GLASS, UV.x 2..3).
@@ -210,6 +228,7 @@ func _fit(lot: Dictionary) -> void:
 	half = float(lot.get("width", LOT_HALF * 2.0)) * 0.5
 	pad = float(lot.get("pad", 0.0))
 	mail_x = float(lot.get("mail_x", INF))
+	drive_away = signf(float(lot.get("drive_away", 0.0)))
 	alley = bool(lot.get("alley", true))
 	outline = lot.get("outline", PackedVector2Array())
 	depth = float(lot.get("depth", 32.0)) - pad
@@ -790,6 +809,8 @@ func _plan(storeys: int, info_only := false) -> Dictionary:
 	var plan: int = plans[rng.randi() % plans.size()]
 	var scheme: int = schemes[rng.randi() % schemes.size()]
 	var gs := -1.0 if rng.randf() < 0.5 else 1.0  # which side the garage is on
+	if drive_away != 0.0:
+		gs = drive_away  # a corner house's drive keeps away from the corner (the dice still rolled)
 	var wide := _bucket(half * 2.0, WIDTHS)
 	var deep := _bucket(depth, DEPTHS)
 	# Not every owner set the house on the builder's line (Nathan, 2026-10-25:
@@ -1010,19 +1031,24 @@ func _seat(plans: Array, storeys: int, wide: float, gs: float, zf: float, deep: 
 	var plan: int = plans[0]
 	var widths := WIDTHS.filter(func(w): return w <= wide)
 	widths.reverse()
+	# A corner house tries every plan with its drive away from the corner,
+	# then with it on the corner side, at each setback before the next
+	# deeper one (a shallow corner lot keeps its building line).
+	var passes := [[gs, -gs]] if drive_away == 0.0 else [[gs], [-gs]]
 	for back in [0.0, 2.0, 4.0, 6.0]:
 		var z: float = zf + back
 		var room := _bucket(deep - z, ROOMS)
-		for p in plans:
-			for w in widths:
-				for g in [gs, -gs]:
-					var shape := _shape([era, p, w, room, storeys, force_kind])
-					var x := 0.0
-					while x <= half:
-						for d in ([x] if x == 0.0 else [x, -x]):
-							if _fits(shape, g, z, d):
-								return [w, g, z, d, room, p]
-						x += 0.5
+		for sides in passes:
+			for p in plans:
+				for w in widths:
+					for g in sides:
+						var shape := _shape([era, p, w, room, storeys, force_kind])
+						var x := 0.0
+						while x <= half:
+							for d in ([x] if x == 0.0 else [x, -x]):
+								if _fits(shape, g, z, d):
+									return [w, g, z, d, room, p]
+							x += 0.5
 	# Nothing fits (a remnant too small or odd to build on): the smallest
 	# plan where the least of it stands past the lot lines.
 	unseated += 1
@@ -3100,6 +3126,8 @@ func _glass(c: Vector3, right: Vector3, w: float, h: float, blinds: float) -> vo
 func _flat_rect(kind: String, x0: float, x1: float, z0: float, z1: float, y: float, col := MULCH) -> void:
 	if kind == "drive" and absf(x1 - x0) >= 2.0 and absf(z1 - z0) >= 2.0:
 		_paved.append(Rect2(minf(x0, x1), minf(z0, z1), absf(x1 - x0), absf(z1 - z0)))
+		if cuts_drawn != null and minf(z0, z1) < -2.0 and not _in_cut:
+			cuts_drawn.append([minf(x0, x1), maxf(x0, x1), minf(z0, z1), 0.0])  # paved out across the parkway
 	if _dry:
 		return
 	var alpha := {"drive": 0.0, "asphalt": 0.4, "line": 0.72, "mulch": 1.0, "gravel": 1.0}
@@ -3137,11 +3165,15 @@ func _flat_tri(pts: Array, y: float) -> void:
 ## half width, `curb_z` where the curb is; asphalt runs on from the
 ## sidewalk to `z1`.
 func _curb_cut(x: float, half: float, curb_z: float, z1: float, y := 0.1) -> void:
+	if cuts_drawn != null:
+		cuts_drawn.append([x - half, x + half, curb_z, 1.5])
 	var walk1 := curb_z + RoadStyle.CURB_WIDTH + RoadStyle.PARKWAY_WIDTH + RoadStyle.SIDEWALK_WIDTH
 	var walk0 := walk1 - RoadStyle.SIDEWALK_WIDTH
 	if z1 > walk1:
 		_flat_rect("asphalt", x - half, x + half, walk1, z1, y)
+	_in_cut = true
 	_flat_rect("drive", x - half, x + half, curb_z, walk1, y)
+	_in_cut = false
 	for s in [-1.0, 1.0]:
 		_flat_tri([Vector3(x + s * half, 0, walk0), Vector3(x + s * half, 0, curb_z),
 			Vector3(x + s * (half + 1.5), 0, curb_z)], y)

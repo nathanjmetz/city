@@ -28,6 +28,15 @@ const SIGN_GAP := 46.0
 ## Lantern post to the top of its globe (12 ft to the light centre).
 const LANTERN_H := 3.7
 const POOL := 13.0
+## Half each thing's footprint on the curb, and how far it may slide along
+## it to find a free spot.
+const LANTERN_HALF := 0.3
+const BENCH_HALF := 0.9
+const BIN_HALF := 0.3
+const SIGN_HALF := 0.2
+const SLIDE := 4.0
+## How often (s) the view asks whether the curb's claims changed.
+const CLAIMS_EVERY := 1.0
 
 const LANTERN_SHADER := """
 shader_type spatial;
@@ -53,6 +62,8 @@ var _parts := {}  # plan's cache: road piece -> [key, part]
 var _mat: StandardMaterial3D
 var _dirty := true
 var _near_on := false
+var _claims_seen := -1
+var _claims_wait := 0.0
 
 
 func setup(s: CitySim, street_lights: StreetLights) -> void:
@@ -89,7 +100,16 @@ func _multi(mesh: Mesh, shadows: bool) -> MultiMeshInstance3D:
 	return mi
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
+	_claims_wait -= delta
+	if _claims_wait <= 0.0 and sim != null:
+		_claims_wait = CLAIMS_EVERY
+		var claims := CurbClaims.of(sim)
+		var now := claims.stamp()
+		if now != _claims_seen:
+			var boxes := claims.changes_since(_claims_seen)
+			_claims_seen = now
+			_forget_near(boxes)
 	var near := RoadView.curbs_wanted()
 	if near != _near_on:
 		_near_on = near
@@ -101,6 +121,20 @@ func _process(_delta: float) -> void:
 		Perf.add("frame.treatments", t)
 	if _pools != null and lamps != null:
 		_pools.visible = lamps.visible_amount > 0.0
+
+
+## The curb's claims changed in these places (Rect2s; [] for anywhere): the
+## roads by them are worked out again.
+func _forget_near(boxes: Array) -> void:
+	if _parts.is_empty():
+		return
+	for id in _parts.keys():
+		var c: Array = _parts[id][0][3]
+		var box := Rect2(Vector2(c[0].x, c[0].z), Vector2.ZERO).expand(Vector2(c[1].x, c[1].z)) \
+			.expand(Vector2(c[2].x, c[2].z)).grow(20.0)
+		if boxes.is_empty() or boxes.any(func(b): return (b as Rect2).intersects(box)):
+			_parts.erase(id)
+			_dirty = true
 
 
 ## Where everything stands: {"lanterns", "cobras", "pools": [Transform3D],
@@ -153,8 +187,10 @@ static func _road_part(s: CitySim, id: int) -> Dictionary:
 	var back := hw + RoadStyle.CURB_WIDTH
 	var main := t.kind(id, -1) == RoadTreatments.MAIN or t.kind(id, 1) == RoadTreatments.MAIN
 	out.skip = main
-	var rng := RandomNumberGenerator.new()
-	rng.seed = id * 92821 + 5
+	# Everything here is curb furniture: it stands only where the curb is
+	# free (CurbClaims: off drive cuts, curb ramps and crosswalks), slid
+	# along the curb to the nearest free spot, or left out.
+	var claims := CurbClaims.of(s)
 	for side in [-1, 1]:
 		var kind := t.kind(id, side)
 		var start := hw + 9.0
@@ -163,23 +199,32 @@ static func _road_part(s: CitySim, id: int) -> Dictionary:
 			var n := maxi(int((stop - start) / LANTERN_GAP), 0)
 			for i in n + 1:
 				var d := start + (stop - start) * (float(i) / maxf(n, 1))
-				var at := _spot(pts, d, side, back + LANTERN_IN)
-				out.lanterns.append(at[0])
-				out.pools.append(_pool(at[0], at[1], 1.4, 1.0))
-				out.lamps.append(_lamp(at, 0.3, LANTERN_H + 0.45))
+				var at := _free(claims, pts, d, side, back + LANTERN_IN, LANTERN_HALF, SLIDE)
+				if not at.is_empty():
+					out.lanterns.append(at[0])
+					out.pools.append(_pool(at[0], at[1], 1.4, 1.0))
+					out.lamps.append(_lamp(at, 0.3, LANTERN_H + 0.45))
 				if i % 2 == 1 and i < n:
-					out.props.append(["bench", _spot(pts, d + 3.0, side, back + LANTERN_IN + 0.2)[0]])
-					out.props.append(["bin", _spot(pts, d - 1.6, side, back + LANTERN_IN)[0]])
+					var bench := _free(claims, pts, d + 3.0, side, back + LANTERN_IN + 0.2, BENCH_HALF, SLIDE)
+					if not bench.is_empty():
+						out.props.append(["bench", bench[0]])
+					var bin := _free(claims, pts, d - 1.6, side, back + LANTERN_IN, BIN_HALF, SLIDE)
+					if not bin.is_empty():
+						out.props.append(["bin", bin[0]])
 		elif kind == RoadTreatments.FACTORY:
 			var n := maxi(int((stop - start) / SIGN_GAP), 0)
 			for i in n + 1:
 				var d := start + (stop - start) * (float(i) / maxf(n, 1))
-				out.props.append(["no_parking", _spot(pts, d, side, back + 0.3)[0]])
+				var sign := _free(claims, pts, d, side, back + 0.3, SIGN_HALF, SLIDE)
+				if not sign.is_empty():
+					out.props.append(["no_parking", sign[0]])
 		if main and kind != RoadTreatments.MAIN:
 			# The other side keeps a cobra head on a wooden pole, one a block.
 			var n := maxi(int(length / 62.0), 1)
 			for i in n:
-				var at := _spot(pts, (i + 0.5) * length / n, side, back + 0.3)
+				var at := _free(claims, pts, (i + 0.5) * length / n, side, back + 0.3, LANTERN_HALF, SLIDE)
+				if at.is_empty():
+					continue
 				out.cobras.append(at[0])
 				out.pools.append(_pool(at[0], at[1], 3.3, 2.0))
 				out.lamps.append(_lamp(at, 1.8, 9.0))
@@ -197,6 +242,23 @@ static func _spot(pts: PackedVector3Array, d: float, side: int, off: float) -> A
 	var p: Vector3 = at[0] + out * off
 	var face := -out  # toward the street
 	return [Transform3D(Basis(Vector3.UP, atan2(face.x, face.z)), Terrain.lift(Vector3(p.x, 0.0, p.z))), face]
+
+
+## _spot, slid along the curb to where it is free (CurbClaims), or [] if
+## nothing within `slide` metres either way is.
+static func _free(claims: CurbClaims, pts: PackedVector3Array, d: float, side: int, off: float, half: float,
+		slide: float) -> Array:
+	var at := _spot(pts, d, side, off)
+	if claims == null:
+		return at
+	var o: Vector3 = at[0].origin
+	var along: Vector3 = Vector3(at[1].z, 0.0, -at[1].x)  # down the curb
+	var q := claims.slide(Vector2(o.x, o.z), Vector2(along.x, along.z).normalized(), half, slide, slide)
+	if q == Vector2.INF:
+		return []
+	if q != Vector2(o.x, o.z):
+		at[0] = Transform3D(at[0].basis, Terrain.lift(Vector3(q.x, 0.0, q.y)))
+	return at
 
 
 ## A pool of light on the street `reach` metres out from a lamp, `scale`
