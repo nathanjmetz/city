@@ -103,6 +103,8 @@ func setup(net: RoadNetwork, s: CitySim = null) -> void:
 		GraphicsQuality.current.changed.connect(func(): _curbs_check = true)
 	network.changed.connect(rebuild)
 	if sim != null:
+		# A street side that took a treatment is drawn again on its own.
+		sim.treatments.changed.connect(_retreat)
 		for sig in [sim.lots_changed, sim.zones_changed, sim.buildings_changed]:
 			sig.connect(func(): if _recheck < 0.0: _recheck = 1.0)
 		for sig in [sim.farms_changed, sim.industry_changed]:
@@ -110,6 +112,29 @@ func setup(net: RoadNetwork, s: CitySim = null) -> void:
 				_redraw = true
 				if _recheck < 0.0: _recheck = 1.0)
 	rebuild()
+
+
+## A road's treatment as its mesh draws it ({} for a plain one, or a road
+## drawn as a country road, which has no curbs or walks to dress).
+func _treat(id: int, rural: bool) -> Dictionary:
+	if sim == null or rural:
+		return {}
+	return sim.treatments.look(id)
+
+
+## Street sides that changed treatment: just those road pieces are drawn
+## again, a few a frame (as after a rebuild that ran out of time).
+func _retreat(segs: Array) -> void:
+	for id in segs:
+		var cached: Array = _street_cache.get(id, [])
+		if cached.is_empty() or not _seg_mi.has(id):
+			continue
+		var key: Array = cached[0].duplicate()
+		var treat := _treat(id, key[2])
+		if key.size() < 10 or key[9] == treat:
+			continue
+		key[9] = treat
+		_later[id] = [key, key[0], key[1], key[3], key[2], key[5], key[6], key[7], key[8], treat]
 
 
 ## The other roads that could pass under a road's points: its bridge is
@@ -550,7 +575,8 @@ func _rebuild_all(gen: int) -> void:
 			var urban := _urban.has(id)
 			if urban:
 				rural = false
-			var key := [pts, type, rural, seg_gaps, Terrain.shift, line_cuts, breaks, urban, dips]
+			var treat := _treat(id, rural)
+			var key := [pts, type, rural, seg_gaps, Terrain.shift, line_cuts, breaks, urban, dips, treat]
 			var cached: Array = _street_cache.get(id, [])
 			if cached.is_empty() or cached[0] != key:
 				if (sliced or not cached.is_empty()) and (Perf.now() - t0) / 1000.0 > _remesh_ms():
@@ -559,10 +585,10 @@ func _rebuild_all(gen: int) -> void:
 					# them); a street keeps its old look a few frames while
 					# they're redrawn. A new street is drawn at once, except a
 					# neighbor's, which just appears a few frames late.
-					_later[id] = [key, pts, type, seg_gaps, rural, line_cuts, breaks, urban, dips]
+					_later[id] = [key, pts, type, seg_gaps, rural, line_cuts, breaks, urban, dips, treat]
 				else:
 					cached = [key, Terrain.drape(RoadMesh.street(pts, type, _mats, seg_gaps, rural, line_cuts, breaks,
-						urban, dips))]
+						urban, dips, treat))]
 			if not cached.is_empty():
 				street_cache[id] = cached
 				mi.mesh = cached[1]
@@ -1022,7 +1048,7 @@ func _remesh_later() -> void:
 		if mi == null or not is_instance_valid(mi):
 			continue
 		var mesh := Terrain.drape(RoadMesh.street(job[1], job[2], _mats, job[3], job[4], job[5], job[6], job[7],
-			job[8]))
+			job[8], job[9] if job.size() > 9 else {}))
 		_street_cache[id] = [job[0], mesh]
 		mi.mesh = mesh
 		if (Perf.now() - t) / 1000.0 > _remesh_ms():

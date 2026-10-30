@@ -58,16 +58,18 @@ static func add_disc(st: SurfaceTool, center: Vector3, radius: float, y: float, 
 ## {side (+1/-1): [from, to] metres along pts}.
 ## `cuts`: how far from each end (start, end) a town street's painted lines
 ## stop, at a junction's crosswalk (JunctionMarks.line_cut).
+## `treat`: the road's treatment (RoadTreatments.look): {"left", "right",
+## "mid"}, each "factory", "main" or "" (today's look); town streets only.
 static func street(pts: PackedVector3Array, type: int, mats: Dictionary, gaps := {}, rural := false,
-		cuts := Vector2.ZERO, breaks := [], urban := false, dips := Vector2.ONE) -> ArrayMesh:
+		cuts := Vector2.ZERO, breaks := [], urban := false, dips := Vector2.ONE, treat := {}) -> ArrayMesh:
 	var spec: Dictionary = RoadStyle.TYPES[type]
 	if RoadStyle.is_freeway(type):
 		return _oneway(pts, spec, mats, gaps)
 	if urban:
-		return _town(pts, type, mats, cuts, true, dips)
+		return _town(pts, type, mats, cuts, true, dips, treat)
 	if spec.get("rural", false) or (rural and spec.median == 0.0):
 		return _rural(pts, type, mats, breaks)
-	return _town(pts, type, mats, cuts, false, dips)
+	return _town(pts, type, mats, cuts, false, dips, treat)
 
 
 ## A town street with curbs and sidewalks. Markings follow MUTCD Part 3B:
@@ -78,7 +80,7 @@ static func street(pts: PackedVector3Array, type: int, mats: Dictionary, gaps :=
 ## `dips`: 0 at an end whose corners have a diagonal ramp instead of ramps
 ## in line with the crosswalk (Junction.pair_ramps), where the curb stays up.
 static func _town(pts: PackedVector3Array, type: int, mats: Dictionary, cuts := Vector2.ZERO, urban := false,
-		dips := Vector2.ONE) -> ArrayMesh:
+		dips := Vector2.ONE, treat := {}) -> ArrayMesh:
 	var spec: Dictionary = RoadStyle.TYPES[type]
 	var hw := RoadStyle.half_width(type)
 	var cw := RoadStyle.CURB_WIDTH
@@ -87,8 +89,13 @@ static func _town(pts: PackedVector3Array, type: int, mats: Dictionary, cuts := 
 	var hm: float = spec.median * 0.5
 	var lane := 3.6
 	var y_mark := RoadStyle.Y_ASPHALT + 0.01
+	var surface: String = spec.get("surface", "asphalt")
+	var factory_mid: bool = treat.get("mid", "") == RoadTreatments.FACTORY and surface == "asphalt" \
+		and mats.has("concrete")
+	if factory_mid:
+		surface = "concrete"  # jointed concrete, built for trucks
 	var layers := [
-		[spec.get("surface", "asphalt"), [[-hw, hw]], RoadStyle.Y_ASPHALT, ""],
+		[surface, [[-hw, hw]], RoadStyle.Y_ASPHALT, ""],
 	]
 	if not raised_curbs:
 		layers.append(["curb", [[-hw - cw, -hw], [hw, hw + cw]], RoadStyle.Y_CURB, ""])
@@ -100,7 +107,10 @@ static func _town(pts: PackedVector3Array, type: int, mats: Dictionary, cuts := 
 		layers.append(["curb", [[-hw, -hw + g], [hw - g, hw]], RoadStyle.Y_ASPHALT + 0.004, ""])
 		layers.append(["curb_face", [[-hw - 0.07, -hw], [hw, hw + 0.07]], RoadStyle.Y_CURB + 0.003, ""])
 	if spec.get("walk", true) or urban:
-		layers.append(["walk", [[-w1, -w0], [w0, w1]], RoadStyle.Y_SIDEWALK, ""])
+		if treat.is_empty():
+			layers.append(["walk", [[-w1, -w0], [w0, w1]], RoadStyle.Y_SIDEWALK, ""])
+		else:
+			layers.append_array(treated_walks(treat, hw, cw, w0, w1))
 	var dashes := []
 	var inner := 0.0  # centre line to the first lane
 	var lane_edge := 0.0  # centre line to the outside of the outer lane
@@ -160,10 +170,31 @@ static func _town(pts: PackedVector3Array, type: int, mats: Dictionary, cuts := 
 				back.append(at[0] + n * (hw + cw))
 				rises.append(_ramp_rise(d, length, dips))
 			add_curb(pan, edge, back, rises)
+		if not spec.get("angle", false) and not (spec.get("parking", 0) > 0 and spec.oneway):
+			# A main street side's stalls: a 23 ft parallel stall between
+			# ticks out from the gutter (MUTCD 3B.19), laid with the gutter
+			# pan so they cost no draw of their own.
+			for side in [-1.0, 1.0]:
+				if treat.get("right" if side > 0.0 else "left", "") != RoadTreatments.MAIN:
+					continue
+				var at := hw + 6.0
+				while at < length - hw - 6.0:
+					_slant(pan, pts, at, side * (hw - 2.2), at, side * (hw - g), RoadStyle.Y_ASPHALT + 0.006)
+					at += 7.0
 		pan.commit(mesh)
 		mesh.surface_set_material(mesh.get_surface_count() - 1, mats.curb)
 		if mats.has("iron"):
-			_castings(mesh, pts, length, hw, lane_edge, mats)
+			# A factory middle's jointed concrete: contraction joints sawn
+			# across the slab every 15 ft (INDOT jointed plain concrete
+			# pavement), dark with their sealant, laid with the iron's dark.
+			var joints := []
+			if factory_mid:
+				var j := hw + 2.0
+				var mlen := RoadNetwork.polyline_length(marks)
+				while j < mlen - 2.0:
+					joints.append(j)
+					j += 4.6
+			_castings(mesh, pts, length, hw, lane_edge, mats, marks, joints)
 		if mats.has("wear"):
 			var centres := []
 			if spec.oneway:
@@ -220,13 +251,30 @@ static func _town(pts: PackedVector3Array, type: int, mats: Dictionary, cuts := 
 	return mesh
 
 
+## A treated road's walks, side by side (RoadTreatments): a factory side
+## gets a narrow 4 ft walk at the back with a wider mowed strip; a main
+## street side is paved from the curb to the storefronts. Both are the
+## walk's own layer, so a treated road draws no more than a plain one.
+static func treated_walks(treat: Dictionary, hw: float, cw: float, w0: float, w1: float) -> Array:
+	var walk := []
+	for side in [-1.0, 1.0]:
+		var span := [w0, w1]
+		match treat.get("right" if side > 0.0 else "left", ""):
+			RoadTreatments.FACTORY:
+				span = [w1 - 1.2, w1]
+			RoadTreatments.MAIN:
+				span = [hw + cw, w1]
+		walk.append([side * span[0], side * span[1]] if side > 0.0 else [side * span[1], side * span[0]])
+	return [["walk", walk, RoadStyle.Y_SIDEWALK, ""]]
+
+
 ## Iron in the street, as the desktop's raised curbs draw it: a curb inlet
 ## in the gutter pan at each corner, just short of the curb ramp, where the
 ## water runs to (INDOT standard E 720 type J: a cast grate with its bars
 ## along the gutter, 2 by 3 ft), and a sanitary manhole cover down the
 ## middle of a lane every block or so (Neenah R-1642 style, 27 in round).
 static func _castings(mesh: ArrayMesh, pts: PackedVector3Array, length: float, hw: float, lane_edge: float,
-		mats: Dictionary) -> void:
+		mats: Dictionary, marks := PackedVector3Array(), joints := []) -> void:
 	var iron := SurfaceTool.new()
 	iron.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var slots := SurfaceTool.new()
@@ -262,6 +310,8 @@ static func _castings(mesh: ArrayMesh, pts: PackedVector3Array, length: float, h
 		var c: Vector3 = at[0] + Vector3(-at[1].z, 0.0, at[1].x).normalized() * lane_mid * side
 		add_disc(slots, c, 0.43, RoadStyle.Y_ASPHALT + 0.005, 20)
 		add_disc(iron, c, 0.37, RoadStyle.Y_ASPHALT + 0.007, 20)
+	for at: float in joints:
+		_slant(slots, marks, at, -hw + 0.05, at, hw - 0.05, RoadStyle.Y_ASPHALT + 0.004)
 	iron.commit(mesh)
 	mesh.surface_set_material(mesh.get_surface_count() - 1, mats.iron)
 	slots.commit(mesh)

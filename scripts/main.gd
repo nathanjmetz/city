@@ -213,6 +213,13 @@ func _ready() -> void:
 	# Streets drawn as country roads go unlit; their pole line is the only one.
 	look.set_country(roads._rural)
 	roads.country_changed.connect(look.set_country)
+	# What treated street sides have standing on them: main street lanterns
+	# and benches, factory NO PARKING signs (desktop only;
+	# the browser draws the treated pavement and walks).
+	if not OS.has_feature("web"):
+		var treat_view := TreatmentView.new()
+		treat_view.setup(sim, look._lamps)
+		add_child(treat_view)
 
 	var arrows := LevelArrows.new()
 	arrows.setup(sim)

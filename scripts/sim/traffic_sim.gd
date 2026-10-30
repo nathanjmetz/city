@@ -286,6 +286,14 @@ var _truck_plan := false  # the route being planned is for a truck (close_segmen
 var truck_routes := false
 var _tpen := {}       # way -> extra seconds for a truck under truck_routes
 var _tpen_key := []
+## Road treatments (RoadTreatments) hand their rules in here: road piece ->
+## its lower speed limit (mph), road pieces that are truck routes (no extra
+## for trucks under truck_routes), and curbs (seg * 2, +1 the right-hand
+## side) with no car parking or no driveway cuts.
+var treat_mph := {}
+var treat_trucks := {}
+var no_parking := {}
+var no_aprons := {}
 ## The route being planned is for a golf cart (TownLaws golf_carts): roads
 ## faster than Balance.CART_MAX_MPH count Balance.CART_FAST_MULT times
 ## their drive, so carts keep to town streets and only cross the highway.
@@ -1199,6 +1207,64 @@ static func limit(type: int) -> float:
 	return RoadStyle.TYPES[type].mph * RoadStyle.MPH
 
 
+## A road piece's speed limit, m/s, with its treatment's.
+func seg_limit(seg: int, type: int) -> float:
+	var v := limit(type)
+	if treat_mph.has(seg):
+		v = minf(v, float(treat_mph[seg]) * RoadStyle.MPH)
+	return v
+
+
+## A road treatment's rules for one road piece (RoadTreatments.push):
+## `mph` 0 for its own limit, `truck` a truck route, and the sides (-1, 1)
+## with no car parking and with no driveway cuts. A new limit is put on its
+## ways at once, as a rebuild would.
+func set_treatment(seg: int, mph: int, truck: bool, park_off: Array, aprons_off: Array) -> void:
+	var was: int = int(treat_mph.get(seg, 0))
+	if mph > 0:
+		treat_mph[seg] = mph
+	else:
+		treat_mph.erase(seg)
+	if truck != treat_trucks.has(seg):
+		if truck:
+			treat_trucks[seg] = true
+		else:
+			treat_trucks.erase(seg)
+		_tpen_key = []
+	for side in [0, 1]:
+		var k: int = seg * 2 + side
+		var s := 1 if side == 1 else -1
+		if s in park_off:
+			no_parking[k] = true
+		else:
+			no_parking.erase(k)
+		if s in aprons_off:
+			no_aprons[k] = true
+		else:
+			no_aprons.erase(k)
+	if was == mph or not network.segments.has(seg):
+		return
+	var c := network.curve_of(seg)
+	var r := RoadNetwork.min_radius(c[0], c[1], c[2])
+	var curve_v := INF if r > 400.0 else RoadStyle.safe_speed_mph(r) * RoadStyle.MPH
+	var any := false
+	for wid in [seg * 2, seg * 2 + 1]:
+		if ways.has(wid):
+			ways[wid].vmax = maxf(minf(seg_limit(seg, ways[wid].type), curve_v), 4.0)
+			any = true
+	if any:
+		_wcost.clear()  # worked out again, every way as after a rebuild
+
+
+func clear_treatments() -> void:
+	for seg in treat_mph.keys():
+		set_treatment(seg, 0, false, [], [])
+	treat_trucks.clear()
+	no_parking.clear()
+	no_aprons.clear()
+	_tpen_key = []
+
+
 ## Lanes each way, and how far right of the centre line each lane runs
 ## (lane 0 is the leftmost in the direction of travel).
 static func lane_offsets(type: int, oneway_flag: bool) -> PackedFloat32Array:
@@ -1411,7 +1477,7 @@ func _rebuild() -> void:
 			ways[wid] = {"id": wid, "seg": id, "fwd": fwd, "from": s.a if fwd else s.b,
 				"to": s.b if fwd else s.a, "type": s.type, "pts": p, "cum": cum,
 				"len": cum[cum.size() - 1], "lanes": offs.size(), "offs": offs,
-				"vmax": maxf(minf(limit(s.type), curve_v), 4.0), "s0": 0.0, "s1": cum[cum.size() - 1]}
+				"vmax": maxf(minf(seg_limit(id, s.type), curve_v), 4.0), "s0": 0.0, "s1": cum[cum.size() - 1]}
 			if not _out.has(ways[wid].from):
 				_out[ways[wid].from] = []
 			_out[ways[wid].from].append(wid)
@@ -2120,7 +2186,8 @@ func _truck_pen() -> Dictionary:
 		_tpen.clear()
 		for wid in ways:
 			var seg: int = int(wid) >> 1
-			if network.segments.has(seg) and int(network.segments[seg].type) in TownLaws.LOCAL_STREETS:
+			if network.segments.has(seg) and int(network.segments[seg].type) in TownLaws.LOCAL_STREETS \
+					and not treat_trucks.has(seg):
 				var w: Dictionary = ways[wid]
 				_tpen[wid] = w.len / w.vmax * (Balance.LAW_TRUCK_STREET_MULT - 1.0)
 	return _tpen
@@ -3368,6 +3435,15 @@ func _curb_at(line: Array, d: float) -> Dictionary:
 ## `held` is the list _curb_taken gives, for a caller placing many at once
 ## (it is added to); with none, the curb spaces are looked over afresh.
 func _new_curb(pl: Dictionary, stop: Dictionary, vid := -1, vlen := 4.8, held = null) -> int:
+	if vlen <= 6.5 and _no_car_parking(stop) and str(pl.get("ref", "")).begins_with("lot:"):
+		# A factory side (RoadTreatments): NO PARKING (MUTCD R7-1), so a car
+		# bound for a building parks across the street and its driver walks
+		# over. Trucks may still stand there to load, as the sign allows,
+		# and police and other crews at work stop where they must.
+		stop = stop.duplicate()
+		stop.side = -int(stop.get("side", 1))
+		if _no_car_parking(stop):
+			return -1
 	var line := _curb_line(stop)
 	if line.is_empty():
 		return -1
@@ -3381,7 +3457,8 @@ func _new_curb(pl: Dictionary, stop: Dictionary, vid := -1, vlen := 4.8, held = 
 	for q in (_curb_taken() if held == null else held):
 		if mid_pos.distance_squared_to(q[0]) < reach * reach:
 			taken.append(q)
-	var aprons := _aprons(stop)
+	# A main street side has no driveway cuts: the curb is all stalls.
+	var aprons := [] if no_aprons.has(int(stop.seg) * 2 + (1 if int(stop.get("side", 1)) > 0 else 0)) else _aprons(stop)
 	for k in tries:
 		var off := ceilf(k * 0.5) * (1.0 if k % 2 == 1 else -1.0) * CURB_STALL * 0.5
 		var c := _curb_at(line, float(line[1]) + off)
@@ -3409,6 +3486,11 @@ func _new_curb(pl: Dictionary, stop: Dictionary, vid := -1, vlen := 4.8, held = 
 	if held != null:
 		held.append([last.pos, vlen])
 	return _add_spot(pl, last, vid)
+
+
+func _no_car_parking(stop: Dictionary) -> bool:
+	return not no_parking.is_empty() and stop.has("seg") \
+		and no_parking.has(int(stop.seg) * 2 + (1 if int(stop.get("side", 1)) > 0 else 0))
 
 
 ## Shared by a run of arrive_now calls: the curb spaces taken (added to as
