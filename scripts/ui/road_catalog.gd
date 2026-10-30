@@ -310,7 +310,7 @@ func setup(tools: Dictionary) -> void:
 	_chip_slide.add_child(_chip_line)
 	_cat_row.add_theme_constant_override("separation", 6)
 	_cat_slide.add_child(_cat_row)
-	var go := UiStyle.label("GO TO", 11, UiStyle.MUTED)
+	var go := UiStyle.label("GO TO", 12, UiStyle.MUTED)
 	go.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	_cat_row.add_child(go)
 
@@ -451,6 +451,7 @@ func open(current: int) -> void:
 		(e.button as Button).set_pressed_no_signal(on)
 	_search.text = ""
 	visible = true
+	MenuState.covering = true
 	set_process(true)
 	if not get_viewport().size_changed.is_connected(_layout):
 		get_viewport().size_changed.connect(_layout)
@@ -465,14 +466,22 @@ func open(current: int) -> void:
 	# The cards take a few frames to find their columns and heights; keep
 	# the road in hand in view while they do.
 	_settle = 4
-	if not DisplayServer.is_touchscreen_available():
+	if not soft_keyboard():
 		_search.grab_focus()
+
+
+## A phone or tablet, where focusing the search box pops up the screen
+## keyboard over the cards. A touchscreen laptop has real keys, so its
+## search box takes the typing as a desktop's does.
+static func soft_keyboard() -> bool:
+	return OS.has_feature("mobile") or OS.has_feature("web_android") or OS.has_feature("web_ios")
 
 
 func close() -> void:
 	if not visible:
 		return
 	visible = false
+	MenuState.covering = false
 	set_process(false)
 	_search.release_focus()
 	closed.emit()
@@ -561,7 +570,7 @@ func _jump(cat: String) -> void:
 		if _shown[i].cat == cat:
 			_set_hi(i, false)
 			break
-	if not DisplayServer.is_touchscreen_available():
+	if not soft_keyboard():
 		_search.grab_focus()
 
 
@@ -616,9 +625,13 @@ func _input(event: InputEvent) -> void:
 				_next_kind(-1 if k.shift_pressed else 1)
 			_:
 				used = false
+				# A key typed anywhere goes into the search box (and never to
+				# the town's own keys behind the panel).
+				if k.unicode > 31 and not _search.has_focus():
+					_search.grab_focus()
 		if used:
 			get_viewport().set_input_as_handled()
-	elif event is InputEventMouseButton and not event.pressed and not DisplayServer.is_touchscreen_available():
+	elif event is InputEventMouseButton and not event.pressed and not soft_keyboard():
 		# Keys keep going to the search box (and not to the camera).
 		_search.grab_focus.call_deferred()
 
@@ -677,6 +690,8 @@ func _next_kind(step: int) -> void:
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_RESIZED and visible:
 		_layout()
+	elif what == NOTIFICATION_EXIT_TREE and visible:
+		MenuState.covering = false  # leaving town with it open
 
 
 ## Fits the panel to the screen: the whole screen less a margin, up to
@@ -710,7 +725,7 @@ func _layout() -> void:
 	for c in from.get_children():
 		from.remove_child(c)
 		to.add_child(c)
-	_hint.visible = not narrow and not DisplayServer.is_touchscreen_available()
+	_hint.visible = not narrow and not soft_keyboard()
 	# Narrow: the search box gets its own row under the title.
 	if narrow and _search.get_parent() == _header:
 		_header.remove_child(_search)
