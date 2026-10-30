@@ -120,12 +120,14 @@ func undo(sim: CitySim) -> bool:
 		return false
 	entries.pop_back()
 	if e.has("roads"):
+		# The road pieces the build cut, which come back with the roads.
+		var cut: Array = e.roads.segments.keys().filter(func(id): return not sim.network.segments.has(id))
 		sim.network.restore(e.roads)
 		sim.traffic.prune_lane_rules()
 		put_back(sim, e.took)
 		sim.put_back_closures({"closed": e.get("closed", {}), "plazas": e.get("plazas", [])})
 		if e.has("treat"):
-			sim.treatments.restore(sim, e.treat)
+			sim.treatments.restore(sim, e.treat, cut)
 		# The road built before this one is current again if no road change
 		# came between; something placed between (a park, a tower) doesn't
 		# count (reviewer 2026-10-27: three undos left the first street in).

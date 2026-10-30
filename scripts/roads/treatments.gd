@@ -635,32 +635,39 @@ func snapshot() -> Dictionary:
 	return {"sides": sides.duplicate(true), "mids": mids.duplicate(true), "locks": locks.duplicate()}
 
 
-## Puts back a snapshot() once the roads are as they were, and hands the
-## rules to the traffic again.
-func restore(sim, snap: Dictionary) -> void:
-	var segs := {}
-	for k in sides:
-		segs[int(k) >> 1] = true
-	for seg in mids:
-		segs[seg] = true
-	sides = snap.sides.duplicate(true)
-	mids = snap.mids.duplicate(true)
-	locks = snap.locks.duplicate()
-	_fading.clear()
-	for k in sides:
-		segs[int(k) >> 1] = true
-		if int(sides[k].get("fade", -1)) >= 0:
-			_fading[k] = true
-	for seg in mids:
-		segs[seg] = true
+## Puts back, from a snapshot(), only the road pieces an undone build cut
+## (`segs`: back now the roads are as they were), with their locks; the
+## pieces it added went with it, and every other street keeps what it has
+## now (review, 2026-10-30: a whole-town restore wiped a lock paid for on
+## another street after the build).
+func restore(sim, snap: Dictionary, segs: Array) -> void:
 	roads_changed(sim)
+	var list := []
+	for seg in segs:
+		if not sim.network.segments.has(seg):
+			continue
+		list.append(seg)
+		for side in [0, 1]:
+			var k: int = int(seg) * 2 + side
+			sides.erase(k)
+			locks.erase(k)
+			_fading.erase(k)
+			if snap.sides.has(k):
+				sides[k] = snap.sides[k].duplicate()
+				if int(sides[k].get("fade", -1)) >= 0:
+					_fading[k] = true
+			if snap.locks.has(k):
+				locks[k] = snap.locks[k]
+		mids.erase(seg)
+		if snap.mids.has(seg):
+			mids[seg] = snap.mids[seg].duplicate()
 	_dirty = true
 	_scan = true
-	revision += 1
-	push_all(sim)
-	var list := segs.keys().filter(func(seg): return sim.network.segments.has(seg))
 	list.sort()
-	changed.emit(list)
+	if not list.is_empty():
+		revision += 1
+		push(sim, list)
+		changed.emit(list)
 
 
 # ---------------------------------------------------------------- locking
@@ -693,6 +700,7 @@ func set_lock(sim, seg: int, side: int, want: String) -> int:
 		# waiting for the next natural repave), and its rules with it.
 		var was := mid(seg)
 		_set_mid(sim, seg, true)
+		sim.street_age.repaved(sim, seg)  # its resurfacing clock starts again
 		if mid(seg) != was:
 			revision += 1
 			push(sim, [seg])

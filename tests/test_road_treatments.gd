@@ -432,6 +432,30 @@ func _undo_keeps_locks() -> void:
 	_check(absf(sim.economy.money - money) < 1.0, "the road and the paid change are both refunded (%.0f vs %.0f)"
 		% [sim.economy.money, money])
 	_check(int(sim.traffic.treat_mph.get(seg, 0)) == MPH and sim.traffic.treat_trucks.has(seg), "and its rules are back")
+	# Draw a road, then pay to change a street it never touched, then undo:
+	# that street keeps its change and nothing of it is refunded.
+	var other := -1
+	for id in sim.network.segments:
+		if id != seg and t.kind(id, -1) == RoadTreatments.HOMES and absf(sim.network.curve_of(id)[0].x - 420.0) > 1.0 \
+				and sim.network.curve_of(id)[0].z > 150.0:
+			other = id
+			break
+	var before_road: float = sim.economy.money
+	_check(sim.apply({"type": "build_road", "start": [at.x, at.z], "ctrl": [at.x, at.z + 40.0], "end": [at.x, at.z + 80.0]}),
+		"the cross street again")
+	var cost := t.lock_cost(sim, other, -1, RoadTreatments.MAIN)
+	sim.apply({"type": "road_treatment", "seg": other, "side": -1, "kind": RoadTreatments.MAIN})
+	_check(other >= 0 and cost > 0 and t.kind(other, -1) == RoadTreatments.MAIN, "another street's side made a main street, paid")
+	var paved_at: int = sim.street_age.paved.get(StreetAge.cell_of(sim, other), -1)
+	_check(paved_at == sim.tick_count, "paid as a resurfacing, its resurfacing clock starts again")
+	_check(sim.apply({"type": "undo"}), "undo the cross street")
+	_check(t.kind(other, -1) == RoadTreatments.MAIN and t.locks.get(other * 2, "") == RoadTreatments.MAIN
+		and sim.traffic.no_aprons.has(other * 2),
+		"the other street keeps its paid change and lock")
+	_check(absf(sim.economy.money - (before_road - cost)) < 1.0,
+		"the road is refunded, the other street's change isn't (%.0f vs %.0f)" % [sim.economy.money, before_road - cost])
+	_check(sim.network.segments.has(seg) and t.locks.get(seg * 2 + 1, "") == RoadTreatments.MAIN,
+		"and the cut block is back with its lock")
 
 
 ## Frontage that changed just before a save is judged after the load, as
