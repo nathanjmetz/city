@@ -505,6 +505,20 @@ void fragment() {
 	if (dot(tilt, tilt) > 0.0 && world_normal.y > 0.95) {
 		NORMAL = lotph_normal_view(tilt * (1.0 - cover), VIEW_MATRIX);
 	}
+	// Rain (Surfaces' streets, LampLight.GLSL): paving goes dark and glossy
+	// with water standing in a lot's low spots; streetlight falls on it.
+	vec4 wl = wet_now();
+	if (wl.x > 0.0) {
+		float paved = (1.0 - is_loose) * (1.0 - cover);
+		float low = texture(noise_soft, p / 11.0 + 0.41).r + stain * 0.1;
+		float film = smoothstep(0.08, 0.3, wl.x) * paved;
+		float pud = smoothstep(0.8 - 0.14 * wl.x, 0.82 - 0.14 * wl.x, low) * smoothstep(0.15, 0.4, wl.x) * paved * is_lot;
+		ALBEDO *= mix(1.0, mix(0.68, 0.45, is_lot), film) * mix(1.0, 0.85, pud);
+		ROUGHNESS = mix(mix(ROUGHNESS, 0.38, film), 0.02, pud);
+		SPECULAR = mix(0.25, 0.45, max(film, pud));
+		NORMAL = normalize(mix(NORMAL, (VIEW_MATRIX * vec4(0.0, 1.0, 0.0, 0.0)).xyz, max(film * 0.5, pud)));
+	}
+	EMISSION = lamp_light(world_pos, ALBEDO, ROUGHNESS, NORMAL, VIEW, VIEW_MATRIX, SPECULAR);
 }
 """
 
@@ -883,7 +897,8 @@ static func _shader(body: String) -> ShaderMaterial:
 ## concrete for drives and walks, each under its own uniform names.
 static func _yard() -> ShaderMaterial:
 	var turn := "vec2 turn(vec2 p, float a) {\n\treturn vec2(p.x * cos(a) - p.y * sin(a), p.x * sin(a) + p.y * cos(a));\n}\n"
-	var mat := _shader(turn + Surfaces.photo_code("lotph") + Surfaces.photo_code("walkph") + YARD)
+	LampLight.ensure_globals()
+	var mat := _shader(turn + Surfaces.photo_code("lotph") + Surfaces.photo_code("walkph") + LampLight.GLSL + YARD)
 	Surfaces.with_photo(mat, "asphalt", "lotph")
 	return Surfaces.with_photo(mat, "concrete", "walkph")
 

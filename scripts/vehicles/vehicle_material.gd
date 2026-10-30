@@ -28,8 +28,10 @@ vec4 custom_data(vec4 c) {
 #endif
 	return c;
 }
+varying vec3 v_world;
 void vertex() {
 	v_custom = custom_data(INSTANCE_CUSTOM);
+	v_world = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 	v_side = VERTEX.x;
 	v_y = VERTEX.y;
 	v_local = VERTEX;
@@ -170,7 +172,8 @@ void fragment() {
 	ROUGHNESS = rough;
 	METALLIC = metal;
 	SPECULAR = spec;
-	EMISSION = emit;
+	// Streetlight on roofs, bonnets and the near side (LampLight; desktop).
+	EMISSION = emit + lamp_light(v_world, col * (1.0 - metal), rough, NORMAL, VIEW, VIEW_MATRIX, mix(spec, 1.0, metal));
 }
 """
 
@@ -185,7 +188,8 @@ static var _ultra: ShaderMaterial
 static func get_material(ultra := false) -> ShaderMaterial:
 	if _mat == null:
 		var sh := Shader.new()
-		sh.code = SHADER
+		LampLight.ensure_globals()
+		sh.code = SHADER.replace("void vertex() {", LampLight.GLSL + "void vertex() {")
 		_mat = ShaderMaterial.new()
 		_mat.shader = sh
 		_ultra = ShaderMaterial.new()
