@@ -163,6 +163,32 @@ func _light() -> void:
 	var winter := Daylight.at(50.0, 0.0)
 	_check(summer.haze > winter.haze and summer.horizon.b - summer.horizon.r < winter.horizon.b - winter.horizon.r,
 		"summer haze: thicker and whiter than winter's")
+	_tone_curve()
+
+
+## The desktop's tone curve (SkyLight._tone): the old contrast above mid
+## grey, darks no longer pushed toward black by day, the old line by night.
+func _tone_curve() -> void:
+	var day := SkyLight.tone_curve(0.0)
+	var night := SkyLight.tone_curve(1.0)
+	var line := func(x: float) -> float: return 0.5 + (x - 0.5) * SkyLight.TONE_CONTRAST
+	var x := func(i: int) -> float: return (i + 0.5) / 256.0
+	var bright_same := true
+	var night_same := true
+	var rising := true
+	for i in 256:
+		var d := day.get_pixel(i, 0).r
+		if x.call(i) >= 0.5:
+			bright_same = bright_same and absf(d - line.call(x.call(i))) < 0.002
+		night_same = night_same and absf(night.get_pixel(i, 0).r - line.call(x.call(i))) < 0.002
+		if i > 0:
+			rising = rising and d > day.get_pixel(i - 1, 0).r
+	_check(bright_same, "tone curve: a sunny day's contrast kept above mid grey")
+	_check(night_same, "tone curve: night keeps the old straight line")
+	_check(rising and day.get_pixel(0, 0).r >= 0.0 and day.get_pixel(0, 0).r < 0.005, "tone curve: rises from black")
+	# Shade on asphalt or a lawn (about 0.13 out of AgX) kept at least 0.11,
+	# where the straight line took it to 0.09.
+	_check(day.get_pixel(33, 0).r > 0.11 and night.get_pixel(33, 0).r < 0.1, "tone curve: shade no longer crushed by day")
 
 
 func _check(ok: bool, what: String) -> void:

@@ -72,8 +72,22 @@ var _sky_share := 0.0 if _gl else 0.6
 ## photos a lawn in shade is a darker green, never black. The desktop's
 ## deeper blue sky (CloudSky) gives less skylight than the old pale one,
 ## and lawns in shadow came out near black up close; this brings the
-## shade back to the measured share (Forward+ only).
-var _shade_k := 1.0 if _gl else 2.1
+## shade back to the measured share (Forward+ only). 2.1 still left a
+## house's shadow on a lawn at 23,38,22 and a tree's on the street at
+## 23,30,46 (a third and under of the sunlit grass and asphalt beside
+## them; look round, 2026-10-29); with the tone curve below (_tone),
+## 3.4 gets them to about 45%, a deeper, cooler green and grey.
+var _shade_k := 1.0 if _gl else 3.4
+## Under an overcast sky there is no sun to cast a shadow, so neither the
+## extra skylight nor the eased tone curve: the grey day keeps the dull,
+## darker look it was tuned with (2.1, the straight line). Weather sets
+## how overcast it is (set_overcast).
+const SHADE_K_OVERCAST := 2.1
+var overcast := 0.0
+## The desktop's tone curve after AgX (_tone): its contrast (as
+## adjustment_contrast, about mid grey) and the darkness it was last set for.
+const TONE_CONTRAST := 1.1
+var _tone_dark := -1.0
 
 
 ## Depth fog at street level (see _ready) and how high the haze reaches.
@@ -107,7 +121,7 @@ func _ready() -> void:
 	# reads blue-grey like in photos rather than saturated blue.
 	env.ambient_light_sky_contribution = _sky_share
 	env.ambient_light_color = Color(0.66, 0.66, 0.64)
-	env.ambient_light_energy = SHADE_ENERGY * _light * _shade_k
+	env.ambient_light_energy = SHADE_ENERGY * _light * _fill()
 	env.reflected_light_source = Environment.REFLECTION_SOURCE_SKY
 	# AgX keeps bright roofs and concrete from clipping to flat white.
 	env.tonemap_mode = Environment.TONE_MAPPER_AGX
@@ -127,7 +141,8 @@ func _ready() -> void:
 	# AgX mutes colour, so bring saturation and contrast back up to photo levels.
 	env.adjustment_enabled = true
 	env.adjustment_saturation = 1.0 if _gl else 1.08
-	env.adjustment_contrast = 1.0 if _gl else 1.1
+	# The desktop's contrast is in its tone curve instead (_tone).
+	env.adjustment_contrast = 1.0
 	var we := WorldEnvironment.new()
 	we.environment = env
 	add_child(we)
@@ -165,6 +180,7 @@ func _ready() -> void:
 		# curve gets there (Forward+ only). Steeper than 1.3 crushes the
 		# shade on lawns to black.
 		env.tonemap_agx_contrast = 1.3
+		_tone(0.0)
 	# Lamps, lit windows and headlights bloom a little; daylight never does.
 	env.glow_enabled = true
 	env.glow_hdr_threshold = 1.2
@@ -172,7 +188,7 @@ func _ready() -> void:
 	env.glow_bloom = 0.0
 	env.glow_blend_mode = Environment.GLOW_BLEND_MODE_ADDITIVE
 	_day = {"top": sky_mat.sky_top_color, "horizon": sky_mat.sky_horizon_color,
-		"ambient": env.ambient_light_energy, "ambient_color": env.ambient_light_color,
+		"ambient_color": env.ambient_light_color,
 		"sun_color": sun.light_color, "sun_energy": sun.light_energy, "rot": sun.rotation_degrees}
 	if GraphicsQuality.current:
 		GraphicsQuality.current.changed.connect(_apply_quality)
@@ -247,7 +263,8 @@ func set_fixed() -> void:
 	env.fog_light_color = _day.horizon
 	if not _gl:
 		env.fog_sky_affect = SKY_FOG
-	env.ambient_light_energy = _day.ambient
+		_tone(overcast)
+	env.ambient_light_energy = SHADE_ENERGY * _light * _fill()
 	env.ambient_light_color = _day.ambient_color
 	env.ambient_light_sky_contribution = _sky_share
 	env.glow_intensity = 0.0
@@ -300,10 +317,11 @@ func set_time(hour: float, months: float) -> void:
 		var veil := SKY_FOG * smoothstep(-4.0, 8.0, elev)
 		if absf(env.fog_sky_affect - veil) > 0.001:
 			env.fog_sky_affect = veil
+		_tone(maxf(darkness, overcast))
 	haze_scale = l.haze
 	env.ambient_light_color = l.shade_color
 	# Moonlit shade keeps its own tuned strength.
-	env.ambient_light_energy = SHADE_ENERGY * _light * lerpf(_shade_k, 1.0, darkness) * l.shade_energy
+	env.ambient_light_energy = SHADE_ENERGY * _light * lerpf(_fill(), 1.0, darkness) * l.shade_energy
 	env.glow_intensity = 0.9 * darkness
 	env.tonemap_exposure = l.exposure
 	if elev > -2.0:
@@ -319,6 +337,61 @@ func set_time(hour: float, months: float) -> void:
 		sun.look_at_from_position(Vector3.ZERO, -dir, Vector3.UP)
 		sun.light_color = MOON_COLOR if _gl else MOON_COLOR_RICH
 		sun.light_energy = (0.7 if _gl else MOON_RICH) * _light * smoothstep(-2.0, -10.0, elev)
+
+
+## How overcast the sky is, 0 to 1 (Weather: its grey). Sent on only when
+## it moves enough to see.
+func set_overcast(grey: float) -> void:
+	if absf(grey - overcast) < 0.01:
+		return
+	overcast = grey
+	if _gl:
+		return
+	if _fixed:
+		env.ambient_light_energy = SHADE_ENERGY * _light * _fill()
+		_tone(overcast)
+	# With day/night on, set_time picks it up next frame.
+
+
+## The daytime skylight's strength against SHADE_ENERGY: _shade_k under a
+## clear or broken sky, SHADE_K_OVERCAST under full cloud.
+func _fill() -> float:
+	return _shade_k if _gl else lerpf(_shade_k, SHADE_K_OVERCAST, overcast)
+
+
+## The desktop's tone curve after AgX, as a lookup the screen's colours go
+## through (adjustment_color_correction). Above mid grey it is the old
+## contrast of 1.1 (adjustment_contrast) that gives a sunny day its punch.
+## Below it, where that straight line took a fixed 5% off every dark, it
+## eases off toward black instead: on a dark asphalt or a lawn in shade
+## the old line took off a third of what was left and drew them near black.
+## By night it goes back to the straight line (darkness 1), so the night's
+## dark (DayNight, Daylight.NIGHT_FILL) stays as dark as it was tuned.
+## Rebuilt only when darkness has moved a little (a 256-entry texture).
+func _tone(dark: float) -> void:
+	# Full day and full night exactly; between them, steps of 0.02.
+	if dark == _tone_dark or (absf(dark - _tone_dark) < 0.02 and dark > 0.0 and dark < 1.0):
+		return
+	_tone_dark = dark
+	env.adjustment_color_correction = ImageTexture.create_from_image(tone_curve(dark))
+
+
+## The curve _tone uses, one channel's output per entry: entry i holds the
+## output for an input of (i + 0.5) / 256, where the screen samples it.
+## Under mid grey a parabola meets the straight line there with the same
+## slope and starts at black with slope 0.9.
+static func tone_curve(dark: float) -> Image:
+	var img := Image.create(256, 1, false, Image.FORMAT_RGBH)
+	var c := TONE_CONTRAST
+	var b := (c - 1.0) * 2.0  # (c - 1) * 0.5 / 0.5^2
+	for i in 256:
+		var x := (i + 0.5) / 256.0
+		var line := 0.5 + (x - 0.5) * c
+		var y := line
+		if x < 0.5:
+			y = lerpf((c - b) * x + b * x * x, line, dark)
+		img.set_pixel(i, 0, Color(y, y, y))
+	return img
 
 
 ## Sky colours and stars, sent on only when they change enough to see: each

@@ -237,6 +237,8 @@ func _process(_delta: float) -> void:
 	env.adjustment_brightness = float(_base[1]) * (1.0 - 0.15 * grey)
 	env.adjustment_saturation = float(_base[2]) * (1.0 - 0.26 * grey)
 	env.adjustment_contrast = float(_base[3]) * (1.0 - 0.1 * grey)
+	# No sun to cast a shadow: the shade's extra skylight and tone curve go too.
+	sky.set_overcast(grey)
 	# Cloud spreads the sun: shadows go soft and faint.
 	sky.sun.shadow_opacity = 1.0 - 0.6 * grey
 	_rain.visible = rain > 0.05 or snow > 0.05
