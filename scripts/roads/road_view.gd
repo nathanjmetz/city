@@ -476,6 +476,10 @@ func _rebuild_all(gen: int) -> void:
 	if junctions != plans:
 		plans = junctions
 		plans_version += 1
+		# Their curb ramps and crosswalks claim the curb (signs, mailboxes,
+		# lamps and street trees keep off them).
+		if sim != null:
+			CurbClaims.of(sim).set_junctions(plans)
 	var street_cache := {}
 	var t0 := Perf.now()
 	_later.clear()

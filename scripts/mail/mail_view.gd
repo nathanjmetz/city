@@ -17,6 +17,7 @@ var _boxes_dirty := true
 var _cbus := MultiMeshInstance3D.new()
 var _clustered := false
 var _clock := 0.0
+var _claims_seen := -1
 
 
 func setup(s: CitySim) -> void:
@@ -68,6 +69,11 @@ func _process(delta: float) -> void:
 	if _clock >= 0.5:
 		_clock = 0.0
 		_park()
+		# What stands on the curb changed (a shop's apron drawn, a ramp).
+		var now := CurbClaims.of(sim).stamp()
+		if now != _claims_seen:
+			_claims_seen = now
+			_boxes_dirty = true
 		if _boxes_dirty:
 			_boxes_dirty = false
 			_mailboxes()
@@ -142,7 +148,8 @@ func _park() -> void:
 		mm.set_instance_custom_data(i, Color(0.93, 0.93, 0.92, 0.0))  # postal white
 
 
-## A mailbox at the curb in front of each home, beside the driveway. Once
+## A mailbox at the curb in front of each home, beside the driveway (where
+## CurbClaims.mailbox_at stands it: never in the drive, nor on a ramp). Once
 ## the post office has put in cluster mailboxes, the longer streets (a side
 ## of a street with CBU_MIN homes or more) get a USPS cluster box unit for
 ## every CBU_DOORS homes instead, as new subdivisions do.
@@ -162,14 +169,17 @@ func _mailboxes() -> void:
 	var spots := {}  # "seg:side" -> [[along, Transform3D], ...]
 	var keys := sim.buildings.keys()
 	keys.sort()
+	var claims := CurbClaims.of(sim)
 	for key in keys:
 		if int(sim.buildings[key].zone) != ZoneMap.Zone.RESIDENTIAL or not sim.lots.has(key):
 			continue
 		var lot: Dictionary = sim.lots[key]
 		var n: Vector3 = lot.normal
 		var along: Vector3 = lot.dir
-		var p: Vector3 = lot.front - n * maxf(float(lot.get("to_curb", 4.0)) - 0.5, 0.3) \
-			+ along * float(lot.get("width", 15.0)) * 0.3
+		var box := claims.mailbox_at(key)
+		if not box.is_finite():
+			continue
+		var p := Vector3(box.x, 0.0, box.y)
 		var street := "%s:%s" % [lot.get("seg", key), lot.get("side", 0)]
 		if not spots.has(street):
 			spots[street] = []

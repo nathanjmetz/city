@@ -3182,8 +3182,7 @@ func _lot_place(ref: String) -> Dictionary:
 		return {}
 	var lot: Dictionary = _sim.lots[ref.substr(4)]
 	var b = _sim.buildings.get(ref.substr(4))
-	var lay := SiteLayout.empty_lot() if b == null else SiteLayout.for_building(int(b.zone), int(b.seed), lot,
-		BuildingTypes.storeys(b), BuildingTypes.type_of(b), int(b.get("level", 0)), _sim.network, int(b.get("added_from", 0)))
+	var lay := SiteLayout.empty_lot() if b == null else SiteLayout.for_lot(_sim, ref.substr(4))
 	var spots := []
 	for s in lay.spots:
 		spots.append({"pos": SiteLayout.world(lot, s.pos), "face": SiteLayout.world_dir(lot, s.face),

@@ -83,5 +83,9 @@ static func _fill(sim: CitySim) -> void:
 		var cap := CitySim.capacity(z, bseed)
 		sim.buildings[key] = {"zone": z, "seed": bseed, "built": 0, "cap": cap,
 			"occ": cap if z == ZoneMap.Zone.RESIDENTIAL else 0}
+		# Its drive side decided as it goes up (BuildingTypes.make does it in
+		# a growing town).
+		if BuildingTypes.type_of(sim.buildings[key]) == "house":
+			sim.buildings[key].drive = SiteLayout.decide_drive(sim, key)
 	sim.buildings_changed.emit()
 	sim.update_stats()
