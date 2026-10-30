@@ -15,8 +15,8 @@ extends RefCounted
 ##     PARKING signs; trucks may still stand to load), jointed concrete
 ##     down the middle, a narrow walk.
 ##   - Main street (Marion's courthouse square, Gas City's Main Street):
-##     20 mph on a street and 25 on bigger roads, the walk paved from the
-##     curb to the storefronts with a brick band, painted stalls and no
+##     25 mph (a street keeps its own; bigger roads slow to it), the walk paved from the
+##     curb to the storefronts, lanterns, painted stalls and no
 ##     driveway cuts (shops use the alley), so more curb stalls fit.
 ## Shops that don't make a main street (Strip shops) and homes are judged
 ## too, so they hold their side against a stray factory or shop, but keep
@@ -58,7 +58,10 @@ const HOLD := 12 * 24 * CitySim.TICKS_PER_HOUR
 const EVERY := 10
 const PHASE := 3
 ## Main street speed limits, mph: a street, and anything bigger.
-const MAIN_MPH_STREET := 20
+## Nathan, 2026-10-30, "a": 25 mph, a street's own limit, so a main street
+## street keeps its speed (20 slowed the test town's trips and grew its
+## landfill bill about 5%).
+const MAIN_MPH_STREET := 25
 const MAIN_MPH_ROAD := 25
 ## The main street limit on a street in use (20, or 25 to leave streets at
 ## their own limit: Nathan's call, 2026-10-29; game_day compares them).

@@ -10,7 +10,7 @@ extends SceneTree
 ## and the middle follows the heavier use; a new factory flips its side
 ## right away once it's built, not while it goes up; the same town gives
 ## the same result, and the kept sums match a fresh count; the rules reach
-## the traffic (truck route, no car parking, 20 mph); the road mesh dresses
+## the traffic (truck route, no car parking, the main street speed); the road mesh dresses
 ## each side; a cut road keeps its sides; a lock is free to keep and costs
 ## a resurfacing to change; and saves, old and new, load the same.
 ## Run: godot --headless -s tests/test_road_treatments.gd
@@ -18,6 +18,9 @@ extends SceneTree
 var _failed := false
 ## The main street speed on a street (Nathan's pick, 20 or 25).
 const MPH := RoadTreatments.MAIN_MPH_STREET
+## The cap the traffic keeps for a main street side on a street: none when MPH is the
+## street's own limit.
+var CAP: int = MPH if MPH < int(RoadStyle.TYPES[RoadStyle.Type.STREET].mph) else 0
 
 
 func _init() -> void:
@@ -125,7 +128,7 @@ func _mixed(sim: CitySim, seg: int) -> void:
 	_check(homes > 4, "the home streets are judged as homes (%d sides)" % homes)
 	var rows := t.rows(sim, seg)
 	var text := str(rows)
-	_check("Factory" in text and "Main street" in text and "Truck route" in text and ("%d mph" % MPH) in text
+	_check("Factory" in text and "Main street" in text and "Truck route" in text and (CAP == 0 or ("%d mph" % MPH) in text)
 		and "No parking on the" in text, "the road's card says each side, why, and the rules: %s" % text)
 	var card := Inspect.describe(sim, {"type": "road", "id": seg})
 	_check(str(card.rows).contains("%d mph" % MPH) and not card.get("actions", []).is_empty(),
@@ -159,7 +162,7 @@ func _rules(sim: CitySim, seg: int) -> void:
 	_check(tr.treat_trucks.has(seg), "the factory street is a truck route")
 	_check(tr.no_parking.has(seg * 2) and not tr.no_parking.has(seg * 2 + 1), "no car parking on the factory side only")
 	_check(tr.no_aprons.has(seg * 2 + 1), "no driveway cuts on the main street side")
-	_check(int(tr.treat_mph.get(seg, 0)) == MPH, "a main street side slows the street to %d mph" % MPH)
+	_check(int(tr.treat_mph.get(seg, 0)) == CAP, "a main street side holds the street to %d mph" % MPH)
 	var w: Dictionary = tr.ways.get(seg * 2 + 1, {})
 	_check(not w.is_empty() and absf(float(w.vmax) - MPH * RoadStyle.MPH) < 0.01,
 		"its lanes run at %d mph (%.2f m/s)" % [MPH, float(w.get("vmax", 0.0))])
@@ -232,7 +235,7 @@ func _saves(sim: CitySim, seg: int) -> void:
 	copy.from_dict(JSON.parse_string(JSON.stringify(data)))
 	_check(copy.treatments.kind(seg, -1) == RoadTreatments.FACTORY and copy.treatments.kind(seg, 1) == RoadTreatments.MAIN,
 		"a loaded town has its sides at once")
-	_check(int(copy.traffic.treat_mph.get(seg, 0)) == MPH and copy.traffic.treat_trucks.has(seg),
+	_check(int(copy.traffic.treat_mph.get(seg, 0)) == CAP and copy.traffic.treat_trucks.has(seg),
 		"and the traffic has its rules before its first tick")
 	for i in 40:
 		sim.tick()
@@ -384,7 +387,7 @@ func _split(sim: CitySim, seg: int) -> void:
 	var tr := sim.traffic
 	var ruled := 0
 	for h in halves:
-		if int(tr.treat_mph.get(h, 0)) == MPH and tr.treat_trucks.has(h) and tr.no_parking.has(h * 2) \
+		if int(tr.treat_mph.get(h, 0)) == CAP and tr.treat_trucks.has(h) and tr.no_parking.has(h * 2) \
 				and tr.no_aprons.has(h * 2 + 1):
 			ruled += 1
 	_check(halves.size() == 2 and ruled == 2, "and the traffic has both halves' rules at once")
@@ -431,7 +434,7 @@ func _undo_keeps_locks() -> void:
 		"the block is back with its lock and its factory side")
 	_check(absf(sim.economy.money - money) < 1.0, "the road and the paid change are both refunded (%.0f vs %.0f)"
 		% [sim.economy.money, money])
-	_check(int(sim.traffic.treat_mph.get(seg, 0)) == MPH and sim.traffic.treat_trucks.has(seg), "and its rules are back")
+	_check(int(sim.traffic.treat_mph.get(seg, 0)) == CAP and sim.traffic.treat_trucks.has(seg), "and its rules are back")
 	# Draw a road, then pay to change a street it never touched, then undo:
 	# that street keeps its change and nothing of it is refunded.
 	var other := -1
