@@ -93,12 +93,21 @@ static var last_masses := []
 ## The plan info of the last house built (drive, garage, door, porch and the
 ## front walk as drawn: "walk", a Rect2), for the yard props (StateView).
 static var last_info := {}
-## What a building paves out across the parkway to the curb, for
-## CurbClaims while BuildingView draws it (null otherwise: dry runs keep
-## nothing): [x0, x1, curb z, flare] each, a commercial apron (_curb_cut,
-## flared) or a drive drawn straight out to the street.
+## What a building paves out across the parkway to the curb, while
+## BuildingView.curb_paving lays a lot out for CurbClaims (null otherwise):
+## [x0, x1, curb z, flare] each, a commercial apron (_curb_cut, flared) or a
+## drive drawn straight out to the street.
 static var cuts_drawn = null
 var _in_cut := false
+## Every builder made while this is set lays its building out without
+## making any surfaces (_dry), as plan_info does (curb_paving).
+static var dry_all := false
+
+
+func _init() -> void:
+	_dry = dry_all
+
+
 ## Plan info alone (where the drive, garage and door are), by plan without
 ## the care tier or paint: what the traffic sim asks for, worked out without drawing.
 static var _infos := {}
@@ -1022,28 +1031,24 @@ func _seat(plans: Array, storeys: int, wide: float, gs: float, zf: float, deep: 
 	var plan: int = plans[0]
 	var widths := WIDTHS.filter(func(w): return w <= wide)
 	widths.reverse()
-	# A corner house tries every plan with its drive away from the corner
-	# before it would turn one round to the corner side.
-	var sides := [gs, -gs] if drive_away == 0.0 else [gs]
+	# A corner house tries every plan with its drive away from the corner,
+	# then with it on the corner side, at each setback before the next
+	# deeper one (a shallow corner lot keeps its building line).
+	var passes := [[gs, -gs]] if drive_away == 0.0 else [[gs], [-gs]]
 	for back in [0.0, 2.0, 4.0, 6.0]:
 		var z: float = zf + back
 		var room := _bucket(deep - z, ROOMS)
-		for p in plans:
-			for w in widths:
-				for g in sides:
-					var shape := _shape([era, p, w, room, storeys, force_kind])
-					var x := 0.0
-					while x <= half:
-						for d in ([x] if x == 0.0 else [x, -x]):
-							if _fits(shape, g, z, d):
-								return [w, g, z, d, room, p]
-						x += 0.5
-	if drive_away != 0.0:
-		var keep := drive_away
-		drive_away = 0.0
-		var seat := _seat(plans, storeys, wide, gs, zf, deep)
-		drive_away = keep
-		return seat
+		for sides in passes:
+			for p in plans:
+				for w in widths:
+					for g in sides:
+						var shape := _shape([era, p, w, room, storeys, force_kind])
+						var x := 0.0
+						while x <= half:
+							for d in ([x] if x == 0.0 else [x, -x]):
+								if _fits(shape, g, z, d):
+									return [w, g, z, d, room, p]
+							x += 0.5
 	# Nothing fits (a remnant too small or odd to build on): the smallest
 	# plan where the least of it stands past the lot lines.
 	unseated += 1

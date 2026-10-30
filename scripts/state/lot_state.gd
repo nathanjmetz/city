@@ -145,7 +145,11 @@ static func yard_of(sim, key: String, masses := [], plan := {}, trees := []) -> 
 		if h.is_empty():
 			var r := RandomNumberGenerator.new()
 			r.seed = int(b.seed)
-			h = HouseBuilder.plan_info(r.randi(), fit.get("art", {"width": fit.half * 2.0, "depth": fit.depth}), storeys)
+			var art: Dictionary = fit.get("art", {"width": fit.half * 2.0, "depth": fit.depth}).duplicate()
+			var away := SiteLayout.drive_away(sim, key)
+			if away != 0.0:
+				art.drive_away = away  # a corner house's drive, as it was built
+			h = HouseBuilder.plan_info(r.randi(), art, storeys)
 		var dx := float(h.drive_x)
 		var dw := float(h.drive_w)
 		var gz := float(h.get("garage_z", -1.0))

@@ -24,10 +24,11 @@ extends SceneTree
 ## view if it changes (junction_view.gd _rebuild_all; where they slide off
 ## drives is shared: JunctionView._post_spot); a car out on the drive is
 ## counted for every garage whose drive is long enough (the game draws two
-## cars in three there); shop, office and factory curb cuts are taken as the
-## usual 7.2 m apron flared to the curb (CurbClaims.lot_cut; a few builders
-## draw theirs wider or narrower); streets are straight strips to the
-## node (no curb-return pavement); a tree trunk is 0.5 m square.
+## cars in three there); a duplex's curb cut is taken as 3 m wide; streets
+## are straight strips to the node (no curb-return pavement); a tree trunk
+## is 0.5 m square. Ramps, crosswalks and drives' curb cuts are read here
+## from the junction plans, the house plans and what the builders draw, not
+## from CurbClaims, so what the claims miss is still caught.
 ##
 ## Run headless only, with HOME set to a scratch folder:
 ##   HOME=/tmp/x godot --headless -s tools/overlap_audit.gd -- OUT_DIR [--towns=look_round,perf_big,county]
@@ -590,11 +591,53 @@ static func _roads(out: Array, sim: CitySim, rv: RoadView, plans: Dictionary) ->
 
 
 ## Curb ramps and crosswalks at shaped town corners (Junction._draw_node,
-## JunctionMarks.paint), as the curb claims hold them
-## (CurbClaims.junction_shapes: across each arm from d + 0.3 to d + 2.7 m out).
-static func _junction_bits(out: Array, _sim: CitySim, plans: Dictionary) -> void:
-	for s in CurbClaims.junction_shapes(plans):
-		_add(out, "curb_ramp" if s[0] == "ramp" else "crosswalk", s[0], s[1], s[2])
+## JunctionMarks.paint): across each arm from d + 0.3 to d + 2.7 m out.
+## Worked out here from the junction plans themselves, not from CurbClaims,
+## so a post the claims let stand on a ramp is still caught.
+static func _junction_bits(out: Array, sim: CitySim, plans: Dictionary) -> void:
+	for n in plans:
+		var j: Dictionary = plans[n]
+		if j.get("country", false) or j.has("bend"):
+			continue
+		var center: Vector3 = j.center
+		var key := "node:%d" % n
+		var ramps := Junction.ramps(j)
+		for r in ramps:
+			var c: Dictionary = j.corners[r[0]]
+			var a: Dictionary = j.arms[c.a]
+			var b: Dictionary = j.arms[c.b]
+			if r[1] == "pair":
+				for pair in [[a, 1.0], [b, -1.0]]:
+					var arm: Dictionary = pair[0]
+					var from: float = float(arm.d) + Junction.RAMP_GAP
+					if from + Junction.RAMP_WIDTH > float(arm.length) * 0.5:
+						continue
+					_arm_band(out, "curb_ramp", "pair", key, center, arm, pair[1], float(arm.hw),
+						float(arm.hw) + RoadStyle.CURB_WIDTH + RoadStyle.PARKWAY_WIDTH, from, from + Junction.RAMP_WIDTH)
+			else:
+				# A diagonal ramp at the corner's middle: a square at the curb return.
+				var mid := (Vector2(a.n) * -1.0 + Vector2(b.n)).normalized()
+				var arm_hw := maxf(float(a.hw), float(b.hw))
+				var at := Vector2(center.x, center.z) + mid * (arm_hw + float(c.r) * 0.4)
+				_add(out, "curb_ramp", "diagonal", key, _sq(at, 1.2))
+		if JunctionMarks.marked(j):
+			for arm in j.arms:
+				var d: float = float(arm.d)
+				if d + JunctionMarks.CROSS_FAR > float(arm.length) * 0.5:
+					continue
+				_arm_band(out, "crosswalk", "shaped", key, center, arm, 1.0, -float(arm.hw), float(arm.hw),
+					d + JunctionMarks.CROSS_NEAR, d + JunctionMarks.CROSS_FAR)
+
+
+static func _arm_band(out: Array, cat: String, what: String, key: String, center: Vector3, arm: Dictionary,
+		side: float, o0: float, o1: float, from: float, to: float) -> void:
+	var p0: Array = LotPlanner.point_at(arm.pts, from)
+	var p1: Array = LotPlanner.point_at(arm.pts, to)
+	var a := Vector2(p0[0].x, p0[0].z)
+	var b := Vector2(p1[0].x, p1[0].z)
+	var dir := Vector2(p0[1].x, p0[1].z).normalized()
+	var nrm := Vector2(-dir.y, dir.x) * side
+	_add(out, cat, what, key, PackedVector2Array([a + nrm * o0, b + nrm * o0, b + nrm * o1, a + nrm * o1]))
 
 
 static func _rail(out: Array, sim: CitySim) -> void:
@@ -697,7 +740,10 @@ static func _signs(out: Array, sim: CitySim, rv: RoadView, plans: Dictionary) ->
 				var back: float = Junction.SHOULDER + 0.6 if arm.get("country", true) \
 					else RoadStyle.CURB_WIDTH + RoadStyle.PARKWAY_WIDTH * 0.5
 				var off := JunctionMarks.country_edge(country_plan, arm, s) + back
-				base = JunctionView._post_spot(claims, at[0] + right * off, dir, j.control == TrafficSim.Rule.SIGNAL)
+				var meant: Vector3 = at[0] + right * off
+				base = JunctionView._post_spot(claims, meant, dir, j.control == TrafficSim.Rule.SIGNAL,
+					JunctionView.post_back(sim.network.nodes[n], meant, dir, cross, j.control == TrafficSim.Rule.SIGNAL),
+					JunctionView.post_ahead(false, true))
 			else:
 				var walk := plain
 				if Junction.trim(plans, n, seg) > 0.0:
@@ -706,7 +752,9 @@ static func _signs(out: Array, sim: CitySim, rv: RoadView, plans: Dictionary) ->
 				base = sl.pos + right * sl.curb - dir * 1.0
 				if not RoadStyle.TYPES[traffic.ways[wid].type].oneway:
 					base = sl.pos + right * (half + RoadStyle.CURB_WIDTH + RoadStyle.PARKWAY_WIDTH * 0.5) - dir * back
-				base = JunctionView._post_spot(claims, base, dir, j.control == TrafficSim.Rule.SIGNAL)
+				base = JunctionView._post_spot(claims, base, dir, j.control == TrafficSim.Rule.SIGNAL,
+					JunctionView.post_back(sim.network.nodes[n], base, dir, cross, j.control == TrafficSim.Rule.SIGNAL),
+					JunctionView.post_ahead(Junction.trim(plans, n, seg) > 0.0, false))
 				# A crosswalk at a plain (unshaped) corner (_markings).
 				var stops_here: bool = j.control == TrafficSim.Rule.SIGNAL or j.control == TrafficSim.Rule.ALL_STOP \
 					or (j.control == TrafficSim.Rule.PRIORITY and not j.major.has(wid) and j.sign != "yield")
@@ -830,7 +878,12 @@ static func _built(out: Array, sim: CitySim) -> void:
 		HouseBuilder.last_info = {}
 		var before := HouseBuilder.last_masses
 		HouseBuilder.last_masses = []
+		# What its builder paves across the parkway, as it draws it (the
+		# curb claims read the plan instead, so the two are checked apart).
+		HouseBuilder.cuts_drawn = []
 		var parts := bv._draw(key, lot, b, fit, rng.randi())
+		var paved: Array = HouseBuilder.cuts_drawn
+		HouseBuilder.cuts_drawn = null
 		var masses: Array = HouseBuilder.last_masses
 		if masses.is_empty() and not before.is_empty():
 			stale += 1  # BuildingView would have used the previous building's masses here
@@ -896,14 +949,18 @@ static func _built(out: Array, sim: CitySim) -> void:
 					var wq := frame * Vector3(q.x, 0.0, q.y)
 					poly.append(Vector2(wq.x, wq.z))
 				_add(out, "garage_apron", "house", key, poly)
-		elif not lay.get("main_street", false) and not lay.spots.is_empty():
-			# A duplex's drive as its plan draws it; a shop's, office's or
-			# factory's apron as their builders draw it (HouseBuilder._curb_cut).
-			var cx := float(lay.cut_x)
-			var cw := 3.0 if type == "duplex" else 6.0  # the drive on the lot (as #940 measured it)
-			for c in CurbClaims.of(sim).cut_of(key):
-				_add(out, "curb_cut", type, key, c[2])
-			_add(out, "drive", type, key, _rect(frame, Rect2(cx - cw * 0.5, 0.0, cw, maxf(float(lay.get("aisle_z", 0.0)), 3.0))))
+		else:
+			if type == "duplex":
+				if not lay.get("main_street", false) and not lay.spots.is_empty():
+					var dcx := float(lay.cut_x)
+					_add(out, "curb_cut", type, key, _rect(frame, Rect2(dcx - 1.5, -tc, 3.0, tc)))
+			else:
+				for c in paved:
+					_add(out, "curb_cut", type, key, _paved_poly(frame, c))
+			if not lay.get("main_street", false) and not lay.spots.is_empty():
+				var cx := float(lay.cut_x)
+				var cw := 3.0 if type == "duplex" else 6.0  # the drive on the lot (as #940 measured it)
+				_add(out, "drive", type, key, _rect(frame, Rect2(cx - cw * 0.5, 0.0, cw, maxf(float(lay.get("aisle_z", 0.0)), 3.0))))
 		for sp in lay.spots:
 			var at: Vector2 = sp.pos
 			var face: Vector2 = sp.get("face", Vector2(0, 1))
@@ -949,6 +1006,24 @@ static func _built(out: Array, sim: CitySim) -> void:
 			if it.item in ["lease", "flag"]:
 				continue  # a sign on a post or a flag pole: stands where it's meant to
 			_add(out, "prop", String(it.item), key, _rect(frame, LotState.footprint(it.item, it.at, it.yaw)))
+
+
+## Paving a builder drew out to the curb ([x0, x1, curb z, flare], lot
+## frame) as it lies: across the parkway and sidewalk, a commercial apron
+## flared at the curb (HouseBuilder._curb_cut's triangles).
+static func _paved_poly(frame: Transform3D, c: Array) -> PackedVector2Array:
+	var x0 := float(c[0])
+	var x1 := float(c[1])
+	var cz := float(c[2])
+	var f := float(c[3])
+	var w0 := cz + RoadStyle.CURB_WIDTH + RoadStyle.PARKWAY_WIDTH
+	var w1 := w0 + RoadStyle.SIDEWALK_WIDTH
+	var pts := [Vector2(x0 - f, cz), Vector2(x1 + f, cz), Vector2(x1, w0), Vector2(x1, w1), Vector2(x0, w1), Vector2(x0, w0)]
+	var out := PackedVector2Array()
+	for q: Vector2 in pts:
+		var w := frame * Vector3(q.x, 0.0, q.y)
+		out.append(Vector2(w.x, w.z))
+	return out
 
 
 static func _local_obb(frame: Transform3D, c: Vector2, along: Vector2, half_len: float, half_w: float) -> PackedVector2Array:

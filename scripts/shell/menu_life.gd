@@ -52,7 +52,6 @@ func setup(s: MenuSim, daynight: DayNight, forced := "") -> void:
 	_tick = sim.tick_count
 	# The title screen's town is an established one: its yards come in grown.
 	sim.grown_yards_from = 0
-	sim.curb_drives_from = 0  # and its corner houses' drives keep clear of the corner
 	_rng.seed = hash([sim.city_seed, "menu"])
 	if forced != "":
 		var f := parse(forced)

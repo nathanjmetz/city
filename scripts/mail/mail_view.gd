@@ -70,9 +70,9 @@ func _process(delta: float) -> void:
 		_clock = 0.0
 		_park()
 		# What stands on the curb changed (a shop's apron drawn, a ramp).
-		var claims := CurbClaims.of(sim)
-		if claims.version != _claims_seen:
-			_claims_seen = claims.version
+		var now := CurbClaims.of(sim).stamp()
+		if now != _claims_seen:
+			_claims_seen = now
 			_boxes_dirty = true
 		if _boxes_dirty:
 			_boxes_dirty = false

@@ -84,8 +84,13 @@ var country := {}
 var claims: CurbClaims
 var _claims_seen := -1
 var _claims_wait := 0.0
-const CLAIMS_EVERY := 3.0
-var _placed := [null]  # the lamps as last drawn
+const CLAIMS_EVERY := 0.5
+var _meant := []  # every lamp where it was meant to stand (place without claims)
+var _stood := []  # each of _meant as it stands now ([] where it has no room)
+var _pieces_now := {}  # the roads in pieces (_pieces), for slid
+var _redo := {}  # indices into _meant to look at again
+## Times the lamps were placed again because the curb changed near one.
+var claim_rebuilds := 0
 
 
 func set_country(segs: Dictionary) -> void:
@@ -116,12 +121,7 @@ func _ready() -> void:
 
 
 func _process(delta: float) -> void:
-	# A drive or corner ramp came or went: the poles looked at again, at
-	# most every CLAIMS_EVERY seconds.
-	_claims_wait -= delta
-	var moved := claims != null and claims.version != _claims_seen and _claims_wait <= 0.0
-	if _dirty or moved:
-		_claims_wait = CLAIMS_EVERY
+	if _dirty or _curb_moved(delta):
 		_rebuild(_dirty)
 		_dirty = false
 	if _map != null:
@@ -152,7 +152,12 @@ static func place(net: RoadNetwork, skip := {}, claims: CurbClaims = null) -> Ar
 	var out := []
 	var taken := {}  # coarse cell -> positions, to keep lamps apart
 	var pieces := _pieces(net)
-	for id in net.segments:
+	# In the order of the roads' ids, so where two lamps meet at a corner the
+	# same one stands every time (a town loaded from a save lists its roads
+	# in another order).
+	var ids := net.segments.keys()
+	ids.sort()
+	for id in ids:
 		var seg: Dictionary = net.segments[id]
 		var type: int = seg.type
 		# Variants light like their menu's road; country roads and alleys go unlit.
@@ -177,18 +182,36 @@ static func place(net: RoadNetwork, skip := {}, claims: CurbClaims = null) -> Ar
 			var fwd: Vector3 = p[1]
 			var right := Vector3(-fwd.z, 0.0, fwd.x)
 			var base: Vector3 = p[0] + right * side * out_by
-			if claims != null:
-				var q := claims.slide(Vector2(base.x, base.z), Vector2(fwd.x, fwd.z).normalized(), 0.35, LAMP_SLIDE, LAMP_SLIDE)
-				if not q.is_finite():
-					continue
-				base = Vector3(q.x, base.y, q.y)
 			if _near(taken, base) or _on_other_road(pieces, base, id):
 				continue
 			var cell := Vector2i(floori(base.x / MIN_GAP), floori(base.z / MIN_GAP))
 			if not taken.has(cell):
 				taken[cell] = []
 			taken[cell].append(base)
-			out.append([mesh_key(kind), base, -right * side, spec[3], spec[2]])
+			var lamp := [mesh_key(kind), base, -right * side, spec[3], spec[2], fwd, id]
+			if claims != null:
+				lamp = slid(lamp, claims, pieces)
+				if lamp.is_empty():
+					continue
+			out.append(lamp)
+	return out
+
+
+## A lamp (as place gives it, where it was meant to stand) slid along its
+## curb off any drive's cut or curb ramp (CurbClaims), up to LAMP_SLIDE
+## either way, and not onto another road; [] when nowhere is clear. Each
+## lamp on its own (their spacing is kept where they were meant to stand),
+## so one can be looked at again alone.
+static func slid(lamp: Array, claims: CurbClaims, pieces: Dictionary) -> Array:
+	var base: Vector3 = lamp[1]
+	var fwd: Vector3 = lamp[5]
+	var q := claims.slide(Vector2(base.x, base.z), Vector2(fwd.x, fwd.z).normalized(), 0.35, LAMP_SLIDE, LAMP_SLIDE)
+	if not q.is_finite():
+		return []
+	var out := lamp.duplicate()
+	out[1] = Vector3(q.x, base.y, q.y)
+	if _on_other_road(pieces, out[1], int(lamp[6])):
+		return []
 	return out
 
 
@@ -257,16 +280,54 @@ static func _on_other_road(grid: Dictionary, p: Vector3, own: int, margin := 1.0
 	return false
 
 
-## `all`: draw them again even where none moved (the roads changed).
+## True when the curb changed (CurbClaims) near where a lamp was meant to
+## stand, looked at every CLAIMS_EVERY seconds: a drive or corner ramp
+## built away from every lamp moves none and redraws nothing.
+func _curb_moved(delta: float) -> bool:
+	_claims_wait -= delta
+	if claims == null or _claims_wait > 0.0:
+		return false
+	_claims_wait = CLAIMS_EVERY
+	var now := claims.stamp()
+	if now == _claims_seen:
+		return false
+	var boxes := claims.changes_since(_claims_seen)
+	_claims_seen = now
+	_redo.clear()
+	var reach := boxes.map(func(r): return (r as Rect2).grow(LAMP_SLIDE + 1.0))
+	for i in _meant.size():
+		var m: Vector3 = _meant[i][1]
+		if reach.any(func(r): return (r as Rect2).has_point(Vector2(m.x, m.z))):
+			_redo[i] = true
+	if not _redo.is_empty():
+		claim_rebuilds += 1
+	return not _redo.is_empty()
+
+
+## `all`: every lamp placed again (the roads changed); otherwise only those
+## the curb changed beside (_redo), each slid again on its own.
 func _rebuild(all := true) -> void:
 	var lists := {}
 	for k in _multis:
 		lists[k] = []
-	var lamps := place(network, country, claims)
-	_claims_seen = claims.version if claims != null else -1
-	if not all and lamps == _placed:
-		return  # nothing moved (a building went up away from any lamp)
-	_placed = lamps
+	_claims_seen = claims.stamp() if claims != null else -1
+	if all or _meant.is_empty():
+		_meant = place(network, country)
+		_pieces_now = _pieces(network)
+		_redo.clear()
+		for i in _meant.size():
+			_redo[i] = true
+		_stood.resize(_meant.size())
+	var moved := false
+	for i in _redo:
+		var l: Array = slid(_meant[i], claims, _pieces_now) if claims != null else _meant[i]
+		if l != _stood[i]:
+			_stood[i] = l
+			moved = true
+	_redo.clear()
+	if not all and not moved:
+		return  # nothing moved (a building went up beside a lamp that had room)
+	var lamps := _stood.filter(func(l): return l != null and not (l as Array).is_empty())
 	for l in lamps:
 		var dir: Vector3 = l[2]
 		var basis := Basis(Vector3.UP, atan2(dir.x, dir.z))

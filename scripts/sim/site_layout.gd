@@ -233,20 +233,29 @@ static func for_lot(sim: CitySim, key: String) -> Dictionary:
 
 
 ## Which side (the lot's local x, +1 or -1) a corner house puts its drive
-## on: away from the corner, so the drive meets its street well clear of
-## the intersection, as US access codes ask (they follow AASHTO's corner
-## clearance: a home's drive on a local street at least 30 ft, 9.1 m, from
-## the intersecting street's curb line). 0 for any other lot, and for a
-## house begun before this rule came in (CitySim.curb_drives_from), so a
-## town saved before keeps its houses as they were built.
+## on, as it was decided when the house went up (decide_drive, kept on the
+## building as "drive" and saved): 0 for any other building, and for a
+## house begun before the rule came in, so a town saved before keeps its
+## houses as they were built.
 static func drive_away(sim: CitySim, key: String) -> float:
 	var b: Dictionary = sim.buildings.get(key, {})
+	if b.is_empty() or BuildingTypes.type_of(b) != "house":
+		return 0.0
+	return signf(float(b.get("drive", 0)))
+
+
+## Decides, once, as a house goes up on lot `key`, which side its drive
+## goes: on a corner, away from the corner, so it meets its street well
+## clear of the intersection, as US access codes ask (they follow AASHTO's
+## corner clearance: a home's drive on a local street at least 30 ft, 9.1 m,
+## from the intersecting street's curb line). 0 elsewhere (the dice pick).
+## Read from the roads as they are then; a lot that becomes a corner later
+## keeps its house as built.
+static func decide_drive(sim: CitySim, key: String) -> int:
 	var lot: Dictionary = sim.lots.get(key, {})
-	if b.is_empty() or lot.is_empty() or not lot.get("corner", false) or BuildingTypes.type_of(b) != "house":
-		return 0.0
-	if int(b.get("built", 0)) < sim.curb_drives_from:
-		return 0.0
-	return -corner_side(sim.network, lot)
+	if lot.is_empty() or not lot.get("corner", false):
+		return 0
+	return -int(corner_side(sim.network, lot))
 
 
 ## The lot's frame in the world, as BuildingView places a building.

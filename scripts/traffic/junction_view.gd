@@ -51,11 +51,23 @@ var _head_ways := []
 ## Worn and ghost paint at junctions whose look has it (JunctionMarks.wear).
 var _worn := MeshInstance3D.new()
 var _ghost := MeshInstance3D.new()
-## The curb claims' version the posts were last stood by, and how long
-## before they may be looked at again.
+## The curb claims' stamp the posts were last stood by, how long before
+## they are looked at again, and where each post was meant to stand (a
+## change to the curb far from all of them redraws nothing).
 var _claims_seen := -1
 var _claims_wait := 0.0
-const CLAIMS_EVERY := 2.0
+const CLAIMS_EVERY := 0.5
+var _meant := []  # Vector2: each post's spot before it slid
+## Times the posts were stood again because the curb changed near one (for
+## the benches and tests).
+var claim_rebuilds := 0
+## The transforms last stood: poles, arms, heads, stops, yields (tests).
+var stood := {}
+## Each junction's posts as last stood (node -> {parts, sign_at}), each
+## turn rule's post (key -> parts), and the junctions to stand again.
+var _by_node := {}
+var _by_rule := {}
+var _redo := {}
 
 
 func setup(t: TrafficSim) -> void:
@@ -119,15 +131,12 @@ func _process(_delta: float) -> void:
 	if traffic == null:
 		return
 	var pv := roads.plans_version if roads != null else 0
-	# What stands on the curb changed (a drive built at a corner): the posts
-	# looked at again, at most every CLAIMS_EVERY seconds.
-	_claims_wait -= _delta
-	var cv: int = roads.sim.curb.version if roads != null and roads.sim != null and roads.sim.curb != null else _claims_seen
-	if traffic.version != _version or pv != _plans_version or (cv != _claims_seen and _claims_wait <= 0.0):
+	if traffic.version != _version or pv != _plans_version:
 		_version = traffic.version
 		_plans_version = pv
-		_claims_wait = CLAIMS_EVERY
 		_rebuild()
+	elif _curb_moved(_delta):
+		_rebuild(true)  # only the posts: the paint stays as it is
 	for i in _head_ways.size():
 		var hw: Array = _head_ways[i]
 		var on := 2
@@ -139,14 +148,73 @@ func _process(_delta: float) -> void:
 			_lenses.multimesh.set_instance_color(i * 3 + k, c if k == on else c * LENS_DARK)
 
 
+## True when the curb changed (CurbClaims) somewhere near where a post was
+## meant to stand, looked at every CLAIMS_EVERY seconds: a building going
+## up away from every junction moves nothing and redraws nothing.
+func _curb_moved(delta: float) -> bool:
+	_claims_wait -= delta
+	if _claims_wait > 0.0 or roads == null or roads.sim == null or roads.sim.curb == null:
+		return false
+	_claims_wait = CLAIMS_EVERY
+	var claims: CurbClaims = roads.sim.curb
+	var now := claims.stamp()
+	if now == _claims_seen:
+		return false
+	var boxes := claims.changes_since(_claims_seen)
+	_claims_seen = now
+	_redo.clear()
+	var reach := boxes.map(func(r): return (r as Rect2).grow(CurbClaims.POST_BACK + 3.0))
+	for n in _by_node:
+		for m: Vector2 in _by_node[n].parts[10]:
+			if reach.any(func(r): return (r as Rect2).has_point(m)):
+				_redo[n] = true
+				break
+	for k in _by_rule:
+		for m: Vector2 in _by_rule[k][3]:
+			if reach.any(func(r): return (r as Rect2).has_point(m)):
+				_redo[int(k.get_slice(":", 0))] = true
+				break
+	if not _redo.is_empty():
+		claim_rebuilds += 1
+	return not _redo.is_empty()
+
+
+## How far a post may slide back from where it was meant to stand: a
+## signal pole at most SIGNAL_SLIDE (its head stays where it was meant to
+## hang, over the lanes behind the stop line: the mast arm reaches it); a
+## stop or yield sign no further than keeps it within MUTCD 2B.10's 50 ft
+## (STOP_REACH) of the edge of the road it meets (`center` the junction,
+## `cross` that road's half width, `dir` toward the junction).
+const SIGNAL_SLIDE := CurbClaims.POST_BACK
+const STOP_REACH := 15.24
+static func post_back(center: Vector3, base: Vector3, dir: Vector3, cross: float, signal_pole: bool) -> float:
+	if signal_pole:
+		return SIGNAL_SLIDE
+	var edge := Vector2(center.x - base.x, center.z - base.z).dot(Vector2(dir.x, dir.z).normalized()) - cross
+	return clampf(STOP_REACH - edge, 0.0, CurbClaims.POST_BACK)
+
+
 ## Where a stop, yield or signal post meant for `base` stands (Terrain not
 ## lifted yet; `dir` toward the junction): slid back along its curb off any
-## drive, curb ramp or crosswalk (CurbClaims.post_spot). Shared with
-## tools/overlap_audit.gd.
-static func _post_spot(claims: CurbClaims, base: Vector3, dir: Vector3, signal_pole: bool) -> Vector3:
+## drive, curb ramp or crosswalk (CurbClaims.post_spot), at most `back`
+## (post_back). Shared with tools/overlap_audit.gd.
+static func _post_spot(claims: CurbClaims, base: Vector3, dir: Vector3, signal_pole: bool, back: float,
+		ahead := CurbClaims.POST_AHEAD) -> Vector3:
 	if claims == null:
 		return base
-	return claims.post_spot(base, -dir, 0.25 if signal_pole else 0.15)
+	return claims.post_spot(base, -dir, 0.25 if signal_pole else 0.15, back, ahead)
+
+
+## How far a post may slide ahead, toward the junction, keeping 4 ft behind
+## the crosswalk: at a shaped corner the claims hold the crosswalk and keep
+## it (SHAPED_AHEAD); at a plain corner its crosswalk (_markings) is 2.1 m
+## ahead of the post, so 0.9 m; on a country road a little.
+const SHAPED_AHEAD := 3.0
+const PLAIN_AHEAD := 3.3 - 1.2 - CurbClaims.CROSSWALK_GAP
+static func post_ahead(shaped: bool, country: bool) -> float:
+	if country:
+		return CurbClaims.POST_AHEAD
+	return SHAPED_AHEAD if shaped else PLAIN_AHEAD
 
 
 ## A No Left or No Right Turn post 2.5 m before the stop sign: slid further
@@ -157,14 +225,16 @@ static func no_turn_spot(claims: CurbClaims, post: Vector3, dir: Vector3) -> Vec
 	return claims.post_spot(post, -dir, 0.15, CurbClaims.POST_BACK, 0.0)
 
 
-func _rebuild() -> void:
+func _rebuild(posts_only := false) -> void:
 	# Neighbors' cities are drawn moved over to their place on the land.
 	Terrain.shift = Terrain.shift_for(self)
-	_rebuild_all()
+	_rebuild_all(posts_only)
 	Terrain.shift = Vector2.ZERO
 
 
-func _rebuild_all() -> void:
+## `posts_only`: stand the posts, poles and heads again and leave the paint
+## (the curb changed beside one, nothing else did).
+func _rebuild_all(posts_only := false) -> void:
 	var poles := []
 	var arms := []
 	var heads := []
@@ -185,7 +255,7 @@ func _rebuild_all() -> void:
 	var cache := {}
 	var pieces := []
 	var faded := [[], []]  # worn, ghost
-	var marked := plans.keys()
+	var marked := plans.keys() if not posts_only else []
 	marked.sort()
 	for n in marked:
 		var plan: Dictionary = plans[n]
@@ -206,15 +276,31 @@ func _rebuild_all() -> void:
 			faded[hit[2] - 1].append(hit[1])
 		else:
 			pieces.append(hit[1])
-	_paint_cache = cache
+	if not posts_only:
+		_paint_cache = cache
 	var sign_at := {}  # way -> [post, facing back, right] of its stop sign or signal pole
 	# Posts keep off drives, curb ramps and crosswalks (CurbClaims).
 	var claims: CurbClaims = CurbClaims.of(roads.sim) if roads != null and roads.sim != null else null
-	_claims_seen = claims.version if claims != null else -1
+	_claims_seen = claims.stamp() if claims != null else -1
+	_meant.clear()
+	var nodes_at: Dictionary = traffic.network.nodes
+	# Each junction's posts are kept, so when only the curb beside a few
+	# changed, only theirs are stood again (_redo).
+	var lists := [poles, arms, heads, lenses, hoods, plates, stops, yields, blades, _head_ways, _meant]
+	if not posts_only:
+		_by_node.clear()
+		_by_rule.clear()
 	for n in nodes:
+		if posts_only and not _redo.has(n) and _by_node.has(n):
+			var kept: Dictionary = _by_node[n]
+			for i in lists.size():
+				(lists[i] as Array).append_array(kept.parts[i])
+			sign_at.merge(kept.sign_at)
+			continue
 		var j: Dictionary = traffic.junctions[n]
 		if j.control == TrafficSim.Rule.NONE:
 			continue
+		var marks := lists.map(func(l): return (l as Array).size())
 		var painted := JunctionMarks.marked(plans.get(n, {}))
 		var named := false
 		# How far back from the stop line the crosswalk is (behind it where
@@ -234,6 +320,7 @@ func _rebuild_all() -> void:
 			var stops_here: bool = j.control == TrafficSim.Rule.SIGNAL or j.control == TrafficSim.Rule.ALL_STOP \
 				or (j.control == TrafficSim.Rule.PRIORITY and not j.major.has(wid) and j.sign != "yield")
 			var base := Vector3.ZERO
+			var meant := Vector3.ZERO  # where the post was meant to stand, before it slid
 			var arm := {}
 			if _is_country(plans, n, seg):
 				if country_plan.is_empty():
@@ -254,8 +341,10 @@ func _rebuild_all() -> void:
 				var back: float = Junction.SHOULDER + 0.6 if arm.get("country", true) \
 					else RoadStyle.CURB_WIDTH + RoadStyle.PARKWAY_WIDTH * 0.5
 				var off := JunctionMarks.country_edge(country_plan, arm, s) + back
-				base = Terrain.lift(_post_spot(claims, at[0] + right * off, dir, j.control == TrafficSim.Rule.SIGNAL))
-				if stops_here and not RoadStyle.unpaved(arm.type):  # no paint on gravel
+				meant = at[0] + right * off
+				base = Terrain.lift(_post_spot(claims, meant, dir, j.control == TrafficSim.Rule.SIGNAL,
+					post_back(nodes_at[n], meant, dir, cross, j.control == TrafficSim.Rule.SIGNAL), post_ahead(false, true)))
+				if stops_here and not RoadStyle.unpaved(arm.type) and not posts_only:  # no paint on gravel
 					JunctionMarks.country_bar(country_plan, arm, paint, RoadStyle.Y_JUNCTION + 0.02)
 					any_paint = true
 			else:
@@ -272,24 +361,33 @@ func _rebuild_all() -> void:
 				if not RoadStyle.TYPES[traffic.ways[wid].type].oneway:
 					# On the near-side corner, in the grass strip beside the curb.
 					base = sl.pos + right * (half + RoadStyle.CURB_WIDTH + RoadStyle.PARKWAY_WIDTH * 0.5) - dir * back
-				base = Terrain.lift(_post_spot(claims, base, dir, j.control == TrafficSim.Rule.SIGNAL))
-				if stops_here and not painted and not RoadStyle.TYPES[traffic.ways[wid].type].oneway:
+				meant = base
+				base = Terrain.lift(_post_spot(claims, meant, dir, j.control == TrafficSim.Rule.SIGNAL,
+					post_back(nodes_at[n], meant, dir, cross, j.control == TrafficSim.Rule.SIGNAL), post_ahead(trim > 0.0, false)))
+				if stops_here and not painted and not RoadStyle.TYPES[traffic.ways[wid].type].oneway and not posts_only:
 					# A crosswalk only where there are sidewalks to join.
 					var spec: Dictionary = RoadStyle.TYPES[traffic.ways[wid].type]
 					var walks: bool = spec.get("walk", true) and not spec.get("rural", false) \
 						and not (roads != null and roads._rural.has(seg))
 					_markings(paint, sl, half, walk, walks)
 					any_paint = true
+			_meant.append(Vector2(meant.x, meant.z))
 			var face := Basis.looking_at(-dir, Vector3.UP)  # facing the drivers
 			sign_at[wid] = [base, dir, right]
 			if j.control == TrafficSim.Rule.SIGNAL:
 				poles.append(Transform3D(Basis().scaled(Vector3(1, POLE_H, 1)), base + Vector3(0, POLE_H * 0.5, 0)))
 				# Mast arm out over the lanes, head above the middle lane.
-				var out: float = (base - sl.pos).dot(right)
-				var head: Vector3 = base + right * (sl.mid - out) + Vector3(0, POLE_H - 0.4, 0)
-				var span: float = out - sl.mid
-				arms.append(Transform3D(Basis(right, Vector3.UP, right.cross(Vector3.UP)).scaled(Vector3(span, 1, 1)),
-					base + right * (-span * 0.5) + Vector3(0, POLE_H - 0.1, 0)))
+				# The head hangs where it was meant to (over the middle lane, as
+				# far behind the stop line as the pole was meant to stand), the
+				# arm reaching it from wherever the pole stands.
+				var hung := Terrain.lift(meant)
+				var out: float = (hung - sl.pos).dot(right)
+				var head: Vector3 = hung + right * (sl.mid - out) + Vector3(0, POLE_H - 0.4, 0)
+				var reach := Vector3(head.x - base.x, 0.0, head.z - base.z)
+				var span: float = maxf(reach.length(), 0.01)
+				var ax: Vector3 = reach / span
+				arms.append(Transform3D(Basis(ax, Vector3.UP, ax.cross(Vector3.UP)).scaled(Vector3(span, 1, 1)),
+					base + reach * 0.5 + Vector3(0, POLE_H - 0.1, 0)))
 				var ht := Transform3D(face, head)
 				heads.append(ht)
 				plates.append(ht * Transform3D(Basis(), Vector3(0, 0, HEAD_D * 0.5 + 0.01)))
@@ -314,6 +412,13 @@ func _rebuild_all() -> void:
 					yields.append(sign_t)
 				else:
 					stops.append(sign_t)
+		var piece := {"parts": [], "sign_at": {}}
+		for i in lists.size():
+			piece.parts.append((lists[i] as Array).slice(marks[i]))
+		for wid in traffic.ways_into(n):
+			if sign_at.has(wid):
+				piece.sign_at[wid] = sign_at[wid]
+		_by_node[n] = piece
 	# The player's turn rules: lane-use arrows painted in each lane behind
 	# the stop line (MUTCD 3B.20: one set near the line, one 50 ft or so
 	# before), and No Left and No Right Turn signs on a post at the near
@@ -322,15 +427,21 @@ func _rebuild_all() -> void:
 	rule_keys.sort()
 	var no_lefts := []
 	var no_rights := []
+	var rule_lists := [poles, no_lefts, no_rights, _meant]
 	for k in rule_keys:
+		if posts_only and not _redo.has(int(k.get_slice(":", 0))) and _by_rule.has(k):
+			for i in rule_lists.size():
+				(rule_lists[i] as Array).append_array(_by_rule[k][i])
+			continue
 		var rule: Dictionary = traffic.lane_rules[k]
 		var wid := _way_in(int(k.get_slice(":", 0)), int(k.get_slice(":", 1)))
 		if wid == -1:
 			continue
+		var rule_marks := rule_lists.map(func(l): return (l as Array).size())
 		var sl := traffic.stop_line(wid)
 		var w: Dictionary = traffic.ways[wid]
 		var masks := traffic.lane_masks(wid)
-		if not rule.lanes.is_empty() and not RoadStyle.unpaved(w.type):
+		if not rule.lanes.is_empty() and not RoadStyle.unpaved(w.type) and not posts_only:
 			for back in [ARROW_BACK, ARROW_BACK + 15.0]:
 				if back + 2.4 > w.len * 0.45:
 					continue  # a short block: the near set only
@@ -351,12 +462,18 @@ func _rebuild_all() -> void:
 			if sign_at.has(wid):
 				dir = sign_at[wid][1]
 				post = sign_at[wid][0] - dir * 2.5
+			_meant.append(Vector2(post.x, post.z))
 			post = no_turn_spot(claims, post, dir)
 			var top := 2.51 + 0.8 * (faces.size() - 1)
 			poles.append(Transform3D(Basis().scaled(Vector3(0.45, top, 0.45)), post + Vector3(0, top * 0.5, 0)))
 			for i in faces.size():
 				(faces[i] as Array).append(Transform3D(Basis.looking_at(-dir, Vector3.UP),
 					post + Vector3(0, top - 0.8 * i, 0) - dir * 0.05))
+		var rule_piece := []
+		for i in rule_lists.size():
+			rule_piece.append((rule_lists[i] as Array).slice(rule_marks[i]))
+		_by_rule[k] = rule_piece
+	stood = {"poles": poles, "arms": arms, "heads": heads, "stops": stops, "yields": yields}
 	_fill(_no_lefts, no_lefts)
 	_fill(_no_rights, no_rights)
 	_fill(_poles, poles)
@@ -368,6 +485,8 @@ func _rebuild_all() -> void:
 	_fill(_stops, stops)
 	_fill(_yields, yields)
 	_fill(_blades, blades)
+	if posts_only:
+		return
 	if any_paint:
 		pieces.append(Terrain.drape(paint.commit(), false, 4.0))
 	_paint.mesh = RoadView._merge(pieces) if not pieces.is_empty() else null

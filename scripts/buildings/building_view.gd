@@ -308,13 +308,7 @@ func _draw(key: String, lot: Dictionary, b: Dictionary, fit: Dictionary, s: int)
 		fit.added_from = int(b.added_from)  # floors added on top of a block this tall
 	HouseBuilder.keep_arrays = true
 	HouseBuilder.flat_weeds = not LawnMap.paints(sim)
-	HouseBuilder.cuts_drawn = []
 	var built := build_for(BuildingTypes.type_of(b), storeys, s, lot.to_curb, fit, spec, int(b.get("units", 2)), b.get("chain", "general"), int(b.get("level", 0)))
-	# What a shop's, office's or plant's builder paved across the parkway
-	# claims the curb (a home's drive is its plan's, read from the layout).
-	if not BuildingTypes.type_of(b) in ["house", "duplex"]:
-		CurbClaims.of(sim).set_drawn(key, HouseBuilder.cuts_drawn)
-	HouseBuilder.cuts_drawn = null
 	HouseBuilder.keep_arrays = false
 	HouseBuilder.flat_weeds = true
 	HouseBuilder.owner_care = 0
@@ -376,17 +370,22 @@ static func build_for(type: String, storeys: int, s: int, to_curb: float, fit: D
 ## off the mailbox beside that drive (CurbClaims.mailbox_at). Shared with
 ## tools/overlap_audit.gd.
 func fit_of(key: String, xf: Transform3D) -> Dictionary:
+	return fit_for(sim, key, xf)
+
+
+static func fit_for(sim: CitySim, key: String, xf: Transform3D) -> Dictionary:
 	var lot: Dictionary = sim.lots[key]
 	var b: Dictionary = sim.buildings[key]
+	var type := BuildingTypes.type_of(b)
 	var fit := _local_lot(lot, xf)
 	if fit.corner and int(b.zone) == ZoneMap.Zone.COMMERCIAL:
 		fit.side = SiteLayout.corner_side(sim.network, lot)
-	if BuildingTypes.type_of(b) in ["row_home", "apartments"]:
+	if type in ["row_home", "apartments"]:
 		fit.alley = SiteLayout.back_lane(sim.network, lot)
 	var away := SiteLayout.drive_away(sim, key)
 	if away != 0.0:
 		fit.drive_away = away
-	if int(b.get("built", 0)) >= sim.curb_drives_from and int(b.zone) == ZoneMap.Zone.RESIDENTIAL:
+	if type == "house" and int(b.get("built", 0)) >= sim.curb_drives_from:
 		# Where the box goes by its own drive alone (its neighbours come and
 		# go; the trees must not move with them). A town saved before keeps
 		# its street trees where they grew.
@@ -394,6 +393,37 @@ func fit_of(key: String, xf: Transform3D) -> Dictionary:
 		if box.is_finite():
 			fit.mail_x = (xf.affine_inverse() * Vector3(box.x, xf.origin.y, box.y)).x
 	return fit
+
+
+## What the builder of the shop, office, plant or flats on lot `key` paves
+## across the parkway to the curb (HouseBuilder.cuts_drawn: [x0, x1, curb z,
+## flare] each, lot frame), from a dry run of the very builder this view
+## draws it with, on the lot as it is handed to it (fit_for) and from the
+## building's own seed: the lot's plan, never its drawing (CurbClaims).
+static func curb_paving(sim: CitySim, key: String) -> Array:
+	var lot: Dictionary = sim.lots[key]
+	var b: Dictionary = sim.buildings[key]
+	var xf := Transform3D(Basis.looking_at(-lot.normal, Vector3.UP), Vector3(lot.front.x, 0.0, lot.front.z))
+	var rng := RandomNumberGenerator.new()
+	rng.seed = b.seed
+	var fit := fit_for(sim, key, xf)
+	if b.has("added_from"):
+		fit.added_from = int(b.added_from)
+	var keep := [HouseBuilder.last_masses, HouseBuilder.last_info, HouseBuilder.keep_arrays, HouseBuilder.owner_care,
+		HouseBuilder.restored, HouseBuilder.cuts_drawn]
+	HouseBuilder.cuts_drawn = []
+	HouseBuilder.dry_all = true
+	build_for(BuildingTypes.type_of(b), BuildingTypes.storeys(b), rng.randi(), lot.to_curb, fit, {}, int(b.get("units", 2)),
+		b.get("chain", "general"), int(b.get("level", 0)))
+	HouseBuilder.dry_all = false
+	var out: Array = HouseBuilder.cuts_drawn
+	HouseBuilder.last_masses = keep[0]
+	HouseBuilder.last_info = keep[1]
+	HouseBuilder.keep_arrays = keep[2]
+	HouseBuilder.owner_care = keep[3]
+	HouseBuilder.restored = keep[4]
+	HouseBuilder.cuts_drawn = keep[5]
+	return out
 
 
 ## Draws building `key` (or, `refill`, only fetches its full drawing again
