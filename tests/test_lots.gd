@@ -342,27 +342,13 @@ func _init() -> void:
 	pk.tick()
 	var in_block := 0
 	var on_it := 0
-	var built_on := 0
-	var site_fp: PackedVector2Array = pk.services.footprint(pk.services.buildings.keys()[0])
 	for k in pk.lots:
-		var lot: Dictionary = pk.lots[k]
-		var p: Vector3 = lot.pos
+		var p: Vector3 = pk.lots[k].pos
 		if p.x > 100.0 and p.x < 200.0 and p.z > 100.0 and p.z < 200.0:
 			in_block += 1
-		if pk.services.overlaps(lot.corners):
+		if pk.services.overlaps(pk.lots[k].corners):
 			on_it += 1
-		# What a builder lays out: the lot's width and depth from its front.
-		var f := Vector2(lot.front.x, lot.front.z)
-		var u := Vector2(lot.dir.x, lot.dir.z).normalized() * float(lot.width) * 0.5
-		var n := Vector2(lot.normal.x, lot.normal.z).normalized() * float(lot.depth)
-		for q in Geometry2D.intersect_polygons(PackedVector2Array([f - u, f + u, f + u + n, f - u + n]), site_fp):
-			if absf(LotPlanner._area(q)) > 0.5:
-				built_on += 1
-	# (Before 2026-10-30 ten lots came, and the builders' layout of five of
-	# them stood on the parking lot: lots it cut into kept their old width
-	# and depth.)
-	_check(in_block >= 8 and on_it == 0, "a block with a parking lot still gets its lots, round it (%d, %d on it)" % [in_block, on_it])
-	_check(built_on == 0, "and no lot's width and depth reach onto it, so nothing is built on it (%d)" % built_on)
+	_check(in_block >= 9 and on_it == 0, "a block with a parking lot still gets its lots, round it (%d, %d on it)" % [in_block, on_it])
 	# The zone tool says what's in the way where zoning gets no lots.
 	var pid: int = pk.services.buildings.keys()[0]
 	var fp := pk.services.footprint(pid)

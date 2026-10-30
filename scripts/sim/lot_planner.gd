@@ -407,16 +407,11 @@ static func _clear_of_parcels(lots: Array, parcels: Array) -> Array:
 			var cut := Geometry2D.clip_polygons(lot.corners, p[1])
 			var best := _largest(cut)
 			var before := absf(_area(lot.corners))
-			if absf(_area(best)) < before - 1.0 and not ":" in str(p[4]):
-				# A public site or a county railroad's right of way (keys with
-				# no ":"; CitySim._with_sites): the lot keeps its front and
-				# gives up its back, shorter, as lots backing onto a parking
-				# lot or the tracks are, and its depth says so: builders lay
-				# a building out by the lot's width and depth, not its
-				# outline (with the old depth it stood on the site). If it
-				# can't, it isn't platted. (A site at its side stops the lot
-				# in the survey: _ray_in_parcel.)
-				var d := _depth_before(lot, p[1])
+			if absf(_area(best)) < before - 1.0 and str(p[4]).begins_with(RAIL_ROW):
+				# A county railroad's right of way (CitySim._rail_sites): the
+				# lot keeps its front and gives up its back, shorter, as lots
+				# backing onto the tracks are; if it can't, it isn't platted.
+				var d := _depth_before(lot, p[3])
 				var zone_size: Dictionary = SIZES.get(int(lot.get("plat_zone", 1)), SIZES[1])
 				if d < float(zone_size.min_d) or cut.size() > 1 and _holes(cut) or _remnant(best):
 					keep = false
@@ -1460,7 +1455,7 @@ func _plan_side(s: Dictionary, zones: ZoneMap, index: Dictionary) -> Array:
 		if r[3] >= 0.0:
 			k = zones.zone_at(_v3((r[1] as Vector2) + (r[2] as Vector2) * ZONE_PROBE))
 		free_kinds.append(k)
-		kinds.append(0 if k != 0 and _ray_in_parcel(r, parcels) else k)
+		kinds.append(0 if k != 0 and _in_parcel(r[1], parcels) else k)
 	var sig := hash([kinds, near_keys, rich, corners])
 	if sig == s.cut_sig:
 		_inputs(s, zones, index, rich)
@@ -1555,43 +1550,12 @@ func _edge(s: Dictionary, a_in: float, a_out: float, k_in: int, k_out: int, zone
 	for _n in 7:
 		var mid := (lo + hi) * 0.5
 		var r := _ray(s, mid)
-		var ok: bool = r[3] >= 0.0 and not _ray_in_parcel(r, parcels)
+		var ok: bool = r[3] >= 0.0 and not _in_parcel(r[1], parcels)
 		if ok:
 			lo = mid
 		else:
 			hi = mid
 	return lo
-
-
-## True where a survey line can't hold a lot for a parcel: its front is on
-## one, or a public site (no ":" in its key: a parking lot, a fire station,
-## the railroad's right of way) stands within SITE_PROBE metres back along
-## it. A public site is set back from the street, so a lot whose front only
-## was checked ran on past the site's side, and the building laid out on it
-## by its width stood on the site.
-static func _ray_in_parcel(r: Array, parcels: Array) -> bool:
-	var f: Vector2 = r[1]
-	if _in_parcel(f, parcels):
-		return true
-	var n: Vector2 = r[2]
-	var reach := minf(float(r[3]), SITE_PROBE) if float(r[3]) >= 0.0 else 0.0
-	if reach <= 0.0:
-		return false
-	var box := Rect2(f, Vector2.ZERO).expand(f + n * reach)
-	for q in parcels:
-		if ":" in str(q[4]) or not (q[0] as Rect2).intersects(box, true):
-			continue
-		var v := 2.0
-		while v <= reach + 0.01:
-			if Geometry2D.is_point_in_polygon(f + n * v, q[1]):
-				return true
-			v += 2.0
-	return false
-
-
-## Metres back along a survey line a public site stops a lot (the shallowest
-## lot a building takes, SIZES min_d).
-const SITE_PROBE := 18.0
 
 
 static func _in_parcel(p: Vector2, parcels: Array) -> bool:
