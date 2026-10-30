@@ -22,10 +22,11 @@ extends SceneTree
 ## Corners cut (each can make a count a little off, none hides a kind):
 ## the mirrored stop, yield, No Turn and signal posts can drift from their
 ## view if it changes (junction_view.gd _rebuild_all; where they slide off
-## drives is shared: JunctionView._post_spot); a car out on the drive is counted for every garage whose drive
-## is long enough (the game draws two cars in three there); shop, office and
-## factory curb cuts are taken as 6 m wide (a duplex's 3 m), their builders
-## keep the true width to themselves; streets are straight strips to the
+## drives is shared: JunctionView._post_spot); a car out on the drive is
+## counted for every garage whose drive is long enough (the game draws two
+## cars in three there); shop, office and factory curb cuts are taken as the
+## usual 7.2 m apron flared to the curb (CurbClaims.lot_cut; a few builders
+## draw theirs wider or narrower); streets are straight strips to the
 ## node (no curb-return pavement); a tree trunk is 0.5 m square.
 ##
 ## Run headless only, with HOME set to a scratch folder:
@@ -495,6 +496,9 @@ static func collect(sim: CitySim) -> Array:
 	_rail(out, sim)
 	_lots(out, sim)
 	_public(out, sim)
+	# The buildings first: their builders' aprons claim the curb (as the game's
+	# signs and lamps stand once the town is drawn).
+	_built(out, sim)
 	_signs(out, sim, rv, plans)
 	_name_posts(out, sim)
 	for l in StreetLights.place(net, rv._rural, claims):
@@ -509,7 +513,6 @@ static func collect(sim: CitySim) -> Array:
 		var outward := Vector3(pos.x - pt.x, 0.0, pos.z - pt.z).normalized()
 		var at := pos + outward * (RoadStyle.CURB_WIDTH + RoadStyle.PARKWAY_WIDTH * 0.5)
 		_add(out, "post", "bus_stop", "stop:%s" % id, _sq(Vector2(at.x, at.z), POST.bus_stop))
-	_built(out, sim)
 	for i in out.size():
 		out[i].id = i
 	return out
@@ -836,7 +839,7 @@ static func _built(out: Array, sim: CitySim) -> void:
 		# The trees as BuildingView._set_trees keeps them: street trees off
 		# its keep-clear spots and the mailbox, a corner lot's side-street
 		# trees too.
-		var mailbox := bv._mailbox_at(key)
+		var mailbox := CurbClaims.of(sim).mailbox_at(key, true)  # BuildingView._set_trees' own reading
 		var planted := []
 		if parts.size() > 2:
 			for t: Array in parts[2]:
@@ -894,9 +897,12 @@ static func _built(out: Array, sim: CitySim) -> void:
 					poly.append(Vector2(wq.x, wq.z))
 				_add(out, "garage_apron", "house", key, poly)
 		elif not lay.get("main_street", false) and not lay.spots.is_empty():
+			# A duplex's drive as its plan draws it; a shop's, office's or
+			# factory's apron as their builders draw it (HouseBuilder._curb_cut).
 			var cx := float(lay.cut_x)
-			var cw := 3.0 if type == "duplex" else 6.0
-			_add(out, "curb_cut", type, key, _rect(frame, Rect2(cx - cw * 0.5, -tc, cw, tc)))
+			var cw := 3.0 if type == "duplex" else 6.0  # the drive on the lot (as #940 measured it)
+			for c in CurbClaims.of(sim).cut_of(key):
+				_add(out, "curb_cut", type, key, c[2])
 			_add(out, "drive", type, key, _rect(frame, Rect2(cx - cw * 0.5, 0.0, cw, maxf(float(lay.get("aisle_z", 0.0)), 3.0))))
 		for sp in lay.spots:
 			var at: Vector2 = sp.pos
@@ -913,8 +919,12 @@ static func _built(out: Array, sim: CitySim) -> void:
 					var front := at - face * 6.2
 					if (front - face * CAR.y * 0.5).y >= 2.6 and (front - face * CAR.y).y >= 0.0:
 						_add(out, "drive_car", type, key, _local_obb(frame, front - face * CAR.y * 0.5, face, CAR.y * 0.5, CAR.x * 0.5))
-		if int(b.zone) == ZoneMap.Zone.RESIDENTIAL and mailbox.is_finite():
-			_add(out, "post", "mailbox", key, _sq(mailbox, POST.mailbox))
+	# Mailboxes once every lot is drawn (they keep off the neighbours' drives).
+	for key in keys:
+		if drawn.has(key) and int(sim.buildings[key].zone) == ZoneMap.Zone.RESIDENTIAL:
+			var box := bv._mailbox_at(key)
+			if box.is_finite():
+				_add(out, "post", "mailbox", key, _sq(box, POST.mailbox))
 	bv.free()
 	if stale > 0:
 		print("overlap_audit: %d buildings drew no masses of their own (BuildingView would reuse the last one's)" % stale)

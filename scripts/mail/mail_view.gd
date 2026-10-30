@@ -17,6 +17,7 @@ var _boxes_dirty := true
 var _cbus := MultiMeshInstance3D.new()
 var _clustered := false
 var _clock := 0.0
+var _claims_seen := -1
 
 
 func setup(s: CitySim) -> void:
@@ -68,6 +69,11 @@ func _process(delta: float) -> void:
 	if _clock >= 0.5:
 		_clock = 0.0
 		_park()
+		# What stands on the curb changed (a shop's apron drawn, a ramp).
+		var claims := CurbClaims.of(sim)
+		if claims.version != _claims_seen:
+			_claims_seen = claims.version
+			_boxes_dirty = true
 		if _boxes_dirty:
 			_boxes_dirty = false
 			_mailboxes()

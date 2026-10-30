@@ -226,7 +226,7 @@ static func factory(art_seed: int, fit := {"half": LOT_HALF, "depth": 32.0}) -> 
 static func for_lot(sim: CitySim, key: String) -> Dictionary:
 	var b: Dictionary = sim.buildings.get(key, {})
 	var lot: Dictionary = sim.lots.get(key, {})
-	if b.is_empty() or lot.is_empty():
+	if b.is_empty() or lot.is_empty() or not b.has("seed"):
 		return empty_lot()
 	return for_building(int(b.zone), int(b.seed), lot, BuildingTypes.storeys(b), BuildingTypes.type_of(b),
 		int(b.get("level", 0)), sim.network, int(b.get("added_from", 0)), drive_away(sim, key))

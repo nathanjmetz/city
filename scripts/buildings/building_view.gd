@@ -308,7 +308,13 @@ func _draw(key: String, lot: Dictionary, b: Dictionary, fit: Dictionary, s: int)
 		fit.added_from = int(b.added_from)  # floors added on top of a block this tall
 	HouseBuilder.keep_arrays = true
 	HouseBuilder.flat_weeds = not LawnMap.paints(sim)
+	HouseBuilder.cuts_drawn = []
 	var built := build_for(BuildingTypes.type_of(b), storeys, s, lot.to_curb, fit, spec, int(b.get("units", 2)), b.get("chain", "general"), int(b.get("level", 0)))
+	# What a shop's, office's or plant's builder paved across the parkway
+	# claims the curb (a home's drive is its plan's, read from the layout).
+	if not BuildingTypes.type_of(b) in ["house", "duplex"]:
+		CurbClaims.of(sim).set_drawn(key, HouseBuilder.cuts_drawn)
+	HouseBuilder.cuts_drawn = null
 	HouseBuilder.keep_arrays = false
 	HouseBuilder.flat_weeds = true
 	HouseBuilder.owner_care = 0
@@ -570,7 +576,9 @@ func _set_trees(key: String, always := true) -> int:
 	# Street trees are the town's and go in as nursery stock.
 	var grown := int(b.get("built", sim.tick_count)) >= sim.grown_yards_from
 	var lot_seed := int(b.get("seed", hash(key)))
-	var mailbox := _mailbox_at(key)
+	# The mailbox by the lot's own drive (where it stands is worked out from
+	# the neighbours' drives too, which come and go; the trees must not).
+	var mailbox := CurbClaims.of(sim).mailbox_at(key, true)
 	# Which trees stand (by number), to tell whether anything changed.
 	var kept := PackedInt32Array()
 	for i in planted.size():

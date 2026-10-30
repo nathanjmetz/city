@@ -93,6 +93,12 @@ static var last_masses := []
 ## The plan info of the last house built (drive, garage, door, porch and the
 ## front walk as drawn: "walk", a Rect2), for the yard props (StateView).
 static var last_info := {}
+## What a building paves out across the parkway to the curb, for
+## CurbClaims while BuildingView draws it (null otherwise: dry runs keep
+## nothing): [x0, x1, curb z, flare] each, a commercial apron (_curb_cut,
+## flared) or a drive drawn straight out to the street.
+static var cuts_drawn = null
+var _in_cut := false
 ## Plan info alone (where the drive, garage and door are), by plan without
 ## the care tier or paint: what the traffic sim asks for, worked out without drawing.
 static var _infos := {}
@@ -3115,6 +3121,8 @@ func _glass(c: Vector3, right: Vector3, w: float, h: float, blinds: float) -> vo
 func _flat_rect(kind: String, x0: float, x1: float, z0: float, z1: float, y: float, col := MULCH) -> void:
 	if kind == "drive" and absf(x1 - x0) >= 2.0 and absf(z1 - z0) >= 2.0:
 		_paved.append(Rect2(minf(x0, x1), minf(z0, z1), absf(x1 - x0), absf(z1 - z0)))
+		if cuts_drawn != null and minf(z0, z1) < -2.0 and not _in_cut:
+			cuts_drawn.append([minf(x0, x1), maxf(x0, x1), minf(z0, z1), 0.0])  # paved out across the parkway
 	if _dry:
 		return
 	var alpha := {"drive": 0.0, "asphalt": 0.4, "line": 0.72, "mulch": 1.0, "gravel": 1.0}
@@ -3152,11 +3160,15 @@ func _flat_tri(pts: Array, y: float) -> void:
 ## half width, `curb_z` where the curb is; asphalt runs on from the
 ## sidewalk to `z1`.
 func _curb_cut(x: float, half: float, curb_z: float, z1: float, y := 0.1) -> void:
+	if cuts_drawn != null:
+		cuts_drawn.append([x - half, x + half, curb_z, 1.5])
 	var walk1 := curb_z + RoadStyle.CURB_WIDTH + RoadStyle.PARKWAY_WIDTH + RoadStyle.SIDEWALK_WIDTH
 	var walk0 := walk1 - RoadStyle.SIDEWALK_WIDTH
 	if z1 > walk1:
 		_flat_rect("asphalt", x - half, x + half, walk1, z1, y)
+	_in_cut = true
 	_flat_rect("drive", x - half, x + half, curb_z, walk1, y)
+	_in_cut = false
 	for s in [-1.0, 1.0]:
 		_flat_tri([Vector3(x + s * half, 0, walk0), Vector3(x + s * half, 0, curb_z),
 			Vector3(x + s * (half + 1.5), 0, curb_z)], y)

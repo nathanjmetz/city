@@ -53,6 +53,7 @@ var _lot_cells := {}  # Vector2i -> [lot keys whose frontage reaches the cell]
 var _lots_dirty := true
 var _cuts := {}  # lot key -> [signature, [shapes]]
 var _mail := {}  # lot key -> [stamp, Vector2]
+var _drawn := {}  # lot key -> [shapes] of the aprons its builder drew (set_drawn)
 
 
 ## The town's claims (made on first use and kept on the sim).
@@ -159,21 +160,73 @@ static func _arm_band(_center: Vector3, arm: Dictionary, side: float, o0: float,
 ## A built lot's curb cut: its drive across the parkway and sidewalk, from
 ## the lot line out to the curb ([] when it has none: built to the
 ## sidewalk, row homes and flats whose people park on the street). A
-## house's or duplex's drive is as wide as its plan draws it; a shop's,
-## office's or factory's entrance 6 m (their builders keep the true width).
+## house's or duplex's drive is as wide as its plan draws it. A shop's,
+## office's or factory's entrance is the commercial apron their builders
+## draw (HouseBuilder._curb_cut): COMMERCIAL_HALF either side of its middle,
+## flared COMMERCIAL_FLARE more each side across the parkway to the curb.
+const COMMERCIAL_HALF := 3.6
+const COMMERCIAL_FLARE := 1.5
 static func lot_cut(lot: Dictionary, lay: Dictionary, type: String) -> PackedVector2Array:
-	if lay.get("main_street", false) or (lay.spots as Array).is_empty() and type != "house":
+	if lay.is_empty() or lay.get("main_street", false) or (lay.get("spots", []) as Array).is_empty() and type != "house":
 		return PackedVector2Array()
-	var cw := float(lay.get("cut_w", 3.0 if type == "duplex" else 6.0))
 	var cx := float(lay.cut_x)
 	var tc := float(lot.get("to_curb", 2.0))
-	return _lot_rect(lot, Rect2(cx - cw * 0.5, -tc, cw, tc))
+	if type in ["house", "duplex"]:
+		var cw := float(lay.get("cut_w", 3.0))
+		return _local_poly(lot, [Vector2(cx - cw * 0.5, -tc), Vector2(cx + cw * 0.5, -tc), Vector2(cx + cw * 0.5, 0.0),
+			Vector2(cx - cw * 0.5, 0.0)])
+	return apron(lot, cx, COMMERCIAL_HALF, -tc)
 
 
-static func _lot_rect(lot: Dictionary, r: Rect2) -> PackedVector2Array:
+## A commercial apron as HouseBuilder._curb_cut draws it: `half` either side
+## of `x`, from the curb (`curb_z`, lot frame) across the parkway and
+## sidewalk, flared COMMERCIAL_FLARE each side across the parkway.
+static func apron(lot: Dictionary, x: float, half: float, curb_z: float) -> PackedVector2Array:
+	var f := COMMERCIAL_FLARE
+	var walk0 := curb_z + RoadStyle.CURB_WIDTH + RoadStyle.PARKWAY_WIDTH
+	var walk1 := walk0 + RoadStyle.SIDEWALK_WIDTH
+	return _local_poly(lot, [Vector2(x - half - f, curb_z), Vector2(x + half + f, curb_z), Vector2(x + half, walk0),
+		Vector2(x + half, walk1), Vector2(x - half, walk1), Vector2(x - half, walk0)])
+
+
+## What building `key`'s builder paved out to the curb (HouseBuilder.
+## cuts_drawn: [x0, x1, curb z, flare] each, from BuildingView._draw for
+## shops, offices and plants): where a drawing differs from the layout's
+## reading (a brick works' drive straight in to its door), what is drawn is
+## what claims the curb. None: the layout's cut stands.
+func set_drawn(key: String, cuts) -> void:
+	var sim: CitySim = _sim.get_ref() if _sim != null else null
+	if sim == null or not sim.lots.has(key):
+		return
+	var shapes := []
+	var lot: Dictionary = sim.lots[key]
+	for c in (cuts if cuts != null else []):
+		var x0 := float(c[0])
+		var x1 := float(c[1])
+		var cz := float(c[2])
+		if float(c[3]) > 0.0:
+			shapes.append(_shape("cut", "lot:" + key, apron(lot, (x0 + x1) * 0.5, (x1 - x0) * 0.5, cz)))
+		else:
+			var back := cz + RoadStyle.CURB_WIDTH + RoadStyle.PARKWAY_WIDTH + RoadStyle.SIDEWALK_WIDTH
+			shapes.append(_shape("cut", "lot:" + key, _local_poly(lot, [Vector2(x0, cz), Vector2(x1, cz), Vector2(x1, back),
+				Vector2(x0, back)])))
+	var had: Array = _drawn.get(key, [])
+	if had.size() == shapes.size() and shapes.all(func(s): return had.any(func(h): return h[2] == s[2])):
+		return
+	if shapes.is_empty():
+		_drawn.erase(key)
+	else:
+		_drawn[key] = shapes
+	_cuts.erase(key)
+	_mail.clear()
+	version += 1
+
+
+## Lot-frame points (x across, z back from the street) in the town.
+static func _local_poly(lot: Dictionary, pts: Array) -> PackedVector2Array:
 	var frame := SiteLayout.frame(lot)
 	var out := PackedVector2Array()
-	for q in [r.position, Vector2(r.end.x, r.position.y), r.end, Vector2(r.position.x, r.end.y)]:
+	for q: Vector2 in pts:
 		var w := frame * Vector3(q.x, 0.0, q.y)
 		out.append(Vector2(w.x, w.z))
 	return out
@@ -225,8 +278,9 @@ func slide(p: Vector2, along: Vector2, half: float, back: float, ahead := 0.0, k
 ## junction) up to POST_BACK, or ahead up to POST_AHEAD, to the nearest
 ## clear spot; `base` if none is (MUTCD 2B.10: as near the stop point as
 ## practical, never more than 50 ft from the road it meets, and 4 ft or
-## more behind the crosswalk, which POST_AHEAD keeps).
-const POST_BACK := 6.0
+## more behind the crosswalk, which POST_AHEAD keeps). 9 m back clears even
+## a shop's flared 10 m apron.
+const POST_BACK := 9.0
 const POST_AHEAD := 0.5
 func post_spot(base: Vector3, back_dir: Vector3, half: float, back := POST_BACK, ahead := POST_AHEAD) -> Vector3:
 	var q := slide(Vector2(base.x, base.z), Vector2(back_dir.x, back_dir.z).normalized(), half + 0.1, back, ahead)
@@ -362,6 +416,7 @@ func _sync_lots() -> void:
 	for key in _cuts.keys():
 		if not sim.buildings.has(key) or not sim.lots.has(key):
 			_cuts.erase(key)
+			_drawn.erase(key)
 
 
 ## A lot's cut shapes.
@@ -390,9 +445,12 @@ func _entry(key: String) -> Array:
 		return hit
 	var lay := _layout(sim, key)
 	var shapes := []
-	var poly := lot_cut(lot, lay, BuildingTypes.type_of(b))
-	if poly.size() >= 3:
-		shapes.append(_shape("cut", "lot:" + key, poly))
+	if _drawn.has(key):
+		shapes = _drawn[key]  # as its builder drew it
+	else:
+		var poly := lot_cut(lot, lay, BuildingTypes.type_of(b))
+		if poly.size() >= 3:
+			shapes.append(_shape("cut", "lot:" + key, poly))
 	var entry := [sig, shapes, version, lay]
 	_cuts[key] = entry
 	return entry
@@ -401,6 +459,8 @@ func _entry(key: String) -> Array:
 ## A built lot's layout (SiteLayout.for_lot), the traffic sim's copy when
 ## it has one.
 static func _layout(sim: CitySim, key: String) -> Dictionary:
+	if not sim.buildings.get(key, {}).has("seed"):
+		return {}  # a bare stand-in building (tests): no drawn drive to read
 	if sim.traffic != null:
 		var pl: Dictionary = sim.traffic.cached_place("lot:" + key)
 		if pl.has("lay"):
