@@ -178,6 +178,7 @@ func _panel_joints(cx: float, bw: float, zf: float, bd: float, top: float, col: 
 ## A dock door at dock height with its seal and two bumpers.
 func _dock_door(x: float, zf: float) -> void:
 	_box("siding", Vector3(2.7, 3.0, 0.08), Vector3(x, DOCK_HEIGHT + 1.5, zf - 0.03), Color(WHITE, 0.0))
+	DoorLog.add(self, "dock", Vector3(x, DOCK_HEIGHT + 1.5, zf - 0.07), Vector3(0, 0, -1), 2.7, 3.0, WHITE)
 	_box("paint", Vector3(3.5, 0.45, 0.35), Vector3(x, DOCK_HEIGHT + 3.2, zf - 0.17), SEAL)
 	for e in [-1.0, 1.0]:
 		_box("paint", Vector3(0.35, 3.4, 0.35), Vector3(x + e * 1.55, DOCK_HEIGHT + 1.6, zf - 0.17), SEAL)
