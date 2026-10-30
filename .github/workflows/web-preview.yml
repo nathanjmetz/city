@@ -249,6 +249,7 @@ jobs:
           run_test tests/test_house_lots.gd
           run_test tests/test_street_trees.gd
           run_test tests/test_lot_grade.gd
+          run_test tests/test_state_layer.gd
 
       - name: Stamp the build
         run: |
