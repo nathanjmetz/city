@@ -124,7 +124,17 @@ Items 9 to 13 change saves, so they go the chart's safe way (a new item; a test 
 5. **The road catalog.** Categories, picture cards, filters, search, and recents on the bar.
 6. **First new types.** Items 1 to 8 above (no save change). Items 9 to 13 come after, one at a time.
 
-## What to decide
+## What Nathan decided (2026-10-29)
+
+All five answered "A" (the picks below):
+- Treatments are looks plus a few real rules ("a").
+- A side changes right away once a building is done ("A").
+- Locking what's there is free; changing it costs about a repaving ("A").
+- Lanterns and brick stay and wear when the money leaves ("A").
+- No land-value change this round ("A").
+- Keep the bar and add an "All roads" card ("A").
+
+## What to decide (asked and answered above)
 
 1. When a building is built, should its side change right away, or wait for the next repaving? **My pick: right away** (the builder pays for the frontage, as real towns require).
 2. When the money leaves a wealthy street, do the lanterns and brick stay and wear, or get swapped out? **My pick: they stay and wear**, and drop to Struggling only after a game year.
