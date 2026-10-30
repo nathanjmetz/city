@@ -26,6 +26,9 @@ func _init() -> void:
 	_docking()
 	_same_everywhere()
 	_old_save()
+	_clear_lanes()
+	_road_edit()
+	_own_trucks()
 	print("ALL TESTS PASSED" if not _failed else "TESTS FAILED")
 	quit(1 if _failed else 0)
 
@@ -371,3 +374,126 @@ func _old_save() -> void:
 			docked = true
 			break
 	_check(docked, "and the next box truck backs up to a dock")
+
+
+## For every warehouse size, every dock and every truck that docks there:
+## the way in along the court's lane, the backing round into the door and
+## the way off the dock out to the gate all keep clear of the longest rig
+## backed in at every other dock (its front-bumper path at least half a
+## truck's width from the other truck's sides).
+func _clear_lanes() -> void:
+	var sim := CitySim.new()
+	var t: TrafficSim = sim.traffic
+	t._sim = sim  # (set as it steps; nothing steps here)
+	var bad := []
+	var checked := 0
+	var docks := []
+	for kind in Warehouses.ORDER:
+		var wid := sim.warehouses.add(kind, Vector3(37, 0, -12), Vector3(0.6, 0, -0.8).normalized())
+		var pl := {"ref": "wh:%d@37,-12" % wid, "spots": [], "taken": []}
+		t._add_docks(pl)
+		docks.append([kind, pl.spots.size(), pl.spots[0].get("lmax", 0.0) if not pl.spots.is_empty() else 0.0])
+		for s in pl.spots:
+			for k in TrafficSim.DOCK_KINDS:
+				var vl := float(VehicleTypes.spec(k).len)
+				var way := TrafficSim._dock_way(s, vl)
+				if way.is_empty():
+					continue
+				var p: Vector3 = way.approach[-1]
+				var h: Vector3 = (p - way.approach[-2]).normalized()
+				var paths := [TrafficSim._smooth(way.approach), TrafficSim._smooth(TrafficSim._back_pts(s, p, h, vl)),
+					TrafficSim._smooth(TrafficSim._pull_pts(s, vl))]
+				checked += 1
+				for o in pl.spots:
+					if o == s:
+						continue
+					var lm: float = o.lmax
+					for path in paths:
+						for q in path:
+							var along: float = (q - o.pos).dot(o.face)
+							var across: float = absf((q - o.pos).dot(o.bx))
+							var da := maxf(maxf(-along, along - lm), 0.0)
+							var dx := maxf(across - 1.3, 0.0)
+							if Vector2(da, dx).length() < 1.3:
+								bad.append([kind, s.door, k, o.door, q])
+								break
+	print("docks: per size [kind, docks, longest rig docking] %s" % [docks])
+	_check(checked > 40 and bad.is_empty(), "every way in, back and out clears the trucks at the other docks (%d ways) %s" % [checked, bad.slice(0, 3)])
+	_check(docks[0][2] < 10.0 and docks[1][2] > 10.0 and docks[1][2] < 20.0 and docks[2][2] > 20.0,
+		"a small court takes vans, a medium one box trucks, a large one 53 ft trailers")
+
+
+## The roads change while a truck sits at a dock (every place is laid out
+## again): it keeps its dock and its time there, even with an empty box
+## truck at the curb looked at first.
+func _road_edit() -> void:
+	var sim := town()
+	var t: TrafficSim = sim.traffic
+	var w: Dictionary = sim.warehouses.buildings[wh_id(sim)]
+	var ref := Warehouses.traffic_ref(wh_id(sim), w)
+	var trip := send(sim, "box_truck")
+	var vid: int = truck_of(sim, trip).id
+	var car := {}
+	for i in 3000:
+		sim.tick()
+		car = t._by_vid.get(vid, {})
+		if car.has("dock_t") and t._tick - int(car.dock_t) > 20:
+			break
+	_check(car.has("dock_t"), "a box truck sits at a dock")
+	if not car.has("dock_t"):
+		return
+	var other := t.new_vehicle("box_truck", ref, -1)
+	var o: Dictionary = t._by_vid.get(other, {})
+	_check(not o.is_empty() and not t.place(ref).spots[o.spot].get("rear", false), "a box truck just made there waits at the curb, not at a dock")
+	# The empty one first, the docked one last, as the bug had them.
+	t.parked.erase(o)
+	t.parked.push_front(o)
+	t.parked.erase(car)
+	t.parked.append(car)
+	var at: Vector3 = car.pos
+	var dock_t: int = car.dock_t
+	t._dirty = true
+	sim.tick()
+	var s: Dictionary = t.place(ref).spots[car.spot]
+	_check(t._by_vid.has(vid) and s.get("rear", false) and (car.pos as Vector3).distance_to(at) < 0.01 and int(car.dock_t) == dock_t
+		and t.place(ref).taken[car.spot] == vid, "after a road edit the docked truck is still on its own dock")
+	var left := -1
+	for i in 400:
+		sim.tick()
+		if not t._by_vid.has(vid):
+			left = t._tick
+			break
+	_check(left - dock_t >= TrafficSim.DOCK_DWELL and left - dock_t <= TrafficSim.DOCK_DWELL + 40, "and leaves when its time is up (%d)" % [left - dock_t])
+
+
+## A warehouse's own truck takes a load to a shop, comes home empty to the
+## warehouse's curb (not a dock), and takes its next load from there.
+func _own_trucks() -> void:
+	var sim := town()
+	var t: TrafficSim = sim.traffic
+	var wid := wh_id(sim)
+	var w: Dictionary = sim.warehouses.buildings[wid]
+	var ref := Warehouses.traffic_ref(wid, w)
+	var shop := ""
+	var bd := INF
+	for key in sim.buildings:
+		if int(sim.buildings[key].zone) == ZoneMap.Zone.COMMERCIAL and sim.lots.has(key):
+			var d: float = sim.lots[key].front.distance_to(w.pos)
+			if d < bd:
+				bd = d
+				shop = key
+	var from := {"ref": "wh:%d" % wid, "pos": [snappedf(w.pos.x, 0.01), snappedf(w.pos.z, 0.01)]}
+	var to := {"ref": "lot:" + shop, "pos": [snappedf(sim.lots[shop].front.x, 0.01), snappedf(sim.lots[shop].front.z, 0.01)]}
+	var trip := t.dispatch(from, to, "goods", {"good": "goods", "amount": 1})
+	var car: Dictionary = truck_of(sim, trip)
+	_check(not car.is_empty() and str(car.base) == ref, "a truck the warehouse makes is based at the warehouse (%s)" % car.get("base", ""))
+	var home := false
+	for i in 8000:
+		sim.tick()
+		var p: Dictionary = t._by_vid.get(car.id, {})
+		if not p.is_empty() and str(p.at_place) == ref and not p.get("pending", false):
+			home = not t.place(ref).spots[p.spot].get("rear", false)
+			break
+	_check(home, "it comes home empty and waits at the warehouse's curb, not at a dock")
+	var again := t.dispatch(from, to, "goods", {"good": "goods", "amount": 1})
+	_check(truck_of(sim, again).get("id", -1) == car.id, "and takes the warehouse's next load")

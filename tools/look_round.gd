@@ -66,9 +66,9 @@ extends SceneTree
 ## through shot 11's warm-up (its day starts LEAD hours early) the nearest
 ## factories send it a load every DOCK_EVERY ticks, on Logistics' books as
 ## any load is, a box truck and a 53 ft trailer in turn. After the jump from
-## January the town's 400-car limit holds its morning rush (and so every
-## truck) for the whole warm-up, so the limit is lifted fourfold through it,
-## as the start of a day's HOME_TICKS lifts it, and put back for the picture.
+## January the town's 400-car limit is full all morning, so these trucks
+## (only these) pull out past it, one more car each (_dock_go). With
+## --close, --only=11 takes 11_close_rundown too.
 
 ## Fair-weather day: July 15, 10:30 in the morning.
 const DAY := [7, 15, 10.5]
@@ -176,7 +176,7 @@ var _ticks := 0       # sim ticks run for the warm-ups so far
 var _dock_wh := -1    # shot 11's warehouse, once placed
 var _dock_from := []  # the factories that send it loads (lot keys)
 var _dock_sent := 0   # loads sent to it so far
-var _dock_cap := 0    # the town's car limit, lifted through shot 11's warm-up
+var _dock_waiting := []  # its loads' trucks still waiting to pull out
 
 
 func _initialize() -> void:
@@ -467,7 +467,7 @@ func _warm(budget_ms := 0) -> bool:
 		_ticks += 1
 		n += 1
 		if _dock_wh >= 0:
-			sim.traffic.max_cars = maxi(sim.traffic.max_cars, 4 * _dock_cap)
+			_dock_go(sim)
 			if _ticks % DOCK_EVERY == 0:
 				_dock_load(sim)
 		if _home_left > 0:
@@ -480,8 +480,6 @@ func _warm(budget_ms := 0) -> bool:
 			return true
 		if budget_ms > 0 and n % 20 == 0 and Time.get_ticks_msec() - t0 > budget_ms:
 			return false
-	if _dock_wh >= 0:
-		sim.traffic.max_cars = _dock_cap  # (and the walkers' limit is back by now)
 	return true
 
 
@@ -500,7 +498,6 @@ func _prepare(s: Array) -> void:
 	if s[0] != "11_docks_60m" or _dock_wh >= 0:
 		return
 	var sim: CitySim = _main.sim
-	_dock_cap = _caps.x if _home_left > 0 else sim.traffic.max_cars
 	for at in [DOCK_WH[1]] + DOCK_WH[2]:
 		var site := Warehouses.site_near(sim.network, at)
 		if site.is_empty() or sim.warehouse_problem(DOCK_WH[0], site[0], site[1]) != "":
@@ -518,6 +515,22 @@ func _prepare(s: Array) -> void:
 	_dock_aim(s)
 	var w: Dictionary = sim.warehouses.buildings[_dock_wh]
 	print("look_round: shot 11's %s warehouse at %s, facing %s, %d docks" % [DOCK_WH[0], w.pos, w.dir, Warehouses.dock_xs(w).size()])
+
+
+## Shot 11: its loads' trucks pull out past the town's car limit (one more
+## car each), which a morning's rush holds at full for hours; the rest of
+## the town keeps to it.
+func _dock_go(sim: CitySim) -> void:
+	var t: TrafficSim = sim.traffic
+	for vid in _dock_waiting.duplicate():
+		var car: Dictionary = t._by_vid.get(vid, {})
+		if car.is_empty() or not car.get("pending", false):
+			_dock_waiting.erase(vid)
+			continue
+		t.max_cars += 1
+		if t._try_launch(car):
+			_dock_waiting.erase(vid)
+		t.max_cars -= 1
 
 
 ## Shot 11: one of the nearest factories sends the warehouse a load of
@@ -545,6 +558,9 @@ func _dock_load(sim: CitySim) -> void:
 	_dock_sent += 1
 	if id >= 0:
 		sim.logistics.trips[id] = {"from": from, "to": to, "purpose": "goods", "cargo": cargo, "kind": "factory"}
+		for car in sim.traffic.parked:
+			if car.get("trip", -1) == id:
+				_dock_waiting.append(car.id)
 		w.incoming = int(w.incoming) + 1
 
 
@@ -631,8 +647,8 @@ func _census(sim: CitySim) -> Dictionary:
 		"at_job": 0, "errands": 0, "home": 0, "travel": 0}
 	for car in sim.traffic.parked:
 		var ref: String = car.get("at_place", "")
-		if car.has("dock_t"):
-			c.docks += 1  # backed up to a warehouse's dock
+		if car.has("dock_t") and (int(car.until) >= 0 or car.get("pending", false)):
+			c.docks += 1  # backed up to a warehouse's dock, its door up
 		var z := -1
 		if ref.begins_with("lot:") and sim.buildings.has(ref.trim_prefix("lot:")):
 			z = int(sim.buildings[ref.trim_prefix("lot:")].zone)
