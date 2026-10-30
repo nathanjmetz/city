@@ -10,9 +10,10 @@ extends SceneTree
 ## touches (Medium has 2, High and up 4): read the triangles as one split's.
 ## Run: godot --headless -s tools/trees/tree_shadow_cost.gd -- SAVE [--blocks=5]
 ## SAVE is a throwaway save path: never a real town (it is cleared).
-## 2026-10-29, the leafiest street of a 5-block town (31 grown trees within
-## 50 m), from 6 m up: Medium 34 trees filed (24 inside its 45 m), 26,438
-## triangles in 18 groups; Cinematic 242 trees, 323,106 in 51.
+## 2026-10-29, after #935 grew the yard trees: the leafiest street of a
+## 5-block town (31 grown trees within 50 m), from 6 m up: Medium 34 trees
+## filed (24 inside its 45 m), 32,590 triangles in 25 groups; Cinematic
+## 242 trees, 418,378 in 97.
 
 const TIERS := [GraphicsQuality.LOW, GraphicsQuality.MEDIUM, GraphicsQuality.HIGH, GraphicsQuality.CINEMATIC]
 ## Camera heights over the street (m).
