@@ -1,16 +1,25 @@
 class_name CountyRailView
 extends Node3D
-## Draws the county's real railroads (CountyRail) out to the haze on the
-## desktop app, with the same kit as a town's own track (RailView): crushed
-## rock ballast with its weedy toe and fill slopes, ties every 60 cm, steel
-## rails with a bright running surface, deck girder bridges on concrete piers
-## over the creeks and rivers, and rubber crossing panels where a road
+## Draws the county's real railroads (CountyRail) out to the haze, with the
+## same kit as a town's own track (RailView): crushed rock ballast with its
+## weedy toe and fill slopes, ties every 60 cm, steel rails with a bright
+## running surface, deck girder bridges on concrete piers over the creeks
+## and rivers, and rubber crossing panels where a road
 ## crosses at grade. One mesh per 256 m square (CountyRail.BIN), the nearest
 ## first within a time budget; the rails and ties drop out with distance,
-## where they are thinner than a pixel, and the ballast carries on.
+## where they are thinner than a pixel, and the ballast carries on. The
+## browser draws a lighter look (CountyRail.light): the ballast, rails and
+## bridges in one plain mesh a square, no ties, out to LIGHT_DRAW_TO.
+##
+## A town street crossing the track is drawn over it (_town_has); a square
+## is drawn again whenever the town builds or clears ground in it, so the
+## track always matches the town's streets as they are now.
 
 ## How far out the track is drawn, metres.
 const DRAW_TO := 4500.0
+## How far out the browser's lighter track is drawn (CountyRail.light):
+## ballast and rails, one mesh a square.
+const LIGHT_DRAW_TO := 2000.0
 ## Rails, and ties, are drawn this near the camera (metres).
 const RAILS_TO := 1500.0
 const TIES_TO := 650.0
@@ -62,18 +71,46 @@ var _mat: StandardMaterial3D
 ## stones on the desktop's High tier and up (PhotoGround).
 var _rock: ShaderMaterial
 var _tie_mesh: BoxMesh
+## Squares to draw again: the town built or cleared ground in them.
+var _stale := {}
+var _redrawn := {}  # square -> when it was last drawn again (ms)
+## Seconds between redraws of one square.
+const REDRAW_S := 1.0
+## The browser's lighter look (CountyRail.light), and how far it reaches.
+var _light := false
+var _reach := DRAW_TO
 
 
 func setup(s: CitySim) -> void:
 	sim = s
+	if not sim.vegetation.changed.is_connected(_on_ground):
+		sim.vegetation.changed.connect(_on_ground)
+
+
+## The town built or cleared land in these chunks (Vegetation.CHUNK squares,
+## town coordinates): the track squares they reach are drawn again.
+func _on_ground(chunks: Array) -> void:
+	if _origin == Vector2.INF:
+		return
+	for ch: Vector2i in chunks:
+		var r := Rect2(Vector2(ch) * Vegetation.CHUNK + _origin, Vector2.ONE * Vegetation.CHUNK).grow(Vegetation.CELL)
+		for bx in range(floori(r.position.x / CountyRail.BIN), floori(r.end.x / CountyRail.BIN) + 1):
+			for bz in range(floori(r.position.y / CountyRail.BIN), floori(r.end.y / CountyRail.BIN) + 1):
+				var b := Vector2i(bx, bz)
+				if _built.has(b):
+					_stale[b] = true
 
 
 func _ready() -> void:
+	_light = CountyRail.light()
+	_reach = LIGHT_DRAW_TO if _light else DRAW_TO
 	_mat = StandardMaterial3D.new()
 	_mat.vertex_color_use_as_albedo = true
 	_mat.vertex_color_is_srgb = true
 	_mat.roughness = 0.9
 	_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	if _light:
+		return  # plain ballast and rails in _mat: no stone photo or ties
 	_rock = ShaderMaterial.new()
 	var sh := Shader.new()
 	sh.code = ROCK_SHADER.replace("PHOTO", PhotoGround.glsl())
@@ -98,6 +135,8 @@ func _process(_delta: float) -> void:
 				if n != null:
 					n.queue_free()
 		_built.clear()
+		_stale.clear()
+		_redrawn.clear()
 		_scan_at = Vector2.INF
 	var cam := get_viewport().get_camera_3d()
 	var c := _origin
@@ -107,6 +146,25 @@ func _process(_delta: float) -> void:
 		_rescan(c)
 	var start := Time.get_ticks_usec()
 	var budget := LoadGate.ms(BUDGET_MS)
+	# Squares the town built near, drawn again first (the old one stays
+	# until the new one is ready): not while the game loads, when the land
+	# under the town is still being worked out, and each at most every
+	# REDRAW_S, so a growing town redraws a square once, not every build.
+	var now := Time.get_ticks_msec()
+	for b in ([] if LoadGate.loading else _stale.keys()):
+		if (Time.get_ticks_usec() - start) / 1000.0 >= budget:
+			break
+		if now - int(_redrawn.get(b, -100000)) < REDRAW_S * 1000.0:
+			continue
+		_redrawn[b] = now
+		_stale.erase(b)
+		if not _built.has(b):
+			continue
+		var old: Array = _built[b]
+		_built[b] = _build(b)
+		for n in old:
+			if n != null:
+				n.queue_free()
 	while not _queue.is_empty() and (Time.get_ticks_usec() - start) / 1000.0 < budget:
 		var b: Vector2i = _queue.pop_back()
 		_built[b] = _build(b)
@@ -116,18 +174,18 @@ func _process(_delta: float) -> void:
 ## (popped first), and lets go of those well past it.
 func _rescan(c: Vector2) -> void:
 	_scan_at = c
-	var r := ceili(DRAW_TO / CountyRail.BIN) + 1
+	var r := ceili(_reach / CountyRail.BIN) + 1
 	var cb := Vector2i((c / CountyRail.BIN).floor())
 	var want := []
 	for dz in range(-r, r + 1):
 		for dx in range(-r, r + 1):
 			var b := cb + Vector2i(dx, dz)
-			if _built.has(b) or _dist(b, c) > DRAW_TO + CountyRail.BIN:
+			if _built.has(b) or _dist(b, c) > _reach + CountyRail.BIN:
 				continue
 			if not CountyRail.routes_in(b).is_empty():
 				want.append(b)
 	for b in _built.keys():
-		if _dist(b, c) > DRAW_TO + CountyRail.BIN * 3.0:
+		if _dist(b, c) > _reach + CountyRail.BIN * 3.0:
 			for n in _built[b]:
 				if n != null:
 					n.queue_free()
@@ -140,9 +198,18 @@ static func _dist(b: Vector2i, c: Vector2) -> float:
 	return ((Vector2(b) + Vector2(0.5, 0.5)) * CountyRail.BIN).distance_to(c)
 
 
-## True where the town has built on the land (its own streets and lots win).
+## True where a town street's pavement covers the track (a grade crossing):
+## the street is drawn there, not the ballast. Nothing else of the town's
+## stands on the right of way (CitySim._rail_under, CountyRail.road_check).
+## Only the pavement, not the street's whole right of way, so a skewed
+## crossing leaves no long gap in the track.
 func _town_has(p: Vector3) -> bool:
-	return sim != null and sim.vegetation.is_occupied(Vegetation.cell_of(p))
+	if sim == null or sim.network.segments.is_empty():
+		return false
+	var hit := RoadIndex.segment_near(sim.network, p, 12.0)
+	if hit.is_empty() or (hit.point as Vector3).y > CountyRail.ROAD_RAISED:
+		return false
+	return float(hit.dist) <= RoadStyle.half_width(sim.network.segments[hit.seg].type) + 0.5
 
 
 ## The track in one square: every route's samples that fall in it, and
@@ -151,10 +218,15 @@ func _build(b: Vector2i) -> Array:
 	var box := Rect2(Vector2(b) * CountyRail.BIN, Vector2.ONE * CountyRail.BIN)
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	var rock := SurfaceTool.new()
-	rock.begin(Mesh.PRIMITIVE_TRIANGLES)
-	var rails := SurfaceTool.new()
-	rails.begin(Mesh.PRIMITIVE_TRIANGLES)
+	# The browser's lighter look: the ballast in the one mesh, plain.
+	var rock := st
+	if not _light:
+		rock = SurfaceTool.new()
+		rock.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var rails := st
+	if not _light:
+		rails = SurfaceTool.new()
+		rails.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var ties := []
 	var any := false
 	var o := _origin
@@ -195,6 +267,8 @@ func _build(b: Vector2i) -> Array:
 					RailView._quad(rock, c0 + y, Vector3(q0.x, c0.y, q0.y) + y, Vector3(q1.x, c1.y, q1.y) + y, c1 + y, RailView.BALLAST)
 			for side: float in [-1.0, 1.0]:
 				RailView._rail(rails, c0 + n0 * side * RailModels.GAUGE * 0.5, c1 + n1 * side * RailModels.GAUGE * 0.5, n0, n1)
+			if _light:
+				continue  # no ties
 			if kind[i] == 1 and kind[i + 1] == 1:
 				continue
 			var seg := c1 - c0
@@ -209,10 +283,12 @@ func _build(b: Vector2i) -> Array:
 	var out := []
 	st.index()
 	st.generate_normals()
-	out.append(_instance(st.commit(), DRAW_TO))
+	out.append(_instance(st.commit(), _reach))
+	if _light:
+		return out
 	rock.index()
 	rock.generate_normals()
-	var ri := _instance(rock.commit(), DRAW_TO)
+	var ri := _instance(rock.commit(), _reach)
 	ri.material_override = _rock
 	out.append(ri)
 	rails.index()

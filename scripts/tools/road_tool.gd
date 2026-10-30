@@ -567,8 +567,8 @@ func _finish_grid(shape: Array = _points) -> void:
 		pts.append(_xz(q))
 	var cmd := {"type": "build_grid_shape", "points": pts, "block": grid_block, "across": grid_across,
 		"side": grid_side, "road": road_type, "fit": _fit(), "join": true}
-	var lines := GridFill.plan(network, shape, grid_block, road_type, grid_side, grid_across, _fit(),
-		sim.painted_near(shape))
+	var lines := sim.rail_trim(GridFill.plan(network, shape, grid_block, road_type, grid_side, grid_across, _fit(),
+		sim.painted_near(shape)), road_type)
 	var go := func() -> void:
 		if sim.apply(cmd):
 			_points.clear()
@@ -879,7 +879,10 @@ func _show_grid(p: Vector3) -> void:
 		if key != _grid_key and Time.get_ticks_msec() - _grid_planned_at > 120:
 			_grid_key = key
 			var painted := sim.painted_near(shape)
-			_grid_plan = GridFill.plan(network, shape, grid_block, road_type, grid_side, grid_across, _fit(), painted)
+			# Streets stop short of a county railroad they'd run along (as the
+			# simulation builds them).
+			_grid_plan = sim.rail_trim(GridFill.plan(network, shape, grid_block, road_type, grid_side, grid_across, _fit(),
+				painted), road_type)
 			# The county road or highway the grid takes over shows too.
 			_grid_taken = []
 			for t in GridFill.taken_over(_grid_plan, painted, shape):

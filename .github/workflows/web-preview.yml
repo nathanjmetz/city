@@ -119,6 +119,7 @@ jobs:
           run_test tests/test_country_roads.gd
           run_test tests/test_county_rail.gd
           run_test tests/test_county_trains.gd
+          run_test tests/test_rail_right_of_way.gd
           run_test tests/test_sim.gd
           run_test tests/test_town_laws.gd
           run_test tests/test_clusters.gd
