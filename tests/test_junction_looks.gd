@@ -237,8 +237,7 @@ func _lots_clear() -> void:
 				if lot.is_empty() or Vector2(lot.front.x, lot.front.z).distance_to(ctr) > 45.0:
 					continue
 				var b: Dictionary = sim.buildings[key]
-				var lay := SiteLayout.for_building(int(b.zone), int(b.seed), lot, BuildingTypes.storeys(b),
-					BuildingTypes.type_of(b), int(b.get("level", 0)), sim.network, int(b.get("added_from", 0)))
+				var lay := SiteLayout.for_lot(sim, key)
 				var pts := [["door", lay.door]]
 				for s in lay.spots:
 					pts.append([s.kind, s.pos])

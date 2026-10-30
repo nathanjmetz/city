@@ -87,6 +87,16 @@ var calendar_from := 0
 ## first loaded on, so every tree it already had keeps the size it had and
 ## only new yards come in grown.
 var grown_yards_from := 0
+## A corner house begun on or after this tick decides as it goes up which
+## side its drive goes, away from the corner (SiteLayout.decide_drive, kept
+## as the building's "drive"), and its street trees keep off its mailbox
+## (BuildingView.fit_for; Nathan, 2026-10-29: "I also noticed
+## street signs in the middle of driveways"). 0 for a town begun with this;
+## a town saved before it gets the tick after the one it was first loaded
+## on, so every house it already had keeps its drive where it was built.
+var curb_drives_from := 0
+## What stands on the curb, for every curbside placer (CurbClaims.of; not saved).
+var curb: CurbClaims = null
 
 var network := RoadNetwork.new()
 ## The last builds, for Ctrl+Z (not saved).
@@ -1045,6 +1055,7 @@ func _apply_cmd(cmd: Dictionary) -> bool:
 			var links_kept := _link_roads()
 			undo = UndoLog.new()
 			grown_yards_from = 0  # a new start: every yard comes in grown
+			curb_drives_from = 0
 			region_links.clear()
 			trade = Trade.new()
 			traffic.overrides.clear()
@@ -5225,6 +5236,7 @@ func save_steps(postcard := false) -> Array:
 		["calendar", func(): return calendar_offset],
 		["calendar_from", func(): return calendar_from],
 		["grown_yards_from", func(): return grown_yards_from],
+		["curb_drives_from", func(): return curb_drives_from],
 		["seed", func(): return city_seed],
 		["roads", func(): return network.to_dict()],
 		["buildings", func(): return buildings],
@@ -5414,6 +5426,10 @@ func from_dict(d: Dictionary) -> void:
 		calendar_from = tick_count
 	# A town saved before yards came in grown keeps its trees as they were.
 	grown_yards_from = int(d.get("grown_yards_from", tick_count + 1))
+	# A town saved before corner drives kept clear keeps its houses as built.
+	curb_drives_from = int(d.get("curb_drives_from", tick_count + 1))
+	if curb != null:
+		curb.reset()  # another town loaded into this sim: its curb worked out afresh
 	city_seed = int(d.get("seed", 1))
 	var postcard := bool(d.get("postcard", false))
 	# Parcels: the lots buildings stand on. (A neighbor's postcard has no
@@ -5447,6 +5463,8 @@ func from_dict(d: Dictionary) -> void:
 			buildings[key].short = int(b.short)
 		if b.has("added_from"):
 			buildings[key].added_from = int(b.added_from)
+		if b.has("drive"):
+			buildings[key].drive = int(b.drive)  # the side its drive went (SiteLayout.drive_away)
 		if z == ZoneMap.Zone.INDUSTRIAL and b.has("chain"):
 			buildings[key].chain = str(b.chain)
 	if postcard:

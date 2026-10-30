@@ -551,6 +551,13 @@ func _progress(fraction: float, status := "") -> void:
 ## loading screen and starts the clock.
 func _settle() -> void:
 	_progress(0.75, "Building the town")
+	# Every lot's drive and paving at the curb worked out now, behind the
+	# loading screen, so no sign, lamp or mailbox waits on it later.
+	var t := Perf.now()
+	var claims := CurbClaims.of(sim)
+	claims.warm()
+	Perf.add("load.curb_claims", t)
+	print("load: curb claims %.0f ms (%d lots)" % [claims.last_sync_ms, claims.last_sync_lots])
 	# Wait for every view to draw what the starting camera sees; the bar
 	# follows the share of views that are ready.
 	await _gate.wait(get_tree(), func(share: float, status: String) -> void:

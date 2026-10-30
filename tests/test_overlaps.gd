@@ -15,31 +15,44 @@ extends SceneTree
 
 const Audit := preload("res://tools/overlap_audit.gd")
 
-## Today's known clashes (2026-10-30), per town: "a vs b" -> the most allowed.
-## The county's railroads come first now (#943): no lot, building, drive,
-## parking, public site or street on their right of way; streets cross only
-## at grade crossings. Left on the track: a few posts at a junction beside a
-## crossing. No count here is above main's before #943.
+## Today's known clashes (2026-10-29), per town: "a vs b" -> the most allowed.
+## Signal and No Turn posts, streetlights and mailboxes in drives' curb
+## cuts or on curb ramps, and street trees on ramps, are down to none
+## (CurbClaims), so any of those fails. A few stop signs stay in a shop's
+## apron where the apron covers every spot MUTCD allows (within 50 ft of
+## the road it meets, behind the crosswalk): shops keeping their aprons
+## back from the corner is the fix still to come.
 const KNOWN := {
 	"small": {
-		"rail_bed:county vs post:stop_sign": 2,
+		"rail_bed:county vs building": 79,
+		"rail_bed:county vs lot": 251,
+		"rail_bed:county vs road": 60,
+		"rail_bed:county vs drive": 22,
+		"rail_bed:county vs parking_stall": 146,
+		"rail_bed:county vs prop": 10,
+		"rail_bed:county vs post:streetlight": 1,
+		"rail_bed:county vs post:utility_pole": 1,
+		"rail_bed:county vs post:stop_sign": 5,
 		"rail_bed:county vs post:signal_pole": 1,
 		"building vs public_site": 5,
-		"post:stop_sign vs curb_cut": 5,
-		"post:streetlight vs curb_cut": 3,
-		"post:mailbox vs curb_cut": 32,
-		"post:mailbox vs curb_ramp": 5,
-		"tree_trunk vs curb_ramp": 1,
-		"lot vs lot": 31,
+		"prop vs sidewalk_line": 8,
+		"lot vs lot": 32,
+		"post:stop_sign vs curb_cut": 2,
 	},
 	"county_small": {
+		"rail_bed:county vs building": 114,
+		"rail_bed:county vs public_site": 18,
+		"rail_bed:county vs lot": 286,
+		"rail_bed:county vs road": 38,
+		"rail_bed:county vs drive": 17,
+		"rail_bed:county vs parking_stall": 64,
+		"rail_bed:county vs tree_trunk": 1,
+		"rail_bed:county vs prop": 2,
 		"rail_bed:county vs post:stop_sign": 1,
-		"building vs public_site": 4,
-		"post:stop_sign vs curb_cut": 3,
-		"post:streetlight vs curb_cut": 9,
-		"post:mailbox vs curb_cut": 35,
-		"post:mailbox vs curb_ramp": 7,
-		"lot vs lot": 24,
+		"building vs public_site": 5,
+		"prop vs sidewalk_line": 8,
+		"lot vs lot": 33,
+		"post:stop_sign vs curb_cut": 1,
 	},
 }
 ## Kinds the audit must find in each town, at least this many.
