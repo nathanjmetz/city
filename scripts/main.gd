@@ -43,7 +43,9 @@ func _ready() -> void:
 	if Session.online():
 		sim = Session.client.my_sim()
 	sim.require_utilities = true
-	sim.county_rail = CountyRail.drawn()
+	# The county's railroads and their through freights, on every platform,
+	# so a town plans the same everywhere (Nathan, 2026-10-29).
+	sim.county_rail = true
 	# The land under your own town is the one every view and hub reads,
 	# even after neighbor copies load with their own offsets.
 	Resources.pin(sim.terrain_offset)

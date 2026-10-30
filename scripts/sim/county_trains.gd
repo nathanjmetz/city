@@ -61,6 +61,8 @@ const CLEAR := 600 + STOP
 ## town's railroad left there (one stop a train, so a fleet never closes up
 ## by more than this).
 const STOP := 1800
+## Two crossings of one road nearer than this (m) are one (double track).
+const SAME_XING := 12.0
 ## Gate warning (s) and the gap kept around the train (m), as Rail.
 const GATE_WARNING := Rail.GATE_WARNING
 const GATE_PAD := 6.0
@@ -588,6 +590,27 @@ func _find(sim) -> void:
 				var p: Vector2 = hit.at - off
 				crossings.append({"seg": sid, "pos": Vector3(p.x, 0.0, p.y), "corridor": ci, "s": hit.s, "closed": false,
 					"county": true})
+	# Where a road crosses a drawn line no through freight runs (a branch,
+	# a spur, the second track of a pair): a grade crossing all the same,
+	# with its crossbucks, whose gates never come down (corridor -1). Not
+	# where the track is a bridge or inside a backdrop town (not drawn).
+	for sid in sim.network.segments:
+		var pts: PackedVector3Array = sim.network.sample_segment(sid, 24)
+		for k in pts.size() - 1:
+			if pts[k].y > CountyRail.ROAD_RAISED or pts[k + 1].y > CountyRail.ROAD_RAISED:
+				continue
+			var hit := CountyRail.crossing(Vector2(pts[k].x, pts[k].z) + off, Vector2(pts[k + 1].x, pts[k + 1].z) + off)
+			if hit.is_empty() or Backdrop.inside(hit.on) or CountyRail.kind_at(hit.route, hit.along) == 2:
+				continue
+			var p: Vector2 = hit.on - off
+			var pos := Vector3(p.x, 0.0, p.y)
+			var known := false
+			for x in crossings:
+				if int(x.seg) == sid and (x.pos as Vector3).distance_to(pos) < SAME_XING:
+					known = true
+					break
+			if not known:
+				crossings.append({"seg": sid, "pos": pos, "corridor": -1, "s": 0.0, "closed": false, "county": true})
 
 
 ## Where segment a-b crosses corridor c: {at, s} or {}.

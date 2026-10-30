@@ -5,10 +5,12 @@ class_name CountyRail
 ## along, and the level its track is laid at, every STEP metres. Region
 ## coordinates throughout.
 ##
-## Scenery for now, drawn by CountyRailView on the desktop app (the browser
-## leaves it out), with the trees and crops kept off its right of way. The
-## routes, near() and crossing() are what a train or a town's own track
-## (Rail) can later run on and join.
+## Drawn by CountyRailView on every platform (the browser in a lighter
+## look: light()), with the trees, crops and farmsteads kept off its right of
+## way, and a town's lots, buildings and public sites too (ROW_HALF), so a
+## town plans the same on the desktop and in the browser, as shared regions
+## need (Nathan, 2026-10-29). The routes, near() and crossing() are what a
+## train or a town's own track (Rail) can later run on and join.
 ##
 ## The track's level: real main lines climb at most about 1 % and run on a
 ## low fill of their own across flat Indiana, so the bed follows the base
@@ -28,6 +30,29 @@ const SMOOTH := 32.0
 const TREE_CLEAR := 12.0
 ## Half the strip crops keep off (the bed, its ditches and fence).
 const CROP_CLEAR := 9.0
+## Half the railroad's right of way, the railroad's own land: a 100 ft
+## right of way is about 15 m each side of the track. A town's lots,
+## buildings and public sites keep off it (Nathan, 2026-10-29: "railroad
+## tracks running right through the city like they're just a part of the
+## ground. They run right underneath the buildings").
+const ROW_HALF := 15.0
+## A town's pavement keeps this far from the track's middle line (the bed,
+## its ditches and fence) except where it crosses at a grade crossing.
+const ROAD_GAP := CROP_CLEAR
+## A road this high above the ground (m, town coordinates) is on a bridge
+## over the track.
+const ROAD_RAISED := 4.0
+## The sharpest a town street may cross the track, degrees off its line.
+## Square is best and new crossings aim near it (a town's own track keeps
+## 70°: RailPlanner.MIN_CROSS_ANGLE), but towns grown around a railroad
+## running slantwise through their grid cross it skewed, and crossings
+## sharper than about 45° are the ones avoided (the long, slanted crossing
+## where a tire drops into the flangeway; FHWA Railroad-Highway Grade
+## Crossing Handbook). 70° here left a grid town with a diagonal line no
+## crossing at all.
+const ROAD_CROSS_ANGLE := 45.0
+## Metres along a road between the points the railroad rules look at.
+const ROAD_STEP := 2.0
 ## From the track's level up to the top of the rail (RailView draws the
 ## ballast, ties and rails on it, as on a town's own track).
 const RAIL_TOP := RailView.RAIL_Y
@@ -59,10 +84,22 @@ static var _profiles := {}
 static var _settled := {}
 
 
-## Whether the railroads are drawn here and keep the trees off: the desktop
-## app only (the browser stays as it was).
+## Whether the railroads are drawn and keep the trees, crops and farmsteads
+## off: everywhere (the browser too, since 2026-10-29). Nothing a town plans
+## may hang on the platform: only how the track looks does (light()).
 static func drawn() -> bool:
-	return not OS.has_feature("web")
+	return true
+
+
+## Tests set this to 0 or 1 to draw as the desktop or the browser does.
+static var force_light := -1
+
+
+## Whether the track is drawn in the browser's lighter look: the ballast
+## and rails in one plain mesh, no stone photo or ties, and not as far out
+## (CountyRailView).
+static func light() -> bool:
+	return force_light == 1 if force_light >= 0 else OS.has_feature("web")
 
 
 static func _load() -> void:
@@ -237,6 +274,219 @@ static func crossing(a: Vector2, b: Vector2) -> Dictionary:
 				if hit != null:
 					return {"route": e[0], "seg": e[1], "on": hit, "along": r.cum[e[1]] + p.distance_to(hit)}
 	return {}
+
+
+## How near an outline (region coordinates) comes to the middle line of any
+## drawn track (0 when the track runs through it), or INF past `reach`.
+## The whole outline counts, not a few points on it. Track inside a backdrop
+## town (not drawn) is left out.
+static func poly_distance(poly: PackedVector2Array, reach: float) -> float:
+	_load()
+	if poly.size() < 3 or routes.is_empty():
+		return INF
+	var lo := poly[0]
+	var hi := poly[0]
+	for q in poly:
+		lo = lo.min(q)
+		hi = hi.max(q)
+	var box := Rect2(lo, hi - lo).grow(reach)
+	if not any_in(box):
+		return INF
+	var best := INF
+	var seen := {}
+	for bx in range(floori(box.position.x / BIN), floori(box.end.x / BIN) + 1):
+		for bz in range(floori(box.position.y / BIN), floori(box.end.y / BIN) + 1):
+			for e in _bins.get(Vector2i(bx, bz), []):
+				if seen.has(e):
+					continue
+				seen[e] = true
+				var r: Dictionary = routes[e[0]]
+				var a: Vector2 = r.pts[e[1]]
+				var b: Vector2 = r.pts[e[1] + 1]
+				if not box.intersects(Rect2(a, Vector2.ZERO).expand(b).grow(0.01)):
+					continue
+				var hit := _seg_poly(a, b, poly)
+				if hit[0] <= reach and hit[0] < best and not Backdrop.inside(hit[1]):
+					best = hit[0]
+	return best
+
+
+## [distance from segment a-b to the outline (0 if they meet), the point on
+## a-b nearest it].
+static func _seg_poly(a: Vector2, b: Vector2, poly: PackedVector2Array) -> Array:
+	if Geometry2D.is_point_in_polygon(a, poly):
+		return [0.0, a]
+	if Geometry2D.is_point_in_polygon(b, poly):
+		return [0.0, b]
+	var best := INF
+	var at := a
+	for i in poly.size():
+		var p := poly[i]
+		var q := poly[(i + 1) % poly.size()]
+		var hit = Geometry2D.segment_intersects_segment(a, b, p, q)
+		if hit != null:
+			return [0.0, hit]
+		var pts := Geometry2D.get_closest_points_between_segments(a, b, p, q)
+		var d := pts[0].distance_to(pts[1])
+		if d < best:
+			best = d
+			at = pts[0]
+	return [best, at]
+
+
+## The right of way (ROW_HALF each side) of the drawn track through `box`
+## (region coordinates), as outlines of pieces at most `piece` metres long
+## that overlap a little at the joins: {key: outline}. A town's lot planner
+## treats them as land already taken, so lots backing onto the railroad stop
+## at its line, shorter, rather than being lost. Keys have no ":".
+static func row_pieces(box: Rect2, piece := 48.0) -> Dictionary:
+	_load()
+	var out := {}
+	if routes.is_empty() or not any_in(box):
+		return out
+	var seen := {}
+	for bx in range(floori(box.position.x / BIN), floori(box.end.x / BIN) + 1):
+		for bz in range(floori(box.position.y / BIN), floori(box.end.y / BIN) + 1):
+			for e in _bins.get(Vector2i(bx, bz), []):
+				if seen.has(e):
+					continue
+				seen[e] = true
+				var r: Dictionary = routes[e[0]]
+				var a: Vector2 = r.pts[e[1]]
+				var b: Vector2 = r.pts[e[1] + 1]
+				var len := a.distance_to(b)
+				if len < 0.01:
+					continue
+				var u := (b - a) / len
+				var n := Vector2(-u.y, u.x) * ROW_HALF
+				var k := ceili(len / piece)
+				for j in k:
+					# Each piece runs 3 m past its ends, so the outer side of a
+					# bend leaves no gap.
+					var p0 := a + u * (len * j / k - 3.0)
+					var p1 := a + u * (len * (j + 1) / k + 3.0)
+					if not box.intersects(Rect2(p0, Vector2.ZERO).expand(p1).grow(ROW_HALF)):
+						continue
+					if Backdrop.inside((p0 + p1) * 0.5):
+						continue
+					out["rail-%d-%d-%d" % [e[0], e[1], j]] = PackedVector2Array([p0 - n, p1 - n, p1 + n, p0 + n])
+	return out
+
+
+## Where a town road (curve c, town coordinates; `half` its half width;
+## `off` the town's place in the region) breaks the railroad's rules: its
+## pavement keeps ROAD_GAP back from the track's middle line except where
+## it crosses, and it crosses at ROAD_CROSS_ANGLE or nearer square (a grade
+## crossing). Existing county road and highway crossings, bridges and
+## raised roads are left alone.
+## {pts: the road's points every ROAD_STEP m (town), bad: [bool] per point,
+## shallow: the sharpest too-shallow crossing's angle in degrees, or -1}.
+static func road_check(c: Array, half: float, off: Vector2) -> Dictionary:
+	_load()
+	var p0: Vector3 = c[0]
+	var p1: Vector3 = c[1]
+	var p2: Vector3 = c[2]
+	var n := maxi(2, ceili((p0.distance_to(p1) + p1.distance_to(p2)) / ROAD_STEP))
+	var pts := RoadNetwork.sample_curve(p0, p1, p2, n)
+	var bad := []
+	bad.resize(pts.size())
+	bad.fill(false)
+	var out := {"pts": pts, "bad": bad, "shallow": -1.0}
+	if routes.is_empty():
+		return out
+	var keep := half + ROAD_GAP
+	var box := Rect2(Vector2(pts[0].x, pts[0].z) + off, Vector2.ZERO)
+	for q in pts:
+		box = box.expand(Vector2(q.x, q.z) + off)
+	if not any_in(box.grow(keep)):
+		return out
+	var cum := PackedFloat32Array([0.0])
+	for i in range(1, pts.size()):
+		cum.append(cum[i - 1] + Vector2(pts[i].x - pts[i - 1].x, pts[i].z - pts[i - 1].z).length())
+	# Where it crosses the track, and how square.
+	var good := []  # metres along the road of each crossing square enough
+	for i in pts.size() - 1:
+		if pts[i].y > ROAD_RAISED or pts[i + 1].y > ROAD_RAISED:
+			continue
+		var a := Vector2(pts[i].x, pts[i].z) + off
+		var b := Vector2(pts[i + 1].x, pts[i + 1].z) + off
+		var hit := crossing(a, b)
+		if hit.is_empty() or Backdrop.inside(hit.on):
+			continue
+		var s: float = cum[i] + a.distance_to(hit.on)
+		var k := kind_at(hit.route, hit.along)
+		var r: Dictionary = routes[hit.route]
+		var t: Vector2 = (r.pts[hit.seg + 1] - r.pts[hit.seg]).normalized()
+		var ang := rad_to_deg(acos(clampf(absf(t.dot((b - a).normalized())), 0.0, 1.0)))
+		if k == 1 or k == 2 or ang >= ROAD_CROSS_ANGLE - 0.01:
+			good.append(s)
+		elif out.shallow < 0.0 or ang < out.shallow:
+			out.shallow = ang
+	# Near the track only at a crossing square enough: within keep of the
+	# track for no more than the crossing itself takes.
+	var reach := keep / sin(deg_to_rad(ROAD_CROSS_ANGLE)) + ROAD_STEP
+	for i in pts.size():
+		if pts[i].y > ROAD_RAISED:
+			continue
+		var nr := near(pts[i].x + off.x, pts[i].z + off.y, keep)
+		if nr.is_empty() or Backdrop.inside(nr.on):
+			continue
+		var k := kind_at(nr.route, nr.along)
+		if k == 1 or k == 2:
+			continue
+		var ok := false
+		for s in good:
+			if absf(cum[i] - float(s)) <= reach:
+				ok = true
+				break
+		bad[i] = not ok
+	return out
+
+
+## Why a town road (see road_check) can't go where it runs by a railroad,
+## in words for the road tool, or "".
+static func road_problem(c: Array, half: float, off: Vector2) -> String:
+	var chk := road_check(c, half, off)
+	if not true in chk.bad:
+		return ""
+	if chk.shallow >= 0.0:
+		return "That crosses the railroad at %d°. A grade crossing must meet the track at %d° or more: cross it nearer square." \
+			% [roundi(chk.shallow), roundi(ROAD_CROSS_ANGLE)]
+	return "Too close along the railroad. Keep the street %d m from the track, or cross it." % roundi(half + ROAD_GAP)
+
+
+## Grid streets (curves, town coordinates) with what breaks the railroad's
+## rules left out: a straight street that runs along the track or crosses
+## it too shallow stops short of it each side, as streets do at the tracks
+## in a real town; a curved one that breaks them is left out.
+static func trim_lines(lines: Array, half: float, off: Vector2) -> Array:
+	var out := []
+	for l in lines:
+		var chk := road_check(l, half, off)
+		var bad: Array = chk.bad
+		if not true in bad:
+			out.append(l)
+			continue
+		var p0: Vector3 = l[0]
+		var p2: Vector3 = l[2]
+		if (l[1] as Vector3).distance_to((p0 + p2) * 0.5) > 0.5:
+			continue
+		var pts: PackedVector3Array = chk.pts
+		var i := 0
+		while i < pts.size():
+			if bad[i]:
+				i += 1
+				continue
+			var j := i
+			while j + 1 < pts.size() and not bad[j + 1]:
+				j += 1
+			var a := pts[i]
+			var b := pts[j]
+			if Vector2(b.x - a.x, b.z - a.z).length() >= maxf(RoadNetwork.MIN_LENGTH, 12.0):
+				# Each end is the last point clear of the track.
+				out.append([a, (a + b) * 0.5, b])
+			i = j + 1
+	return out
 
 
 ## The routes with a piece in the square bin `b` (BIN metres).

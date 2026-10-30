@@ -407,6 +407,18 @@ static func _clear_of_parcels(lots: Array, parcels: Array) -> Array:
 			var cut := Geometry2D.clip_polygons(lot.corners, p[1])
 			var best := _largest(cut)
 			var before := absf(_area(lot.corners))
+			if absf(_area(best)) < before - 1.0 and str(p[4]).begins_with(RAIL_ROW):
+				# A county railroad's right of way (CitySim._rail_sites): the
+				# lot keeps its front and gives up its back, shorter, as lots
+				# backing onto the tracks are; if it can't, it isn't platted.
+				var d := _depth_before(lot, p[3])
+				var zone_size: Dictionary = SIZES.get(int(lot.get("plat_zone", 1)), SIZES[1])
+				if d < float(zone_size.min_d) or cut.size() > 1 and _holes(cut) or _remnant(best):
+					keep = false
+					break
+				_set_shape(lot, best)
+				lot.depth = snappedf(minf(float(lot.depth), d), SNAP)
+				continue
 			if absf(_area(best)) < before - 1.0:
 				# A public site (no ":" in its key) just shortens the lots
 				# beside it; a built lot leaves its neighbours most of theirs.
@@ -419,6 +431,29 @@ static func _clear_of_parcels(lots: Array, parcels: Array) -> Array:
 		if keep:
 			out.append(lot)
 	return out
+
+
+## Parcels whose key starts so are a railroad's right of way.
+const RAIL_ROW := "rail-"
+
+
+## How deep a lot runs from its front before `poly` (town x/z) begins, across
+## its whole width (its own depth if poly isn't behind it).
+static func _depth_before(lot: Dictionary, poly: PackedVector2Array) -> float:
+	var f := Vector2(lot.front.x, lot.front.z)
+	var u := Vector2(lot.dir.x, lot.dir.z).normalized()
+	var v := Vector2(lot.normal.x, lot.normal.z).normalized()
+	var w := float(lot.width) * 0.5
+	var depth := float(lot.depth)
+	var local := PackedVector2Array()
+	for q in poly:
+		local.append(Vector2((q - f).dot(u), (q - f).dot(v)))
+	var band := PackedVector2Array([Vector2(-w, -50.0), Vector2(w, -50.0), Vector2(w, depth + 50.0), Vector2(-w, depth + 50.0)])
+	var best := depth
+	for piece in Geometry2D.intersect_polygons(local, band):
+		for q in piece:
+			best = minf(best, q.y)
+	return best
 
 
 ## A trimmed piece no building fits: under 1,500 sq ft, or pinched in two.
