@@ -128,6 +128,7 @@ jobs:
           run_test tests/test_water.gd
           run_test tests/test_advisor.gd
           run_test tests/test_build_menus.gd
+          run_test tests/test_road_catalog.gd
           run_test tests/test_first_town.gd
           run_test tests/test_pad.gd
           run_test tests/test_camera_zoom.gd
@@ -161,6 +162,7 @@ jobs:
           run_test tests/test_postcard.gd
           run_test tests/test_vehicles.gd
           run_test tests/test_doors.gd
+          run_test tests/test_docks.gd
           run_test tests/test_seasons.gd
           run_test tests/test_month_words.gd
           run_test tests/test_words.gd

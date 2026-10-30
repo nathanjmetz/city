@@ -171,11 +171,11 @@ func _ready() -> void:
 	cars.setup(sim.traffic, _tick_fraction, sim)
 	cars.parked = func(): return sim.construction.parked_poses()
 	add_child(cars)
-	# Garage doors going up and down for the cars going in and out
-	# (desktop only: the browser never makes the view).
+	# Garage and dock doors going up and down for the cars and trucks going
+	# in and out (desktop only: the browser never makes the view).
 	if not OS.has_feature("web"):
 		var doors := DoorView.new()
-		doors.setup(sim.traffic, sim, cars.out_front, buildings.lot_xf)
+		doors.setup(sim.traffic, sim, cars.out_front, buildings.lot_xf, warehouse_view.xf_of)
 		add_child(doors)
 
 	var bus_view := BusView.new()

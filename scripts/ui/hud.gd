@@ -76,6 +76,9 @@ var _variant_title := UiStyle.label("", 10, UiStyle.MUTED)
 var _variant_group := -1  # the menu whose variants the row shows
 var _variant_of := {}     # road menu -> the variant last picked in it
 var _kinds_open := false  # the road kinds row is up instead of grid sizes
+## "All roads": every road on one screen, opened from the All roads card.
+var catalog := RoadCatalog.new()
+var _all_roads_card: Button
 var _traffic_row := HBoxContainer.new()
 var _traffic_card: Button
 var _neighborhood_card: Button
@@ -237,6 +240,7 @@ func _ready() -> void:
 	_root.add_child(_info_panel)
 	_build_economy()
 	_build_stats()
+	_build_catalog()
 	_build_quick()
 	hover.setup(sim, info_view.cam, select_tool, anything_open)
 	_root.add_child(hover)
@@ -246,6 +250,8 @@ func _ready() -> void:
 	_root.add_child(tour)
 	level_up.setup(sim, town._town_name("Your town"))
 	_root.add_child(level_up)
+	# Over everything else while it's open.
+	_root.add_child(catalog)
 	# The cards that follow the cursor keep off the bars and panels.
 	for c in [_top_bar, _drawer_dock, _hint_panel, _smart_panel, _quick, _search_panel, _views_panel, _display_panel,
 			_towns_panel, _help, _info_panel, advisor, permits, region_panel, town, stats_panel, music]:
@@ -366,7 +372,17 @@ func _build_quick() -> void:
 		_cards_in(_drawers[cat], found)
 		for b in found:
 			_all_cards.append([b, cat])
-			b.pressed.connect(_remember.bind(b))
+			if not b.has_meta("no_recent"):
+				b.pressed.connect(_remember.bind(b))
+	# Every road kind from All roads, so search finds "brick" or "gravel" and
+	# a road picked there lands in the recent tools. Each menu's own road is
+	# its bar card already, so search skips its double.
+	for t in catalog.road_cards:
+		var b: Button = catalog.road_cards[t]
+		_all_cards.append([b, "roads"])
+		b.pressed.connect(_remember.bind(b))
+		if t in RoadStyle.GROUPS:
+			b.set_meta("no_search", true)
 	# The Views come up in search too ("smoke", "noise", "traffic").
 	for k in _view_cards:
 		_all_cards.append([_view_cards[k], "views"])
@@ -421,6 +437,8 @@ func search_cards(text: String) -> Array[Button]:
 	var ranks: Array = [[], [], [], []]
 	for entry in _all_cards:
 		var b: Button = entry[0]
+		if b.has_meta("no_search"):
+			continue
 		var title := card_title(b).to_lower()
 		var hay := title + " " + b.tooltip_text.to_lower() + " " + menu_title(entry[1]).to_lower()
 		if not Array(words).all(func(w): return w in hay):
@@ -723,7 +741,7 @@ func pad_bottom_height() -> float:
 
 ## True while a tool is in hand, a panel or view is open, or something is selected.
 func anything_open() -> bool:
-	return _budget_open or _view != "" or _views_panel.visible or _display_panel.visible or _help.visible or _search_panel.visible or advisor.visible or permits.visible or region_panel.visible \
+	return _budget_open or catalog.visible or _view != "" or _views_panel.visible or _display_panel.visible or _help.visible or _search_panel.visible or advisor.visible or permits.visible or region_panel.visible \
 		or town.visible or timelapse.visible or stats_panel.visible or _towns_panel.visible or music.visible \
 		or not select_tool.selection.is_empty() or road_tool.mode != RoadTool.Mode.NONE \
 		or zone_tool.zone != ZoneTool.OFF or service_tool.kind != ServiceTool.OFF \
@@ -736,6 +754,7 @@ func anything_open() -> bool:
 func close_all() -> void:
 	_budget_open = false
 	pie.close()
+	catalog.close()
 	_open_search(false)
 	(_quick.get_child(0) as Button).set_pressed_no_signal(false)
 	_show_view("")
@@ -1580,6 +1599,14 @@ func _roads_drawer() -> PanelContainer:
 			_pick_road(_variant_of.get(g, g)))
 		types.add_child(b)
 		_type_cards[g] = b
+	# Every road on one screen, with pictures, filters and search (Nathan
+	# 2026-10-29: keep this bar, and add "All roads").
+	_all_roads_card = _card("road_catalog", "All roads", "", false)
+	_all_roads_card.tooltip_text = "All roads: every kind of road on one screen, %d in all, with pictures, filters and search" \
+		% RoadCatalog.roads().size()
+	_all_roads_card.set_meta("no_recent", true)
+	_all_roads_card.pressed.connect(open_catalog)
+	types.add_child(_all_roads_card)
 
 	var opts := _section(row, "Options")
 	# Height: a three-way pill, Bridge over Ground over Tunnel, in one card's
@@ -1648,7 +1675,87 @@ func _roads_drawer() -> PanelContainer:
 	_neighborhood_card.pressed.connect(func():
 		neighborhood_tool.set_kind("" if neighborhood_tool.kind != "" else "found"))
 	town.add_child(_neighborhood_card)
+	# Cards in this row are a little slimmer than elsewhere (52 px, not 58),
+	# which makes room for All roads in its 1000 px (tests/test_build_menus.gd).
+	_slim_cards(row)
 	return drawer
+
+
+## Every card under `n` as narrow as its name allows, down to 52 px.
+func _slim_cards(n: Node) -> void:
+	for c in n.get_children():
+		if c is Button and c.has_meta("title"):
+			var t := c.get_meta("title") as Label
+			var w := Brand.ui(500).get_string_size(t.text, HORIZONTAL_ALIGNMENT_LEFT, -1, 11).x
+			c.custom_minimum_size.x = maxf(52.0, ceilf(w) + 8.0)
+		elif c is Control:
+			_slim_cards(c)
+
+
+## Opens All roads over the map, with the road in hand marked.
+func open_catalog() -> void:
+	if _category != "roads":
+		_open("roads")
+	_kinds_open = false
+	_sync()
+	catalog.open(road_tool.road_type)
+
+
+## All roads: its cards are made now (so search finds every road), and the
+## tools from other menus that belong with roads are filed under its kinds.
+## A tool's card has the coral ring while it's in hand; the switches
+## (parallel, snapping) never do, since a ring there would read as "in hand".
+func _build_catalog() -> void:
+	var traffic := func(m: int, title: String, icon: String, where: String) -> Dictionary:
+		var card: Button = _traffic_cards[m]
+		return {"title": title, "icon": icon, "where": where, "tip": card.tooltip_text,
+			"pick": func(): press_card(card), "on": func(): return traffic_tool.mode == m}
+	var draw := func(title: String, icon: String, where: String, tip: String, pick: Callable, on: Callable) -> Dictionary:
+		return {"title": title, "icon": icon, "where": where, "tip": tip, "on": on,
+			"pick": func():
+				_draw_tool_in_hand()
+				pick.call()
+				_sync()}
+	var trail: Button = _park_cards["trailhead"]
+	catalog.setup({
+		"paths": [
+			traffic.call(TrafficTool.Mode.CAR_FREE, "Car-free street", "people", "Traffic  ·  click a town street"),
+			{"title": "Trailhead", "icon": "trailhead", "where": "Parks  ·  trails grow from it", "tip": trail.tooltip_text,
+				"pick": func(): press_card(trail), "on": func(): return park_tool.kind == "trailhead"},
+		],
+		"addons": [
+			draw.call("S-curve", "scurve", "Draw  ·  bends one way and back",
+				"S-curve: a road that bends one way and then back, in one go. Click the start, the first bend, the second bend, then the end. (In the bar: click Curve twice.)",
+				func(): road_tool.set_mode(RoadTool.Mode.SCURVE), func(): return road_tool.mode == RoadTool.Mode.SCURVE),
+			draw.call("Roundabout", "roundabout", "Draw  ·  real FHWA sizes", "Roundabout: click a junction, or open ground for a new one",
+				func(): road_tool.set_mode(RoadTool.Mode.ROUNDABOUT), func(): return road_tool.mode == RoadTool.Mode.ROUNDABOUT),
+			draw.call("Parallel road", "parallel", "Options  ·  switch on or off", _parallel_card.tooltip_text,
+				func(): road_tool.set_parallel(not road_tool.parallel), func(): return false),
+			draw.call("Bridge", "raise", "Options  ·  a step higher each pick", _elevation_segs[0].tooltip_text,
+				func(): road_tool.change_elevation(1), func(): return road_tool.elevation > 0.0),
+			draw.call("Tunnel", "lower", "Options  ·  a step deeper each pick", _elevation_segs[2].tooltip_text,
+				func(): road_tool.change_elevation(-1), func(): return road_tool.elevation < 0.0),
+			draw.call("Snap to roads", "locate", "Options  ·  switch on or off", _snap_segs.roads.tooltip_text,
+				func(): road_tool.set_snap("roads", not road_tool.snap_roads), func(): return false),
+			draw.call("Guide lines", "grid", "Options  ·  switch on or off", _snap_segs.guides.tooltip_text,
+				func(): road_tool.set_snap("guides", not road_tool.snap_guides), func(): return false),
+			traffic.call(TrafficTool.Mode.NO_LEFT, "No left turn", "noleft", "Traffic  ·  Turns"),
+			traffic.call(TrafficTool.Mode.NO_RIGHT, "No right turn", "noright", "Traffic  ·  Turns"),
+			traffic.call(TrafficTool.Mode.LANES, "Lane arrows", "lanes", "Traffic  ·  Turns"),
+		],
+	})
+	catalog.road_picked.connect(func(t: int):
+		# Just as a card in the bar's row of kinds does.
+		_kinds_open = false
+		_pick_road(t))
+
+
+## Roads open with a drawing tool in hand (not Traffic, a lot or the bulldozer).
+func _draw_tool_in_hand() -> void:
+	if _category != "roads":
+		_open("roads")
+	if road_tool.mode == RoadTool.Mode.NONE or road_tool.mode == RoadTool.Mode.BULLDOZE:
+		road_tool.set_mode(road_tool.last_draw)
 
 
 ## Picks a road type, and remembers it as its menu's choice.
@@ -1673,35 +1780,15 @@ func _show_variants(menu: int) -> void:
 		b.tooltip_text = _road_tip(t)
 		b.pressed.connect(func():
 			_kinds_open = false
-			_pick_road(t))
+			_pick_road(t)
+			_remember(catalog.road_cards[t]))
 		_variant_row.add_child(b)
 		_variant_cards[t] = b
 
 
 ## A road's tooltip: what it is, in plain words, with its lanes, speed and price.
 static func _road_tip(t: int) -> String:
-	var spec: Dictionary = RoadStyle.TYPES[t]
-	var bits := ["%d lane%s%s" % [spec.lanes, "" if spec.lanes == 1 else "s", ", one way" if spec.oneway else ""]]
-	if spec.get("turn", false):
-		bits.append("center turn lane")
-	elif spec.get("trees", false):
-		bits.append("tree median")
-	elif spec.median > 0.0:
-		bits.append("median")
-	if spec.get("angle", false):
-		bits.append("angled parking")
-	elif spec.get("parking", 0) > 0 or t == RoadStyle.Type.STREET:
-		bits.append("parking")
-	if spec.get("bike", false):
-		bits.append("bike lanes")
-	if spec.get("bus", false):
-		bits.append("curb lanes for buses only")
-	if spec.get("surface", "asphalt") != "asphalt":
-		bits.append(spec.surface)
-	if not spec.lots:
-		bits.append("no driveways")
-	bits.append("%d mph" % spec.mph)
-	return "%s: %s. $%s a metre." % [spec.name, ", ".join(bits), CitySim.money_text(int(Economy.BUILD_PER_M[t]))]
+	return RoadCatalog.tip(t)
 
 
 func _zones_drawer() -> PanelContainer:

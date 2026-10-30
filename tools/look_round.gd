@@ -54,6 +54,21 @@ extends SceneTree
 ## set of the same town. --close adds three 40 m shots after the fixed 10
 ## (11 a run-down home street, 12 a showpiece one, 13 derelict shops), which
 ## frames.json lists too; they are extra, never part of the fixed list.
+##
+## 11_docks_60m (added 2026-10-29 with working doors step 2, docs/spec-
+## working-doors.md): 60 m over the docks of a regional warehouse on the
+## big town's east edge, across the street from the factory row, July 15,
+## 10:30, with trucks backed up to its open dock doors. The big test town
+## has no warehouse, so this shot adds one (DOCK_WH), only when its turn
+## comes: it is taken last, after 09, so shots 01 to 10 see the very same
+## town as before. The test town's factories ship no goods to a warehouse
+## in a morning (their raw loads come from the county road first), so
+## through shot 11's warm-up (its day starts LEAD hours early) the nearest
+## factories send it a load every DOCK_EVERY ticks, on Logistics' books as
+## any load is, a box truck and a 53 ft trailer in turn. After the jump from
+## January the town's 400-car limit is full all morning, so these trucks
+## (only these) pull out past it, one more car each (_dock_go). With
+## --close, --only=11 takes 11_close_rundown too.
 
 ## Fair-weather day: July 15, 10:30 in the morning.
 const DAY := [7, 15, 10.5]
@@ -92,7 +107,19 @@ var SHOTS := [
 	["06_dusk_100m", MID, 35.0, MID_PITCH, 100.0, "dusk", FAIR],
 	["07_night_100m", MID, 35.0, MID_PITCH, 100.0, "night", FAIR],
 	["09_snow_100m", MID, 35.0, MID_PITCH, 100.0, "winter", SNOW],
+	# Aimed at the warehouse's truck court once it is placed (_dock_aim).
+	["11_docks_60m", DOCK_WH[1], 0.0, 35.0, 60.0, "day", FAIR],
 ]
+## Shot 11's warehouse: [kind, where to look for a site beside the east
+## edge's street (Warehouses.site_near), more places to try if that one
+## is taken].
+const DOCK_WH := ["large", Vector3(880.0, 0.0, 70.0), [Vector3(880.0, 0.0, -70.0),
+	Vector3(880.0, 0.0, 210.0), Vector3(880.0, 0.0, -210.0)]]
+## Ticks between the loads the factories send shot 11's warehouse (30 s of
+## play: oftener, its trucks queue to pull out onto its short street), and
+## how many of the nearest factories take turns sending them.
+const DOCK_EVERY := 300
+const DOCK_FROM := 6
 ## Sim ticks run right after the town is built (a sim minute each), so cars
 ## and walkers are out; always the same number, so the town is the same.
 const WARM_TICKS := 150
@@ -146,6 +173,10 @@ var _target := 0.0    # the sky hour the sim is being run to
 var _home_left := 0   # ticks of lifted limits to go (HOME_TICKS)
 var _caps := Vector2i.ZERO  # the car and walker limits to put back
 var _ticks := 0       # sim ticks run for the warm-ups so far
+var _dock_wh := -1    # shot 11's warehouse, once placed
+var _dock_from := []  # the factories that send it loads (lot keys)
+var _dock_sent := 0   # loads sent to it so far
+var _dock_waiting := []  # its loads' trucks still waiting to pull out
 
 
 func _initialize() -> void:
@@ -323,6 +354,7 @@ func _build() -> void:
 	print("look_round: %d buildings, %d people, %d farms, %d cars, %d walkers, %s, dusk at %.2f" % [sim.buildings.size(),
 		sim.stats.population, sim.farms.farms.size(), sim.traffic.cars.size(), sim.traffic.walkers.size(),
 		GraphicsQuality.current.describe() if GraphicsQuality.current else "?", _dusk_hour])
+	_prepare(SHOTS[0])
 	_set_shot(SHOTS[0])
 
 
@@ -349,6 +381,7 @@ func _next() -> void:
 		_close_aim(s, true)
 	_row = {"name": s[0], "frame_ms": 0.0, "render_cpu_ms": 0.0, "draw_calls": 0.0,
 		"triangles": 0.0, "when": s[5], "weather": s[6]}
+	_prepare(s)
 	_set_shot(s)
 	_stage = 4
 
@@ -433,6 +466,10 @@ func _warm(budget_ms := 0) -> bool:
 		sim.tick()
 		_ticks += 1
 		n += 1
+		if _dock_wh >= 0:
+			_dock_go(sim)
+			if _ticks % DOCK_EVERY == 0:
+				_dock_load(sim)
 		if _home_left > 0:
 			_home_left -= 1
 			if _home_left == 0:
@@ -453,6 +490,88 @@ func _dusk(month: int, day: int) -> float:
 	while h < 23.5 and SkyLight.sun_position(h, date).x > DUSK_SUN:
 		h += 1.0 / 60.0
 	return h
+
+
+## Before shot `s`: shot 11's warehouse goes in (once), finished, and the
+## shot is aimed at its docks.
+func _prepare(s: Array) -> void:
+	if s[0] != "11_docks_60m" or _dock_wh >= 0:
+		return
+	var sim: CitySim = _main.sim
+	for at in [DOCK_WH[1]] + DOCK_WH[2]:
+		var site := Warehouses.site_near(sim.network, at)
+		if site.is_empty() or sim.warehouse_problem(DOCK_WH[0], site[0], site[1]) != "":
+			continue
+		if sim.apply({"type": "place_warehouse", "kind": DOCK_WH[0], "pos": [site[0].x, site[0].z], "dir": [site[1].x, site[1].z]}):
+			var ids := sim.warehouses.buildings.keys()
+			ids.sort()
+			_dock_wh = ids[-1]
+			sim.construction.sites.erase("wh:%d" % _dock_wh)  # built already
+			sim.warehouses_changed.emit()
+			break
+	if _dock_wh < 0:
+		printerr("look_round: no site for shot 11's warehouse")
+		return
+	_dock_aim(s)
+	var w: Dictionary = sim.warehouses.buildings[_dock_wh]
+	print("look_round: shot 11's %s warehouse at %s, facing %s, %d docks" % [DOCK_WH[0], w.pos, w.dir, Warehouses.dock_xs(w).size()])
+
+
+## Shot 11: its loads' trucks pull out past the town's car limit (one more
+## car each), which a morning's rush holds at full for hours; the rest of
+## the town keeps to it.
+func _dock_go(sim: CitySim) -> void:
+	var t: TrafficSim = sim.traffic
+	for vid in _dock_waiting.duplicate():
+		var car: Dictionary = t._by_vid.get(vid, {})
+		if car.is_empty() or not car.get("pending", false):
+			_dock_waiting.erase(vid)
+			continue
+		t.max_cars += 1
+		if t._try_launch(car):
+			_dock_waiting.erase(vid)
+		t.max_cars -= 1
+
+
+## Shot 11: one of the nearest factories sends the warehouse a load of
+## goods, as Logistics does (on its books, room promised).
+func _dock_load(sim: CitySim) -> void:
+	var w: Dictionary = sim.warehouses.buildings.get(_dock_wh, {})
+	if w.is_empty():
+		return
+	if _dock_from.is_empty():
+		var keys := []
+		for key in sim.buildings:
+			if int(sim.buildings[key].zone) == ZoneMap.Zone.INDUSTRIAL and sim.lots.has(key):
+				keys.append(key)
+		keys.sort_custom(func(a, b): return sim.lots[a].front.distance_to(w.pos) < sim.lots[b].front.distance_to(w.pos) \
+			or (sim.lots[a].front.distance_to(w.pos) == sim.lots[b].front.distance_to(w.pos) and a < b))
+		_dock_from = keys.slice(0, DOCK_FROM)
+	if _dock_from.is_empty() or Warehouses.free_space(w) < 1:
+		return
+	var key: String = _dock_from[_dock_sent % _dock_from.size()]
+	var lot: Dictionary = sim.lots[key]
+	var from := {"ref": "lot:" + key, "pos": [snappedf(lot.front.x, 0.01), snappedf(lot.front.z, 0.01)]}
+	var to := {"ref": "wh:%d" % _dock_wh, "pos": [snappedf(w.pos.x, 0.01), snappedf(w.pos.z, 0.01)]}
+	var cargo := {"good": "goods", "amount": 1}
+	var id := sim.traffic.dispatch(from, to, "goods", cargo, "box_truck" if _dock_sent % 2 == 0 else "semi")
+	_dock_sent += 1
+	if id >= 0:
+		sim.logistics.trips[id] = {"from": from, "to": to, "purpose": "goods", "cargo": cargo, "kind": "factory"}
+		for car in sim.traffic.parked:
+			if car.get("trip", -1) == id:
+				_dock_waiting.append(car.id)
+		w.incoming = int(w.incoming) + 1
+
+
+## Shot 11: the middle of the warehouse's truck court, from the street side
+## and a little to the left.
+func _dock_aim(s: Array) -> void:
+	var w: Dictionary = _main.sim.warehouses.buildings[_dock_wh]
+	var at := Warehouses.frame(w) * Vector3(Warehouses.gate_x(w), 0.0, -Warehouses.site_depth(w) * 0.5
+		+ float(Warehouses.spec(w).court) * 0.55)
+	s[1] = Vector3(at.x, 0.0, at.z)
+	s[2] = rad_to_deg(atan2(w.dir.x, w.dir.z)) + 35.0
 
 
 ## The street view: down the middle of the town street nearest its spot,
@@ -493,7 +612,8 @@ func _shop_aim(sim: CitySim) -> void:
 
 ## --dry: every shot's warm-up, no drawing, and a count of where the cars
 ## are at that moment. "shops" and "factories" are cars parked on commercial
-## and industrial lots (or at the curb of one), "homes" on residential ones.
+## and industrial lots (or at the curb of one), "homes" on residential ones,
+## "at docks" trucks backed up to a warehouse's dock (shot 11).
 func _dry_run() -> void:
 	var sim: CitySim = _main.sim
 	var t0 := Time.get_ticks_msec()
@@ -503,11 +623,12 @@ func _dry_run() -> void:
 		var t1 := Time.get_ticks_msec()
 		var before := _ticks
 		_shot = i
+		_prepare(s)
 		_set_shot(s)
 		_warm()
 		var c := _census(sim)
-		var line := "look_round: %-18s %s hour %5.2f  parked: shops %3d  factories %3d  homes %4d  other %3d | people at work %4d, at errands %3d, in transit %4d, home %4d of %d | driving %3d, walking %3d | +%d ticks %.1fs" % [
-			s[0], "legacy" if _legacy else "warm  ", sim.sky_hour(), c.shops, c.factories, c.homes, c.other,
+		var line := "look_round: %-18s %s hour %5.2f  parked: shops %3d  factories %3d  homes %4d  other %3d  at docks %2d | people at work %4d, at errands %3d, in transit %4d, home %4d of %d | driving %3d, walking %3d | +%d ticks %.1fs" % [
+			s[0], "legacy" if _legacy else "warm  ", sim.sky_hour(), c.shops, c.factories, c.homes, c.other, c.docks,
 			c.at_job, c.errands, c.travel, c.home, c.people, sim.traffic.cars.size(), sim.traffic.walkers.size(),
 			_ticks - before, (Time.get_ticks_msec() - t1) / 1000.0]
 		print(line)
@@ -522,10 +643,12 @@ func _dry_run() -> void:
 
 ## Parked cars by the kind of lot they are on, and where the people are.
 func _census(sim: CitySim) -> Dictionary:
-	var c := {"shops": 0, "factories": 0, "homes": 0, "other": 0, "people": sim.people.people.size(),
+	var c := {"shops": 0, "factories": 0, "homes": 0, "other": 0, "docks": 0, "people": sim.people.people.size(),
 		"at_job": 0, "errands": 0, "home": 0, "travel": 0}
 	for car in sim.traffic.parked:
 		var ref: String = car.get("at_place", "")
+		if car.has("dock_t") and (int(car.until) >= 0 or car.get("pending", false)):
+			c.docks += 1  # backed up to a warehouse's dock, its door up
 		var z := -1
 		if ref.begins_with("lot:") and sim.buildings.has(ref.trim_prefix("lot:")):
 			z = int(sim.buildings[ref.trim_prefix("lot:")].zone)
@@ -694,7 +817,8 @@ func _finish() -> void:
 	var q := GraphicsQuality.current
 	var report := {"tier": GraphicsQuality.NAMES[q.tier] if q else "?", "renderer": RenderingServer.get_current_rendering_method(),
 		"adapter": RenderingServer.get_video_adapter_name(), "window": [root.size.x, root.size.y],
-		"town": "PerfTown big", "warm_ticks": WARM_TICKS, "day_ticks": _ticks, "warm": "legacy" if _legacy else "through the day", "buildings": _main.sim.buildings.size(),
+		"town": "PerfTown big" + (", shot 11 with a %s warehouse added on the east edge" % DOCK_WH[0] if _dock_wh >= 0 else ""),
+		"warm_ticks": WARM_TICKS, "day_ticks": _ticks, "warm": "legacy" if _legacy else "through the day", "buildings": _main.sim.buildings.size(),
 		"day": DAY, "dusk_hour": snappedf(_dusk_hour, 0.01), "night_hour": NIGHT_HOUR, "winter": WINTER,
 		"date": Time.get_date_string_from_system(), "shots": _rows}
 	var f := FileAccess.open(_out.path_join("frames.json"), FileAccess.WRITE)

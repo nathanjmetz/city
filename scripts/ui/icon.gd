@@ -156,6 +156,17 @@ func _draw() -> void:
 			line.call(P.call(0.78, 0.92), P.call(0.78, 0.4))
 			line.call(P.call(0.5, 0.75), P.call(0.5, 0.1))
 			draw_polyline(PackedVector2Array([P.call(0.3, 0.3), P.call(0.5, 0.1), P.call(0.7, 0.3)]), color, w, true)
+		"road_catalog":
+			# All roads: a page of road cards, two by two, a road in each
+			# (one lane, two, a median, a wide one).
+			for i in 4:
+				var c := Vector2(0.3 + 0.4 * (i % 2), 0.3 + 0.4 * (i / 2))
+				var r := Rect2(P.call(c.x - 0.17, c.y - 0.17), Vector2(0.34, 0.34) * s)
+				draw_rect(r, Color(color, 0.18), true)
+				draw_rect(r, color, false, w * 0.7, true)
+				var half: float = [0.05, 0.08, 0.1, 0.12][i]
+				_poly([P.call(c.x - half, c.y - 0.13), P.call(c.x + half, c.y - 0.13), P.call(c.x + half, c.y + 0.13),
+					P.call(c.x - half, c.y + 0.13)], Color(color, 0.75))
 		"parallel":
 			for x in [0.14, 0.4, 0.6, 0.86]:
 				line.call(P.call(x, 0.9), P.call(x, 0.1))

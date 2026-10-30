@@ -23,6 +23,11 @@ extends Node3D
 ## the simulation's own (door_t: it goes up while the driver walks out);
 ## otherwise a door moves at that pace toward up or down, and one first
 ## seen already moving starts from shut.
+##
+## Warehouse dock doors (step 2) the same way: a dock door goes up once a
+## truck has backed up to it (DoorEvents.DOCK_TICKS, about 12 s), onto a
+## deep dark warehouse (DOCK_DEPTH), and comes down after the truck pulls
+## away. Their buildings are WarehouseView's (wh_xf).
 
 ## Metres out from the shut door the opening and the moving door are drawn.
 const CARD_OUT := 0.07
@@ -32,12 +37,17 @@ const PANEL_OUT := 0.09
 const ROOM_DEPTH := 6.4
 const ROOM_WIDER := 1.2
 const ROOM_TALLER := 0.45
+## A warehouse behind a dock door: deep, and gone dark well before its back
+## wall (the racks are 30 m in).
+const DOCK_DEPTH := 18.0
 
 var traffic: TrafficSim
 var events: DoorEvents
 ## Returns the transform a lot's building is drawn with (BuildingView), or
 ## null when it isn't drawn: lot key -> Transform3D.
 var lot_xf := Callable()
+## The same for a warehouse, by its traffic ref ("wh:<id>@x,z").
+var wh_xf := Callable()
 
 ## Doors open or moving: key ("ref#door") -> [how far up (0 to 1), door
 ## (DoorLog), world transform of the lot's building].
@@ -54,15 +64,20 @@ const CARD_SHADER := """
 shader_type spatial;
 render_mode cull_back, specular_disabled;
 global uniform float night;
-uniform float depth = 6.4;
+uniform float depth = 6.4;  // unless the door gives its own (INSTANCE_CUSTOM.w)
 uniform float wider = 1.2;
 uniform float taller = 0.45;
-// INSTANCE_CUSTOM: door width, how high it is open, door height (m).
+// INSTANCE_CUSTOM: door width, how high it is open, door height, room depth (m, 0: depth).
 varying vec3 v_pos;
 varying vec3 v_cam;
 varying vec3 v_size;
+varying float v_depth;
+varying vec2 v_room;
 void vertex() {
 	v_size = INSTANCE_CUSTOM.xyz;
+	v_depth = INSTANCE_CUSTOM.w > 0.0 ? INSTANCE_CUSTOM.w : depth;
+	// A warehouse's floor runs far off to the sides and up to the joists.
+	v_room = INSTANCE_CUSTOM.w > 0.0 ? vec2(24.0, 5.0) : vec2(wider, taller);
 	vec3 cam = (inverse(MODEL_MATRIX) * vec4(CAMERA_POSITION_WORLD, 1.0)).xyz;
 	// The card's own metres: x across, y up from the floor, z out of the wall.
 	v_pos = vec3(VERTEX.x * v_size.x, (VERTEX.y + 0.5) * v_size.y, 0.0);
@@ -71,11 +86,11 @@ void vertex() {
 void fragment() {
 	vec3 d = normalize(v_pos - v_cam);
 	d.z = min(d.z, -0.001);
-	float hw = v_size.x * 0.5 + wider * 0.5;
-	float top = v_size.z + taller;
+	float hw = v_size.x * 0.5 + v_room.x * 0.5;
+	float top = v_size.z + v_room.y;
 	// The first of the room's back wall, side walls, floor and ceiling the
 	// eye's ray meets behind the opening.
-	float tb = (-depth - v_pos.z) / d.z;
+	float tb = (-v_depth - v_pos.z) / d.z;
 	float ts = abs(d.x) > 1e-4 ? (sign(d.x) * hw - v_pos.x) / d.x : 1e6;
 	float tv = abs(d.y) > 1e-4 ? ((d.y > 0.0 ? top : 0.0) - v_pos.y) / d.y : 1e6;
 	float t = min(tb, min(ts, tv));
@@ -85,7 +100,7 @@ void fragment() {
 	if (t == ts) col = vec3(0.48, 0.47, 0.44);  // drywall
 	if (t == tv) col = d.y > 0.0 ? vec3(0.36, 0.36, 0.35) : vec3(0.30, 0.29, 0.27);  // ceiling, concrete floor
 	// Daylight comes in at the door and dies off inside; dark corners.
-	float lit = mix(1.0, 0.12, smoothstep(0.0, depth, in_m));
+	float lit = mix(1.0, 0.12, smoothstep(0.0, min(v_depth, 9.0), in_m));
 	float edge = min(min(hw - abs(hit.x), hit.y), top - hit.y);
 	lit *= mix(0.55, 1.0, smoothstep(0.0, 0.6, edge));
 	ALBEDO = vec3(0.0);
@@ -123,11 +138,12 @@ void fragment() {
 """
 
 
-func setup(t: TrafficSim, sim: CitySim, out_front: Callable, xf_of: Callable) -> void:
+func setup(t: TrafficSim, sim: CitySim, out_front: Callable, xf_of: Callable, wh_of := Callable()) -> void:
 	traffic = t
 	events = DoorEvents.new(t, sim)
 	events.out_front = out_front
 	lot_xf = xf_of
+	wh_xf = wh_of
 
 
 func _ready() -> void:
@@ -184,21 +200,23 @@ func step(eye: Vector3) -> void:
 		_eye = eye
 	_time = now
 	var go := dt / (DoorEvents.OPEN_TICKS * TrafficSim.DT)
+	var go_dock := dt / (DoorEvents.DOCK_TICKS * TrafficSim.DT)
 	for key in _open:
 		var e: Array = _open[key]
 		if not _shown.has(key):
-			var xf = lot_xf.call(str(e[0]).substr(4)) if lot_xf.is_valid() else null
+			var xf = _xf(str(e[0]))
 			if xf == null:
 				continue  # its building isn't drawn (yet)
 			_shown[key] = [0.0, e[2], xf]
 		var sh: Array = _shown[key]
-		sh[0] = float(e[3]) if float(e[3]) >= 0.0 else minf(float(sh[0]) + go, 1.0)
+		var step_k := go_dock if sh[1][0] == "dock" else go
+		sh[0] = float(e[3]) if float(e[3]) >= 0.0 else minf(float(sh[0]) + step_k, 1.0)
 	var r2 := reach * reach
 	var list := []
 	for key in _shown.keys():
 		var sh: Array = _shown[key]
 		if not _open.has(key):
-			sh[0] = maxf(float(sh[0]) - go, 0.0)
+			sh[0] = maxf(float(sh[0]) - (go_dock if sh[1][0] == "dock" else go), 0.0)
 		var at: Vector3 = (sh[2] as Transform3D) * (sh[1][1] as Vector3)
 		var d2 := Vector2(at.x - eye.x, at.z - eye.z).length_squared()
 		if float(sh[0]) <= 0.0 or d2 > r2:
@@ -209,6 +227,15 @@ func step(eye: Vector3) -> void:
 		list.sort_custom(func(a, b): return a[0] < b[0])
 		list.resize(cap)
 	_draw(list)
+
+
+## Where the building with the doors of place `ref` is drawn, or null.
+func _xf(ref: String) -> Variant:
+	if ref.begins_with("lot:"):
+		return lot_xf.call(ref.substr(4)) if lot_xf.is_valid() else null
+	if ref.begins_with("wh:"):
+		return wh_xf.call(ref) if wh_xf.is_valid() else null
+	return null
 
 
 func _draw(list: Array) -> void:
@@ -236,7 +263,7 @@ func _draw(list: Array) -> void:
 		if open_h > 0.005:
 			var b := xf.basis * Basis(right * w, Vector3.UP * open_h, f)
 			cards.set_instance_transform(n, Transform3D(b, xf * (bottom + Vector3.UP * open_h * 0.5 + f * CARD_OUT)))
-			cards.set_instance_custom_data(n, Color(w, open_h, h, 0.0))
+			cards.set_instance_custom_data(n, Color(w, open_h, h, DOCK_DEPTH if d[0] == "dock" else 0.0))
 			cards.set_instance_color(n, Color.WHITE)
 			n += 1
 		if h - open_h > 0.005:
