@@ -86,6 +86,11 @@ var _recs := {}  # lot key -> {sq, xf, centre, front, look, sign, chain, site}
 var _by_sq := {}  # Vector2i -> {lot key: true}, the buildings in each 128 m square
 var _far_sq := FarSquares.new()
 var _near := NearDetail.new()
+## A finished building was filed (drawn and in place), or one was let go
+## (torn down, or about to be drawn again): for the views that follow
+## buildings one at a time (StateView).
+signal building_placed(key: String)
+signal building_removed(key: String)
 var _batches := {}  # Vector2i -> BatchSquare: squares drawn in full
 var _fill: Array = []  # buildings a square drawn in full still waits for, nearest last
 ## The queue wants sorting before the next fill (sorted once a frame, not
@@ -378,10 +383,13 @@ func _spawn(key: String, refill := false) -> void:
 		fit.side = SiteLayout.corner_side(sim.network, lot)
 	if BuildingTypes.type_of(b) in ["row_home", "apartments"]:
 		fit.alley = SiteLayout.back_lane(sim.network, lot)
+	HouseBuilder.last_info = {}
 	var drawn := _draw(key, lot, b, fit, rng.randi())
 	if drawn.is_empty():
 		return
 	var masses: Array = HouseBuilder.last_masses
+	# A house's plan as drawn (its walk and all), for the yard props.
+	var plan: Dictionary = HouseBuilder.last_info.duplicate() if BuildingTypes.type_of(b) == "house" else {}
 	# On a hillside a building stands on the highest ground under its walls,
 	# with a walkout foundation down to the low side: never with the hill
 	# coming up through the floor (Brawn's homes built through a forest).
@@ -395,6 +403,9 @@ func _spawn(key: String, refill := false) -> void:
 	var labels: Array = drawn[3]
 	if refill:
 		var had: Dictionary = _recs[key]
+		if not masses.is_empty():
+			had.masses = masses.duplicate()
+		had.plan = plan
 		if _batches.has(had.sq):
 			_batches[had.sq].set_building(key, had.xf, solid, draped, footing, labels)
 			_merge_soon(had.sq)
@@ -422,6 +433,8 @@ func _spawn(key: String, refill := false) -> void:
 	if bulk.is_empty():
 		var box := MeshParts.aabb(solid)
 		bulk = [Rect2(box.position.x, box.position.z, box.size.x, box.size.z)]
+	rec.masses = bulk.duplicate()  # its footprints, for the yard props (StateView)
+	rec.plan = plan
 	var pitched: bool = BuildingTypes.type_of(b) in ["house", "duplex", "row_home"]
 	var far := far_arrays(_far_surfaces(solid), bulk, int(b.zone) == ZoneMap.Zone.INDUSTRIAL,
 		_wall_colour(int(b.zone), rng), _roof_colour(pitched, rng), flat[0][1] if not flat.is_empty() else [])
@@ -475,11 +488,13 @@ func _place(key: String, parts: Array) -> void:
 		_batches[rec.sq].set_building(key, rec.xf, parts[0], parts[1], parts[2], parts[5])
 		_merge_soon(rec.sq)
 	_near.index(key, rec.centre)
+	building_placed.emit(key)
 
 
 func _unspawn(key: String) -> void:
 	var rec: Dictionary = _recs[key]
 	_recs.erase(key)
+	building_removed.emit(key)
 	if _by_sq.has(rec.sq):
 		_by_sq[rec.sq].erase(key)
 		if _by_sq[rec.sq].is_empty():
@@ -1007,6 +1022,34 @@ func _near_parts(key: String) -> Array:
 func lot_xf(key: String) -> Variant:
 	var rec: Dictionary = _recs.get(key, {})
 	return rec.xf if not rec.is_empty() else null
+
+## A building's footprints as drawn (Rect2s in its lot's frame: x across,
+## z back from the street edge), or [] before it is drawn.
+func masses_of(key: String) -> Array:
+	return _recs.get(key, {}).get("masses", [])
+
+
+## The trees a lot's builder planted, in the world: [[position, species,
+## size, room to spread or -1 (a street tree or a non-home's)], ...].
+func trees_of(key: String) -> Array:
+	if not _planted.has(key):
+		return []
+	var frame: Transform3D = _planted[key][0]
+	var out := []
+	for t: Array in _planted[key][1]:
+		out.append([frame * (t[0] as Vector3), int(t[1]), float(t[3]), float(t[4]) if t.size() > 4 else -1.0])
+	return out
+
+
+## The buildings finished and in place (for a view set up after some were).
+func placed_keys() -> Array:
+	return _recs.keys().filter(func(k): return _recs[k].site == null)
+
+
+## A house's plan as its builder drew it (HouseBuilder.last_info: drive,
+## garage, door, porch, front walk), or {} for anything else.
+func plan_of(key: String) -> Dictionary:
+	return _recs.get(key, {}).get("plan", {})
 
 
 ## True when nothing is waiting to be drawn, merged or grown (for tools and
