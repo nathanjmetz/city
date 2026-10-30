@@ -126,6 +126,12 @@ func _ready() -> void:
 	var worn_view := WornPathView.new()
 	add_child(worn_view)
 	worn_view.setup(sim)
+	# Each yard its own lawn, painted into the ground (desktop).
+	var lawns: LawnMap = null
+	if LawnMap.wanted():
+		lawns = LawnMap.new()
+		add_child(lawns)
+		lawns.setup(sim)
 	var works_view := SubdivisionWorksView.new()
 	add_child(works_view)
 	works_view.setup(sim)
@@ -434,6 +440,8 @@ func _ready() -> void:
 	_gate.watch("trees", wild.is_drawn)
 	_gate.watch("fields", farm_view.settled)
 	_gate.watch("farmsteads", farmsteads.is_drawn)
+	if lawns != null:
+		_gate.watch("lawns", lawns.is_drawn)
 	_progress(0.35, "Laying out the land")
 	await get_tree().process_frame
 	if Session.online():

@@ -124,6 +124,16 @@ uniform float far_cut = 0.0;
 uniform sampler2D chunk_built : hint_default_white, filter_nearest, repeat_enable;
 // The desktop's photographed ground (PhotoGround.glsl() goes here):
 // PHOTO_GROUND
+#ifdef DESKTOP_DETAIL
+// Each yard's own lawn (LawnMap, LawnLook): 256 m tiles of 2 m texels in
+// two arrays, and a page table (64 tiles across, centred on the town) of
+// which layer + 1 holds each tile (0: none). a: lushness, weeds, grass
+// kind, wear; b: mower stripes, their direction (cos 2a, sin 2a), shade.
+uniform float lawn_on = 0.0;
+uniform sampler2D lawn_pages : filter_nearest, hint_default_black;
+uniform sampler2DArray lawn_a : filter_linear_mipmap, repeat_disable;
+uniform sampler2DArray lawn_b : filter_linear_mipmap, repeat_disable;
+""" + LawnLook.STRIPE_GLSL + """#endif
 // CUSTOM0: (height, normal x, normal z) on the next coarser level, and w the
 // reach of this chunk's level (0 for the coarsest): vertices slide to the
 // coarser level between MORPH_START and MORPH_END of that reach.
@@ -249,6 +259,101 @@ void fragment() {
 	// Darker, lusher clumps; in a lawn only where it's green, since a dry
 	// patch goes straw-light, and dark clumps in tan read as bare dirt.
 	col = mix(col, dark.rgb, smoothstep(0.35, 0.95, clump) * mix(0.3, 0.14 * (1.0 - dryness), mowed));
+	// How hard this lawn browns in a dry spell (1: as every lawn did).
+	float lawn_resp = 1.0;
+#ifdef DESKTOP_DETAIL
+	// Each yard its own lawn (LawnMap, LawnLook; Nathan, 2026-10-29: "every
+	// lawn is the same color"): watered and fed or left to the weather,
+	// weedy or clean, fescue or bluegrass, striped by the mower, worn bare
+	// along paths, thin under a big tree. Outside the lots, as before.
+	vec4 la = vec4(0.5, 0.0, 0.5, 0.0);
+	vec4 lb = vec4(0.0, 0.5, 0.5, 0.0);
+	vec2 luv = p / 256.0;
+	vec2 lgx = dFdx(luv);
+	vec2 lgy = dFdy(luv);
+	// Metres one pixel covers here.
+	float foot = length(fwidth(p));
+	if (lawn_on > 0.5) {
+		ivec2 pc = ivec2(floor(luv)) + 32;
+		if (pc.x >= 0 && pc.y >= 0 && pc.x < 64 && pc.y < 64) {
+			float layer = floor(texelFetch(lawn_pages, pc, 0).r * 255.0 + 0.5) - 1.0;
+			if (layer >= 0.0) {
+				// The gradients of the whole map, not of the tile's own
+				// coordinates (they jump at its edge, which would pick a
+				// tiny mip there and draw a line round every tile).
+				vec3 at = vec3(fract(luv), layer);
+				la = textureGrad(lawn_a, at, lgx, lgy);
+				lb = textureGrad(lawn_b, at, lgx, lgy);
+			}
+		}
+	}
+	// Far off, at several metres a pixel, the yards fade to the town's
+	// average, so the far town never sparkles.
+	float lot_far = smoothstep(6.0, 14.0, foot);
+	la = mix(la, vec4(0.5, 0.0, 0.5, 0.0), lot_far);
+	lb = mix(lb, vec4(0.0, 0.5, 0.5, 0.0), lot_far);
+	float l_rich = clamp(la.r * 2.0 - 1.0, 0.0, 1.0);
+	float l_tired = clamp(1.0 - la.r * 2.0, 0.0, 1.0);
+	// Blotches 2 to 5 m across, at scales and turns no other layer uses.
+	float patchy = texture(noise_soft, turn(p, 0.8) / 31.0 + 0.53).r;
+	float blot = texture(noise_soft, turn(p, 1.9) / 13.0 + 0.11).r;
+	// Fed and watered: a deep, cooler green.
+	col *= mix(vec3(1.0), vec3(0.6, 0.8, 0.66), l_rich);
+	// The grass: yellow-green fescue and rye to blue-green bluegrass.
+	col *= 1.0 + (la.b * 2.0 - 1.0) * vec3(-0.12, -0.03, 0.18);
+	// Never watered or fed: paler, with straw patches where it dries first.
+	vec3 straw = mix(lawn_dormant.rgb, dormant.rgb, 0.5) * (0.88 + 0.24 * blot);
+	float dry_spot = smoothstep(0.35, 0.75, patchy * 0.7 + blot * 0.3 + l_tired * 0.25);
+	col = mix(col, straw, l_tired * mix(0.4, 0.8, dry_spot));
+	// Weeds: light clover and crabgrass patches, dark clumps of coarse fescue.
+	col = mix(col, col * vec3(1.16, 1.1, 0.8), smoothstep(0.5, 0.78, blot) * la.g * 0.75);
+	col = mix(col, dark.rgb * 1.05, smoothstep(0.55, 0.82, 1.0 - patchy) * la.g * 0.45);
+	// Let go (run-down and derelict yards): unmown for weeks, the grass
+	// tall and coarse and gone to seed, tan-olive heads over green in
+	// uneven drifts, with yellow-green crabgrass and dandelion clumps.
+	// Every edge soft and mixed, from the noise: never a flat patch.
+	float unmown = smoothstep(0.45, 0.9, la.g);
+	float drift = smoothstep(0.25, 0.85, patchy * 0.6 + clump * 0.4);
+	col = mix(col, mix(col, straw * vec3(1.05, 1.0, 0.85), 0.55), unmown * mix(0.2, 0.7, drift));
+	col = mix(col, col * vec3(1.22, 1.12, 0.62), smoothstep(0.62, 0.85, blot * 0.7 + grain * 0.3) * unmown * 0.35);
+	col *= 1.0 + ((grain - 0.5) * 0.45 * fade + (blades - 0.5) * 0.35 * fade * fade) * unmown;
+	if (pk > 0.0 && unmown > 0.0) {
+		// Coarser, longer blades than a mown lawn's.
+		pr = mix(pr, ph_grass(turn(p, 0.6) * 0.55), unmown * 0.6);
+		ps = mix(ps, ph_grass_s(turn(p, 0.6) * 0.55) * 1.3, unmown * 0.6);
+	}
+	// Under a big tree: thinner, darker grass with soil showing.
+	col = mix(col, col * vec3(0.74, 0.8, 0.72), lb.a * 0.8);
+	col = mix(col, soil.rgb * 0.7, lb.a * smoothstep(0.45, 0.8, blot) * 0.3);
+	// An unwatered lawn browns far more in a dry spell; a watered one hardly.
+	lawn_resp = la.r < 0.5 ? mix(2.6, 1.0, la.r * 2.0) : mix(1.0, 0.3, la.r * 2.0 - 1.0);
+	// Worn ground: thin and tan at a path's edge, bare packed soil in it
+	// (the map holds a soft line; the blotches give it a ragged edge).
+	float l_wear = la.a + (blot - 0.5) * 0.3 + (grain - 0.5) * 0.12 * fade;
+	float l_thin = smoothstep(0.16, 0.42, l_wear);
+	float l_bare = smoothstep(0.5, 0.7, l_wear);
+	col = mix(col, mix(col, straw, 0.55), l_thin * 0.65);
+	col = mix(col, soil.rgb * (0.8 + 0.28 * clump), l_bare * 0.85);
+	if (pk > 0.0 && l_bare > 0.0) {
+		pr = mix(pr, ph_soil(p), l_bare * 0.8);
+		ps = mix(ps, ph_soil_s(p) * 0.5, l_bare * 0.8);
+	}
+	// Mower stripes, 0.9 m passes back and forth (LawnLook.STRIPE_FADE): grass laid away from the
+	// eye reads lighter, toward it darker, so which rows are light flips
+	// with the view. Gone where a pass is under a few pixels (no moire), in
+	// dormant grass and under snow.
+	vec2 s2 = lb.gb * 2.0 - 1.0;
+	float s_ang = atan(s2.y, s2.x + 0.0001) * 0.5;
+	vec2 s_dir = vec2(cos(s_ang), sin(s_ang));
+	float s_across = dot(p, vec2(-s_dir.y, s_dir.x)) / 1.8;
+	float s_fw = min(foot / 1.8, 0.2);
+	float s_sq = smoothstep(0.25 - s_fw, 0.25 + s_fw + 0.001, abs(fract(s_across) - 0.5)) * 2.0 - 1.0;
+	vec3 l_eye = (INV_VIEW_MATRIX * vec4(VIEW, 0.0)).xyz;
+	float s_face = dot(normalize(l_eye.xz + vec2(0.0001)), s_dir);
+	float s_k = lb.r * min(length(s2), 1.0) * (1.0 - smoothstep(LAWN_STRIPE_FADE.x, LAWN_STRIPE_FADE.y, foot / 1.8))
+		* (1.0 - season_look.w * 0.8) * (1.0 - smoothstep(0.1, 0.4, snow));
+	col *= 1.0 + s_sq * mix(s_face, 1.0, 0.2) * 0.11 * s_k;
+#endif
 	// Spring green-up, then cool-season grass going tan and dormant in the
 	// late-summer dry spell and over winter (Indiana pasture). A town's
 	// mowed lawns (bluegrass and fescue) only go a muted olive, never sand:
@@ -256,8 +361,7 @@ void fragment() {
 	// 2026-10-26).
 	col = mix(col, col * vec3(0.92, 1.12, 0.78), season_look.z);
 	float brown = clamp(season_look.w * 1.1 - (1.0 - dryness) * 0.3, 0.0, 0.85);
-	float lawn_brown = clamp(season_look.w * 0.45 - (1.0 - dryness) * 0.1, 0.0, 0.4);
-	vec3 gone_off = mix(dormant.rgb, lawn_dormant.rgb, mowed);
+""" + LawnLook.BROWN_GLSL + """	vec3 gone_off = mix(dormant.rgb, lawn_dormant.rgb, mowed);
 	col = mix(col, gone_off * (0.85 + big * 0.3) * mix(1.0, 0.92 + 0.16 * clump, mowed), mix(brown, lawn_brown, mowed));
 
 	// Crop fields (CropCalendar): the county's 40, 80 and 160 acre fields,

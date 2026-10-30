@@ -135,6 +135,11 @@ static var restored := false
 ## How far the owner has built on (BuildingView sets it around a build from
 ## the building's stage): 1 adds a wing out back (Home with addition).
 static var grown := 0
+## False where the ground paints each lot's own lawn (LawnMap, the desktop
+## app): a run-down lawn's weedy, patchy look is drawn there with soft,
+## mixed edges, so the flat weed patches here are left out (BuildingView
+## sets it around a build).
+static var flat_weeds := true
 ## Set by BuildingView around a build: the drawing comes back as its
 ## surfaces' arrays (MeshParts, the mesh's "parts" meta: [[material name,
 ## arrays], ...]) on an empty mesh, never sent to the graphics chip. The view
@@ -3205,7 +3210,7 @@ func _weeds() -> void:
 	rng.seed = hash([was.seed, "weeds"])
 	# Run-down: ragged patches; derelict: the whole lawn, every 3 m or so.
 	var share := 0.3 if owner_care == -1 else 0.85
-	var z := 1.2
+	var z := 1.2 if flat_weeds else depth
 	while z < depth - 0.5:
 		var x := -half + 1.2
 		while x < half - 0.5:
