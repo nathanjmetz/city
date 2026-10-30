@@ -89,6 +89,8 @@ var _shown_at := Vector4(INF, INF, INF, INF)  # the camera (local) and reaches t
 ##   {"planted": tick}: planted then as nursery stock, it grows on with the
 ##     game's clock toward the size in its transform (the size it reaches
 ##     at TreeKinds.REF_AGE, and it keeps growing after);
+##   {"planted": tick, "start": years}: the same, but already this old on
+##     that day (a grown yard tree, yard_age), growing on from there;
 ##   {"age": years}: this old, drawn at the size in its transform;
 ##   {"shrub": true}: brush, never grown up close.
 ## Without facts the age comes from the size.
@@ -183,7 +185,7 @@ static func resolve(t: Array, world := Transform3D.IDENTITY) -> Array:
 	var size := xf.basis.get_scale().y
 	var age: float
 	if facts.has("planted"):
-		var start := TreeKinds.nursery_age(sp)
+		var start := maxf(float(facts.get("start", 0.0)), TreeKinds.nursery_age(sp))
 		age = maxf(start + extra_years + float(now_tick - int(facts.planted)) / float(REGROW_TICKS * 12), start)
 		var now := size * TreeKinds.size_at(sp, age)
 		xf = Transform3D(xf.basis.scaled(Vector3.ONE * (now / maxf(size, 0.001))), xf.origin)
@@ -192,6 +194,50 @@ static func resolve(t: Array, world := Transform3D.IDENTITY) -> Array:
 	else:
 		age = TreeKinds.age_for_size(sp, size)
 	return [xf, sp, t[2], age, seed_of(world * xf.origin), not facts.has("shrub")]
+
+
+## Yard trees in a new neighbourhood start already grown (Nathan,
+## 2026-10-29: "A. Yes, back-yard trees start grown; street trees still
+## start small and grow"), at the mixed ages of an established Indiana
+## street: about one in seven a young tree (13 years), most 18, 25 or 33
+## years, and about one in eight a big old one (56). Street trees are the
+## town's and go in as nursery stock. The ages are grown trees' own mesh
+## ages (GrownTrees.BUCKETS), so a new street's yard trees share a few
+## meshes (fewer draw calls) instead of each being its own.
+const YARD_YOUNG := 0.14
+const YARD_OLD := 0.88
+const YARD_PICKS := [13.0, 18.0, 25.0, 33.0, 56.0]
+## The ages a tree kept younger to fit is put back to (the largest that fits).
+const YARD_STEPS := [9.0, 13.0, 18.0, 25.0, 33.0, 43.0, 56.0]
+
+
+## How old a yard tree of kind `sp` is the day its yard is finished, from
+## `seed` (a whole number from the lot's own seed: the same lot always gets
+## the same trees). `room`: how big the crown may grow, as a share of the
+## size its planter gave it (the size at TreeKinds.REF_AGE): a tree with
+## no room to spread past that (a wall, a pool, the next tree or the lot
+## line near) is kept young enough to fit. Whole-number maths for the
+## pick, so every computer agrees.
+static func yard_age(sp: int, seed: int, room := 1.0) -> float:
+	var u := float(posmod(seed, 1000003)) / 1000003.0
+	var v := float(posmod(seed / 1000003, 997)) / 997.0
+	var young := TreeKinds.nursery_age(sp)
+	var age: float
+	if u < YARD_YOUNG:
+		age = YARD_PICKS[0]
+	elif u < YARD_OLD:
+		age = YARD_PICKS[1 + mini(int(v * 3.0), 2)]
+	else:
+		age = YARD_PICKS[4]
+	# No older than the crown has room for: the oldest step that fits, or
+	# nursery stock.
+	if room < TreeKinds.size_at(sp, age):
+		var fits := TreeKinds.age_for_size(sp, room)
+		age = young
+		for s in YARD_STEPS:
+			if s <= fits:
+				age = s
+	return maxf(age, young)
 
 
 ## A tree's seed: from where it stands in the region (a view position plus
@@ -596,7 +642,7 @@ static func _broadleaf(sp: int, rng: RandomNumberGenerator, leaves: SurfaceTool,
 		var hue := rng.randf()
 		for i in cards_per:
 			var q := cc + Vector3(rng.randf_range(-1, 1), rng.randf_range(-0.7, 0.7), rng.randf_range(-1, 1)) * card * 0.6
-			_card(leaves, rng, q, center, rad, card * rng.randf_range(0.8, 1.2), hue, far)
+			_card(leaves, rng, q, center, rad, card * rng.randf_range(0.8, 1.2), hue, Vector2(base, h), far)
 
 
 ## A conifer: tiers of cards round a straight stem, wide at the bottom
@@ -618,12 +664,16 @@ static func _conifer(sp: int, rng: RandomNumberGenerator, leaves: SurfaceTool, w
 			var a := TAU * (i + rng.randf()) / n
 			var p := Vector3(cos(a) * r * rng.randf_range(0.45, 0.8), y, sin(a) * r * rng.randf_range(0.45, 0.8))
 			var size := (1.6 + r * 0.45) * (1.5 if far else 1.0)
-			_card(leaves, rng, p, Vector3(0, y + 0.8, 0), Vector3(r + 0.5, 1.5, r + 0.5), size, hue, far)
+			_card(leaves, rng, p, Vector3(0, y + 0.8, 0), Vector3(r + 0.5, 1.5, r + 0.5), size, hue, Vector2(low, h), far)
 
 
 ## One leaf card, randomly turned, with normals out from the crown centre.
+## Its colour carries what the leaf shader shades it by, as a grown tree's
+## cards do (TreeMesher): how far out in the crown (r), how high up the
+## crown, `span` its bottom and top (g), and the cluster's own hue (b), so
+## the cards and the grown tree at the same spot are lit alike.
 static func _card(st: SurfaceTool, rng: RandomNumberGenerator, p: Vector3, center: Vector3, rad: Vector3, size: float, hue: float,
-		far := false) -> void:
+		span: Vector2, far := false) -> void:
 	var basis := Basis.from_euler(Vector3(rng.randf_range(-PI, PI), rng.randf_range(-PI, PI), rng.randf_range(-PI, PI)))
 	var u := basis.x * size * 0.5
 	var v := basis.y * size * 0.5
@@ -635,7 +685,8 @@ static func _card(st: SurfaceTool, rng: RandomNumberGenerator, p: Vector3, cente
 		var out := (rel + Vector3(0, 0.35, 0)).normalized()
 		st.set_normal(out)
 		# How far out in the crown: inner leaves are shaded by outer ones.
-		st.set_color(Color(clampf(rel.length(), 0.0, 1.0), 0, 0, 0.5 if far else 1.0))
+		var up := clampf((q.y - span.x) / maxf(span.y - span.x, 0.1), 0.0, 1.0)
+		st.set_color(Color(clampf(rel.length(), 0.0, 1.0), up, hue, 0.5 if far else 1.0))
 		st.set_uv(uvs[i])
 		st.add_vertex(q)
 

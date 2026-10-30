@@ -50,7 +50,7 @@ Marks: ✅ already have · 🟢 easy to add · 🟠 big job
 | Stop signs | Stop signs on the side road, or all-way stops | ✅ |
 | Roundabouts | Several real sizes, 1 or 2 lanes | ✅ |
 | Bridges, overpasses and tunnels | Raise or lower a road as you draw | ✅ |
-| No left turn, no right turn, no U-turn at a corner | Not yet. Cars pick lanes on their own | 🟢 |
+| No left turn, no right turn, no U-turn at a corner | No Left and No Right Turn signs, per road at a junction (Traffic > Turns). No U-turn sign: cars only turn round at dead ends | ✅ |
 | Take away a crosswalk | Not yet. Every corner has them | 🟢 |
 
 ## Drawing tools

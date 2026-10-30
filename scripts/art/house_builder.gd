@@ -90,6 +90,24 @@ static var drawn := 0
 ## built, for its foundation and far-off block: the mesh's own bounds also
 ## take in fences and sheds out to the lot lines.
 static var last_masses := []
+## The plan info of the last house built (drive, garage, door, porch and the
+## front walk as drawn: "walk", a Rect2), for the yard props (StateView).
+static var last_info := {}
+## What a building paves out across the parkway to the curb, while
+## BuildingView.curb_paving lays a lot out for CurbClaims (null otherwise):
+## [x0, x1, curb z, flare] each, a commercial apron (_curb_cut, flared) or a
+## drive drawn straight out to the street.
+static var cuts_drawn = null
+var _in_cut := false
+## Every builder made while this is set lays its building out without
+## making any surfaces (_dry), as plan_info does (curb_paving).
+static var dry_all := false
+
+
+func _init() -> void:
+	_dry = dry_all
+
+
 ## Plan info alone (where the drive, garage and door are), by plan without
 ## the care tier or paint: what the traffic sim asks for, worked out without drawing.
 static var _infos := {}
@@ -135,6 +153,11 @@ static var restored := false
 ## How far the owner has built on (BuildingView sets it around a build from
 ## the building's stage): 1 adds a wing out back (Home with addition).
 static var grown := 0
+## False where the ground paints each lot's own lawn (LawnMap, the desktop
+## app): a run-down lawn's weedy, patchy look is drawn there with soft,
+## mixed edges, so the flat weed patches here are left out (BuildingView
+## sets it around a build).
+static var flat_weeds := true
 ## Set by BuildingView around a build: the drawing comes back as its
 ## surfaces' arrays (MeshParts, the mesh's "parts" meta: [[material name,
 ## arrays], ...]) on an empty mesh, never sent to the graphics chip. The view
@@ -163,10 +186,22 @@ var _cottage_at := Rect2()
 ## flats it now holds (0 while it is one home).
 var _cf_stair := Rect2()
 var _cf_units := 0
-## Trees this lot plants: [local position, TreeField species, tint, scale].
+## Trees this lot plants: [local position, TreeField species, tint, scale],
+## and a home's own yard trees a fifth: their room to grow (_yard_room).
 var trees := []
+## What a grown yard tree's crown keeps off besides the walls (_yard_room):
+## the paved drive and its parking (2 m or more each way, so not the
+## walks), the things out back (_back_yard), the garage's keep-out.
+var _paved := []  # Rect2s
+var _props := []  # Rect2s
+var _keep_out := Rect2()
+var _yard_from := 0  # the home's yard trees: trees[_yard_from] up to _yard_to
+var _yard_to := 0
 ## Where the home's curbside mailbox stands across the lot (local x), or INF.
 var mail_x := INF
+## A corner house's garage and drive go on this side (local x, +1 or -1),
+## away from the corner (SiteLayout.drive_away); 0 to let the dice pick.
+var drive_away := 0.0
 var rng: RandomNumberGenerator
 ## Set around a shop's display windows on the desktop: the glass shows a
 ## lit sales floor behind it (HouseMaterials GLASS, UV.x 2..3).
@@ -193,6 +228,7 @@ func _fit(lot: Dictionary) -> void:
 	half = float(lot.get("width", LOT_HALF * 2.0)) * 0.5
 	pad = float(lot.get("pad", 0.0))
 	mail_x = float(lot.get("mail_x", INF))
+	drive_away = signf(float(lot.get("drive_away", 0.0)))
 	alley = bool(lot.get("alley", true))
 	outline = lot.get("outline", PackedVector2Array())
 	depth = float(lot.get("depth", 32.0)) - pad
@@ -265,6 +301,8 @@ func _house(to_curb: float, storeys := 0) -> Array:
 	_utilities(info)
 	_front_yard(info)
 	_drive_hoop(info)
+	_yard_room()
+	last_info = info
 	return [_commit_house(), _commit_flat(), trees]
 
 
@@ -771,6 +809,8 @@ func _plan(storeys: int, info_only := false) -> Dictionary:
 	var plan: int = plans[rng.randi() % plans.size()]
 	var scheme: int = schemes[rng.randi() % schemes.size()]
 	var gs := -1.0 if rng.randf() < 0.5 else 1.0  # which side the garage is on
+	if drive_away != 0.0:
+		gs = drive_away  # a corner house's drive keeps away from the corner (the dice still rolled)
 	var wide := _bucket(half * 2.0, WIDTHS)
 	var deep := _bucket(depth, DEPTHS)
 	# Not every owner set the house on the builder's line (Nathan, 2026-10-25:
@@ -991,19 +1031,24 @@ func _seat(plans: Array, storeys: int, wide: float, gs: float, zf: float, deep: 
 	var plan: int = plans[0]
 	var widths := WIDTHS.filter(func(w): return w <= wide)
 	widths.reverse()
+	# A corner house tries every plan with its drive away from the corner,
+	# then with it on the corner side, at each setback before the next
+	# deeper one (a shallow corner lot keeps its building line).
+	var passes := [[gs, -gs]] if drive_away == 0.0 else [[gs], [-gs]]
 	for back in [0.0, 2.0, 4.0, 6.0]:
 		var z: float = zf + back
 		var room := _bucket(deep - z, ROOMS)
-		for p in plans:
-			for w in widths:
-				for g in [gs, -gs]:
-					var shape := _shape([era, p, w, room, storeys, force_kind])
-					var x := 0.0
-					while x <= half:
-						for d in ([x] if x == 0.0 else [x, -x]):
-							if _fits(shape, g, z, d):
-								return [w, g, z, d, room, p]
-						x += 0.5
+		for sides in passes:
+			for p in plans:
+				for w in widths:
+					for g in sides:
+						var shape := _shape([era, p, w, room, storeys, force_kind])
+						var x := 0.0
+						while x <= half:
+							for d in ([x] if x == 0.0 else [x, -x]):
+								if _fits(shape, g, z, d):
+									return [w, g, z, d, room, p]
+							x += 0.5
 	# Nothing fits (a remnant too small or odd to build on): the smallest
 	# plan where the least of it stands past the lot lines.
 	unseated += 1
@@ -1323,6 +1368,7 @@ func _draw_plan(key: Array, wide: float, room: float, storeys: int) -> Dictionar
 	if _deck.size.x > 0.0:
 		info.deck = _deck
 	info.kind = kind
+	DoorLog.take(self, info)
 	_raised = false
 	var arrays := {}
 	for mat in _st:
@@ -1992,8 +2038,10 @@ func _yard(h: Dictionary, to_curb: float) -> void:
 	var walk_z: float = h.walk_z
 	if rng.randf() < 0.55 and pad <= 0.0:
 		_flat_rect("drive", door_x - 0.6, door_x + 0.6, -0.3, walk_z, 0.06)
+		h["walk"] = Rect2(door_x - 0.6, -0.3, 1.2, walk_z + 0.3)
 	else:
 		_flat_rect("drive", minf(door_x, dx) - 0.6, maxf(door_x, dx), walk_z - 1.2, walk_z, 0.06)
+		h["walk"] = Rect2(minf(door_x, dx) - 0.6, walk_z - 1.2, absf(door_x - dx) + 0.6, 1.2)
 	# Foundation bed with shrubs along the front, skipping the garage.
 	var fz: float = h.front_z
 	var gs: float = h.gs
@@ -2045,6 +2093,7 @@ func _yard_trees(h: Dictionary, _to_curb: float) -> void:
 	var spots := []
 	var span := half - 2.0
 	var back: float = h.front_z + 13.0
+	var first := trees.size()
 	if rng.randf() < 0.8:
 		spots.append([Vector3(rng.randf_range(-span, span), 0, rng.randf_range(1.5, h.front_z - 3.5)), true])
 	rng.randf()  # was the street tree's roll, kept so the back yard stays as it was
@@ -2079,6 +2128,70 @@ func _yard_trees(h: Dictionary, _to_curb: float) -> void:
 			if _wall_gap(p) < TreeField.SPREAD[pick[0]] * size * 0.9:
 				continue
 		trees.append([p, pick[0], pick[1], size])
+	_yard_from = first
+	_yard_to = trees.size()
+	_keep_out = h.get("keep_out", Rect2())
+
+
+## Everything a grown yard tree's crown keeps off, as rects (lot x/z): the
+## walls (_masses), the garage's keep-out, the shed and pool (_improved),
+## the backyard cottage, the paved drive and its parking, and the thing
+## out back (_back_yard).
+func _crown_keep() -> Array:
+	var out := _masses.duplicate()
+	for k in [_keep_out, _improved, _cottage_at] + _paved + _props:
+		if (k as Rect2).has_area():
+			out.append(k)
+	return out
+
+
+## How far a spot is from the nearest of `rects` (m).
+static func _gap_to(rects: Array, q: Vector2) -> float:
+	var gap := INF
+	for k: Rect2 in rects:
+		var dx := maxf(maxf(k.position.x - q.x, q.x - k.end.x), 0.0)
+		var dz := maxf(maxf(k.position.y - q.y, q.y - k.end.y), 0.0)
+		gap = minf(gap, Vector2(dx, dz).length())
+	return gap
+
+
+## How much room each of the home's yard trees has to spread, as a share
+## of the crown its size gives it (TreeField.SPREAD at TreeKinds.REF_AGE),
+## added as the tree's fifth entry (which marks it a home's yard tree): a
+## yard that comes in grown (TreeField.yard_age) gets no older tree than
+## this. Its crown keeps off everything in _crown_keep by the rule the
+## walls already have (the crown's reach times 0.9), at most touches the
+## next yard tree, and hangs over the side and back lot lines by no more
+## than a third. Runs once the yard is finished (after _back_yard). Plain
+## geometry: no random draws, so the lot looks as it always did.
+func _yard_room() -> void:
+	var keep := _crown_keep()
+	# The side and back lot lines (the front one runs along the sidewalk:
+	# a crown over the walk is any shade tree's).
+	var lines := []
+	var pts := outline
+	if pts.size() < 3:
+		pts = PackedVector2Array([Vector2(-half, 0), Vector2(half, 0), Vector2(half, depth), Vector2(-half, depth)])
+	for i in pts.size():
+		var a := pts[i]
+		var b := pts[(i + 1) % pts.size()]
+		if a.y > 0.5 or b.y > 0.5:
+			lines.append([a, b])
+	for i in range(_yard_from, _yard_to):
+		var t: Array = trees[i]
+		var p: Vector3 = t[0]
+		var q := Vector2(p.x, p.z)
+		var r: float = TreeField.SPREAD[t[1]] * float(t[3])
+		var room := _gap_to(keep, q) / (r * 0.9)
+		for j in range(_yard_from, _yard_to):
+			if j != i:
+				var o: Array = trees[j]
+				var d := q.distance_to(Vector2(o[0].x, o[0].z))
+				room = minf(room, 1.15 * d / (r + TreeField.SPREAD[o[1]] * float(o[3])))
+		for l in lines:
+			var c := Geometry2D.get_closest_point_to_segment(q, l[0], l[1])
+			room = minf(room, q.distance_to(c) / (r * 0.67))
+		t.append(room)
 
 
 ## Street trees: shade trees down the middle of the parkway (the grass strip
@@ -2224,6 +2337,10 @@ func _back_yard(h: Dictionary) -> void:
 	for tr in trees:
 		if Vector2(tr[0].x, tr[0].z).distance_to(Vector2(spot.x, spot.z)) < 3.5:
 			return
+	if thing < 0.76 and (thing < 0.62 or era != "recent"):
+		# Shed 2.4 x 3 m, bed 3 x 5, swing set, a 6 m clothesline: the yard's
+		# grown trees keep their crowns off it (_yard_room).
+		_props.append(Rect2(spot.x - 2.0, spot.z - 3.1, 4.0, 6.2))
 	if thing < 0.3:
 		_yard_shed(spot)
 	elif thing < 0.48:
@@ -2490,6 +2607,7 @@ func _garage(gx: float, gz0: float, gw: float, h: float) -> void:
 	for dd in doors:
 		# Garage doors share the siding surface; alpha 0 asks for wide panels.
 		_box("siding", Vector3(dd[1], h, 0.08), Vector3(dd[0], 0.15 + h * 0.5, gz0 - 0.02), Color(TRIM, 0.0))
+		DoorLog.add(self, "garage", Vector3(dd[0], 0.15 + h * 0.5, gz0 - 0.06), Vector3(0, 0, -1), dd[1], h, TRIM)
 		_box("paint", Vector3(dd[1] + 0.3, 0.14, 0.1), Vector3(dd[0], 0.15 + h + 0.07, gz0 - 0.05), TRIM)
 	for s in [-1.0, 1.0]:
 		_box("paint", Vector3(0.18, 0.36, 0.12), Vector3(gx + s * (gw * 0.5 - 0.35), 2.2, gz0 - 0.07), Color("#1c1c1c"))
@@ -3006,6 +3124,10 @@ func _glass(c: Vector3, right: Vector3, w: float, h: float, blinds: float) -> vo
 ## Flat ground work. Kinds (packed into vertex alpha for the yard shader):
 ## drive (concrete), asphalt, line (painted, in `col`), mulch or gravel (in `col`).
 func _flat_rect(kind: String, x0: float, x1: float, z0: float, z1: float, y: float, col := MULCH) -> void:
+	if kind == "drive" and absf(x1 - x0) >= 2.0 and absf(z1 - z0) >= 2.0:
+		_paved.append(Rect2(minf(x0, x1), minf(z0, z1), absf(x1 - x0), absf(z1 - z0)))
+		if cuts_drawn != null and minf(z0, z1) < -2.0 and not _in_cut:
+			cuts_drawn.append([minf(x0, x1), maxf(x0, x1), minf(z0, z1), 0.0])  # paved out across the parkway
 	if _dry:
 		return
 	var alpha := {"drive": 0.0, "asphalt": 0.4, "line": 0.72, "mulch": 1.0, "gravel": 1.0}
@@ -3043,11 +3165,15 @@ func _flat_tri(pts: Array, y: float) -> void:
 ## half width, `curb_z` where the curb is; asphalt runs on from the
 ## sidewalk to `z1`.
 func _curb_cut(x: float, half: float, curb_z: float, z1: float, y := 0.1) -> void:
+	if cuts_drawn != null:
+		cuts_drawn.append([x - half, x + half, curb_z, 1.5])
 	var walk1 := curb_z + RoadStyle.CURB_WIDTH + RoadStyle.PARKWAY_WIDTH + RoadStyle.SIDEWALK_WIDTH
 	var walk0 := walk1 - RoadStyle.SIDEWALK_WIDTH
 	if z1 > walk1:
 		_flat_rect("asphalt", x - half, x + half, walk1, z1, y)
+	_in_cut = true
 	_flat_rect("drive", x - half, x + half, curb_z, walk1, y)
+	_in_cut = false
 	for s in [-1.0, 1.0]:
 		_flat_tri([Vector3(x + s * half, 0, walk0), Vector3(x + s * half, 0, curb_z),
 			Vector3(x + s * (half + 1.5), 0, curb_z)], y)
@@ -3122,7 +3248,7 @@ func _weeds() -> void:
 	rng.seed = hash([was.seed, "weeds"])
 	# Run-down: ragged patches; derelict: the whole lawn, every 3 m or so.
 	var share := 0.3 if owner_care == -1 else 0.85
-	var z := 1.2
+	var z := 1.2 if flat_weeds else depth
 	while z < depth - 0.5:
 		var x := -half + 1.2
 		while x < half - 0.5:

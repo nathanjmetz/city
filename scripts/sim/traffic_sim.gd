@@ -25,6 +25,34 @@ const MAX_CARS := 400
 const DT := 0.1
 ## Ticks between drivers' decisions (see _drive).
 const THINK_EVERY := 3
+## A car leaving a home's garage never waits for its door: the door starts
+## up while its driver walks out to it, timed to be most of the way up
+## (DOOR_SHARE) as the driver gets in. door_t is the tick it starts up and
+## door_n the ticks it takes to go all the way: DOOR_TICKS (10 s of driving,
+## a real opener's 10 to 12 s), or less after a short walk (no less than
+## DOOR_MIN), so it is still up in time. Kept on the car's record (already
+## saved; an older save has none and its door simply stays shut).
+## DoorEvents reads them; the trip's timing never changes.
+const DOOR_TICKS := 100
+const DOOR_SHARE := 0.8
+const DOOR_MIN := 30
+## Warehouse docks (docs/spec-working-doors.md, step 2). A box truck or a
+## van trailer bound for a warehouse backs up to one of its dock doors (a
+## spot of kind "dock" with "rear": its back bumper against the dock, the
+## spots added to the end of the place's list, so saved spot numbers keep
+## their meaning), and sits there DOCK_DWELL ticks before it heads off:
+## 30 s of play at normal speed (10 ticks a second). Nathan, 2026-10-29,
+## asked how long a truck should sit at an open dock: "A" (about 30
+## seconds). The load counts as the truck reaches the dock, before it backs
+## in, as it did at the curb, so the wait changes no money; the truck is
+## busy longer. Rigs that load from the top or the side (hoppers, log and
+## ore trucks, tankers, flatbeds) still stop out front. DOCK_GAP: metres
+## from the dock face to the parked truck's back bumper (the dock bumpers).
+const DOCK_DWELL := 300
+const DOCK_KINDS := ["box_truck", "semi", "mail_semi", "delivery_van"]
+const DOCK_GAP := 0.35
+## The court's lane runs at least this far in from the site's front.
+const DOCK_LANE_MIN := 1.5
 ## From the end of a curb return to where cars stop: the crosswalk (0.3 to
 ## 2.7 m past the return, in line with the curb ramps), then 4 ft and the
 ## 2 ft stop bar (MUTCD 3B.16).
@@ -215,6 +243,7 @@ var _due := {}       # tick -> parked vehicles due to head off then (_due_at)
 var _outs := {}      # vehicle id -> [key, path out of its spot] while it waits to pull out
 var _due_done := -1  # the last tick _rest took its due vehicles for (-1: look through all)
 var _pend := {}      # vehicle id -> parked vehicle waiting for a gap to pull out
+var _doored := {}    # vehicle id -> parked vehicle whose garage door is going up (door_t)
 var _slow := {}      # ways whose _speed is below 1 (or has cars), kept up to date each tick
 var _slow_ok := -1   # the lane version _slow was gathered on
 var _groups := {}    # [home, where to] -> pace of who set off from there this step (_pace)
@@ -309,8 +338,9 @@ func _flows_on() -> bool:
 func _flow_start(car: Dictionary) -> void:
 	_release(car.at_place, car.spot, car.id)
 	_unpark(car)
-	for k in ["at_place", "spot", "pos", "face", "hidden", "pending"]:
+	for k in ["at_place", "spot", "pos", "face", "hidden", "pending", "door_t", "door_n"]:
 		car.erase(k)
+	_doored.erase(car.id)
 	var t := float(_tick)
 	var ins := []
 	var route: Array = car.route
@@ -571,9 +601,11 @@ func set_green(node: int, phase: int, seconds: float) -> bool:
 
 ## The player's turn rules at a junction approach, like TM:PE's lane arrows
 ## and junction restrictions: "node:seg" (the road arriving there) ->
-## {no_left: a No Left Turn sign (MUTCD R3-2), lanes: lane-use arrows for
-## each lane, left to right, as ARROW_* bits (MUTCD 3B.20), or [] for the
-## game's own}. Kept in a table of their own, apart from `overrides`.
+## {no_left: a No Left Turn sign (MUTCD R3-2), no_right: a No Right Turn
+## sign (R3-1), lanes: lane-use arrows for each lane, left to right, as
+## ARROW_* bits (MUTCD 3B.20), or [] for the game's own}. Kept in a table of
+## their own, apart from `overrides`. Saves from before No Right load
+## without it.
 var lane_rules := {}
 const ARROW_L := 1
 const ARROW_S := 2
@@ -588,19 +620,22 @@ func lane_rule(node: int, seg: int) -> Dictionary:
 	return lane_rules.get(lane_key(node, seg), {})
 
 
-## Sets the turn rules for road `seg` arriving at junction `node`: a No Left
-## Turn sign, and lane arrows (one ARROW_* mask per lane, left to right, or
-## [] for the game's own). Both off clears the approach.
-func set_lane_rule(node: int, seg: int, no_left: bool, lanes: Array) -> bool:
+## Sets the turn rules for road `seg` arriving at junction `node`: No Left
+## and No Right Turn signs, and lane arrows (one ARROW_* mask per lane, left
+## to right, or [] for the game's own). All off clears the approach. No
+## turn signs on a roundabout's ring (see takes_turn_signs).
+func set_lane_rule(node: int, seg: int, no_left: bool, lanes: Array, no_right := false) -> bool:
 	if not network.nodes.has(node) or network.segments_at(node).size() < 3 \
 			or not network.segments_at(node).has(seg):
+		return false
+	if (no_left or no_right) and not takes_turn_signs(seg):
 		return false
 	var masks := []
 	for m in lanes:
 		masks.append(clampi(int(m), 1, ARROW_L | ARROW_S | ARROW_R))
 	var key := lane_key(node, seg)
-	var rule := {"no_left": no_left, "lanes": masks}
-	if not no_left and masks.is_empty():
+	var rule := {"no_left": no_left, "no_right": no_right, "lanes": masks}
+	if not no_left and not no_right and masks.is_empty():
 		if not lane_rules.has(key):
 			return false
 		lane_rules.erase(key)
@@ -610,6 +645,28 @@ func set_lane_rule(node: int, seg: int, no_left: bool, lanes: Array) -> bool:
 		lane_rules[key] = rule
 	_rebuild()
 	return true
+
+
+## Whether a road can take No Left or No Right Turn signs: not a
+## roundabout's ring (or another one-way loop piece). Its traffic only goes
+## one way round, so closing the turn off it into an exit would leave
+## everyone on that exit's street, fire trucks too, no way in (reviewer
+## 2026-10-29).
+func takes_turn_signs(seg: int) -> bool:
+	return network.segments.has(seg) and not _is_ring(seg)
+
+
+## Drops turn rules at junctions that are gone, or lost the road they were
+## for, at once rather than at the next rebuild. UndoLog calls it after
+## putting roads back: undo hands out junction and road ids again, and a new
+## junction mustn't start with an undone one's signs (second reader on the
+## turn-ban branch, 2026-10-26).
+func prune_lane_rules() -> void:
+	for k in lane_rules.keys():
+		var n := int(k.get_slice(":", 0))
+		if not network.nodes.has(n) or network.segments_at(n).size() < 3 \
+				or not network.segments_at(n).has(int(k.get_slice(":", 1))):
+			lane_rules.erase(k)
 
 
 ## The arrows each lane of a way into a junction shows now, left to right
@@ -635,7 +692,8 @@ func lane_rules_to_dict() -> Dictionary:
 	var keys := lane_rules.keys()
 	keys.sort()
 	for k in keys:
-		out[k] = {"no_left": lane_rules[k].no_left, "lanes": lane_rules[k].lanes.duplicate()}
+		out[k] = {"no_left": lane_rules[k].no_left, "no_right": lane_rules[k].no_right,
+			"lanes": lane_rules[k].lanes.duplicate()}
 	return out
 
 
@@ -645,7 +703,8 @@ func lane_rules_from_dict(d: Dictionary) -> void:
 		var lanes := []
 		for m in d[k].get("lanes", []):
 			lanes.append(int(m))
-		lane_rules[str(k)] = {"no_left": bool(d[k].get("no_left", false)), "lanes": lanes}
+		lane_rules[str(k)] = {"no_left": bool(d[k].get("no_left", false)),
+			"no_right": bool(d[k].get("no_right", false)), "lanes": lanes}
 	_dirty = true
 
 
@@ -1199,6 +1258,7 @@ func from_dict(d: Dictionary) -> void:
 	_due.clear()
 	_due_done = -1
 	_pend.clear()
+	_doored.clear()
 	_pseq.clear()
 	walkers.clear()
 	_wdone.clear()
@@ -1454,10 +1514,24 @@ func _build_turns(n: int) -> void:
 				kind = Turn.LEFT
 			kinds.append(kind)
 		var rule: Dictionary = lane_rules.get(lane_key(n, w.seg), {})
-		if rule.get("no_left", false) and (kinds.has(Turn.STRAIGHT) or kinds.has(Turn.RIGHT)):
-			# A No Left Turn sign: lefts go, unless left is the only way on.
+		var banned := []
+		# A ring keeps every turn, even under a sign from an older save.
+		if takes_turn_signs(w.seg):
+			if rule.get("no_left", false):
+				banned.append(Turn.LEFT)
+			if rule.get("no_right", false):
+				banned.append(Turn.RIGHT)
+		var open_way := false
+		for j in outs.size():
+			# A turn into a car-free street doesn't count: cars can't take
+			# it (the turn-ban branch's second reader, 2026-10-26).
+			if not kinds[j] in banned and may_enter(ways[outs[j][1]].seg, false):
+				open_way = true
+		if not banned.is_empty() and open_way:
+			# No Left and No Right Turn signs: those turns go, unless they
+			# are the only ways on.
 			for j in range(outs.size() - 1, -1, -1):
-				if kinds[j] == Turn.LEFT:
+				if kinds[j] in banned:
 					outs.remove_at(j)
 					kinds.remove_at(j)
 		var m := outs.size()
@@ -2346,13 +2420,26 @@ func _reroute_all() -> void:
 		if place(car.at_place).is_empty():
 			_unpark(car)
 			_report(car, failed)
+	# Trucks backed up to a warehouse's dock keep their own dock, laid out
+	# again, before anything else is given a space there.
+	for car in parked:
+		if not kerb.has(car.id) or not kerb[car.id].get("rear", false):
+			continue
+		var pl := place(car.at_place)
+		for i in pl.get("spots", []).size():
+			if pl.taken[i] == -1 and pl.spots[i].get("rear", false) and pl.spots[i].pos.distance_to(kerb[car.id].pos) < 0.5:
+				pl.taken[i] = car.id
+				car.spot = i
+				if car.get("pending", false):
+					car.from_spot = i
+				break
 	# Cars parked at a curb that was rebuilt move to the new curb.
 	for car in parked:
 		var pl := place(car.at_place)
 		var ok: bool = car.spot >= 0 and car.spot < pl.spots.size()
 		if ok:
 			var s: Dictionary = pl.spots[car.spot]
-			ok = (s.pos + s.face * car.len * 0.5).distance_to(car.pos) < 0.5
+			ok = _nose(s, car.len).distance_to(car.pos) < 0.5
 		if ok:
 			continue
 		# It gives up the space it was counted in (a garage its house laid
@@ -2375,11 +2462,13 @@ func _reroute_all() -> void:
 		if at >= 0:
 			var s: Dictionary = pl.spots[at]
 			car.spot = at
-			car.pos = s.pos + s.face * car.len * 0.5
+			car.pos = _nose(s, car.len)
 			car.face = s.face
 			car.hidden = s.hidden
 			if car.get("pending", false):
 				car.from_spot = at  # it pulls out of the space it's in now
+			if car.has("door_t") and not _behind_door(pl, at):
+				_shut_door(car)  # no door in front of its new space
 			parked_version += 1
 	# Vehicles about to pull out plan again on the new roads.
 	for car in parked:
@@ -2451,6 +2540,7 @@ func _cancel(car: Dictionary) -> void:
 	_release(car.get("to_place", ""), car.get("to_spot", -1), car.id)
 	_report(car, failed)
 	car.erase("pending")
+	_shut_door(car)
 	_pend.erase(car.id)
 	for k in ["route", "leg", "d", "end_d", "goal", "dest", "park", "home", "to_place", "to_spot", "lane",
 			"to_stop", "after"]:
@@ -2591,19 +2681,24 @@ func dispatch(from: Dictionary, to: Dictionary, purpose: String, cargo := {}, ki
 		return id if _send(car, rt, purpose, cargo, {"stay": stay, "back": "edge", "back_stop": stop},
 			edge_to) else -1
 	# A vehicle already parked here that nobody owns (a depot's truck, or one
-	# that just finished the last leg of its round) takes the job.
+	# that just finished the last leg of its round) takes the job; not a
+	# truck still being unloaded at a warehouse dock (DOCK_DWELL).
 	var car := {}
 	for p in parked:
 		if p.at_place == rf and p.owner == -1 and not p.get("pending", false) and p.get("driver", -1) == -1 \
-				and (p.kind == kind or any_kind and p.get("job", "") == purpose):
+				and (p.kind == kind or any_kind and p.get("job", "") == purpose) \
+				and not (p.has("dock_t") and int(p.until) > _tick):
 			car = p
 			break
 	if car.is_empty():
 		# A new one, based where vehicles are kept: a lot or yard with room
-		# for them, else wherever this trip ends.
+		# for them, else wherever this trip ends. A warehouse keeps its own
+		# trucks: they come back to it empty and wait at its curb for the
+		# next load (based at the shop they delivered to, each stayed there
+		# for good and the warehouse made a new one for every load).
 		var base := rf
 		var pl := place(rf)
-		if pl.lot.is_empty() and pl.drive.is_empty() and rt != "edge":
+		if pl.lot.is_empty() and pl.drive.is_empty() and rt != "edge" and not rf.begins_with("wh:"):
 			base = rt
 		var vid := new_vehicle(kind, rf, -1, base)
 		if vid != -1:
@@ -2932,8 +3027,120 @@ func place(ref: String) -> Dictionary:
 		pl.spots.append(e)
 		pl.taken.append(-1)
 	_places[ref] = pl
+	if ref.begins_with("wh:") and not pl.spots.any(func(s): return s.get("rear", false)):
+		_add_docks(pl)
 	_claim_spots(pl)
 	return pl
+
+
+## The place a ref stands for if it is already worked out and still holds
+## for what stands there now, else {}; never works one out or claims its
+## spots (for views that only read, like StateView). Treat it as read-only.
+func cached_place(ref: String) -> Dictionary:
+	var pl: Dictionary = _places.get(ref, {})
+	if pl.is_empty() or pl.has("seed") and _place_seed(ref) != pl.seed:
+		return {}
+	return pl
+
+
+## A warehouse's dock doors as spots trucks back up to, one per door its
+## drawing has (Warehouses.dock_xs: plain math from its spec). Added like a
+## curb space out front (_add_spot): on the end of its list and saved with
+## it, so an older save's spot numbers mean what they did, and a loaded copy
+## has them in the same order. Each spot is the back bumper's place against
+## the dock, facing the road, with the court's frame for the way in
+## (_dock_way): its origin (the site's front middle), across and inward
+## unit vectors, the gate's x, the curb's z and the half width to keep in.
+func _add_docks(pl: Dictionary) -> void:
+	if _sim == null:
+		return
+	var w = _sim.warehouses.buildings.get(int(str(pl.ref).substr(3).get_slice("@", 0)))
+	if w == null or Warehouses.is_store(w):
+		return
+	var b := Basis.looking_at(w.dir, Vector3.UP)
+	var bx := Vector3(b.x.x, 0.0, b.x.z).normalized()
+	var bz := Vector3(b.z.x, 0.0, b.z.z).normalized()
+	var o := Vector3(w.pos.x, 0.0, w.pos.z)
+	var zb := float(Warehouses.spec(w).court) - DOCK_GAP
+	var to_curb := Warehouses.SETBACK + RoadStyle.CURB_WIDTH + RoadStyle.PARKWAY_WIDTH + RoadStyle.SIDEWALK_WIDTH
+	# One lane across the court for every truck, clear of the longest rig
+	# that docks here (its nose and a turn's radius out from the dock), so
+	# trucks running along it or pulling off a dock never pass through one
+	# backed in. Rigs longer than that stop out front.
+	var lmax := 0.0
+	for k in DOCK_KINDS:
+		var vl := float(VehicleTypes.spec(k).len)
+		if zb - vl - _dock_r(vl) >= DOCK_LANE_MIN:
+			lmax = maxf(lmax, vl)
+	if lmax <= 0.0:
+		return  # a court too short for any of them: trucks stop out front
+	var xs := Warehouses.dock_xs(w)
+	for i in xs.size():
+		var x: float = xs[i]
+		_add_spot(pl, {"pos": o + bx * x + bz * zb, "face": -bz, "kind": "dock", "hidden": false,
+			"local": Vector2(x, zb), "rear": true, "door": i, "o": o, "bx": bx, "bz": bz,
+			"gx": Warehouses.gate_x(w), "zc": -to_curb, "half": Warehouses.site_width(w) * 0.5 - 1.5,
+			"zl": zb - lmax - _dock_r(lmax), "lmax": lmax})
+
+
+## The radius a truck `vlen` long backs round into a dock.
+static func _dock_r(vlen: float) -> float:
+	return maxf(6.0, vlen * 0.3)
+
+
+## A dock spot's court point at local (x, z), flat.
+static func _dock_pt(s: Dictionary, x: float, z: float) -> Vector3:
+	return s.o + s.bx * x + s.bz * z
+
+
+## Where a vehicle parked in spot `s` has its front bumper: half its length
+## out from the spot's middle, or its whole length out from a dock's
+## (backed in, its back bumper at the dock).
+static func _nose(s: Dictionary, vlen: float) -> Vector3:
+	return s.pos + s.face * (vlen if s.get("rear", false) else vlen * 0.5)
+
+
+## The way a truck `vlen` long backs into dock spot `s`, in two moves as a
+## driver does it in a truck court (an "alley dock"): in at the gate, a
+## turn to run along the docks on the court's lane (zl), a stop past its
+## door with the cab straight, then back round a turn of radius r into
+## the door. {"approach": world
+## points from the gate to where it stops, "r": the turn's radius}, or {}
+## when the court is too short for it (a 53 ft trailer at a small
+## warehouse) or no side has the room: it stops out front instead.
+static func _dock_way(s: Dictionary, vlen: float) -> Dictionary:
+	if vlen > float(s.get("lmax", 0.0)) + 0.01:
+		return {}
+	var r := _dock_r(vlen)
+	var x: float = s.local.x
+	var z_line: float = s.zl
+	var gx: float = s.gx
+	var a := vlen + r
+	var first := 1.0 if x >= gx else -1.0
+	for sd in [first, -first]:
+		var px: float = x + float(sd) * a
+		if absf(px) > float(s.half) or (px - gx) * sd < r:
+			continue
+		var pts := [_dock_pt(s, gx, float(s.zc)), _dock_pt(s, gx, z_line)]
+		var mx: float = px - float(sd) * vlen
+		if (mx - gx) * sd > 2.0:
+			pts.append(_dock_pt(s, mx, z_line))
+		pts.append(_dock_pt(s, px, z_line))
+		return {"approach": pts, "r": r}
+	return {}
+
+
+## A vehicle of `kind` that backs up to a dock door: a box or van body,
+## loaded from the back.
+static func _docks(kind: String) -> bool:
+	return kind in DOCK_KINDS
+
+
+## The kind _reserve is given for `car` carrying `cargo`: its own when it
+## brings a load (it may back up to a warehouse dock), else none (an empty
+## truck coming home, or one just made, waits at the curb or in a lot).
+static func _dock_kind(car: Dictionary, cargo) -> String:
+	return str(car.get("kind", "")) if VehicleTypes.is_loaded(cargo) else ""
 
 
 ## A copy of `d` with its keys as plain strings in sorted order: a lot in
@@ -2975,8 +3182,7 @@ func _lot_place(ref: String) -> Dictionary:
 		return {}
 	var lot: Dictionary = _sim.lots[ref.substr(4)]
 	var b = _sim.buildings.get(ref.substr(4))
-	var lay := SiteLayout.empty_lot() if b == null else SiteLayout.for_building(int(b.zone), int(b.seed), lot,
-		BuildingTypes.storeys(b), BuildingTypes.type_of(b), int(b.get("level", 0)), _sim.network, int(b.get("added_from", 0)))
+	var lay := SiteLayout.empty_lot() if b == null else SiteLayout.for_lot(_sim, ref.substr(4))
 	var spots := []
 	for s in lay.spots:
 		spots.append({"pos": SiteLayout.world(lot, s.pos), "face": SiteLayout.world_dir(lot, s.face),
@@ -3280,6 +3486,8 @@ func _add_spot(pl: Dictionary, s: Dictionary, vid := -1) -> int:
 
 ## Files a vehicle just parked (or found parked on a load) for _claim_spots.
 func _file_parked(car: Dictionary) -> void:
+	if car.has("door_t"):
+		_doored[car.id] = car
 	var at: String = car.at_place
 	if not _parked_at.has(at):
 		_parked_at[at] = []
@@ -3310,7 +3518,9 @@ func _claim_spots(pl: Dictionary) -> void:
 
 ## A free spot for a vehicle: trucks take docks and bays first, cars their
 ## garage or driveway, then a stall. -1 if the place is full.
-func _reserve(pl: Dictionary, vid: int, truck: bool, cart := false) -> int:
+## `vkind` (the vehicle's): only a box or van body backs up to a warehouse
+## dock (DOCK_KINDS), and only where its court has room for it.
+func _reserve(pl: Dictionary, vid: int, truck: bool, cart := false, vkind := "") -> int:
 	# A truck never squeezes into a car's 9 x 18 ft stall or a driveway: it
 	# backs into a dock or bay, or stands at the kerb out front as delivery
 	# trucks do.
@@ -3327,6 +3537,9 @@ func _reserve(pl: Dictionary, vid: int, truck: bool, cart := false) -> int:
 	for kind in order:
 		for i in pl.spots.size():
 			if pl.taken[i] == -1 and pl.spots[i].kind == kind and not pl.spots[i].get("stop_only", false):
+				if pl.spots[i].get("rear", false) and (not _docks(vkind) \
+						or _dock_way(pl.spots[i], float(VehicleTypes.spec(vkind).len)).is_empty()):
+					continue
 				pl.taken[i] = vid
 				return i
 	return -1
@@ -3522,6 +3735,7 @@ func _index_parked() -> void:
 	_due.clear()
 	_due_done = -1
 	_pend.clear()
+	_doored.clear()
 	_pseq.clear()
 	_next_pseq = 0
 	for car in parked:
@@ -3547,8 +3761,36 @@ func _unpark(car: Dictionary) -> void:
 		_parked_at.erase(car.get("at_place", ""))
 	_parked_to.erase(car.id)
 	_pend.erase(car.id)
+	_doored.erase(car.id)
 	_pseq.erase(car.id)
 	parked_version += 1
+
+
+## True for a spot behind a garage door that opens: a home's garage with
+## a door the art logged in front of it (not a parking deck or a factory's
+## bay, whose doors come later).
+static func _behind_door(pl: Dictionary, spot: int) -> bool:
+	return spot >= 0 and spot < pl.get("spots", []).size() and pl.spots[spot].kind == "garage" \
+		and int(pl.get("zone", -1)) == ZoneMap.Zone.RESIDENTIAL and DoorEvents.door_for(pl, spot) >= 0
+
+
+## A car whose driver sets out on a `walk` ticks long to it: its garage
+## door starts up so it is DOOR_SHARE of the way up as they get there.
+func _open_door(car: Dictionary, walk: int) -> void:
+	_shut_door(car)
+	if not car.has("at_place") or not _behind_door(place(car.at_place), int(car.get("spot", -1))):
+		return
+	var lead := int(DOOR_TICKS * DOOR_SHARE)
+	car.door_t = _tick + maxi(walk - lead, 0)
+	car.door_n = clampi(roundi(float(_tick + walk - int(car.door_t)) / DOOR_SHARE), DOOR_MIN, DOOR_TICKS)
+	_doored[car.id] = car
+
+
+## Forgets a car's garage door (it closes, as far as DoorEvents knows).
+func _shut_door(car: Dictionary) -> void:
+	car.erase("door_t")
+	car.erase("door_n")
+	_doored.erase(car.id)
 
 
 ## Puts a vehicle at rest in a spot.
@@ -3556,7 +3798,7 @@ func _park(car: Dictionary, pl: Dictionary, spot: int) -> void:
 	var s: Dictionary = pl.spots[spot]
 	car.at_place = pl.ref
 	car.spot = spot
-	car.pos = s.pos + s.face * car.len * 0.5  # front bumper, as when driving
+	car.pos = _nose(s, car.len)  # front bumper, as when driving
 	car.face = s.face
 	car.hidden = s.hidden
 	car.v = 0.0
@@ -3565,7 +3807,8 @@ func _park(car: Dictionary, pl: Dictionary, spot: int) -> void:
 	car.conn = null
 	car.pj = null
 	for k in ["route", "leg", "d", "end_d", "goal", "dest", "park", "home", "to_place", "to_spot", "lane",
-			"commit", "arrive", "stuck", "lc_from", "lc_t", "lc_cool", "held", "jd", "at", "facing", "pulled_over"]:
+			"commit", "arrive", "stuck", "lc_from", "lc_t", "lc_cool", "held", "jd", "at", "facing", "pulled_over",
+			"door_t", "door_n", "backing", "dock_t"]:
 		car.erase(k)
 	if not car.has("until"):
 		car.until = -1
@@ -3613,7 +3856,7 @@ func _send(car: Dictionary, to_ref: String, purpose: String, cargo: Dictionary, 
 	var spot := -1
 	var park_ref: String = to_pl.ref
 	if not to_pl.get("edge", false):
-		spot = -1 if shut else _reserve(to_pl, car.id, truck, _is_cart(car))
+		spot = -1 if shut else _reserve(to_pl, car.id, truck, _is_cart(car), _dock_kind(car, cargo))
 		# A full driveway at home: the extra car goes on the street out front,
 		# as in any real neighbourhood; a town lot is for shoppers, workers
 		# and visitors (many towns, Marion among them, ban overnight parking
@@ -3675,6 +3918,7 @@ func _try_launch(car: Dictionary, lanes := {}) -> bool:
 	_unpark(car)
 	for k in ["at_place", "spot", "pos", "face", "hidden", "pending"]:
 		car.erase(k)
+	_doored.erase(car.id)  # (door_t rides on while it backs out: DoorEvents)
 	return true
 
 
@@ -3688,7 +3932,7 @@ func _dest(car: Dictionary) -> Dictionary:
 		return {}
 	var i: int = car.get("to_spot", -1)
 	if i < 0 or i >= pl.spots.size() or (pl.taken[i] != car.id and pl.taken[i] != -1):
-		i = _reserve(pl, car.id, car.len > 6.5, _is_cart(car))
+		i = _reserve(pl, car.id, car.len > 6.5, _is_cart(car), _dock_kind(car, car.get("cargo", {})))
 		if i < 0:
 			i = _new_curb(pl, pl.stop, car.id, car.len)
 			if i < 0:
@@ -3769,6 +4013,8 @@ func _entrance(pl: Dictionary, spot: int, car_len := 0.0) -> Vector3:
 		# Far enough back that a long rig's tail is behind it as it pulls in
 		# straight, rather than looping back on itself to line up.
 		return s.pos - s.face * maxf(9.0, car_len * 0.5 + 2.5)
+	if s.get("rear", false):
+		return _dock_pt(s, s.gx, s.zc)  # a warehouse's gate
 	if not pl.drive.is_empty():
 		return pl.drive[pl.drive.size() - 1]
 	return SiteLayout.world(pl.lot, Vector2(pl.lay.cut_x, -pl.lot.to_curb))
@@ -3777,9 +4023,14 @@ func _entrance(pl: Dictionary, spot: int, car_len := 0.0) -> Vector3:
 ## The way in, from the edge of the road to the spot, in local steps.
 func _approach_pts(pl: Dictionary, spot: int, car_len: float) -> Array:
 	var s: Dictionary = pl.spots[spot]
-	var front: Vector3 = s.pos + s.face * car_len * 0.5
+	var front: Vector3 = _nose(s, car_len)
 	if s.kind == "curb":
 		return [s.pos - s.face * (car_len * 0.5 + 1.0), front]
+	if s.get("rear", false):
+		# To where it stops before backing in (_back_in); a rig the court
+		# has no room for (given this dock on a reroute) pulls up to it.
+		var way := _dock_way(s, car_len)
+		return way.approach if not way.is_empty() else [_dock_pt(s, s.gx, s.zc), front]
 	if s.has("via"):
 		# A parking lot: in at the driveway, along its aisles to the stall.
 		return [pl.drive[pl.drive.size() - 1]] + s.via + [front]
@@ -3874,7 +4125,7 @@ func _out_path(car: Dictionary, pl: Dictionary, spot: int, w: Dictionary, lane: 
 	var s: Dictionary = pl.spots[spot]
 	var top: float = maxf(w.s1 - 0.5, 1.0)  # back in the lane before the junction
 	var bot: float = minf(w.s0 + 0.5, top)  # and clear of the one behind
-	var front: Vector3 = s.pos + s.face * car.len * 0.5
+	var front: Vector3 = _nose(s, car.len)
 	var entry := _entrance(pl, spot)
 	var de := _nearest_d(w, entry)
 	if s.kind == "curb":
@@ -3912,6 +4163,16 @@ func _out_path(car: Dictionary, pl: Dictionary, spot: int, w: Dictionary, lane: 
 		var pts := _smooth([front, front + s.face * 2.0] + _lane_run(w, lane, minf(clampf(df + 4.0, bot, top), go - 3.0), go))
 		return _poly_path({"node": -1, "wi": -1, "li": -1, "wo": w.id, "lo": lane, "turn": Turn.RIGHT,
 			"vt": 4.0, "exit_d": go}, pts, 0.0)
+	if s.get("rear", false):
+		# Backed in at a warehouse dock: it pulls straight off the dock out
+		# to the court's lane, along it to the gate and out into the
+		# street, clear of the trucks backed in beside it.
+		var pull := _pull_pts(s, car.len)
+		de = minf(de, maxf(top - DRIVEWAY_LEAD - 2.0, bot))
+		var out_d := clampf(de + DRIVEWAY_LEAD + 2.0, bot, top)
+		pull.append_array(_lane_run(w, lane, minf(clampf(de + 2.0, bot, top), out_d - 3.0), out_d))
+		return _poly_path({"node": -1, "wi": -1, "li": -1, "wo": w.id, "lo": lane, "turn": Turn.RIGHT,
+			"vt": 4.0, "exit_d": out_d}, _smooth(pull), 0.0)
 	if s.kind == "drive" or s.kind == "garage":
 		# Straight back down the driveway and out into the street, ending up
 		# pointed the way the car is going.
@@ -4043,6 +4304,72 @@ func _poly_pose(c: Dictionary, jd: float) -> Array:
 	return [p, dir]
 
 
+## The way a truck `vlen` long stopped at `p`, heading `h`, backs into dock
+## spot `s`: straight back along the lane, round the turn, up to the dock
+## (points for _smooth, in the order its front bumper goes), or [] when it
+## stands in line with the door already.
+static func _back_pts(s: Dictionary, p: Vector3, h: Vector3, vlen: float) -> Array:
+	var nf := _nose(s, vlen)
+	var k := p + h * (nf - p).dot(h)
+	var run := (p - k).dot(h)
+	if run < 3.0 or nf.distance_to(k) < 1.0:
+		return []
+	# The turn is kept tight round the corner (straight runs either side
+	# of it), so the truck stays in its lane and its door's column.
+	var r := minf(_dock_r(vlen), minf(run, nf.distance_to(k)) * 0.5)
+	return [p, k + h * r, k, k + (nf - k).normalized() * r, nf]
+
+
+## The way a truck `vlen` long pulls off dock spot `s`, to the road's edge
+## at the gate (points for _smooth; _out_path runs it on along the lane).
+static func _pull_pts(s: Dictionary, vlen: float) -> Array:
+	var x: float = s.local.x
+	var gx: float = s.gx
+	var pull := [_nose(s, vlen)]
+	if s.has("zl"):
+		# Straight off the dock to the lane, a tight turn onto it (clear of
+		# the trucks either side), along it and out at the gate.
+		var zl: float = s.zl
+		var zn: float = (_nose(s, vlen) - s.o).dot(s.bz)
+		var r := minf(_dock_r(vlen), minf(zn - zl, absf(gx - x)) * 0.5)
+		if r > 0.5:
+			var sd := signf(gx - x)
+			pull.append_array([_dock_pt(s, x, zl + r), _dock_pt(s, x, zl), _dock_pt(s, x + sd * r, zl)])
+		pull.append(_dock_pt(s, gx, zl))
+	pull.append(_dock_pt(s, gx, s.zc))
+	return pull
+
+
+## A truck stopped in a warehouse's court past its dock (_dock_way) backs
+## round into it: straight back with the cab in line, then round the turn
+## and square up to the door. Its load counts now, as it did pulling up at
+## the curb out front (so the backing in and the wait at the dock change no
+## money); it parks, and its door goes up, once it is against the dock.
+## False for any other vehicle, or one already backing in.
+func _back_in(car: Dictionary) -> bool:
+	if car.get("backing", false) or not car.has("to_place"):
+		return false
+	var pl := place(car.to_place)
+	var i: int = car.get("to_spot", -1)
+	if pl.is_empty() or i < 0 or i >= pl.spots.size() or not pl.spots[i].get("rear", false):
+		return false
+	var back := _back_pts(pl.spots[i], car.j.pts[car.j.pts.size() - 1], _flat_dir(car.j.d1), car.len)
+	if back.is_empty():
+		return false  # it pulled straight up to the dock: it parks as it is
+	var pts := _smooth(back)
+	if car.get("to_ref", "") != "" and car.get("trip", -1) >= 0 and car.get("after", {}).get("report", true):
+		_report(car, arrivals)
+		if not car.has("after"):
+			car.after = {}
+		car.after["report"] = false
+	car.j = _poly_path({"node": -1, "wi": car.j.wi, "li": car.j.li, "wo": -1, "lo": -1, "turn": Turn.RIGHT,
+		"vt": 4.0, "exit_d": 0.0}, pts, _polylen(pts))
+	car.jd = 0.0
+	car.v = 0.0
+	car.backing = true
+	return true
+
+
 ## A car pulled in: it parks, its trip is reported, and the people in it
 ## get out and walk in.
 func _arrive(car: Dictionary) -> void:
@@ -4081,6 +4408,11 @@ func _arrive(car: Dictionary) -> void:
 	_park(car, pl, car.get("to_spot", 0))
 	var stay: int = after.get("stay", -1)
 	var driver: int = after.get("driver", -1)
+	if pl.spots[car.spot].get("rear", false):
+		# Backed up to a warehouse's dock: its door goes up now (DoorEvents),
+		# and it sits there being unloaded before it heads off.
+		car.dock_t = _tick
+		stay = maxi(stay, DOCK_DWELL)
 	car.after = {}
 	car.cargo = {} if after.has("back") else car.cargo
 	if driver != -1:
@@ -4205,7 +4537,7 @@ func go(pid: int, to_ref: String, purpose: String, stay: int, on_foot := false) 
 		if path.is_empty() or walkers.size() >= max_walkers:
 			return false
 		car.driver = pid
-		_walk(pid, path, {"drive": car.id, "to": to_ref, "purpose": purpose, "stay": stay})
+		_open_door(car, _walk(pid, path, {"drive": car.id, "to": to_ref, "purpose": purpose, "stay": stay}))
 	else:
 		var path := _walk_between(from_pl, to_pl)
 		if path.is_empty() or walkers.size() >= max_walkers:
@@ -4267,7 +4599,8 @@ func arrive_now(sim: CitySim, pid: int, to_ref: String, stay: int, batch := {}) 
 	return true
 
 
-func _walk(pid: int, pts: PackedVector3Array, then: Dictionary) -> void:
+## Returns the ticks the walk takes.
+func _walk(pid: int, pts: PackedVector3Array, then: Dictionary) -> int:
 	var cum := PackedFloat32Array([0.0])
 	for i in range(1, pts.size()):
 		cum.append(cum[i - 1] + pts[i].distance_to(pts[i - 1]))
@@ -4302,8 +4635,9 @@ func _walk(pid: int, pts: PackedVector3Array, then: Dictionary) -> void:
 		w.xings = xings
 		_note_xings(w)
 	walkers.append(w)
-	_file_walker(w)
+	var ticks := _file_walker(w)
 	_next_walker += 1
+	return ticks
 
 
 ## A walker's pace in whole cm/s: their own, slower when young or old,
@@ -4333,7 +4667,8 @@ func _pace(pid: int, pts: PackedVector3Array) -> float:
 
 ## Files a walker under the step they arrive: the first whole step count t
 ## with t * v * DT >= len.
-func _file_walker(w: Dictionary) -> void:
+## Files a walker under the step it gets there; returns how many steps on.
+func _file_walker(w: Dictionary) -> int:
 	var t := maxi(ceili(w.len / (w.v * DT)), 1)
 	while t > 1 and (t - 1) * w.v * DT >= w.len:
 		t -= 1
@@ -4345,6 +4680,7 @@ func _file_walker(w: Dictionary) -> void:
 	if not _wdone.has(at):
 		_wdone[at] = []
 	_wdone[at].append(w)
+	return t
 
 
 ## Metres a walker has gone (worked out from the steps, not stored).
@@ -4465,6 +4801,7 @@ func _walked(w: Dictionary) -> void:
 			# Can't get there: back inside.
 			if not car.is_empty():
 				car.driver = -1
+				_shut_door(car)
 			p.at = "" if car.is_empty() or car.at_place == "lot:" + p.home else car.at_place
 			_sim.people.set_until(p, _tick + 30 if p.at != "" else -1)
 			return
@@ -5201,6 +5538,8 @@ func _drive_move(tally: bool) -> void:
 			speed_sum += 1.0
 			limit_sum += 1.0
 			if car.jd >= car.j.len - (0.3 if car.j.wo < 0 else 0.0):
+				if car.j.wo < 0 and _back_in(car):
+					continue  # at a warehouse dock: now it backs up to the door
 				if car.j.wo < 0:
 					done.append(car)  # parked
 					if car.has("to_place"):

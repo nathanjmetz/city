@@ -38,6 +38,13 @@ func _process(_delta: float) -> bool:
 	for key in hud._category_buttons:
 		bar += hud._category_buttons[key].get_combined_minimum_size().x + 4
 	_check(bar <= 1280.0, "the bottom bar fits a 1280 px window (%d px)" % roundi(bar))
+	# The Traffic row (shown above the road menus while Traffic is open),
+	# measured shown: car-free and the turn rules live there, not in Roads.
+	var was: bool = hud._traffic_row.visible
+	hud._traffic_row.visible = true
+	var tw: float = hud._traffic_row.get_combined_minimum_size().x
+	hud._traffic_row.visible = was
+	_check(tw > 0.0 and tw <= MAX_WIDTH, "the Traffic row is %d px wide" % roundi(tw))
 	for cat in Hud.SERVICE_CATEGORIES:
 		hud.close_all()
 		hud._open(cat)
@@ -56,6 +63,20 @@ func _process(_delta: float) -> bool:
 	hud.close_all()
 	hud._park_cards["courthouse"].pressed.emit()
 	_check(hud._category == "civic", "the courthouse is under Civic (%s)" % hud._category)
+	hud.close_all()
+	# One card for both curves: Curve, then Curve again for an S-curve,
+	# and its name says which (Nathan 2026-10-26: CS2's road options).
+	hud._open("roads")
+	var curve: Button = hud._tool_cards[RoadTool.Mode.CURVED]
+	curve.pressed.emit()
+	_check(hud.road_tool.mode == RoadTool.Mode.CURVED, "the Curve card draws a curve")
+	curve.pressed.emit()
+	hud._sync()
+	_check(hud.road_tool.mode == RoadTool.Mode.SCURVE and (curve.get_meta("title") as Label).text == "S-curve",
+		"clicked again it draws an S-curve, and says so")
+	curve.pressed.emit()
+	_check(hud.road_tool.mode == RoadTool.Mode.CURVED, "and again, back to a simple curve")
+	hud.close_all()
 	hud.close_all()
 	print("FAILED" if _failed else "ALL PASSED")
 	quit(1 if _failed else 0)

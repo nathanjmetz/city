@@ -84,8 +84,44 @@ const CODE := "shader_type sky;\n" + COMMON + """
 uniform vec3 top_color : source_color = vec3(0.17, 0.36, 0.70);
 uniform vec3 horizon_color : source_color = vec3(0.74, 0.79, 0.84);
 uniform float curve = 0.12;
-uniform sampler2D stars : source_color, filter_linear;
 uniform float stars_alpha = 0.0;
+// Where the sun really is, set or not (SkyLight._twilight_sun): straight up
+// while it's high, which turns the twilight off.
+uniform vec3 sun_dir = vec3(0.0, 1.0, 0.0);
+
+// Stars: sharp points a pixel or so across, about 2,000 over the dome, most
+// of them faint and a few bright (a small town's sky: the faintest are lost
+// in its glow). One star at most in each cell of a grid on the sky.
+vec3 star_field(vec3 d, float px) {
+	// The grid: 96 x 96 cells on each face of a cube around the camera.
+	vec3 a = abs(d);
+	vec3 n = vec3(0.0, 0.0, sign(d.z));
+	vec3 u = vec3(1.0, 0.0, 0.0);
+	vec3 v = vec3(0.0, 1.0, 0.0);
+	if (a.x >= a.y && a.x >= a.z) {
+		n = vec3(sign(d.x), 0.0, 0.0);
+		u = vec3(0.0, 1.0, 0.0);
+		v = vec3(0.0, 0.0, 1.0);
+	} else if (a.y >= a.z) {
+		n = vec3(0.0, sign(d.y), 0.0);
+		u = vec3(1.0, 0.0, 0.0);
+		v = vec3(0.0, 0.0, 1.0);
+	}
+	vec3 p = d / dot(d, n);
+	vec2 g = vec2(dot(p, u), dot(p, v)) * 48.0;
+	vec2 cell = floor(g);
+	vec2 seed = cell + vec2(dot(n, vec3(131.0, 257.0, 397.0)), dot(n, vec3(71.0, 53.0, 29.0)));
+	if (hash(seed) > 0.075) {
+		return vec3(0.0);
+	}
+	vec2 at = cell + 0.15 + 0.7 * vec2(hash(seed + 3.1), hash(seed + 7.7));
+	vec3 s = normalize(n + (u * at.x + v * at.y) / 48.0);
+	float r = length(d - s) / px;
+	float b = 0.08 + 1.6 * pow(hash(seed + 11.3), 6.0);
+	vec3 tint = mix(vec3(0.8, 0.88, 1.0), vec3(1.0, 0.88, 0.72), hash(seed + 5.9));
+	return tint * b * exp(-r * r * 1.4);
+}
+
 void sky() {
 	vec3 d = EYEDIR;
 	float up = clamp(d.y, -1.0, 1.0);
@@ -99,9 +135,62 @@ void sky() {
 	col *= mix(0.92, 1.0, mu * 0.5 + 0.5);
 	float day = LIGHT0_ENABLED ? smoothstep(-0.1, 0.15, LIGHT0_DIRECTION.y) : 0.0;
 	col += sun_c * (0.10 * pow(max(mu, 0.0), 6.0) + 0.35 * pow(max(mu, 0.0), 120.0)) * 0.25 * day;
-	// Stars, faded in at night.
-	vec4 st = texture(stars, SKY_COORDS);
-	col += st.rgb * st.a * stars_alpha;
+	// Twilight, from a low sun to well after it has set. The sky is not the
+	// same all round: over the place the sun went down the horizon glows
+	// orange, then yellow, fading up into the blue; opposite it the earth's
+	// own shadow lies on the horizon as a blue-grey band, under a pink one
+	// (the belt of Venus), and rises and fades as the sun sinks. Real
+	// photos of a clear July dusk over flat Indiana farmland show it.
+	float se = degrees(asin(clamp(sun_dir.y, -1.0, 1.0)));
+	float tw = smoothstep(-15.0, -3.0, se) * (1.0 - smoothstep(4.0, 12.0, se));
+	vec3 tw_light = vec3(0.0);
+	if (tw > 0.0) {
+		float h = max(up, 0.0);
+		vec2 sh = normalize(sun_dir.xz + vec2(1e-5));
+		vec2 dh = d.xz / max(length(d.xz), 1e-4);
+		float toward = clamp(dot(sh, dh) * 0.5 + 0.5, 0.0, 1.0);
+		// 0 at sunset, 1 by the end of civil twilight.
+		float deep = 1.0 - smoothstep(-7.0, 0.0, se);
+		float lum = dot(horizon_color, vec3(0.2126, 0.7152, 0.0722));
+		// A bright core about 20 degrees either side of where the sun went
+		// down, in a warm band reaching most of the way round; both narrow,
+		// sink and redden as the sun goes deeper.
+		float core = pow(toward, 16.0) * exp(-h / mix(0.08, 0.04, deep));
+		float band = pow(toward, 3.0) * exp(-h / mix(0.16, 0.09, deep));
+		vec3 glow = lum * (mix(vec3(4.2, 2.1, 0.55), vec3(3.0, 0.9, 0.2), deep) * core
+			+ vec3(0.8, 0.5, 0.25) * band);
+		// Before sunset the sun's own light (above) already does this.
+		glow *= 1.0 - smoothstep(0.0, 6.0, se) * 0.6;
+		// The earth's shadow and the pink band over it.
+		float away = pow(1.0 - toward, 1.5);
+		float rim = mix(0.03, 0.12, deep);
+		float shadow = (1.0 - smoothstep(rim * 0.6, rim, h)) * smoothstep(-1.0, 1.5, -se);
+		float belt = smoothstep(rim * 0.6, rim, h) * exp(-(h - rim) / 0.1) * (1.0 - deep * 0.7);
+		vec3 tint = mix(vec3(1.0), vec3(0.55, 0.6, 0.8), shadow * away * (1.0 - deep * 0.5));
+		tint = mix(tint, vec3(1.12, 0.92, 1.0), belt * away);
+		// The horizon's colour keeps low, under a clear blue: twice as
+		// steep a gradient as the day's (with the day's, a pink horizon
+		// greyed the sky 20 degrees up to mauve).
+		float g_day = clamp(1.0 - pow(1.0 - c, 1.0 / curve), 0.0, 1.0);
+		float g_tw = clamp(1.0 - pow(1.0 - c, 2.0 / curve), 0.0, 1.0);
+		vec3 lift = (top_color - horizon_color) * (g_tw - g_day);
+		// Under a closing lid of cloud there is little sunset to see.
+		float open_sky = 1.0 - 0.8 * smoothstep(0.6, 1.0, cover);
+		col = mix(col, (col + lift) * tint + glow, tw * open_sky);
+		// Light on the clouds from under the horizon: orange toward the
+		// glow, pink overhead and away from it.
+		tw_light = lum * mix(vec3(1.1, 0.75, 0.75), vec3(2.2, 1.0, 0.45), toward * toward) * (1.0 - deep * 0.8) * tw;
+	}
+	// Stars, faded in at night and lost low down in the haze and the
+	// town's glow. Only on the screen: the sky's light on the town (its
+	// cubemap) has no use for them.
+	// The star's distance is measured in pixels, so it is a point at any
+	// zoom (taken here, outside any branch, and from the sight line, which
+	// turns smoothly across the grid's seams).
+	float px = max(length(fwidth(d)), 1e-6);
+	if (stars_alpha > 0.0 && !AT_CUBEMAP_PASS) {
+		col += star_field(d, px) * stars_alpha * smoothstep(0.03, 0.3, up);
+	}
 	if (up > 0.0) {
 		// Where this sight line meets the cloud base: the clouds hang over
 		// the land, so they pass overhead as the camera moves.
@@ -121,7 +210,7 @@ void sky() {
 			lit *= 1.0 - cl.y * mix(0.85, 0.45, smoothstep(0.65, 0.95, 1.0 - up));
 			// Sunlit cloud is about as bright as a white wall in sun; the
 			// shaded base is the sky's grey-blue.
-			vec3 bright = sun_c * 0.62 + horizon_color * 0.35;
+			vec3 bright = sun_c * 0.62 + horizon_color * 0.35 + tw_light;
 			vec3 base = mix(horizon_color, top_color, 0.35) * 0.5 + sun_c * 0.05;
 			vec3 cc = mix(base, bright, lit);
 			// Silver lining toward the sun.

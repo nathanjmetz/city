@@ -59,15 +59,15 @@ static func add_disc(st: SurfaceTool, center: Vector3, radius: float, y: float, 
 ## `cuts`: how far from each end (start, end) a town street's painted lines
 ## stop, at a junction's crosswalk (JunctionMarks.line_cut).
 static func street(pts: PackedVector3Array, type: int, mats: Dictionary, gaps := {}, rural := false,
-		cuts := Vector2.ZERO, breaks := [], urban := false) -> ArrayMesh:
+		cuts := Vector2.ZERO, breaks := [], urban := false, dips := Vector2.ONE) -> ArrayMesh:
 	var spec: Dictionary = RoadStyle.TYPES[type]
 	if RoadStyle.is_freeway(type):
 		return _oneway(pts, spec, mats, gaps)
 	if urban:
-		return _town(pts, type, mats, cuts, true)
+		return _town(pts, type, mats, cuts, true, dips)
 	if spec.get("rural", false) or (rural and spec.median == 0.0):
 		return _rural(pts, type, mats, breaks)
-	return _town(pts, type, mats, cuts)
+	return _town(pts, type, mats, cuts, false, dips)
 
 
 ## A town street with curbs and sidewalks. Markings follow MUTCD Part 3B:
@@ -75,7 +75,10 @@ static func street(pts: PackedVector3Array, type: int, mats: Dictionary, gaps :=
 ## yellow pair each side of a two-way left-turn lane, white dashes between
 ## lanes going the same way, a solid white bike lane line, and white stall
 ## marks where parking is metered downtown.
-static func _town(pts: PackedVector3Array, type: int, mats: Dictionary, cuts := Vector2.ZERO, urban := false) -> ArrayMesh:
+## `dips`: 0 at an end whose corners have a diagonal ramp instead of ramps
+## in line with the crosswalk (Junction.pair_ramps), where the curb stays up.
+static func _town(pts: PackedVector3Array, type: int, mats: Dictionary, cuts := Vector2.ZERO, urban := false,
+		dips := Vector2.ONE) -> ArrayMesh:
 	var spec: Dictionary = RoadStyle.TYPES[type]
 	var hw := RoadStyle.half_width(type)
 	var cw := RoadStyle.CURB_WIDTH
@@ -155,7 +158,7 @@ static func _town(pts: PackedVector3Array, type: int, mats: Dictionary, cuts := 
 				var n: Vector3 = Vector3(-at[1].z, 0.0, at[1].x).normalized() * side
 				edge.append(at[0] + n * hw)
 				back.append(at[0] + n * (hw + cw))
-				rises.append(_ramp_rise(d, length))
+				rises.append(_ramp_rise(d, length, dips))
 			add_curb(pan, edge, back, rises)
 		pan.commit(mesh)
 		mesh.surface_set_material(mesh.get_surface_count() - 1, mats.curb)
@@ -300,7 +303,9 @@ static func _curb_stations(length: float) -> PackedFloat32Array:
 
 ## The curb's rise `d` metres along a street `length` long: full, but
 ## dropped flush where a curb ramp meets the street near each end.
-static func _ramp_rise(d: float, length: float) -> float:
+static func _ramp_rise(d: float, length: float, dips := Vector2.ONE) -> float:
+	if (dips.x if d < length * 0.5 else dips.y) <= 0.0:
+		return CURB_RISE
 	var e := minf(d, length - d)
 	var t := clampf(minf(e - RAMP_FROM + RAMP_EASE, RAMP_TO + RAMP_EASE - e) / RAMP_EASE, 0.0, 1.0)
 	return lerpf(CURB_RISE, -0.03, t)

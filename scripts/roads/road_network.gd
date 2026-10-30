@@ -7,6 +7,9 @@ extends RefCounted
 ## later receive the same commands from players and replay them.
 
 signal changed
+## A road piece was cut in two (a road joined it mid-block): what was on
+## `seg` (a car-free closure, say) can carry on to `first` and `second`.
+signal split(seg: int, first: int, second: int)
 ## Goes up on every change, so caches can tell when to work things out again.
 var revision := 0
 ## Segments meeting at each node, kept until the roads change (segments_at).
@@ -189,9 +192,25 @@ func total_length() -> float:
 
 # --- Commands ---------------------------------------------------------------
 
+## Why a road of this shape (curve [start, ctrl, end], town coordinates) and
+## type can't be laid on the ground, or "": set by the town (CitySim
+## road_ground: a county railroad's track, CountyRail.road_check). Every
+## build_road asks it, so no builder lays a road the rules refuse.
+var ground_check := Callable()
+## Why the last build_road was refused by ground_check, or "".
+var refused := ""
+
 ## Builds a road from start to end bent toward ctrl. Joins existing junctions
 ## and roads it starts on, ends on, or crosses.
 func build_road(start: Vector3, ctrl: Vector3, end: Vector3, type := 0, oneway := false) -> bool:
+	refused = ""
+	# Whatever builds it (the road tool, a grid, a subdivision, the town's
+	# engineer, a hub's road, a roundabout, the highway out of town), a road
+	# goes only where the ground lets it (ground_check).
+	if ground_check.is_valid():
+		refused = ground_check.call([start, ctrl, end], type)
+		if refused != "":
+			return false
 	# The roads it cuts on the way (where it starts, ends or crosses) and the
 	# road itself are one change, so `changed` fires once.
 	begin_batch()
@@ -283,6 +302,7 @@ func split_segment(seg_id: int, t: float) -> int:
 	if s.has("built_by"):
 		segments[p].built_by = s.built_by
 		segments[q].built_by = s.built_by
+	split.emit(seg_id, p, q)  # closures move onto the halves before anything hears of the change
 	_changed()
 	return m
 

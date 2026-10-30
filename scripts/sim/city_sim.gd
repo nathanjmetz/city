@@ -79,6 +79,24 @@ var calendar_offset := Seasons.NEW_TOWN_OFFSET
 ## one (0 for a town begun on it): ticks before it read on the old calendar,
 ## so a building put up back then keeps the year it was put up in.
 var calendar_from := 0
+## The yard trees of a building begun on or after this tick start already
+## grown, the mixed ages of an established neighbourhood (BuildingView,
+## TreeField.yard_age; Nathan, 2026-10-29: "A. Yes, back-yard trees start
+## grown; street trees still start small and grow"). 0 for a town begun
+## with this; a town saved before it gets the tick after the one it was
+## first loaded on, so every tree it already had keeps the size it had and
+## only new yards come in grown.
+var grown_yards_from := 0
+## A corner house begun on or after this tick decides as it goes up which
+## side its drive goes, away from the corner (SiteLayout.decide_drive, kept
+## as the building's "drive"), and its street trees keep off its mailbox
+## (BuildingView.fit_for; Nathan, 2026-10-29: "I also noticed
+## street signs in the middle of driveways"). 0 for a town begun with this;
+## a town saved before it gets the tick after the one it was first loaded
+## on, so every house it already had keeps its drive where it was built.
+var curb_drives_from := 0
+## What stands on the curb, for every curbside placer (CurbClaims.of; not saved).
+var curb: CurbClaims = null
 
 var network := RoadNetwork.new()
 ## The last builds, for Ctrl+Z (not saved).
@@ -218,8 +236,14 @@ var history := StatHistory.new()
 ## The game turns this on; tests about other things can leave it off.
 var require_utilities := false
 ## Through freights on the county's real railroads (CountyTrains), with
-## gates where the town's roads cross them. The desktop game turns it on.
-var county_rail := false
+## gates where the town's roads cross them. The game turns it on, on every
+## platform alike (main.gd, Region.new_sim). With it the railroads come first, as in a real town: lots, buildings and
+## public sites keep off their right of way (CountyRail.ROW_HALF), and roads
+## cross them only at grade crossings (CountyRail.road_check).
+var county_rail := false:
+	set(v):
+		county_rail = v
+		services.county_rail = v
 var county_trains := CountyTrains.new()
 ## The balance harness turns cars off to play years of a city in seconds
 ## (traffic doesn't touch the budget yet).
@@ -304,6 +328,7 @@ var _zone_check_lots := {}
 
 func _init() -> void:
 	Resources.follow(terrain_offset)
+	network.ground_check = road_ground
 	lots_changed.connect(func(): _lot_rev += 1)
 	# The water utility's manager takes the player's word (Permits guidance).
 	permits.locators["water"] = func(c: CitySim, id: int) -> Vector2:
@@ -356,6 +381,12 @@ func _init() -> void:
 	# The county seat: county roads count from the courthouse once it stands.
 	parks_changed.connect(func(): streets.seat(self))
 	_hook_pollution()
+	# Car-free streets and other closures follow their road: on to both
+	# pieces when it's cut in two, gone when it's removed or undone (so a
+	# new road given the old id isn't born closed: second reader,
+	# 2026-10-26).
+	network.split.connect(_carry_closure)
+	network.changed.connect(_drop_stale_closures)
 	network.changed.connect(func():
 		_lots_light = true
 		_roads_moved = true
@@ -437,6 +468,15 @@ func _apply_cmd(cmd: Dictionary) -> bool:
 					economy.money -= shapes_cost(pieces, _road(cmd))
 					if cmd.get("join", false):
 						_join_crossings(pieces)
+		"build_roads":
+			# Roads drawn as one, like an S-curve's two halves: one command,
+			# so one undo and, online, all of them or none.
+			var curves := []
+			for r in cmd.get("roads", []):
+				if not (r is Array and r.size() == 3):
+					return false
+				curves.append([_v(r[0]), _v(r[1]), _v(r[2])])
+			ok = _build_roads(curves, _road(cmd), bool(cmd.get("over", false)), bool(cmd.get("join", false)))
 		"join_county":
 			# A road drawn onto a county road (hub roads too).
 			ok = _join_county(_v(cmd.at), int(cmd.get("way", 0)))
@@ -458,6 +498,7 @@ func _apply_cmd(cmd: Dictionary) -> bool:
 				int(cmd.get("fit", GridFill.FIT_ROUND)), painted)
 			if shape.size() == 2:
 				lines = [[shape[0], shape[0].lerp(shape[1], 0.5), shape[1]]]
+			lines = rail_trim(lines, _road(cmd))
 			if lines.is_empty() or not _can_afford(lines, _road(cmd)) or land_problem(lines) != "":
 				return false
 			# A county road or highway the grid meets along its side becomes
@@ -491,6 +532,10 @@ func _apply_cmd(cmd: Dictionary) -> bool:
 			var arcs := RoadShapes.roundabout(_v(cmd.center), radius)
 			if not _can_afford(arcs, ring) or land_problem(arcs) != "":
 				return false
+			# All of it or none: no ring half laid round a railroad.
+			for arc in arcs:
+				if road_ground(arc, ring) != "":
+					return false
 			ok = _build_roundabout(_v(cmd.center), radius, ring)
 			if ok:
 				economy.money -= shapes_cost(arcs, ring)
@@ -957,13 +1002,35 @@ func _apply_cmd(cmd: Dictionary) -> bool:
 		"heritage":
 			# Protect a historic district, or lift its protection.
 			ok = heritage.set_protected(self, int(cmd.get("district", -1)), bool(cmd.get("protect", true)))
+		"car_free":
+			# A street closed to cars as a walking plaza, or opened to cars
+			# again (CS2's pedestrian streets; Nathan 2026-10-26).
+			var seg := int(cmd.seg)
+			var on := bool(cmd.get("on", true))
+			if on:
+				var cost := car_free_cost(seg)
+				if car_free_problem(seg) != "" or cost > economy.money:
+					return false
+				economy.money -= cost
+				undo.note_car_free(self, seg, cost)
+				traffic.close_segment(seg, true, "night")
+				if not seg in parks.trails.plazas:
+					parks.trails.plazas.append(seg)
+			else:
+				if not seg in parks.trails.plazas:
+					return false
+				traffic.close_segment(seg, false)
+				parks.trails.plazas.erase(seg)
+			parks.trails._rev = ""
+			parks_changed.emit()
+			ok = true
 		"set_junction":
 			# Traffic lights, stop signs or none at a junction (-1 = automatic).
 			ok = traffic.set_rule(int(cmd.node), int(cmd.rule))
 		"set_lanes":
-			# A No Left Turn sign and lane arrows where a road meets a junction.
+			# No Left and No Right Turn signs and lane arrows where a road meets a junction.
 			ok = traffic.set_lane_rule(int(cmd.node), int(cmd.seg), bool(cmd.get("no_left", false)),
-				cmd.get("lanes", []))
+				cmd.get("lanes", []), bool(cmd.get("no_right", false)))
 		"link_wave":
 			# A green wave: light `to` timed behind light `from` at the limit.
 			ok = traffic.link_wave(int(cmd.from), int(cmd.to), float(cmd.get("v", 15.6)))
@@ -987,6 +1054,8 @@ func _apply_cmd(cmd: Dictionary) -> bool:
 			# after the wipe, with a crossroads to start the town from.
 			var links_kept := _link_roads()
 			undo = UndoLog.new()
+			grown_yards_from = 0  # a new start: every yard comes in grown
+			curb_drives_from = 0
 			region_links.clear()
 			trade = Trade.new()
 			traffic.overrides.clear()
@@ -1007,6 +1076,8 @@ func _apply_cmd(cmd: Dictionary) -> bool:
 			economy = Economy.new()
 			economy.set_difficulty(diff, true)
 			services = Services.new()
+			services.terrain_offset = terrain_offset
+			services.county_rail = county_rail
 			farms = Farms.new()
 			industry = Industry.new()
 			power = Power.new()
@@ -2113,6 +2184,8 @@ func warehouse_problem(kind: String, pos: Vector3, dir: Vector3) -> String:
 	if Services.road_clash(network, poly):
 		return "Too close to a road. %s needs %d × %d m." % [Words.a_first(Words.mid(Warehouses.KINDS[kind].name)),
 			roundi(Warehouses.site_width(w)), roundi(Warehouses.site_depth(w))]
+	if _rail_under(poly, CountyRail.ROW_HALF):
+		return "That ground is the railroad's right of way: keep %d m from the track." % roundi(CountyRail.ROW_HALF)
 	for id in services.buildings:
 		if not Geometry2D.intersect_polygons(poly, services.footprint(id)).is_empty():
 			return "Overlaps a service building."
@@ -2149,7 +2222,7 @@ func warehouse_problem(kind: String, pos: Vector3, dir: Vector3) -> String:
 ## True when new ground for warehouse `id` is free: no road, building,
 ## farm, company, other warehouse, reserve, or zoned or built lot on it.
 func warehouse_ground_ok(poly: PackedVector2Array, id: int) -> bool:
-	if Services.road_clash(network, poly):
+	if Services.road_clash(network, poly) or _rail_under(poly, CountyRail.ROW_HALF):
 		return false
 	for p in _grid_in(poly):
 		if not land_ok(p):
@@ -3282,7 +3355,66 @@ func _lot_blocked(lot: Dictionary) -> bool:
 			and Highways.distance(at.x + terrain_offset.x, at.z + terrain_offset.y) >= HIGHWAY_LOT_CLEAR
 	# Nor across a county road's gravel (joined or still painted on the
 	# land), which would cut it in two.
-	return not _land_ok[at] or _county_under(lot.corners, CountyGrid.HALF_WIDTH)
+	if not _land_ok[at] or _county_under(lot.corners, CountyGrid.HALF_WIDTH):
+		return true
+	# Nor on a county railroad's right of way, the whole outline.
+	return _rail_under(lot.corners)
+
+
+## How far inside the railroad's right of way a lot may reach (m): the lot
+## planner stops lots at its line (CountyRail.row_pieces), give or take.
+const RAIL_LOT_SLACK := 1.0
+
+
+## True when an outline (town coordinates) reaches onto a county railroad's
+## right of way (CountyRail.ROW_HALF from the track), where the railroads
+## are drawn (county_rail). Towns saved before this rule are test towns
+## (Nathan, 2026-10-29): their lots on the track go at the next full lot
+## check, like lots a new road runs through.
+func _rail_under(poly: PackedVector2Array, half := CountyRail.ROW_HALF - RAIL_LOT_SLACK) -> bool:
+	if not county_rail or poly.size() < 3:
+		return false
+	var o := terrain_offset
+	var reg := PackedVector2Array()
+	for q in poly:
+		reg.append(q + o)
+	return CountyRail.poly_distance(reg, half) < half
+
+
+## The county railroads' right of way near the town's roads, as outlines the
+## lot planner keeps lots off (CountyRail.row_pieces), by key. Kept until
+## the roads reach new ground.
+func _rail_sites() -> Dictionary:
+	if not county_rail or network.nodes.is_empty():
+		return {}
+	var lo := Vector2.INF
+	var hi := -Vector2.INF
+	for id in network.nodes:
+		var p: Vector3 = network.nodes[id]
+		lo = lo.min(Vector2(p.x, p.z))
+		hi = hi.max(Vector2(p.x, p.z))
+	# Lots reach about a lot's depth past the outermost roads.
+	var reach := 120.0
+	var key := [Vector2i(((lo - Vector2.ONE * reach) / 64.0).floor()), Vector2i(((hi + Vector2.ONE * reach) / 64.0).ceil()),
+		terrain_offset]
+	if key == _rail_sites_key:
+		return _rail_sites_out
+	_rail_sites_key = key
+	var o := terrain_offset
+	var box := Rect2(Vector2(key[0]) * 64.0 + o, Vector2(key[1] - key[0]) * 64.0)
+	var out := {}
+	var pieces := CountyRail.row_pieces(box)
+	for k in pieces:
+		var poly := PackedVector2Array()
+		for q in pieces[k]:
+			poly.append(q - o)
+		out[k] = {"corners": poly}
+	_rail_sites_out = out
+	return out
+
+
+var _rail_sites_key := []
+var _rail_sites_out := {}
 
 
 ## True when a lot runs onto a bank's, campus's or the phone company's land
@@ -3352,6 +3484,8 @@ func _block_reason(lot: Dictionary) -> String:
 		return "it's the state highway's right of way"
 	if _county_under(lot.corners, CountyGrid.HALF_WIDTH):
 		return "a county road runs through here (build a street on it, or bulldoze it)"
+	if _rail_under(lot.corners):
+		return "it's the railroad's right of way (%d m each side of the track)" % roundi(CountyRail.ROW_HALF)
 	return ""
 
 
@@ -3539,9 +3673,13 @@ func _parcel_lots() -> Dictionary:
 ## backing onto a city parking lot is just shorter, instead of being lost.
 ## Keys have no ":" so they never pass for a lot.
 func _with_sites(frozen: Dictionary) -> Dictionary:
-	if services.buildings.is_empty() and parks.sites.is_empty():
+	var rail_row := _rail_sites()
+	if services.buildings.is_empty() and parks.sites.is_empty() and rail_row.is_empty():
 		return frozen
 	var out := frozen.duplicate()
+	# The railroads' right of way too: lots backing onto the tracks stop at
+	# its line.
+	out.merge(rail_row)
 	for id in services.buildings:
 		out["svc-%d" % id] = {"corners": services.footprint(id)}
 	for id in parks.sites:
@@ -3694,6 +3832,7 @@ func _sites_sig() -> int:
 		sites.append([id, services.footprint(id)])
 	for id in parks.sites:
 		sites.append([id, parks.land_polys(id)])
+	sites.append(_rail_sites().keys())
 	return hash(sites)
 
 
@@ -3760,6 +3899,8 @@ func road_problem(c: Array, type: int) -> String:
 	var saved := reserves.crosses(RoadNetwork.sample_curve(c[0], c[1], c[2], 24))
 	if problem == "" and saved != "":
 		problem = "That land is reserved for %s. Clear the reserve first." % Reserves.KINDS[saved]
+	if problem == "":
+		problem = road_ground(c, type)
 	if problem == "" and Economy.road_cost(c, type) > economy.money:
 		return "Not enough money: this road costs $%s." % money_text(Economy.road_cost(c, type))
 	return problem
@@ -3778,6 +3919,25 @@ func pieces_problem(pieces: Array, type: int) -> String:
 	if shapes_cost(pieces, type) > economy.money:
 		return "Not enough money: this road costs $%s." % money_text(shapes_cost(pieces, type))
 	return ""
+
+
+## Why a road of this shape (curve, town coordinates) can't go on the ground
+## here, or "": it keeps back from a county railroad's track and crosses it
+## only at a grade crossing (CountyRail.road_check). Every road the network
+## builds is asked (RoadNetwork.ground_check), whoever builds it.
+func road_ground(c: Array, type: int) -> String:
+	if not county_rail:
+		return ""
+	return CountyRail.road_problem(c, RoadStyle.half_width(type), terrain_offset)
+
+
+## Grid streets with the stretches that would run along a county railroad,
+## or cross it too shallow, left out (CountyRail.trim_lines): they stop
+## short of the track. Unchanged with county_rail off.
+func rail_trim(lines: Array, type: int) -> Array:
+	if not county_rail:
+		return lines
+	return CountyRail.trim_lines(lines, RoadStyle.half_width(type), terrain_offset)
 
 
 ## Whose land these road pieces cross ("" when it's this town's or open
@@ -3857,6 +4017,54 @@ static func shapes_cost(curves: Array, type: int) -> int:
 ## upgrade, and only the rest is new road. True if anything changed. With
 ## `retype` false the old roads keep their type (a county road joined
 ## along a street the player drew onto its line stays that street).
+## Builds roads drawn as one (an S-curve's halves), all or none: every one
+## meets the road rules, raised ones climbing over what they cross, and the
+## town can pay for them all, before any goes in.
+func _build_roads(curves: Array, type: int, over: bool, join: bool) -> bool:
+	if curves.is_empty() or curves.size() > 8:
+		return false
+	var plans := []
+	var cost := 0
+	for c in curves:
+		var pieces := [c]
+		if over:
+			pieces = Overpass.plan(self, c, type).pieces
+		var why := pieces_problem(pieces, type)
+		if why != "" and not why.begins_with("Not enough money"):
+			return false
+		cost += shapes_cost(pieces, type)
+		plans.append(pieces)
+	if cost > economy.money:
+		return false
+	var roads := network.snapshot()
+	var money := economy.money
+	var closures := street_closures()
+	var built := []
+	network.begin_batch()
+	for i in curves.size():
+		var pieces: Array = plans[i]
+		var one := false
+		if pieces.size() == 1:
+			one = _build_over(curves[i], type)
+		else:
+			for q in pieces:
+				one = network.build_road(q[0], q[1], q[2], type) or one
+			if one:
+				economy.money -= shapes_cost(pieces, type)
+		if not one:
+			# Checked above, so this shouldn't happen; if it does, none of it stays.
+			network.restore(roads)
+			economy.money = money
+			network.end_batch()
+			put_back_closures(closures)
+			return false
+		built.append_array(pieces)
+	network.end_batch()
+	if join:
+		_join_crossings(built)
+	return true
+
+
 func _build_over(c: Array, type: int, retype := true) -> bool:
 	var n := maxi(2, ceili(Vector2(c[2].x - c[0].x, c[2].z - c[0].z).length() / OVERLAY_STEP))
 	var along := []  # per sample: the segment it runs along, or -1
@@ -3975,6 +4183,101 @@ static func _off_line(line: PackedVector3Array, p: Vector3) -> float:
 const OVERLAY_NEAR := 2.5
 const OVERLAY_PARALLEL := 0.97
 const OVERLAY_STEP := 4.0
+
+
+## Why a street can't be made car-free, or "" if it can: a town street
+## (not an avenue, a highway or a country road) on the ground, not a bridge
+## or a tunnel, that isn't car-free yet.
+func car_free_problem(seg: int) -> String:
+	if not network.segments.has(seg):
+		return "Click a street."
+	if seg in parks.trails.plazas:
+		return "Already car-free."
+	if traffic.closed.has(seg):
+		# Kept apart from car-free: opening a plaza mustn't open what the
+		# engineer was paid to close (second reviewer 2026-10-29).
+		return "The city engineer already closed this street to through traffic."
+	if not network.segments[seg].type in Balance.PLAZA_TYPES:
+		return "Only town streets can be car-free, not %ss." % RoadStyle.TYPES[network.segments[seg].type].name.to_lower()
+	for p in network.curve_of(seg):
+		if absf(p.y) > 0.5:
+			return "Bridges and tunnels can't be car-free."
+	return ""
+
+
+var _plazas_moved := false
+
+
+## A road cut in two: a closure on it (car-free, or local traffic only)
+## stays on both pieces, and a plaza stays a plaza.
+func _carry_closure(seg: int, first: int, second: int) -> void:
+	if traffic.closed.has(seg):
+		var deliveries: String = str(traffic.closed[seg])
+		traffic.close_segment(seg, false)
+		traffic.close_segment(first, true, deliveries)
+		traffic.close_segment(second, true, deliveries)
+	var plazas: Array = parks.trails.plazas
+	var at := plazas.find(seg)
+	if at != -1:
+		plazas[at] = first
+		plazas.insert(at + 1, second)
+		_plazas_moved = true
+
+
+## Closures and plazas on roads that are gone; and the plazas redrawn if
+## any moved or went.
+func _drop_stale_closures() -> void:
+	for seg in traffic.closed.keys():
+		if not network.segments.has(int(seg)):
+			traffic.close_segment(int(seg), false)
+	var plazas: Array = parks.trails.plazas
+	for seg in plazas.duplicate():
+		if not network.segments.has(int(seg)):
+			plazas.erase(seg)
+			_plazas_moved = true
+		elif not network.segments[int(seg)].type in Balance.PLAZA_TYPES:
+			# Made an avenue (upgraded, or an avenue drawn along it): it's
+			# a road for cars again, and the pavers go with the rebuild
+			# (second reviewer 2026-10-29: car-free avenues).
+			plazas.erase(seg)
+			traffic.close_segment(int(seg), false)
+			_plazas_moved = true
+	if _plazas_moved:
+		_plazas_moved = false
+		parks.trails._rev = ""
+		parks_changed.emit()
+
+
+## The streets closed to cars and the plazas now, to put back when roads
+## taken out for a moment come back (a park closing that didn't let the
+## park grow, an undo). Taking a road out drops them at once.
+func street_closures() -> Dictionary:
+	return {"closed": traffic.closed.duplicate(), "plazas": parks.trails.plazas.duplicate()}
+
+
+## Puts back closures and plazas (street_closures()) on the roads that are
+## there again and are missing them.
+func put_back_closures(k: Dictionary) -> void:
+	for seg in k.get("closed", {}):
+		if network.segments.has(int(seg)) and not traffic.closed.has(int(seg)):
+			traffic.close_segment(int(seg), true, str(k.closed[seg]))
+	var plazas: Array = parks.trails.plazas
+	var moved := false
+	for seg in k.get("plazas", []):
+		if network.segments.has(int(seg)) and not int(seg) in plazas \
+				and network.segments[int(seg)].type in Balance.PLAZA_TYPES:
+			plazas.append(int(seg))
+			moved = true
+	if moved:
+		parks.trails._rev = ""
+		parks_changed.emit()
+
+
+## Pavers, benches and planters, curb to curb, for a car-free street.
+func car_free_cost(seg: int) -> int:
+	if not network.segments.has(seg):
+		return -1
+	return int(RoadNetwork.polyline_length(network.sample_segment(seg)) * Balance.PLAZA_PER_M)
 
 
 func upgrade_cost(seg: int, type: int) -> int:
@@ -4704,15 +5007,22 @@ static func _touch(touch: Dictionary, key: String, along: float, q: Vector3) -> 
 
 func _county_road(a: Vector2, b: Vector2, link_ends: Array) -> Array:
 	var money := economy.money
-	var n := maxi(1, ceili(a.distance_to(b) / 400.0))
-	var pts := []
-	for i in n + 1:
-		var p := a.lerp(b, float(i) / n)
-		pts.append(Vector3(p.x, 0.0, p.y))
+	# Bent where it would run along a county railroad or cross it too
+	# shallow (CountyRail.detour), in pieces of 400 m at most.
+	var bends := [Vector3(a.x, 0.0, a.y), Vector3(b.x, 0.0, b.y)]
+	if county_rail:
+		bends = CountyRail.detour(bends[0], bends[1], RoadStyle.half_width(RoadStyle.Type.STREET), terrain_offset)
+	var pts := [bends[0]]
+	for k in range(1, bends.size()):
+		var p0: Vector3 = bends[k - 1]
+		var p1: Vector3 = bends[k]
+		var n := maxi(1, ceili(p0.distance_to(p1) / 400.0))
+		for i in range(1, n + 1):
+			pts.append(p0.lerp(p1, float(i) / n))
 	var before := network.segments.keys()
 	streets.hold = true
 	network.begin_batch()
-	for i in n:
+	for i in pts.size() - 1:
 		network.build_road(pts[i], (pts[i] + pts[i + 1]) * 0.5, pts[i + 1], RoadStyle.Type.STREET)
 	network.end_batch()
 	streets.hold = false
@@ -4925,6 +5235,8 @@ func save_steps(postcard := false) -> Array:
 		["tick", func(): return tick_count],
 		["calendar", func(): return calendar_offset],
 		["calendar_from", func(): return calendar_from],
+		["grown_yards_from", func(): return grown_yards_from],
+		["curb_drives_from", func(): return curb_drives_from],
 		["seed", func(): return city_seed],
 		["roads", func(): return network.to_dict()],
 		["buildings", func(): return buildings],
@@ -5112,6 +5424,12 @@ func from_dict(d: Dictionary) -> void:
 	else:
 		calendar_offset = Seasons.offset_from_old(tick_count)
 		calendar_from = tick_count
+	# A town saved before yards came in grown keeps its trees as they were.
+	grown_yards_from = int(d.get("grown_yards_from", tick_count + 1))
+	# A town saved before corner drives kept clear keeps its houses as built.
+	curb_drives_from = int(d.get("curb_drives_from", tick_count + 1))
+	if curb != null:
+		curb.reset()  # another town loaded into this sim: its curb worked out afresh
 	city_seed = int(d.get("seed", 1))
 	var postcard := bool(d.get("postcard", false))
 	# Parcels: the lots buildings stand on. (A neighbor's postcard has no
@@ -5145,6 +5463,8 @@ func from_dict(d: Dictionary) -> void:
 			buildings[key].short = int(b.short)
 		if b.has("added_from"):
 			buildings[key].added_from = int(b.added_from)
+		if b.has("drive"):
+			buildings[key].drive = int(b.drive)  # the side its drive went (SiteLayout.drive_away)
 		if z == ZoneMap.Zone.INDUSTRIAL and b.has("chain"):
 			buildings[key].chain = str(b.chain)
 	if postcard:

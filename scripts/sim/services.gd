@@ -122,6 +122,9 @@ const PROFILE := {Kind.POWER_FEED: "power_feed", Kind.WELL: "well", Kind.PARKING
 
 ## Where the city sits in the shared region (set by CitySim).
 var terrain_offset := Vector2.ZERO
+## Whether the county's railroads are drawn and come first (set by CitySim):
+## no public building on their right of way.
+var county_rail := false
 ## The service buildings: id -> {kind, pos: Vector3 (centre), dir: Vector3
 ## (unit, from the building toward its road), and "size" (Vector2) once a
 ## hub has grown past its first footprint}.
@@ -332,6 +335,12 @@ func site_problem(network: RoadNetwork, kind: int, pos: Vector3, dir: Vector3) -
 		poly.append(Vector2(p.x, p.z))
 	if road_clash(network, poly):
 		return "Too close to a road."
+	if county_rail:
+		var reg := PackedVector2Array()
+		for q in poly:
+			reg.append(q + terrain_offset)
+		if CountyRail.poly_distance(reg, CountyRail.ROW_HALF) < CountyRail.ROW_HALF:
+			return "That ground is the railroad's right of way: keep %d m from the track." % roundi(CountyRail.ROW_HALF)
 	for id in buildings:
 		var b: Dictionary = buildings[id]
 		var other := PackedVector2Array()

@@ -4,7 +4,7 @@ extends RefCounted
 ## junction is built or changed, from its real corners (Junction.plan), so
 ## skewed, Y, T, offset and five-way junctions all come out the same way:
 ##
-## - A crosswalk across every leg, in line with its curb ramps: two solid
+## - A crosswalk across a leg (style(), below), in line with its curb ramps: two solid
 ##   white transverse lines 10 in wide with 6.2 ft between them (Indiana
 ##   MUTCD 3B.17: lines 6 to 24 in wide, at least 6 ft apart), square to
 ##   the leg wherever it points, curb to curb.
@@ -18,6 +18,23 @@ extends RefCounted
 ## A leg too short to fit them all gets what fits: the crosswalk first.
 ## Junctions that aren't shaped (country roads, one-ways, ramps) keep
 ## JunctionView's simple marks.
+##
+## Not every leg is painted alike (Nathan, 2026-10-29: "every intersection
+## is exactly the same shape"). Given the junction's traffic control, each
+## leg's crosswalk is one of (style()):
+## - "continental": high-visibility bars 24 in wide and 24 in apart, along
+##   the road (MUTCD 3B.18, Figure 3B-19), at signals on main streets and
+##   avenues, where towns put them.
+## - "lines": the two transverse lines.
+## - "none": no paint (the crosswalk is still there in law, unmarked, as at
+##   most quiet residential corners; MUTCD 3B.18 leaves marking to the
+##   town). Often no stop line either where a stop sign stands alone.
+##   Always at an old corner with one diagonal ramp (Junction.ramps).
+## None across a car-free street: people walk all of it.
+## The paint is fresh, worn or a grey ghost of itself (wear()), more often
+## worn in the old town, fresher at signals where it is redone with them.
+## Where traffic stops does not change with the paint: cars stop at the
+## stop line, painted or not (stop_back).
 
 ## Metres past where a leg's road starts (the end of its curb return).
 const CROSS_NEAR := 0.3  # the crosswalk's first line, at the curb ramp
@@ -126,30 +143,178 @@ static func stop_back(j: Dictionary, seg: int) -> float:
 	return -1.0
 
 
+## Continental crosswalk bars, 24 in wide with 24 in between.
+const STRIPE := 0.6
+const STRIPE_GAP := 0.6
+## A ghost of a paint job: this share of it worn off to the asphalt, in
+## pieces about a metre long.
+const GHOST_GONE := 0.35
+const GHOST_PIECE := 0.9
+
+
+## A junction's traffic control as paint picks by it, from TrafficSim's
+## junction ({} when it has none): "signal", "all_stop", "two_way" (stop or
+## yield on the side roads) or "none".
+static func control_of(tj: Dictionary) -> String:
+	if tj.is_empty():
+		return "none"
+	match int(tj.control):
+		TrafficSim.Rule.SIGNAL: return "signal"
+		TrafficSim.Rule.ALL_STOP: return "all_stop"
+		TrafficSim.Rule.PRIORITY: return "two_way"
+	return "none"
+
+
+## Each leg's line at a junction, from its traffic control: seg -> "stop",
+## "yield" or "" (traffic goes on through), as paint() takes them.
+static func leg_rules(traffic: TrafficSim, node: int) -> Dictionary:
+	var out := {}
+	var j: Dictionary = traffic.junctions.get(node, {})
+	for wid in traffic.ways_into(node):
+		var rule := ""
+		if j.is_empty() or j.control == TrafficSim.Rule.NONE:
+			pass
+		elif j.control == TrafficSim.Rule.PRIORITY and j.major.has(wid):
+			pass
+		elif j.control == TrafficSim.Rule.PRIORITY and j.sign == "yield":
+			rule = "yield"
+		else:
+			rule = "stop"
+		out[traffic.ways[wid].seg] = rule
+	return out
+
+
+## A junction's car-free legs (closed to cars): seg -> true. No paint
+## across them.
+static func car_free_legs(traffic: TrafficSim, j: Dictionary) -> Dictionary:
+	var out := {}
+	for arm in j.get("arms", []):
+		if traffic.closed.has(arm.seg):
+			out[arm.seg] = true
+	return out
+
+
+## The crosswalk across one leg: "continental", "lines" or "none" (see the
+## top). `rule` is the leg's ("stop", "yield", or "" where traffic goes on
+## through); `closed`: segments closed to cars. With no control given (""),
+## the plain rule book: two lines on every leg.
+static func style(j: Dictionary, arm: Dictionary, rule: String, control: String, closed := {}) -> String:
+	if closed.has(arm.seg):
+		return "none"
+	if control == "":
+		return "lines"
+	if Junction.ramps(j).any(func(r): return r[1] == "diagonal"):
+		return "none"  # an old corner's one diagonal ramp lands outside any markings (ADA 406.6)
+	var center: Vector3 = j.center
+	var era: String = j.get("look", {}).get("era", "postwar")
+	var main := false
+	var big := false  # an avenue or bigger meets here
+	for o in j.arms:
+		main = main or o.type == RoadStyle.Type.MAIN_STREET
+		big = big or RoadStyle.group(o.type) != RoadStyle.Type.STREET
+	var r := Junction.roll(center, "walk %d" % j.arms.find(arm))
+	var quiet: float = {"prewar": 0.35, "postwar": 0.5, "recent": 0.65}.get(era, 0.5)
+	match control:
+		"signal":
+			if main or big:
+				return "continental" if Junction.roll(center, "high vis") < (0.8 if main else 0.55) else "lines"
+			return "lines"
+		"all_stop":
+			if main:
+				return "continental" if Junction.roll(center, "high vis") < 0.5 else "lines"
+			if big:
+				return "lines"
+			return "none" if r < quiet * 0.5 else "lines"
+		"two_way":
+			if main:
+				return "lines"
+			if rule == "":
+				# Across the through road at a side street: often unmarked.
+				if RoadStyle.group(arm.type) != RoadStyle.Type.STREET:
+					return "lines" if r < 0.5 else "none"
+				return "none" if r < 0.8 else "lines"
+			if big:
+				return "lines"
+			return "none" if r < quiet else "lines"
+	return "none" if r < 0.85 and not main else "lines"
+
+
+## How worn a junction's paint is: 0 fresh, 1 worn, 2 a grey ghost. Fresh
+## with no control given (the plain rule book).
+static func wear(j: Dictionary, control: String) -> int:
+	if control == "":
+		return 0
+	var era: String = j.get("look", {}).get("era", "postwar")
+	var fresh: float = {"prewar": 0.3, "postwar": 0.4, "recent": 0.6}.get(era, 0.4)
+	var ghost: float = {"prewar": 0.25, "postwar": 0.15, "recent": 0.05}.get(era, 0.15)
+	if control == "signal" or j.arms.any(func(a): return a.type == RoadStyle.Type.MAIN_STREET):
+		# Redone with the signal's upkeep, or for the downtown.
+		fresh += 0.2
+		ghost *= 0.5
+	var r := Junction.roll(j.center, "paint")
+	if r < fresh:
+		return 0
+	return 2 if r > 1.0 - ghost else 1
+
+
 ## Paints one junction into `st`. `rules`: seg -> "stop", "yield" or ""
-## (no line, traffic goes on through).
-static func paint(j: Dictionary, rules: Dictionary, st: SurfaceTool, y: float) -> void:
+## (no line, traffic goes on through). `control` (control_of) picks each
+## leg's crosswalk and the paint's wear (drawn into `st` all the same: the
+## caller picks the paint for wear()); "" paints every leg the plain way.
+## No paint on a leg in `closed` (car-free).
+static func paint(j: Dictionary, rules: Dictionary, st: SurfaceTool, y: float, control := "",
+		closed := {}) -> void:
 	if not marked(j):
 		return
 	var center: Vector3 = j.center
-	for arm in j.arms:
+	var worn := wear(j, control)
+	for i in j.arms.size():
+		var arm: Dictionary = j.arms[i]
 		var fits := room(arm)
-		if fits == 0:
+		if fits == 0 or closed.has(arm.seg):
 			continue
 		var hw: float = arm.hw
 		var d: float = arm.d
-		for at in [d + CROSS_NEAR, d + CROSS_FAR - CROSS_LINE]:
-			Junction._band(st, center, arm, 1.0, -hw, hw, at, at + CROSS_LINE, y)
 		var rule: String = rules.get(arm.seg, "")
+		var kind := style(j, arm, rule, control, closed)
+		var bits := [center, worn, "leg %d" % i]
+		if kind == "lines":
+			for at in [d + CROSS_NEAR, d + CROSS_FAR - CROSS_LINE]:
+				_piece(st, arm, bits, 1.0, -hw, hw, at, at + CROSS_LINE, y)
+		elif kind == "continental":
+			# Bars along the road, centred on it, curb to curb.
+			var n := int((2.0 * hw + STRIPE_GAP) / (STRIPE + STRIPE_GAP))
+			var o := -hw + (2.0 * hw - (n * STRIPE + (n - 1) * STRIPE_GAP)) * 0.5
+			for k in n:
+				var o0 := o + k * (STRIPE + STRIPE_GAP)
+				_piece(st, arm, bits, 1.0, o0, o0 + STRIPE, d + CROSS_NEAR, d + CROSS_FAR, y)
 		if fits < 2 or rule == "":
 			continue
+		if kind == "none" and control != "signal" and Junction.roll(center, "bar %d" % i) < 0.45:
+			continue  # a stop sign alone, no line (MUTCD 3B.16: a stop line is optional there)
 		var lanes := approach(arm.type)
 		var at := d + CROSS_FAR + BAR_GAP
 		if rule == "yield":
 			_teeth(st, center, arm, lanes[0], lanes[1], at, y)
 		else:
 			# Drivers arrive on the leg's -n side (they keep right).
-			Junction._band(st, center, arm, -1.0, lanes[0], lanes[1], at, at + BAR, y)
+			_piece(st, arm, bits, -1.0, lanes[0], lanes[1], at, at + BAR, y)
+
+
+## A band of paint (Junction._band, about the junction's centre), or what
+## is left of it on a ghost: pieces across it worn away, picked by the
+## junction's own hash. `bits`: [centre, wear, a name for the leg].
+static func _piece(st: SurfaceTool, arm: Dictionary, bits: Array, side: float, o0: float, o1: float,
+		from: float, to: float, y: float) -> void:
+	var center: Vector3 = bits[0]
+	if bits[1] < 2:
+		Junction._band(st, center, arm, side, o0, o1, from, to, y)
+		return
+	var n := maxi(1, roundi((o1 - o0) / GHOST_PIECE))
+	for k in n:
+		if Junction.roll(center, "%s %s %.1f %d" % [bits[2], side, from, k]) < GHOST_GONE:
+			continue
+		Junction._band(st, center, arm, side, lerpf(o0, o1, float(k) / n), lerpf(o0, o1, float(k + 1) / n), from, to, y)
 
 
 ## The approach lanes' span from the centre line, [inner, outer] metres:

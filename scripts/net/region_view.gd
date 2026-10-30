@@ -134,7 +134,7 @@ func _add_city(id: String) -> void:
 					buildings.regraded(Rect2(box.position - at, box.size)))
 		var cars := TrafficView.new()
 		# Their cars as their computer last sent them.
-		cars.setup(c.sim.traffic, func(): return 0.0)
+		cars.setup(c.sim.traffic, func(): return 0.0, c.sim)
 		root.add_child(cars)
 		if terrain != null:
 			their_exits = ExitRoads.new()

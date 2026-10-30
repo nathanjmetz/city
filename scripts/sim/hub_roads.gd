@@ -111,6 +111,9 @@ static func check(sim, route: Array, self_ref: String) -> Dictionary:
 		var saved: String = sim.reserves.crosses(RoadNetwork.sample_curve(c[0], c[1], c[2], 24))
 		if problem == "" and saved != "" and saved != "farm":
 			problem = "land saved for %s" % Reserves.KINDS[saved]
+		if problem == "":
+			# The ground rules every road is built by (a county railroad).
+			problem = sim.road_ground(c, TYPE)
 		if problem != "":
 			out.why = problem
 			return out

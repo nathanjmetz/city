@@ -33,6 +33,17 @@ func _sync() -> void:
 			_shapes[id] = [w.kind, w.level, w.bays, w.get("built", []).size()]
 
 
+## Where warehouse `ref` ("wh:<id>" or its traffic ref "wh:<id>@x,z") is
+## drawn, or null while it isn't (yet, or still going up): DoorView puts its
+## dock doors there.
+func xf_of(ref: String) -> Variant:
+	var id := int(ref.substr(3).get_slice("@", 0))
+	var node: Node3D = _nodes.get(id)
+	if node == null or not sim.construction.is_done("wh:%d" % id, sim.tick_count):
+		return null
+	return Transform3D(node.basis, node.position)
+
+
 func _spawn(id: int, w: Dictionary) -> Node3D:
 	var root := Node3D.new()
 	add_child(root)

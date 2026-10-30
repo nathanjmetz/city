@@ -132,6 +132,44 @@ static func offset(curve: Array, gap: float) -> Array:
 	return [a, Vector3(hit.x, 0.0, hit.y), b]
 
 
+## An S-curve from a start, two bend points and an end (CS2's complex
+## curve), as two roads [start, control, end] that meet in the middle with
+## no kink. Roads are quadratic curves, so the cubic through the four points
+## is split at its middle and each half gets the control point where its
+## end directions cross, which keeps the direction smooth at all three ends.
+static func s_curve(p0: Vector3, c1: Vector3, c2: Vector3, p3: Vector3) -> Array:
+	var m := p0 * 0.125 + c1 * 0.375 + c2 * 0.375 + p3 * 0.125
+	var tm := _flat_dir(p3 + c2 - c1 - p0, p3 - p0)
+	var d0 := _flat_dir(c1 - p0, p3 - p0)
+	var d3 := _flat_dir(p3 - c2, p3 - p0)
+	var y := lerpf(p0.y, p3.y, 0.5)
+	m.y = y
+	var left = _meet(p0, d0, m, tm)
+	var right = _meet(m, tm, p3, d3)
+	# Where a half's directions run parallel (nearly straight) or double
+	# back, that half goes straight.
+	if left == null:
+		left = p0.lerp(m, 0.5)
+	if right == null:
+		right = m.lerp(p3, 0.5)
+	left.y = lerpf(p0.y, y, 0.5)
+	right.y = lerpf(y, p3.y, 0.5)
+	return [[p0, left, m], [m, right, p3]]
+
+
+## Where a line from `a` heading `da` meets one through `b` heading `db`,
+## ahead of `a` and behind `b`, or null.
+static func _meet(a: Vector3, da: Vector3, b: Vector3, db: Vector3):
+	var hit = Geometry2D.line_intersects_line(Vector2(a.x, a.z), Vector2(da.x, da.z), Vector2(b.x, b.z), Vector2(db.x, db.z))
+	if hit == null:
+		return null
+	var p := Vector3(hit.x, 0.0, hit.y)
+	var span := Vector2(b.x - a.x, b.z - a.z).length()
+	if (p - a).dot(da) < 0.0 or (b - p).dot(db) < 0.0 or Vector2(p.x - a.x, p.z - a.z).length() > span * 2.0:
+		return null
+	return p
+
+
 static func _flat_dir(d: Vector3, fallback: Vector3) -> Vector3:
 	d.y = 0.0
 	if d.length() < 0.01:

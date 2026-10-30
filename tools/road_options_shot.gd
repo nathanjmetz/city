@@ -2,7 +2,10 @@ extends SceneTree
 ## Pictures of the road options added to match CS2's (docs/road-options.md),
 ## one scene per step, in the real game.
 ## Run: godot -s tools/road_options_shot.gd -- <step> <out_prefix>
-## Steps: oneway (the one-way boulevard and the Boulevard menu).
+## Steps: oneway (the one-way boulevard and the Boulevard menu), scurve (an
+## S-curve built, and the Draw tools), snap (the snap switches, Roads off),
+## carfree (a street made car-free, close up and with the tool), noright
+## (a No Right Turn sign at a junction, close up and with the Traffic tools).
 
 var _main: Node
 var _hud: Hud
@@ -35,6 +38,10 @@ func _process(_delta: float) -> bool:
 			n.stop()
 		match step:
 			"oneway": _oneway(sim)
+			"scurve": _scurve(sim)
+			"snap": _snap(sim)
+			"carfree": _car_free(sim)
+			"noright": _no_right(sim)
 		if not _shots.is_empty():
 			_shots[0][1].call()
 	# Each shot gets 90 frames to settle, then is saved and the next set up.
@@ -65,6 +72,93 @@ func _oneway(sim: CitySim) -> void:
 		["close", func():
 			_hud.close_all()
 			_aim(Vector3(0, 0, -135), 25.0, 30.0, 45.0)],
+	]
+
+
+func _scurve(sim: CitySim) -> void:
+	# A street drawn as an S-curve between two avenues, the way it's drawn:
+	# start, a bend, a bend back, end.
+	sim.apply({"type": "build_road", "start": [-60, 0], "ctrl": [100, 0], "end": [260, 0], "road": RoadStyle.Type.AVENUE})
+	sim.apply({"type": "build_road", "start": [-60, -260], "ctrl": [100, -260], "end": [260, -260], "road": RoadStyle.Type.AVENUE})
+	var tool: RoadTool = _main.find_children("*", "RoadTool", false, false)[0]
+	tool.road_type = RoadStyle.Type.STREET
+	tool.mode = RoadTool.Mode.SCURVE
+	tool._points = [Vector3(0, 0, 0), Vector3(0, 0, -130), Vector3(200, 0, -130)]
+	for curve in tool._pending_curves(Vector3(200, 0, -260)):
+		tool._build(curve)
+	tool._points.clear()
+	_shots = [
+		["menu", func():
+			_aim(Vector3(100, 0, -130), 0.0, 55.0, 330.0)
+			_hud._open("roads")
+			tool.set_mode(RoadTool.Mode.SCURVE)],
+		["close", func():
+			_hud.close_all()
+			_aim(Vector3(100, 0, -130), 20.0, 32.0, 120.0)],
+	]
+
+
+func _snap(sim: CitySim) -> void:
+	sim.apply({"type": "build_road", "start": [-100, 0], "ctrl": [0, 0], "end": [100, 0], "road": RoadStyle.Type.AVENUE})
+	sim.apply({"type": "build_road", "start": [0, 0], "ctrl": [0, -100], "end": [0, -200]})
+	var tool: RoadTool = _main.find_children("*", "RoadTool", false, false)[0]
+	_shots = [
+		["menu", func():
+			_aim(Vector3(0, 0, -80), 0.0, 55.0, 260.0)
+			_hud._open("roads")
+			tool.set_mode(RoadTool.Mode.STRAIGHT)
+			tool.set_snap("roads", false)],
+	]
+
+
+func _car_free(sim: CitySim) -> void:
+	# A block of town streets with the middle one made car-free.
+	sim.apply({"type": "build_road", "start": [-150, 0], "ctrl": [0, 0], "end": [150, 0], "road": RoadStyle.Type.AVENUE})
+	sim.apply({"type": "build_road", "start": [-150, -120], "ctrl": [0, -120], "end": [150, -120]})
+	for x in [-100, 0, 100]:
+		sim.apply({"type": "build_road", "start": [x, 0], "ctrl": [x, -60], "end": [x, -120]})
+	var seg: int = sim.network.find_segment_near(Vector3(0, 0, -60), 1.0).seg
+	sim.apply({"type": "car_free", "seg": seg, "on": true})
+	var traffic: TrafficTool = _main.find_children("*", "TrafficTool", false, false)[0]
+	_shots = [
+		["menu", func():
+			_aim(Vector3(0, 0, -60), 0.0, 55.0, 230.0)
+			_hud._open("roads")
+			traffic.set_mode(TrafficTool.Mode.CAR_FREE)],
+		["close", func():
+			traffic.set_mode(TrafficTool.Mode.NONE)
+			_hud.close_all()
+			_aim(Vector3(0, 0, -60), 30.0, 28.0, 45.0)],
+func _no_right(sim: CitySim) -> void:
+	# An avenue crossing a street on open ground, No Right Turn for drivers
+	# coming in from the west on the avenue.
+	var o := Vector3(0, 0, -320)
+	sim.apply({"type": "build_road", "start": [o.x - 200, o.z], "ctrl": [o.x, o.z], "end": [o.x + 200, o.z],
+		"road": RoadStyle.Type.AVENUE})
+	sim.apply({"type": "build_road", "start": [o.x, o.z - 150], "ctrl": [o.x, o.z], "end": [o.x, o.z + 150]})
+	sim.tick()
+	var c := sim.network.find_node_near(o, 1.0)
+	var west := -1
+	for wi in sim.traffic.ways_into(c):
+		if sim.traffic.ways[wi].pts[0].x < o.x - 1.0:
+			west = wi
+	sim.apply({"type": "set_lanes", "node": c, "seg": sim.traffic.ways[west].seg, "no_right": true, "lanes": []})
+	var traffic: TrafficTool = _main.find_children("*", "TrafficTool", false, false)[0]
+	var sl := sim.traffic.stop_line(west)
+	var post: Vector3 = sl.pos + sl.right * (sl.curb + 0.9) - sl.dir * 1.5
+	_shots = [
+		["close", func():
+			# From up the road the drivers come in on, just short of the sign
+			# (closer than the game lets a player zoom).
+			for cam in _main.find_children("*", "CityCamera", false, false):
+				cam.ignore_floor = true
+			_aim(post + sl.dir * 10.0 - sl.right * 2.0, 248.0, 5.0, 20.0)],
+		["menu", func():
+			for cam in _main.find_children("*", "CityCamera", false, false):
+				cam.ignore_floor = false
+			_aim(o, 0.0, 55.0, 160.0)
+			_hud._open("roads")
+			traffic.set_mode(TrafficTool.Mode.NO_RIGHT)],
 	]
 
 

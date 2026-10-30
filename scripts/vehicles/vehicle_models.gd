@@ -133,6 +133,11 @@ static func mesh_keys() -> Array:
 					out.append(p)
 		else:
 			out.append_array(VARIANTS.get(k, [k]))
+			# Far off every body style of a kind is drawn as the kind
+			# (TrafficView._far): sedans past the near distance had no
+			# batch and weren't drawn at all (2026-10-29).
+			if not out.has(k):
+				out.append(k)
 		if WINTER.has(k):
 			out.append(WINTER[k])
 	for e in EMPTY.values():

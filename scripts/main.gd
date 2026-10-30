@@ -43,7 +43,9 @@ func _ready() -> void:
 	if Session.online():
 		sim = Session.client.my_sim()
 	sim.require_utilities = true
-	sim.county_rail = CountyRail.drawn()
+	# The county's railroads and their through freights, on every platform,
+	# so a town plans the same everywhere (Nathan, 2026-10-29).
+	sim.county_rail = true
 	# The land under your own town is the one every view and hub reads,
 	# even after neighbor copies load with their own offsets.
 	Resources.pin(sim.terrain_offset)
@@ -126,6 +128,12 @@ func _ready() -> void:
 	var worn_view := WornPathView.new()
 	add_child(worn_view)
 	worn_view.setup(sim)
+	# Each yard its own lawn, painted into the ground (desktop).
+	var lawns: LawnMap = null
+	if LawnMap.wanted():
+		lawns = LawnMap.new()
+		add_child(lawns)
+		lawns.setup(sim)
 	var works_view := SubdivisionWorksView.new()
 	add_child(works_view)
 	works_view.setup(sim)
@@ -160,9 +168,15 @@ func _ready() -> void:
 	bank_view.setup(sim)
 
 	var cars := TrafficView.new()
-	cars.setup(sim.traffic, _tick_fraction)
+	cars.setup(sim.traffic, _tick_fraction, sim)
 	cars.parked = func(): return sim.construction.parked_poses()
 	add_child(cars)
+	# Garage and dock doors going up and down for the cars and trucks going
+	# in and out (desktop only: the browser never makes the view).
+	if not OS.has_feature("web"):
+		var doors := DoorView.new()
+		doors.setup(sim.traffic, sim, cars.out_front, buildings.lot_xf, warehouse_view.xf_of)
+		add_child(doors)
 
 	var bus_view := BusView.new()
 	bus_view.setup(sim)
@@ -183,6 +197,14 @@ func _ready() -> void:
 	var ambient := AmbientLife.new()
 	ambient.setup(sim, (walkers.get_child(0) as MultiMeshInstance3D).material_override)
 	add_child(ambient)
+	# The state layer: what stands in the yards, at the curbs and by the shop
+	# doors near the camera shows how well each lot is kept (the desktop
+	# download only; Nathan, 2026-10-29: "we should primarily only build the
+	# desktop download, not the browser").
+	if not OS.has_feature("web"):
+		var state := StateView.new()
+		state.setup(sim, buildings)
+		add_child(state)
 
 	var look := DayNight.new()
 	look.setup(sim, sky, _tick_fraction)
@@ -428,6 +450,8 @@ func _ready() -> void:
 	_gate.watch("trees", wild.is_drawn)
 	_gate.watch("fields", farm_view.settled)
 	_gate.watch("farmsteads", farmsteads.is_drawn)
+	if lawns != null:
+		_gate.watch("lawns", lawns.is_drawn)
 	_progress(0.35, "Laying out the land")
 	await get_tree().process_frame
 	if Session.online():
@@ -527,6 +551,13 @@ func _progress(fraction: float, status := "") -> void:
 ## loading screen and starts the clock.
 func _settle() -> void:
 	_progress(0.75, "Building the town")
+	# Every lot's drive and paving at the curb worked out now, behind the
+	# loading screen, so no sign, lamp or mailbox waits on it later.
+	var t := Perf.now()
+	var claims := CurbClaims.of(sim)
+	claims.warm()
+	Perf.add("load.curb_claims", t)
+	print("load: curb claims %.0f ms (%d lots)" % [claims.last_sync_ms, claims.last_sync_lots])
 	# Wait for every view to draw what the starting camera sees; the bar
 	# follows the share of views that are ready.
 	await _gate.wait(get_tree(), func(share: float, status: String) -> void:

@@ -7,6 +7,8 @@ extends Node3D
 ## month: overcast or fair, some days a few hours of rain (snow in winter),
 ## and some mornings fog. Overcast dims and greys the picture and softens
 ## shadows; rain streaks over it, snow drifts down, fog thickens the haze.
+## Rain wets the streets and walks (Surfaces, desktop High and up), and they
+## dry over the next hour or two of the sky's clock once it stops.
 ## Off: always fair.
 
 ## Share of days with rain or snow, January to December (Indianapolis has
@@ -34,6 +36,17 @@ const FOG_DAYS := [0.06, 0.06, 0.05, 0.04, 0.05, 0.05, 0.06, 0.08, 0.1, 0.1, 0.0
 ## How much thicker than clear-day haze a full fog is: under a kilometre to
 ## see, against about 18 km on a clear day.
 const FOG_HAZE := 15.0
+## Wet streets: how fast rain soaks them (per sky hour, to full), and how
+## many sky hours they take to dry from soaked under a daytime sky (twice
+## as long at night). A summer street dries in about an hour and a half
+## after a good rain, the puddles last.
+const WET_RISE := 4.0
+const DRY_HOURS := 1.6
+## How far back the sky's odds are read to know how wet the streets are
+## now (sky hours), in steps of WET_STEP: long enough to dry from soaked
+## at night.
+const WET_HISTORY := 3.4
+const WET_STEP := 0.1
 ## Faint streaks over the picture, three depths of them, nearer ones longer
 ## and faster; snow is soft flakes drifting down slower. Drawn flat over the
 ## screen like most city builders do: from high up, real drops would be
@@ -106,6 +119,8 @@ var cover := 0.0
 var rain := 0.0
 var snow := 0.0
 var fog := 0.0
+## How wet the streets are (0-1): soaks while it rains, then dries.
+var wet := 0.0
 ## Real conditions to show instead of the odds, [cover, rain or snow, fog,
 ## snow 0/1] (the home screen's Marion report, MarionWeather), or [] for
 ## the odds.
@@ -114,6 +129,9 @@ var _rain: ColorRect
 ## The sky's colour settings before any cloud.
 var _base := []
 var _rain_mat: ShaderMaterial
+var _wet_hour := -1.0  # the sky hour wetness was last worked out at
+var _wet_key := ""  # the clock wetness was last read from the odds at
+var _wet_sent := Vector2(-1.0, -1.0)
 
 
 func setup(s: CitySim, light: SkyLight) -> void:
@@ -178,6 +196,59 @@ static func conditions(clock: Dictionary) -> Array:
 	return [float((h >> 6) % 30) / 100.0, 0.0, fog, 0.0]
 
 
+## How wet the streets are `hours` sky hours on from `wet`, while rain
+## falls at `rain` (0-1) under a sky `dark` (0 day, 1 night): rain soaks
+## them fast (a light rain only part way); dry, they dry over DRY_HOURS,
+## half as fast at night.
+static func wet_after(wet: float, rain: float, hours: float, dark := 0.0) -> float:
+	var soak := smoothstep(0.0, 0.3, rain)
+	if soak > wet:
+		return minf(wet + WET_RISE * hours, soak)
+	return maxf(wet - hours / DRY_HOURS * (1.0 - 0.5 * dark), soak)
+
+
+## How dark the sky is at an hour, roughly (0 day, 1 night), for drying.
+static func dark_at(hour: float) -> float:
+	var h := fposmod(hour, 24.0)
+	return 1.0 - smoothstep(5.5, 7.5, h) * (1.0 - smoothstep(19.5, 21.5, h))
+
+
+## The same clock `hours` earlier. A sky clock (`sky`, see sky_clock) has a
+## whole month for its day, so its day before is the month before.
+static func clock_before(clock: Dictionary, hours: float, sky := true) -> Dictionary:
+	var t := clock.duplicate()
+	var h := float(clock.hour) + float(clock.get("minute", 0.0)) / 60.0 - hours
+	while h < 0.0:
+		h += 24.0
+		if sky:
+			t.month = int(t.month) - 1
+		else:
+			t.day = int(t.day) - 1
+			if int(t.day) < 1:
+				t.day = 28
+				t.month = int(t.month) - 1
+		if int(t.month) < 1:
+			t.month = 12
+			t.year = int(t.year) - 1
+	t.hour = int(h)
+	t.minute = (h - floorf(h)) * 60.0
+	return t
+
+
+## How wet the streets are at a clock time, from the sky's own odds over
+## the hours before (`sky_of(clock)` gives conditions() for a clock): the
+## same for every copy of a town, and right the moment a town is loaded.
+static func wet_at(clock: Dictionary, sky_of: Callable, sky := true) -> float:
+	var w := 0.0
+	var steps := int(WET_HISTORY / WET_STEP)
+	var now := float(clock.hour) + float(clock.get("minute", 0.0)) / 60.0
+	for i in range(steps, -1, -1):
+		var c: Array = sky_of.call(clock_before(clock, i * WET_STEP, sky))
+		var falling := 0.0 if float(c[3]) > 0.5 else float(c[1])
+		w = wet_after(w, falling, WET_STEP, dark_at(now - i * WET_STEP))
+	return w
+
+
 ## The date conditions() reads for a town in play: the sky's day is a whole
 ## month (SkyClock), so the weather is rolled once a month and its hours are
 ## the sky's: a wet spell of a few sky hours lasts 10 to 25 real minutes.
@@ -209,14 +280,15 @@ func _process(_delta: float) -> void:
 	if sim == null or sky == null:
 		return
 	var c := [0.0, 0.0, 0.0, 0.0]
+	var clock := sim.clock() if sim is MenuSim else sky_clock(sim)
 	if on:
 		if live.size() >= 4:
 			c = live
 		elif sim is MenuSim:
 			# The home screen's real date (its tick is pinned to the season).
-			c = conditions(sim.clock())
+			c = conditions(clock)
 		else:
-			c = for_town(sky_clock(sim), sim.tick_count, DayNight.cycle_on)
+			c = for_town(clock, sim.tick_count, DayNight.cycle_on)
 	var snowing := float(c[3]) > 0.5
 	cover = lerpf(cover, float(c[0]), 0.02)
 	rain = lerpf(rain, 0.0 if snowing else float(c[1]), 0.03)
@@ -237,9 +309,44 @@ func _process(_delta: float) -> void:
 	env.adjustment_brightness = float(_base[1]) * (1.0 - 0.15 * grey)
 	env.adjustment_saturation = float(_base[2]) * (1.0 - 0.26 * grey)
 	env.adjustment_contrast = float(_base[3]) * (1.0 - 0.1 * grey)
+	# No sun to cast a shadow: the shade's extra skylight and tone curve go too.
+	sky.set_overcast(grey)
 	# Cloud spreads the sun: shadows go soft and faint.
 	sky.sun.shadow_opacity = 1.0 - 0.6 * grey
+	_wet(c, clock)
 	_rain.visible = rain > 0.05 or snow > 0.05
 	if _rain.visible:
 		_rain_mat.set_shader_parameter("amount", clampf(rain, 0.0, 1.0) * 0.55 if rain > 0.05 else 0.0)
 		_rain_mat.set_shader_parameter("snow", clampf(snow, 0.0, 1.0) * 0.6 if snow > 0.05 else 0.0)
+
+
+## How wet the streets are now. Under the sky's own odds it is read from
+## them (wet_at: the same everywhere, and right on a load), again each time
+## the clock moves a hundredth of an hour. Under real conditions (live, the
+## home screen's Marion report) or with the weather off, it soaks and dries
+## from where it was by the sky hours gone; a clock that jumps or stands
+## still changes nothing. (A real report has no history: the home screen
+## starts with dry streets and they soak from there.)
+func _wet(c: Array, clock: Dictionary) -> void:
+	var hour := float(clock.hour) + float(clock.get("minute", 0.0)) / 60.0
+	if on and live.size() < 4:
+		var key := "%d %d %d %.2f" % [int(clock.year), int(clock.month), int(clock.day), hour]
+		if key != _wet_key:
+			_wet_key = key
+			if sim is MenuSim:
+				wet = wet_at(clock, func(t): return conditions(t), false)
+			else:
+				var tick := sim.tick_count
+				wet = wet_at(clock, func(t): return for_town(t, tick, DayNight.cycle_on))
+	else:
+		_wet_key = ""
+		var falling := 0.0 if float(c[3]) > 0.5 else float(c[1])
+		var gone := fposmod(hour - _wet_hour + 12.0, 24.0) - 12.0
+		if _wet_hour >= 0.0 and gone > 0.0 and gone <= 0.5:
+			wet = wet_after(wet, falling, gone, dark_at(hour))
+	_wet_hour = hour
+	# Desktop at High and up (the tier that draws the photo scans).
+	var shown := Vector2(wet, rain) * Surfaces.photo_level()
+	if not shown.is_equal_approx(_wet_sent):
+		_wet_sent = shown
+		LampLight.set_wet(shown.x, shown.y)

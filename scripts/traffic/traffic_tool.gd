@@ -3,16 +3,20 @@ extends Node3D
 ## Traffic info view and junction controls, like the Cities: Skylines 2
 ## traffic view plus the TM:PE junction tools. While it's open, roads are
 ## coloured by traffic flow; pick a control and click junctions to set it.
+## Car-free: click a town street to close it to cars as a walking plaza
+## (CS2's pedestrian streets), or click a car-free one to open it again.
 
 signal mode_changed(mode: int)
 signal hint_changed(text: String)
 
-enum Mode { NONE, VIEW, AUTO, SIGNAL, ALL_STOP, STOP, NO_CONTROL, TIMING, SMART, LANES, NO_LEFT }
+enum Mode { NONE, VIEW, AUTO, SIGNAL, ALL_STOP, STOP, NO_CONTROL, TIMING, SMART, LANES, NO_LEFT, CAR_FREE, NO_RIGHT }
 
 const RULE_FOR := {
 	Mode.AUTO: -1, Mode.SIGNAL: TrafficSim.Rule.SIGNAL, Mode.ALL_STOP: TrafficSim.Rule.ALL_STOP,
 	Mode.STOP: TrafficSim.Rule.PRIORITY, Mode.NO_CONTROL: TrafficSim.Rule.NONE,
 }
+## The sign each turn tool puts up, as it's kept in TrafficSim.lane_rules.
+const SIGN_FOR := {Mode.NO_LEFT: "no_left", Mode.NO_RIGHT: "no_right"}
 const RULE_NAME := ["no signs or lights", "traffic lights", "an all-way stop", "stop signs on the side road"]
 ## Lane arrows a click steps a lane through (TM:PE): left, left and
 ## straight, straight, straight and right, right, all three.
@@ -27,6 +31,8 @@ var mode := Mode.NONE
 
 var _ring := MeshInstance3D.new()
 var _hover := -1
+## Car-free: the street under the mouse, or -1.
+var _hover_seg := -1
 var _hint := ""
 var _refresh := 0.0
 ## The light a green wave runs from (Timing: Ctrl-click), or -1.
@@ -62,6 +68,7 @@ func _ready() -> void:
 func set_mode(m: int) -> void:
 	mode = m
 	_wave_from = -1
+	_hover_seg = -1
 	flow_view.visible = m != Mode.NONE
 	_ring.visible = false
 	_hover = -1
@@ -80,6 +87,11 @@ func _unhandled_input(event: InputEvent) -> void:
 	var mb := event as InputEventMouseButton
 	if mb.button_index == MOUSE_BUTTON_RIGHT and not mb.pressed and not cam.right_dragged:
 		set_mode(Mode.NONE)
+	elif mb.button_index == MOUSE_BUTTON_LEFT and mb.pressed and not mb.alt_pressed \
+			and _hover_seg != -1 and mode == Mode.CAR_FREE:
+		sim.apply({"type": "car_free", "seg": _hover_seg, "on": not _hover_seg in sim.parks.trails.plazas})
+		_hint = ""
+		_update_hint()
 	elif mb.button_index == MOUSE_BUTTON_LEFT and mb.pressed and not mb.alt_pressed \
 			and _hover != -1 and mode == Mode.SMART:
 		# Sensors on or off at this light.
@@ -109,22 +121,23 @@ func _unhandled_input(event: InputEvent) -> void:
 			_hint = ""
 			_update_hint()
 	elif mb.button_index == MOUSE_BUTTON_LEFT and mb.pressed and not mb.alt_pressed \
-			and _approach != -1 and (mode == Mode.LANES or mode == Mode.NO_LEFT):
+			and _approach != -1 and (mode == Mode.LANES or SIGN_FOR.has(mode)):
 		var t := sim.traffic
 		var seg: int = t.ways[_approach].seg
 		var node: int = t.ways[_approach].to
 		var rule := t.lane_rule(node, seg)
-		var no_left: bool = rule.get("no_left", false)
+		var signs := {"no_left": rule.get("no_left", false), "no_right": rule.get("no_right", false)}
 		var lanes: Array = rule.get("lanes", []).duplicate()
-		if mode == Mode.NO_LEFT:
-			no_left = not no_left
+		if SIGN_FOR.has(mode):
+			signs[SIGN_FOR[mode]] = not signs[SIGN_FOR[mode]]
 		elif mb.shift_pressed:
 			lanes = []  # the game's own lanes again
 		elif _lane != -1:
 			if lanes.size() != t.ways[_approach].lanes:
 				lanes = t.lane_masks(_approach)
 			lanes[_lane] = next_arrows(int(lanes[_lane]))
-		sim.apply({"type": "set_lanes", "node": node, "seg": seg, "no_left": no_left, "lanes": lanes})
+		sim.apply({"type": "set_lanes", "node": node, "seg": seg, "no_left": signs.no_left,
+			"no_right": signs.no_right, "lanes": lanes})
 		_hint = ""
 		_update_hint()
 	elif mb.button_index == MOUSE_BUTTON_LEFT and mb.pressed and not mb.alt_pressed \
@@ -150,6 +163,9 @@ func _process(delta: float) -> void:
 		_refresh = 1.0
 		_update_hint()
 	var hit = cam.mouse_ground_point()
+	if mode == Mode.CAR_FREE:
+		_street_pick(hit)
+		return
 	var node := -1
 	if hit != null and RULE_FOR.has(mode):
 		node = _junction_near(hit)
@@ -157,7 +173,7 @@ func _process(delta: float) -> void:
 		node = _junction_near(hit)
 		if node != -1 and sim.traffic.junctions[node].control != TrafficSim.Rule.SIGNAL:
 			node = -1
-	if hit != null and (mode == Mode.LANES or mode == Mode.NO_LEFT):
+	if hit != null and (mode == Mode.LANES or SIGN_FOR.has(mode)):
 		var near := approach_near(sim.traffic, hit)
 		if near[0] != _approach or near[1] != _lane:
 			_approach = near[0]
@@ -232,6 +248,24 @@ static func arrow_words(mask: int) -> String:
 	return " or ".join(parts) if parts.size() < 3 else "any way"
 
 
+## Car-free: the street under the mouse, ringed at its middle.
+func _street_pick(hit) -> void:
+	var seg := -1
+	if hit != null:
+		var near := sim.network.find_segment_near(hit, 12.0)
+		if not near.is_empty() and near.dist <= RoadStyle.half_width(sim.network.segments[near.seg].type) + 2.0:
+			seg = near.seg
+	if seg != _hover_seg:
+		_hover_seg = seg
+		_update_hint()
+	_ring.visible = seg != -1
+	if seg != -1:
+		var pts := sim.network.sample_segment(seg, 2)
+		var r := RoadStyle.half_width(sim.network.segments[seg].type) + 3.0
+		_ring.position = Terrain.lift(pts[1]) + Vector3(0, 0.4, 0)
+		_ring.scale = Vector3(r, 1.0, r)
+
+
 ## The light's phase whose approach is nearest the point, or -1.
 func _phase_near(node: int, p: Vector3) -> int:
 	var j: Dictionary = sim.traffic.junctions[node]
@@ -276,7 +310,17 @@ func _update_hint() -> void:
 		return
 	var text := "Traffic flow: green moves at the limit, red is jammed. %d%% overall, %d cars." \
 		% [roundi(sim.traffic.flow * 100.0), sim.traffic.cars.size()]
-	if mode == Mode.SMART:
+	if mode == Mode.CAR_FREE:
+		text = "Click a town street to make it car-free: people walk, trucks deliver at night. Click again to open it."
+		if _hover_seg != -1 and sim.network.segments.has(_hover_seg):
+			if _hover_seg in sim.parks.trails.plazas:
+				text += "\nThis street is car-free: a click opens it to cars."
+			else:
+				var problem := sim.car_free_problem(_hover_seg)
+				var cost := sim.car_free_cost(_hover_seg)
+				text += "\n" + (problem if problem != "" else "Car-free here: $%s%s" % [CitySim.money_text(cost),
+					"" if cost <= sim.economy.money else ", not enough money"])
+	elif mode == Mode.SMART:
 		text = "Click a traffic light to give it sensors: it holds the green while cars keep coming and skips a way with no one waiting. Click again for a fixed cycle."
 		if _hover != -1 and sim.traffic.junctions.has(_hover):
 			text += "\nThis light is %s." % ("smart (sensors)" if sim.traffic.actuated.has(_hover) else "on a fixed cycle")
@@ -307,12 +351,16 @@ func _update_hint() -> void:
 			var w: Dictionary = sim.traffic.ways[_approach]
 			var mine: bool = not sim.traffic.lane_rule(w.to, w.seg).get("lanes", []).is_empty()
 			text += "\nLanes, left to right: %s%s." % [", ".join(parts), " (yours)" if mine else ""]
-	elif mode == Mode.NO_LEFT:
-		text = "Click a road where it meets a junction to put up a No Left Turn sign, or take it down."
+	elif SIGN_FOR.has(mode):
+		var turn := "left" if mode == Mode.NO_LEFT else "right"
+		text = "Click a road where it meets a junction to put up a No %s Turn sign, or take it down." % turn.capitalize()
 		if _approach != -1:
 			var w: Dictionary = sim.traffic.ways[_approach]
-			text += "\nThis road %s." % ("has a No Left Turn sign" if sim.traffic.lane_rule(w.to, w.seg).get("no_left", false)
-				else "can turn left")
+			if not sim.traffic.takes_turn_signs(w.seg):
+				text += "\nA roundabout can't take turn signs: cars only go one way round it, so every exit has to stay open."
+			else:
+				text += "\nThis road %s." % (("has a No %s Turn sign" % turn.capitalize())
+					if sim.traffic.lane_rule(w.to, w.seg).get(SIGN_FOR[mode], false) else "can turn " + turn)
 	elif RULE_FOR.has(mode):
 		text = ["", "", "Click a junction to let the game choose its control.",
 			"Click a junction to add traffic lights.", "Click a junction to make it an all-way stop.",

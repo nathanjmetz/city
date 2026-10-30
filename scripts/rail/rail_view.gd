@@ -827,6 +827,11 @@ func _draw_gates() -> void:
 			for tilt: float in [0.7, -0.7]:
 				var cb := f * Transform3D(Basis(Vector3.BACK, tilt), Vector3(0, 3.9, -0.12))
 				_box(st, cb, Vector3.ZERO, Vector3(2.4, 0.22, 0.03), Color("#f2f2ee"))
+			if int(c.get("corridor", 0)) == -1:
+				# A county line no through freight runs (a branch or a spur):
+				# a passive crossing, crossbucks only (MUTCD 8B.03), no
+				# flashers or gate.
+				continue
 			_box(st, f, Vector3(0, 3.1, -0.15), Vector3(1.4, 0.12, 0.08), Color("#1e1e1e"))
 			for s: float in [-1.0, 1.0]:
 				_box(st, f, Vector3(s * 0.6, 3.1, -0.22), Vector3(0.42, 0.42, 0.06), Color("#1e1e1e"))

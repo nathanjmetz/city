@@ -124,6 +124,23 @@ func _draw() -> void:
 			draw_arc(P.call(0.95, 0.95), s * 0.62, PI, PI * 1.5, 24, color, w, true)
 			draw_arc(P.call(0.95, 0.95), s * 0.32, PI, PI * 1.5, 24, color, w, true)
 			draw_arc(P.call(0.95, 0.95), s * 0.47, PI * 1.05, PI * 1.45, 12, Color(color, 0.6), w * 0.6, true)
+		"scurve":
+			# A road that bends one way then back: two S-shaped edges and a
+			# dashed centre line.
+			for k in [-0.13, 0.0, 0.13]:
+				var pts := PackedVector2Array()
+				for i in 17:
+					var t := i / 16.0
+					var u := 1.0 - t
+					# Cubic from bottom left up to top right, bending each way.
+					var q: Vector2 = Vector2(0.12, 0.9) * (u * u * u) + Vector2(0.95, 0.75) * (3.0 * u * u * t) \
+						+ Vector2(0.05, 0.25) * (3.0 * u * t * t) + Vector2(0.88, 0.1) * (t * t * t)
+					pts.append(P.call(q.x + k, q.y))
+				if k == 0.0:
+					for i in range(0, 16, 4):
+						draw_polyline(pts.slice(i, i + 3), Color(color, 0.6), w * 0.6, true)
+				else:
+					draw_polyline(pts, color, w, true)
 		"grid":
 			for i in 3:
 				var t := 0.18 + i * 0.32
@@ -139,6 +156,17 @@ func _draw() -> void:
 			line.call(P.call(0.78, 0.92), P.call(0.78, 0.4))
 			line.call(P.call(0.5, 0.75), P.call(0.5, 0.1))
 			draw_polyline(PackedVector2Array([P.call(0.3, 0.3), P.call(0.5, 0.1), P.call(0.7, 0.3)]), color, w, true)
+		"road_catalog":
+			# All roads: a page of road cards, two by two, a road in each
+			# (one lane, two, a median, a wide one).
+			for i in 4:
+				var c := Vector2(0.3 + 0.4 * (i % 2), 0.3 + 0.4 * (i / 2))
+				var r := Rect2(P.call(c.x - 0.17, c.y - 0.17), Vector2(0.34, 0.34) * s)
+				draw_rect(r, Color(color, 0.18), true)
+				draw_rect(r, color, false, w * 0.7, true)
+				var half: float = [0.05, 0.08, 0.1, 0.12][i]
+				_poly([P.call(c.x - half, c.y - 0.13), P.call(c.x + half, c.y - 0.13), P.call(c.x + half, c.y + 0.13),
+					P.call(c.x - half, c.y + 0.13)], Color(color, 0.75))
 		"parallel":
 			for x in [0.14, 0.4, 0.6, 0.86]:
 				line.call(P.call(x, 0.9), P.call(x, 0.1))
@@ -332,11 +360,12 @@ func _draw() -> void:
 			_poly([P.call(0.58, 0.24), P.call(0.7, 0.04), P.call(0.82, 0.24)], color)
 			line.call(P.call(0.7, 0.56), P.call(0.86, 0.42), w * 1.3)
 			_poly([P.call(0.8, 0.32), P.call(0.98, 0.32), P.call(0.94, 0.5)], color)
-		"noleft":
-			# MUTCD R3-2: a left-turn arrow under a red circle and slash.
-			line.call(P.call(0.58, 0.82), P.call(0.58, 0.42), w * 1.3)
-			line.call(P.call(0.58, 0.42), P.call(0.36, 0.42), w * 1.3)
-			_poly([P.call(0.38, 0.28), P.call(0.18, 0.42), P.call(0.38, 0.56)], color)
+		"noleft", "noright":
+			# MUTCD R3-2 / R3-1: a turn arrow under a red circle and slash.
+			var x := (func(v: float) -> float: return v if kind == "noleft" else 1.0 - v)
+			line.call(P.call(x.call(0.58), 0.82), P.call(x.call(0.58), 0.42), w * 1.3)
+			line.call(P.call(x.call(0.58), 0.42), P.call(x.call(0.36), 0.42), w * 1.3)
+			_poly([P.call(x.call(0.38), 0.28), P.call(x.call(0.18), 0.42), P.call(x.call(0.38), 0.56)], color)
 			var red := Color(0.92, 0.25, 0.2)
 			draw_arc(P.call(0.5, 0.5), s * 0.42, 0.0, TAU, 32, red, w * 1.3, true)
 			line.call(P.call(0.2, 0.2), P.call(0.8, 0.8), w * 1.3, red)

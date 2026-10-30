@@ -28,6 +28,12 @@ const SUN_ENERGY := 1.7
 const SHADE_ENERGY := 0.62
 
 const MOON_COLOR := Color(0.62, 0.72, 0.95)
+## The desktop's moonlight (Daylight.NIGHT_ZENITH and the rest): a faint,
+## greyer light. Moonlight is really sunlight, a little warmer if anything;
+## it reads cool only because the eye loses colour in the dark. At the
+## browser's 0.7 (about 40% of the midday sun) house walls glowed blue.
+const MOON_COLOR_RICH := Color(0.72, 0.8, 0.95)
+const MOON_RICH := 0.25
 
 var sun := DirectionalLight3D.new()
 var env := Environment.new()
@@ -39,6 +45,7 @@ var clouds: ShaderMaterial
 var cloud_shadows: MeshInstance3D
 var _sky: Sky
 var _moving := false
+var _sun_dir := Vector3.UP  # the sun as the desktop sky last heard (_twilight_sun)
 ## 0 in full daylight, 1 at full night. DayNight reads it.
 var darkness := 0.0
 var _day := {}  # the fixed late-morning look, to go back to
@@ -65,13 +72,29 @@ var _sky_share := 0.0 if _gl else 0.6
 ## photos a lawn in shade is a darker green, never black. The desktop's
 ## deeper blue sky (CloudSky) gives less skylight than the old pale one,
 ## and lawns in shadow came out near black up close; this brings the
-## shade back to the measured share (Forward+ only).
-var _shade_k := 1.0 if _gl else 2.1
+## shade back to the measured share (Forward+ only). 2.1 still left a
+## house's shadow on a lawn at 23,38,22 and a tree's on the street at
+## 23,30,46 (a third and under of the sunlit grass and asphalt beside
+## them; look round, 2026-10-29); with the tone curve below (_tone),
+## 3.4 gets them to about 45%, a deeper, cooler green and grey.
+var _shade_k := 1.0 if _gl else 3.4
+## Under an overcast sky there is no sun to cast a shadow, so neither the
+## extra skylight nor the eased tone curve: the grey day keeps the dull,
+## darker look it was tuned with (2.1, the straight line). Weather sets
+## how overcast it is (set_overcast).
+const SHADE_K_OVERCAST := 2.1
+var overcast := 0.0
+## The desktop's tone curve after AgX (_tone): its contrast (as
+## adjustment_contrast, about mid grey) and the darkness it was last set for.
+const TONE_CONTRAST := 1.1
+var _tone_dark := -1.0
 
 
 ## Depth fog at street level (see _ready) and how high the haze reaches.
 const HAZE_DENSITY := 0.00016
 const HAZE_LAYER := 600.0
+## How much the depth fog veils the desktop's sky dome by day (see _ready).
+const SKY_FOG := 0.14
 
 
 func _ready() -> void:
@@ -98,7 +121,7 @@ func _ready() -> void:
 	# reads blue-grey like in photos rather than saturated blue.
 	env.ambient_light_sky_contribution = _sky_share
 	env.ambient_light_color = Color(0.66, 0.66, 0.64)
-	env.ambient_light_energy = SHADE_ENERGY * _light * _shade_k
+	env.ambient_light_energy = SHADE_ENERGY * _light * _fill()
 	env.reflected_light_source = Environment.REFLECTION_SOURCE_SKY
 	# AgX keeps bright roofs and concrete from clipping to flat white.
 	env.tonemap_mode = Environment.TONE_MAPPER_AGX
@@ -118,7 +141,8 @@ func _ready() -> void:
 	# AgX mutes colour, so bring saturation and contrast back up to photo levels.
 	env.adjustment_enabled = true
 	env.adjustment_saturation = 1.0 if _gl else 1.08
-	env.adjustment_contrast = 1.0 if _gl else 1.1
+	# The desktop's contrast is in its tone curve instead (_tone).
+	env.adjustment_contrast = 1.0
 	var we := WorldEnvironment.new()
 	we.environment = env
 	add_child(we)
@@ -148,7 +172,7 @@ func _ready() -> void:
 		# over the whole dome greyed the blue overhead to slate (a quarter
 		# of the haze colour at every height); about half that keeps a hazy
 		# summer sky pale but blue.
-		env.fog_sky_affect = 0.14
+		env.fog_sky_affect = SKY_FOG
 		# AgX's default curve left the town under a grey veil from the
 		# heights it's played at: woods olive-grey, lawns khaki, shade
 		# lifted. Aerial photos of a Grant County town in July have dark
@@ -156,6 +180,7 @@ func _ready() -> void:
 		# curve gets there (Forward+ only). Steeper than 1.3 crushes the
 		# shade on lawns to black.
 		env.tonemap_agx_contrast = 1.3
+		_tone(0.0)
 	# Lamps, lit windows and headlights bloom a little; daylight never does.
 	env.glow_enabled = true
 	env.glow_hdr_threshold = 1.2
@@ -163,7 +188,7 @@ func _ready() -> void:
 	env.glow_bloom = 0.0
 	env.glow_blend_mode = Environment.GLOW_BLEND_MODE_ADDITIVE
 	_day = {"top": sky_mat.sky_top_color, "horizon": sky_mat.sky_horizon_color,
-		"ambient": env.ambient_light_energy, "ambient_color": env.ambient_light_color,
+		"ambient_color": env.ambient_light_color,
 		"sun_color": sun.light_color, "sun_energy": sun.light_energy, "rot": sun.rotation_degrees}
 	if GraphicsQuality.current:
 		GraphicsQuality.current.changed.connect(_apply_quality)
@@ -236,7 +261,10 @@ func set_fixed() -> void:
 	darkness = 0.0
 	_sky_colors(_day.top, _day.horizon, 0.0)
 	env.fog_light_color = _day.horizon
-	env.ambient_light_energy = _day.ambient
+	if not _gl:
+		env.fog_sky_affect = SKY_FOG
+		_tone(overcast)
+	env.ambient_light_energy = SHADE_ENERGY * _light * _fill()
 	env.ambient_light_color = _day.ambient_color
 	env.ambient_light_sky_contribution = _sky_share
 	env.glow_intensity = 0.0
@@ -246,6 +274,7 @@ func set_fixed() -> void:
 	sun.rotation_degrees = _day.rot
 	_fixed = true
 	_humid = -1.0
+	_twilight_sun(Vector3.UP)
 	set_season(_season_months)
 
 
@@ -275,15 +304,24 @@ static func sun_position(hour: float, months: float) -> Vector2:
 func set_time(hour: float, months: float) -> void:
 	var pos := sun_position(hour, months)
 	var elev := pos.x
-	var l := Daylight.at(elev, Daylight.humidity(months))
+	var l := Daylight.at(elev, Daylight.humidity(months), not _gl)
 	_fixed = false
+	_twilight_sun(SunPath.toward(pos))
 	darkness = l.darkness
 	_sky_colors(l.zenith, l.horizon, l.stars)
 	env.fog_light_color = l.fog_color
+	if not _gl:
+		# The fog's even veil over the dome greyed dusk's blue overhead to
+		# purple and the night's navy to brown; it fades out from a low sun,
+		# leaving the haze to the sky's own horizon (CloudSky).
+		var veil := SKY_FOG * smoothstep(-4.0, 8.0, elev)
+		if absf(env.fog_sky_affect - veil) > 0.001:
+			env.fog_sky_affect = veil
+		_tone(maxf(darkness, overcast))
 	haze_scale = l.haze
 	env.ambient_light_color = l.shade_color
 	# Moonlit shade keeps its own tuned strength.
-	env.ambient_light_energy = SHADE_ENERGY * _light * lerpf(_shade_k, 1.0, darkness) * l.shade_energy
+	env.ambient_light_energy = SHADE_ENERGY * _light * lerpf(_fill(), 1.0, darkness) * l.shade_energy
 	env.glow_intensity = 0.9 * darkness
 	env.tonemap_exposure = l.exposure
 	if elev > -2.0:
@@ -297,8 +335,63 @@ func set_time(hour: float, months: float) -> void:
 		var moon := Vector2(maxf(-elev, 25.0), fposmod(pos.y + 180.0, 360.0))
 		var dir := SunPath.toward(moon)
 		sun.look_at_from_position(Vector3.ZERO, -dir, Vector3.UP)
-		sun.light_color = MOON_COLOR
-		sun.light_energy = 0.7 * _light * smoothstep(-2.0, -10.0, elev)
+		sun.light_color = MOON_COLOR if _gl else MOON_COLOR_RICH
+		sun.light_energy = (0.7 if _gl else MOON_RICH) * _light * smoothstep(-2.0, -10.0, elev)
+
+
+## How overcast the sky is, 0 to 1 (Weather: its grey). Sent on only when
+## it moves enough to see.
+func set_overcast(grey: float) -> void:
+	if absf(grey - overcast) < 0.01:
+		return
+	overcast = grey
+	if _gl:
+		return
+	if _fixed:
+		env.ambient_light_energy = SHADE_ENERGY * _light * _fill()
+		_tone(overcast)
+	# With day/night on, set_time picks it up next frame.
+
+
+## The daytime skylight's strength against SHADE_ENERGY: _shade_k under a
+## clear or broken sky, SHADE_K_OVERCAST under full cloud.
+func _fill() -> float:
+	return _shade_k if _gl else lerpf(_shade_k, SHADE_K_OVERCAST, overcast)
+
+
+## The desktop's tone curve after AgX, as a lookup the screen's colours go
+## through (adjustment_color_correction). Above mid grey it is the old
+## contrast of 1.1 (adjustment_contrast) that gives a sunny day its punch.
+## Below it, where that straight line took a fixed 5% off every dark, it
+## eases off toward black instead: on a dark asphalt or a lawn in shade
+## the old line took off a third of what was left and drew them near black.
+## By night it goes back to the straight line (darkness 1), so the night's
+## dark (DayNight, Daylight.NIGHT_FILL) stays as dark as it was tuned.
+## Rebuilt only when darkness has moved a little (a 256-entry texture).
+func _tone(dark: float) -> void:
+	# Full day and full night exactly; between them, steps of 0.02.
+	if dark == _tone_dark or (absf(dark - _tone_dark) < 0.02 and dark > 0.0 and dark < 1.0):
+		return
+	_tone_dark = dark
+	env.adjustment_color_correction = ImageTexture.create_from_image(tone_curve(dark))
+
+
+## The curve _tone uses, one channel's output per entry: entry i holds the
+## output for an input of (i + 0.5) / 256, where the screen samples it.
+## Under mid grey a parabola meets the straight line there with the same
+## slope and starts at black with slope 0.9.
+static func tone_curve(dark: float) -> Image:
+	var img := Image.create(256, 1, false, Image.FORMAT_RGBH)
+	var c := TONE_CONTRAST
+	var b := (c - 1.0) * 2.0  # (c - 1) * 0.5 / 0.5^2
+	for i in 256:
+		var x := (i + 0.5) / 256.0
+		var line := 0.5 + (x - 0.5) * c
+		var y := line
+		if x < 0.5:
+			y = lerpf((c - b) * x + b * x * x, line, dark)
+		img.set_pixel(i, 0, Color(y, y, y))
+	return img
 
 
 ## Sky colours and stars, sent on only when they change enough to see: each
@@ -324,8 +417,8 @@ func _use_clouds(moving: bool) -> void:
 		off = clouds.get_shader_parameter("drift")
 	_moving = moving
 	clouds = CloudSky.make(moving)
-	clouds.set_shader_parameter("stars", sky_mat.sky_cover)
 	clouds.set_shader_parameter("cover", cov)
+	clouds.set_shader_parameter("sun_dir", _sun_dir)
 	clouds.set_shader_parameter("drift", off)
 	_clouds_colors()
 	_sky.sky_material = clouds
@@ -335,6 +428,22 @@ func _use_clouds(moving: bool) -> void:
 	add_child(cloud_shadows)
 	_shadow_param("cover", cov)
 	_shadow_param("drift", off)
+
+
+## Where the sun really is, for the desktop sky's twilight (CloudSky's
+## sun_dir): after sunset the light is the moon's, so the sky can't read the
+## sun off its light. Sent on only while the sun is under 13 degrees (above
+## that the sky has no twilight to draw) and when it has moved half a
+## degree: each change re-renders the sky's lighting.
+func _twilight_sun(dir: Vector3) -> void:
+	if clouds == null:
+		return
+	if dir.y > sin(deg_to_rad(13.0)):
+		dir = Vector3.UP
+	if dir.dot(_sun_dir) > cos(deg_to_rad(0.5)):
+		return
+	_sun_dir = dir
+	clouds.set_shader_parameter("sun_dir", dir)
 
 
 func _clouds_colors() -> void:

@@ -19,7 +19,13 @@ extends Node3D
 ## Close vehicles get the detailed model (the close-up one on the desktop
 ## Ultra tier), far ones a simple one, and very far ones aren't drawn.
 ## Parked vehicles in stalls, driveways and at docks are drawn too; ones
-## inside a garage or bay are out of sight.
+## inside a bay or a home's garage are out of sight, except that on the
+## desktop two household cars in three that the simulation has in its
+## garage are drawn out on the drive (see _out_front).
+## One drawn out on the drive stays there while it is really backing out
+## of the garage behind it, and one coming home stops there, so it never
+## drives through the shut garage door (DoorEvents opens the door only for
+## the others: out_front).
 
 ## Metres from the camera where models switch to the simple version, and
 ## where they stop being drawn, on a full desktop (High and up); lower
@@ -35,6 +41,27 @@ var _flow_frames := 0
 ## On the desktop Ultra tier, vehicles this close (metres) get the close-up
 ## model: rounded body, alloy wheels, seams and clear-coat paint.
 const ULTRA_NEAR := 75.0
+## Household cars the simulation puts in a home's garage that are drawn out
+## on the drive instead: OUT_FRONT in OUT_OF. A Grant County home has about
+## 1.8 vehicles and most stand outside even with a garage, which holds the
+## mower, the bikes and the boxes (look critic, round 0, 2026-10-29).
+const OUT_FRONT := 2
+const OUT_OF := 3
+## Metres a car drawn out front stands from its garage spot (the drive spot
+## in front of a bay, SiteLayout.house), and how far back from the street
+## edge of the lot its middle must be, as the drive spot's must (its rear
+## bumper must be on the lot too).
+const DRIVE_OUT := 6.2
+const DRIVE_MIN_Z := 2.6
+## Metres over which a car drawn out on the drive eases from its path onto
+## the place it stands parked, coming home or backing out.
+const DRIVE_EASE := 4.0
+const _STAYS := [0.0, 0.0, Vector3.ZERO]
+## Metres the camera moves, or the reach changes, before the parked
+## vehicles' batches are filled again, and the fewest frames between
+## fills (one car parking or the camera panning never refills every frame).
+const REFILL_M := 16.0
+const REFILL_FRAMES := 4
 ## Kinds whose emergency lights run.
 const EMERGENCY := ["fire_engine", "ambulance"]
 ## Bodies longer than this (metres) are drawn further out than cars.
@@ -50,6 +77,9 @@ const ROLL := 0.006
 const LEAN_MAX := 0.03
 
 var traffic: TrafficSim
+## The town the traffic belongs to (see setup); null draws no car out on a
+## drive.
+var town: CitySim
 ## Returns how far through the current tick the clock is, 0 to 1.
 var tick_fraction: Callable
 ## Vehicles standing still off the traffic list (a crew's pickup at a job
@@ -66,6 +96,27 @@ var _sampled := -1.0  # the clock time the vehicles were last sampled at
 const _NONE := []
 var _parked := []   # [front, mesh key, transform, custom, far mesh key], for parked vehicles in sight
 var _parked_version := -1
+## Each parked vehicle's drawing, kept while it stays put: car id ->
+## [place, spot, pos, cargo, items where it is, items out on the drive, id].
+var _pcache := {}
+## What the kept drawings were worked out against: the roads' version (the
+## ground is graded with them) and whether cars go out on the drive.
+var _pcache_for := []
+## Household cars drawn out on the drive at the last _rebuild_parked, ones
+## drawn there that have since set off and are still backing out (drawn
+## from the drive, not the garage), and for cars coming home, whether
+## they'll stand on the drive: car id -> [place, spot, out front].
+var _out_ids := {}
+var _leaving_out := {}
+var _arrive_out := {}
+## Parked vehicles' own batches (mesh key -> [near, far, Ultra] or null),
+## filled again only when the camera has moved or the reach changed (see
+## _fill_parked), and what they were last filled for.
+var _pmm := {}
+var _pfill := [Vector3.INF, 0.0, 0.0, 0.0]
+var _pfill_due := true
+var _pfill_age := 0
+var _parked_drawn := 0
 ## How far vehicles are drawn now, and inside it the full model: the
 ## graphics tier's cars_m and car_near_m, pulled in on a crowded road to
 ## stay under its most-at-once (cars; GraphicsQuality.fit_reach).
@@ -119,9 +170,13 @@ class Motion:
 static var premade := {}
 
 
-func setup(t: TrafficSim, fraction: Callable) -> void:
+## `sim` is the town the traffic belongs to, for its lots and buildings
+## (which garage cars stand out on the drive): passed in, since a
+## neighbor's town or one just loaded hasn't stepped its traffic yet.
+func setup(t: TrafficSim, fraction: Callable, sim: CitySim = null) -> void:
 	traffic = t
 	tick_fraction = fraction
+	town = sim
 
 
 func _ready() -> void:
@@ -215,23 +270,18 @@ func _draw_cars(_delta: float) -> void:
 	var full := float(GraphicsQuality.knob("cars_m", FAR))
 	_reach_far = minf(_reach_far, full)
 	_reach_near = minf(float(GraphicsQuality.knob("car_near_m", NEAR)), _reach_far)
-	_drawn = 0
 	# Snow cover (from DayNight). Plows go on and come off with it.
 	if (Seasons.snow_now > 0.4) != (_snow > 0.4):
 		_info.clear()
+		_pcache.clear()
 		_parked_version = -1
 	_snow = Seasons.snow_now
-	if traffic.parked_version != _parked_version:
+	var rebuilt := traffic.parked_version != _parked_version or _pcache_for != _pcache_key()
+	if rebuilt:
 		_parked_version = traffic.parked_version
 		_rebuild_parked()
-	for item in _parked:
-		var dist: float = item[0].distance_to(eye)
-		if dist <= _reach_far:
-			_drawn += 1
-			if dist < _reach_near:
-				_add(item[1], 2 if dist * dist < ultra2 else 0, item[2], item[3])
-			else:
-				_add(item[4], 1, item[2], item[3])
+	_fill_parked(eye, ultra2, rebuilt)
+	_drawn = _parked_drawn
 	var far2 := _reach_far * _reach_far
 	var near2 := _reach_near * _reach_near
 	var small := FAR_SMALL * _reach_far / FAR
@@ -440,21 +490,25 @@ func _clock(delta: float) -> void:
 ## Takes a sample of where a vehicle's front axle is now.
 func _sample(car: Dictionary, info: Array) -> void:
 	var m: Motion = info[9]
-	var pose: Array = traffic.car_pose(car)
+	var c = car.get("j")
+	# One drawn out on the drive comes home to stand there, and backs out
+	# from there: drawn short of (or ahead of) where it is along its path.
+	var drv := _on_drive(car, c)
+	var short: float = drv[0]
+	var pose: Array = traffic.car_pose(car, -short) if short > 0.0 else traffic.car_pose(car)
 	var fo: float = info[10]
 	var h: Vector3 = pose[1]
 	h.y = 0.0
 	h = h.normalized() if h.length_squared() > 1e-6 else Vector3.FORWARD
-	var a: Vector3 = pose[0] - h * fo
-	var c = car.get("j")
+	var a: Vector3 = pose[0] - h * fo + drv[2]
 	var rev: bool = c != null and car.jd < float(c.get("rev", 0.0))
 	var r := Vector3.ZERO
 	var tr := Vector3.ZERO
 	if rev:
 		# Backing up: the path the front bumper backs along is where the
 		# rear has just been, so both axles sit on it.
-		a = _rev_point(car, fo)
-		r = _rev_point(car, info[7])
+		a = _rev_point(car, fo + drv[1]) + drv[2]
+		r = _rev_point(car, float(info[7]) + drv[1]) + drv[2]
 		if info[5]:
 			var art: Dictionary = VehicleModels.ARTIC[info[1]]
 			tr = _rev_point(car, float(art.hitch) - float(art.pin) + float(art.axle))
@@ -611,33 +665,277 @@ static func _kind(car: Dictionary) -> String:
 
 
 ## Parked vehicles only move when one parks or leaves, so their places are
-## worked out once then.
+## worked out then, each vehicle's kept for as long as it stays put.
 func _rebuild_parked() -> void:
 	_parked.clear()
+	if _pcache_for != _pcache_key():
+		_pcache_for = _pcache_key()
+		_pcache.clear()
+	var cache := {}
+	var fronts := {}  # place -> front bumpers of what is drawn there
+	var outs := []
 	for car in traffic.parked:
-		if car.get("hidden", false):
+		var at = car.get("at_place", "")
+		var c: Array = _pcache.get(car.id, _NONE)
+		if c.is_empty() or c[0] != at or c[1] != car.get("spot", -1) or c[2] != car.pos or c[3] != car.get("cargo"):
+			var hidden: bool = car.get("hidden", false)
+			var pose := TrafficSim.parked_pose(car)
+			c = [at, car.get("spot", -1), car.pos, car.get("cargo"), _NONE if hidden else _parked_items(car, pose[0], pose[1]),
+				_out_front(car) if hidden else _NONE, car.id]
+		cache[car.id] = c
+		if not c[4].is_empty():
+			_parked.append_array(c[4])
+			if fronts.has(at):
+				fronts[at].append(c[4][0][0])
+			else:
+				fronts[at] = [c[4][0][0]]
+		elif not c[5].is_empty():
+			outs.append(c)
+	_pcache = cache
+	# Ones drawn out front that have just set off back out from the drive.
+	for id in _out_ids:
+		if not cache.has(id):
+			_leaving_out[id] = true
+	if _leaving_out.size() > 1024:
+		_leaving_out.clear()
+	_out_ids = {}
+	# Out on the drive only where nothing else stands (a duplex's drive spot
+	# is right in front of its garage).
+	for c in outs:
+		var front: Vector3 = c[5][0][0]
+		var here: Array = fronts.get(c[0], _NONE)
+		var clear := true
+		for f in here:
+			if Vector2(f.x - front.x, f.z - front.z).length_squared() < 4.0:
+				clear = false
+				break
+		if not clear:
 			continue
-		var pose := TrafficSim.parked_pose(car)
-		var flat: Vector3 = pose[1]
-		if flat.length() < 0.5:
-			flat = Vector3.FORWARD
-		var kind := _kind(car)
-		# Front and back on the ground, so it sits level with the slope.
-		var front: Vector3 = Terrain.stand(pose[0])
-		var dir: Vector3 = (front - Terrain.stand(pose[0] - flat * float(VehicleModels.AXLE.get(kind, 3.5)))).normalized()
-		var paint := VehicleTypes.paint(kind, car.id)
-		var custom := Color(paint.r, paint.g, paint.b, VehicleMaterial.OFF)
-		if VehicleModels.ARTIC.has(kind):
-			# A rig parked straight: the trailer lined up behind the cab.
-			var art: Dictionary = VehicleModels.ARTIC[kind]
-			var xf := Transform3D(Basis.looking_at(dir, Vector3.UP), front)
-			_parked.append([front, art.cab, xf, custom, art.cab])
-			var hitch: Vector3 = xf * Vector3(0, 0, art.hitch)
-			var trailer := VehicleModels.trailer_for(art.trailer, car.get("cargo", {}))
-			_parked.append([front, trailer, Transform3D(xf.basis, hitch + dir * float(art.pin)),
-				Color(1, 1, 1, VehicleMaterial.OFF), trailer])
+		_parked.append_array(c[5])
+		_out_ids[c[6]] = true
+		if here.is_empty():
+			fronts[c[0]] = [front]
 		else:
-			# Parked in the same body it drove in.
-			var model := _model(kind, car.id)
-			_parked.append([front, model, Transform3D(Basis.looking_at(dir, Vector3.UP), front), custom,
-				_far(kind, model)])
+			here.append(front)
+
+
+func _pcache_key() -> Array:
+	return [traffic.version, _drive_cars()]
+
+
+## Garage cars drawn out on the drive: on the desktop where the graphics
+## tier's budget allows (drive_cars), never in the browser, which draws
+## and counts its cars as it always has.
+static func _drive_cars() -> bool:
+	return not OS.has_feature("web") and bool(GraphicsQuality.knob("drive_cars", true))
+
+
+## What a parked vehicle draws, standing with its front bumper at `pos`
+## facing `face`: [[front, mesh key, transform, custom, far mesh key], ...].
+func _parked_items(car: Dictionary, pos: Vector3, face: Vector3) -> Array:
+	var flat := face
+	if flat.length() < 0.5:
+		flat = Vector3.FORWARD
+	var kind := _kind(car)
+	# Front and back on the ground, so it sits level with the slope.
+	var front: Vector3 = Terrain.stand(pos)
+	var dir: Vector3 = (front - Terrain.stand(pos - flat * float(VehicleModels.AXLE.get(kind, 3.5)))).normalized()
+	var paint := VehicleTypes.paint(kind, car.id)
+	var custom := Color(paint.r, paint.g, paint.b, VehicleMaterial.OFF)
+	if VehicleModels.ARTIC.has(kind):
+		# A rig parked straight: the trailer lined up behind the cab.
+		var art: Dictionary = VehicleModels.ARTIC[kind]
+		var xf := Transform3D(Basis.looking_at(dir, Vector3.UP), front)
+		var hitch: Vector3 = xf * Vector3(0, 0, art.hitch)
+		var trailer := VehicleModels.trailer_for(art.trailer, car.get("cargo", {}))
+		return [[front, art.cab, xf, custom, art.cab], [front, trailer, Transform3D(xf.basis, hitch + dir * float(art.pin)),
+			Color(1, 1, 1, VehicleMaterial.OFF), trailer]]
+	# Parked in the same body it drove in.
+	var model := _model(kind, car.id)
+	return [[front, model, Transform3D(Basis.looking_at(dir, Vector3.UP), front), custom, _far(kind, model)]]
+
+
+## A household car in its home's garage, drawn out on the drive in front of
+## its bay instead (OUT_FRONT cars in OUT_OF, picked by the car's id, so
+## every computer and every load shows the same ones), where the drive is
+## long enough. Only the drawing moves it: the simulation, saves and the
+## copies still have it in the garage. [] for one that stays inside.
+func _out_front(car: Dictionary) -> Array:
+	if not car.has("face") or not _out_pick(car, str(car.get("at_place", "")), car.pos, car.face):
+		return _NONE
+	return _parked_items(car, car.pos - car.face * DRIVE_OUT, car.face)
+
+
+## Whether car `car`, in (or bound for) its home's garage at place `ref`
+## with its front bumper at `pos` facing `face`, is one drawn out on the
+## drive (see _out_front; whether the drive is clear is looked at there).
+func _out_pick(car: Dictionary, ref: String, pos: Vector3, face: Vector3) -> bool:
+	if town == null or not _drive_cars() or not ref.begins_with("lot:") \
+			or absi(hash([car.id, "out front"])) % OUT_OF >= OUT_FRONT:
+		return false
+	var kind := _kind(car)
+	if kind == "golf_cart" or VehicleModels.ARTIC.has(kind):
+		return false
+	var b = town.buildings.get(ref.substr(4))
+	var lot = town.lots.get(ref.substr(4))
+	if b == null or lot == null or int(b.zone) != ZoneMap.Zone.RESIDENTIAL:
+		return false  # a factory's bay or an office deck stays shut
+	var at: Vector3 = pos - face * DRIVE_OUT
+	var len := float(car.get("len", 4.5))
+	var inv := SiteLayout.frame(lot).affine_inverse()
+	# (A short drive, or a long pickup: it would stick out over the sidewalk.)
+	return (inv * (at - face * len * 0.5)).z >= DRIVE_MIN_Z and (inv * (at - face * len)).z >= 0.0
+
+
+## True for a household car drawn out on the drive rather than in its
+## garage: parked there now, or (`leaving`) backing out from there, or
+## coming home to stand there. DoorEvents opens no door for it.
+func out_front(car: Dictionary, leaving := false) -> bool:
+	if car.has("at_place"):
+		return _out_ids.has(car.id)
+	if leaving:
+		return _leaving_out.has(car.id) or _out_ids.has(car.id)
+	var ref: String = car.get("to_place", "")
+	var spot: int = car.get("to_spot", -1)
+	var had: Array = _arrive_out.get(car.id, _NONE)
+	if not had.is_empty() and had[0] == ref and had[1] == spot:
+		return had[2]
+	var s := _spot(ref, spot, car.get("spot_geo", {}))
+	var out: bool = not s.is_empty() and s.kind == "garage" \
+		and _out_pick(car, ref, s.pos + s.face * float(car.get("len", 4.5)) * 0.5, s.face)
+	if _arrive_out.size() > 2048:
+		_arrive_out.clear()
+	_arrive_out[car.id] = [ref, spot, out]
+	return out
+
+
+## For a car drawn out on the drive, on its way into or out of the garage
+## behind it (path `c`): [metres to draw it short of where it is along the
+## path, metres to draw it ahead while backing out, and a nudge onto the
+## very place it stands parked (the path runs a little off square to the
+## garage), eased in or out over DRIVE_EASE metres]. Nothing for any other.
+func _on_drive(car: Dictionary, c) -> Array:
+	if c == null or int(c.get("node", 0)) != -1:
+		_leaving_out.erase(car.id)  # out in the street now
+		return _STAYS
+	var jd := float(car.jd)
+	var len := float(car.get("len", 4.5))
+	if int(c.wi) == -1:
+		# Backing out of where it was parked: from the drive, not the garage.
+		if jd > DRIVE_OUT + DRIVE_EASE or not (_leaving_out.has(car.id) or _out_ids.has(car.id)):
+			return _STAYS
+		var ahead := maxf(DRIVE_OUT - jd, 0.0)
+		# Its path starts at its front bumper in the garage, facing in (d0).
+		var pts: PackedVector3Array = c.pts
+		var nudge := _nudge(car, pts[0] - c.d0 * DRIVE_OUT, DRIVE_OUT - jd)
+		return [0.0, ahead, nudge * clampf(1.0 - (jd + ahead - DRIVE_OUT) / DRIVE_EASE, 0.0, 1.0)]
+	if int(c.wo) != -1:
+		return _STAYS
+	# Turning in and up the drive to the garage: it stops on the drive.
+	var stop := float(c.len) - DRIVE_OUT
+	if jd < stop - DRIVE_EASE or not out_front(car):
+		return _STAYS
+	var s := _spot(car.get("to_place", ""), car.get("to_spot", -1), car.get("spot_geo", {}))
+	var nudge := Vector3.ZERO
+	if not s.is_empty():
+		nudge = _nudge(car, s.pos + s.face * (len * 0.5 - DRIVE_OUT), stop - jd) \
+			* clampf(1.0 - (stop - minf(jd, stop)) / DRIVE_EASE, 0.0, 1.0)
+	return [maxf(jd - stop, 0.0), 0.0, nudge]
+
+
+## From the point `along` metres on along a car's path to `want`, where its
+## front bumper stands parked out on the drive, flat.
+func _nudge(car: Dictionary, want: Vector3, along: float) -> Vector3:
+	var d: Vector3 = want - traffic.car_pose(car, along)[0]
+	return Vector3(d.x, 0.0, d.z)
+
+
+## A place's spot, or `geo` when there is one (where a path ends).
+func _spot(ref: String, spot: int, geo: Dictionary) -> Dictionary:
+	if not geo.is_empty():
+		return geo
+	if ref == "" or ref == "edge" or spot < 0:
+		return {}
+	var spots: Array = traffic.place(ref).get("spots", [])
+	return spots[spot] if spot < spots.size() else {}
+
+
+## Parked vehicles go in batches of their own, filled again when one parks
+## or leaves, the camera has moved REFILL_M or the reach has changed by
+## that much, and at most every REFILL_FRAMES frames, not every frame: a big
+## town has thousands standing in drives and lots. The count drawn (for the
+## tier's cap) is the last fill's, a little off while the reach changes.
+func _fill_parked(eye: Vector3, ultra2: float, rebuilt: bool) -> void:
+	_pfill_due = _pfill_due or rebuilt
+	_pfill_age += 1
+	if _pfill[0] != Vector3.INF and _pfill_age < REFILL_FRAMES:
+		return
+	if not _pfill_due and eye.distance_squared_to(_pfill[0]) < REFILL_M * REFILL_M \
+			and absf(_reach_far - float(_pfill[1])) < maxf(REFILL_M, _reach_far * 0.05) \
+			and absf(_reach_near - float(_pfill[2])) < REFILL_M and ultra2 == _pfill[3]:
+		return
+	_pfill = [eye, _reach_far, _reach_near, ultra2]
+	_pfill_due = false
+	_pfill_age = 0
+	var by := [{}, {}, {}]  # lod -> mesh key -> [[transforms], [customs]]
+	_parked_drawn = 0
+	for item in _parked:
+		var dist: float = item[0].distance_to(eye)
+		if dist > _reach_far:
+			continue
+		_parked_drawn += 1
+		var lod := 1
+		var key: String = item[4]
+		if dist < _reach_near:
+			lod = 2 if dist * dist < ultra2 else 0
+			key = item[1]
+		var lists: Dictionary = by[lod]
+		if not lists.has(key):
+			lists[key] = [[], []]
+		lists[key][0].append(item[2])
+		lists[key][1].append(item[3])
+	for key in _pmm:
+		for lod in 3:
+			var mi = _pmm[key][lod]
+			if mi != null and not by[lod].has(key) and mi.multimesh.visible_instance_count != 0:
+				mi.multimesh.visible_instance_count = 0
+	for lod in 3:
+		for key in by[lod]:
+			if not _batches.has(key):
+				continue
+			var mm: MultiMesh = _parked_batch(key, lod).multimesh
+			var xfs: Array = by[lod][key][0]
+			var cu: Array = by[lod][key][1]
+			var n := xfs.size()
+			if n > mm.instance_count:
+				mm.instance_count = n + n / 4 + 8
+				for i in mm.instance_count:
+					mm.set_instance_color(i, Color.WHITE)
+			for i in n:
+				mm.set_instance_transform(i, xfs[i])
+				mm.set_instance_custom_data(i, cu[i])
+			mm.visible_instance_count = n
+
+
+## The parked vehicles' batch for a model and level of detail, made the
+## first time one is drawn, sharing the moving ones' mesh and material.
+func _parked_batch(key: String, lod: int) -> MultiMeshInstance3D:
+	if not _pmm.has(key):
+		_pmm[key] = [null, null, null]
+	if _pmm[key][lod] != null:
+		return _pmm[key][lod]
+	if lod == 2 and _batches[key].size() < 3:
+		_add_ultra_batch(key)
+	var src: MultiMeshInstance3D = _batches[key][lod]
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.use_custom_data = true
+	mm.use_colors = true
+	mm.mesh = src.multimesh.mesh
+	var mi := MultiMeshInstance3D.new()
+	mi.multimesh = mm
+	mi.material_override = src.material_override
+	mi.cast_shadow = src.cast_shadow
+	add_child(mi)
+	_pmm[key][lod] = mi
+	return mi

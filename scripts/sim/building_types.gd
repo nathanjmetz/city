@@ -230,6 +230,11 @@ static func make(sim, key: String, b: Dictionary, type: String, level: int) -> D
 	out.focc = mini(int(b.get("focc", 0)), out.flats)
 	out.changed = int(b.get("changed", b.built))
 	out.why = str(b.get("why", ""))
+	# A house going up decides once which side its drive goes (a corner
+	# house's away from the corner), and keeps it as it grows; one begun
+	# before the rule came in keeps the drive it was built with.
+	if type == "house" and not out.has("drive") and sim is CitySim and int(out.get("built", 0)) >= int(sim.curb_drives_from):
+		out.drive = SiteLayout.decide_drive(sim, key)
 	# Grown a stage on the same lot: some owners add floors on top of the
 	# building they have ("added_from": its storeys before), the rest
 	# rebuild (Balance.ADD_ON_PERCENT). Anything else is a new building.

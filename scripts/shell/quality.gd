@@ -120,35 +120,46 @@ const DETAIL_FLOOR := [
 ##   far_from: share of BuildingView's far-box swap distance.
 ##   crops / crop_m / crop_shadows: field plants on or off, how far round
 ##     the look spot, and whether corn casts shadows.
+##   tree_shadow_m: on a tier whose woods cast no shadows (tree_shadows
+##     off), how far round the camera the grown trees still cast theirs,
+##     each from its light tree (GrownTrees.shadow_reach): a street tree
+##     with no shadow looks pasted on (look round 1, 2026-10-29). 0: none.
+##     Tiers with tree_shadows cast every tree's, however far.
 ##   photo: the real-life photographed ground (PhotoGround; desktop only).
 ##   understory: shrubs and saplings under the woods' canopy, and the
 ##     fencerows' brush filled in, near the camera (WildView; desktop only).
 ##   cars_m: how far cars and trucks are drawn; car_near_m: inside it the
 ##     full model, past it the light one; car_detail: the close-up model
 ##     inside TrafficView.ULTRA_NEAR.
+##   drive_cars: household cars the simulation keeps in the garage drawn
+##     out on the drive (TrafficView._out_front; desktop only, never in the
+##     browser, so its car count and cap are as before).
 ##   cars / people: the most cars or walkers drawn at once. Past that the
 ##     view pulls its reach in until the count fits (fit_reach()), so the
 ##     nearest stay drawn. people_m: how far walkers are drawn.
+##   doors_m / doors: how far garage doors open for the cars going in and
+##     out, and the most open or moving at once, nearest first (DoorView;
+##     desktop High and up, never the browser). Past it every door is shut.
 ## Values a tier already sets in TIERS (detail, shadow_reach, tree_shadows)
 ## aren't repeated here: knob() reads them as detail, shadow_m and
 ## tree_shadows. High is the look the game had before budgets, so a
 ## full-strength desktop (High and up) is never drawn with less than that.
 const BUDGETS := [
-	{"grow_ms": 3.0, "woods": 0.6, "far_woods": 2000.0, "far_from": 0.6, "photo": false, "understory": false, "crops": false, "crop_m": 51.0, "crop_shadows": false,
-		"cars_m": 1400.0, "car_near_m": 160.0, "car_detail": false, "cars": 600,
-		"people_m": 180.0, "people": 400},
-	{"grow_ms": 3.0, "woods": 0.7, "far_woods": 2600.0, "far_from": 0.7, "photo": false, "understory": false, "crops": false, "crop_m": 51.0, "crop_shadows": false,
-		"cars_m": 1900.0, "car_near_m": 200.0, "car_detail": false, "cars": 1200,
-		"people_m": 250.0, "people": 1000},
-	{"grow_ms": 4.0, "woods": 1.0, "far_woods": 3500.0, "far_from": 1.2, "photo": true, "understory": true, "crops": true, "crop_m": 60.0, "crop_shadows": false,
-		"cars_m": 2600.0, "car_near_m": 240.0, "car_detail": false, "cars": 4000,
-		"people_m": 320.0, "people": 4000},
-	{"grow_ms": 4.0, "woods": 1.0, "far_woods": 4000.0, "far_from": 1.2, "photo": true, "understory": true, "crops": true, "crop_m": 77.0, "crop_shadows": false,
-		"cars_m": 2600.0, "car_near_m": 240.0, "car_detail": true, "cars": 8000,
-		"people_m": 320.0, "people": 8000},
-	{"grow_ms": 4.0, "woods": 1.0, "far_woods": 4500.0, "far_from": 1.2, "photo": true, "understory": true, "crops": true, "crop_m": 81.0, "crop_shadows": true,
-		"cars_m": 2600.0, "car_near_m": 240.0, "car_detail": true, "cars": 16000,
-		"people_m": 320.0, "people": 16000},
+	{"grow_ms": 3.0, "woods": 0.6, "far_woods": 2000.0, "far_from": 0.6, "photo": false, "understory": false, "crops": false, "crop_m": 51.0, "crop_shadows": false, "tree_shadow_m": 0.0,
+		"cars_m": 1400.0, "car_near_m": 160.0, "car_detail": false, "drive_cars": false, "cars": 600,
+		"people_m": 180.0, "people": 400, "doors_m": 0.0, "doors": 0},
+	{"grow_ms": 3.0, "woods": 0.7, "far_woods": 2600.0, "far_from": 0.7, "photo": false, "understory": false, "crops": false, "crop_m": 51.0, "crop_shadows": false, "tree_shadow_m": 45.0,
+		"cars_m": 1900.0, "car_near_m": 200.0, "car_detail": false, "drive_cars": true, "cars": 1200,
+		"people_m": 250.0, "people": 1000, "doors_m": 0.0, "doors": 0},
+	{"grow_ms": 4.0, "woods": 1.0, "far_woods": 3500.0, "far_from": 1.2, "photo": true, "understory": true, "crops": true, "crop_m": 60.0, "crop_shadows": false, "tree_shadow_m": 2000.0,
+		"cars_m": 2600.0, "car_near_m": 240.0, "car_detail": false, "drive_cars": true, "cars": 4000,
+		"people_m": 320.0, "people": 4000, "doors_m": 150.0, "doors": 32},
+	{"grow_ms": 4.0, "woods": 1.0, "far_woods": 4000.0, "far_from": 1.2, "photo": true, "understory": true, "crops": true, "crop_m": 77.0, "crop_shadows": false, "tree_shadow_m": 2000.0,
+		"cars_m": 2600.0, "car_near_m": 240.0, "car_detail": true, "drive_cars": true, "cars": 8000,
+		"people_m": 320.0, "people": 8000, "doors_m": 200.0, "doors": 48},
+	{"grow_ms": 4.0, "woods": 1.0, "far_woods": 4500.0, "far_from": 1.2, "photo": true, "understory": true, "crops": true, "crop_m": 81.0, "crop_shadows": true, "tree_shadow_m": 2000.0,
+		"cars_m": 2600.0, "car_near_m": 240.0, "car_detail": true, "drive_cars": true, "cars": 16000,
+		"people_m": 320.0, "people": 16000, "doors_m": 250.0, "doors": 64},
 ]
 ## Headless runs and tests (no Quality autoload, or not active): the views
 ## keep the look they had before tiers (detail 1.0), with no field plants,
@@ -156,13 +167,20 @@ const BUDGETS := [
 ## no count caps.
 const NO_CAP := 1 << 30
 const INACTIVE := {"detail": 1.0, "shadow_m": 2000.0, "tree_shadows": true, "grow_ms": 4.0, "woods": 1.0, "far_woods": 3500.0,
-	"far_from": 1.0, "photo": false, "understory": false, "crops": false, "crop_m": 51.0, "crop_shadows": false, "cars_m": 2600.0,
-	"car_near_m": 240.0, "car_detail": false, "cars": NO_CAP, "people_m": 320.0, "people": NO_CAP}
+	"far_from": 1.0, "photo": false, "understory": false, "crops": false, "crop_m": 51.0, "crop_shadows": false, "tree_shadow_m": 0.0, "cars_m": 2600.0,
+	"car_near_m": 240.0, "car_detail": false, "drive_cars": true, "cars": NO_CAP, "people_m": 320.0, "people": NO_CAP,
+	"doors_m": 0.0, "doors": 0}
 ## The browser caps how long a frame may spend growing detail (its one
 ## thread also runs the town).
 const BROWSER_GROW_MS := 3.0
 ## The browser lays out its far woods on its one thread too: not as far.
 const BROWSER_FAR_WOODS := 2600.0
+## How far each tier draws the state layer's yard props (knob "state_m";
+## StateView, docs/spec-state-layer.md): none on Low, a light 100 m on
+## Medium (Nathan's 8 GB Mac mini; decided 2026-10-29), 150 m from High up.
+## Never in the browser. Kept out of BUDGETS so it merges beside other
+## views' knobs; a headless run or test (INACTIVE) gets 0 unless it asks.
+const STATE_M := [0.0, 100.0, 150.0, 150.0, 150.0]
 
 ## Each kind of machine's budget: the frame it aims for (slow_ms: drawing
 ## slower than this counts against the tier; room_ms: the whole frame under
@@ -733,12 +751,17 @@ static func budget_for(t: int, on_browser := false) -> Dictionary:
 	b["detail"] = r.detail
 	b["shadow_m"] = r.shadow_reach
 	b["tree_shadows"] = r.tree_shadows
+	b["state_m"] = 0.0 if on_browser else STATE_M[t]
 	if on_browser:
 		b["grow_ms"] = minf(b.grow_ms, BROWSER_GROW_MS)
 		b["far_woods"] = minf(b.far_woods, BROWSER_FAR_WOODS)
 		b["crops"] = false
 		b["crop_shadows"] = false
 		b["car_detail"] = false
+		b["drive_cars"] = false
+		b["doors_m"] = 0.0
+		b["doors"] = 0
+		b["tree_shadow_m"] = 0.0  # no full trees there (TreeLook.radii)
 	return b
 
 

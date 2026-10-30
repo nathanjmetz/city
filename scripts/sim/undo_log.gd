@@ -18,7 +18,7 @@ const WINDOW_MS := 30000
 const KEEP := 10
 
 ## Commands that draw roads: undone by putting the road network back.
-const ROAD_TYPES := ["build_road", "build_grid", "build_grid_shape", "build_roundabout", "upgrade_road"]
+const ROAD_TYPES := ["build_road", "build_roads", "build_grid", "build_grid_shape", "build_roundabout", "upgrade_road"]
 ## Commands that place one thing, and the command that removes it again.
 const PLACE_TYPES := {
 	"place_service": "remove_service", "place_park": "remove_park", "place_warehouse": "remove_warehouse",
@@ -46,7 +46,8 @@ func before(sim: CitySim, cmd: Dictionary) -> Variant:
 	var type := str(cmd.get("type", ""))
 	if type in ROAD_TYPES:
 		return {"type": type, "money": sim.economy.money, "roads": sim.network.snapshot(), "rev": sim.network.revision,
-			"county": sim.county_joined.size(), "links": sim.region_links.size(), "held": held(sim)}
+			"county": sim.county_joined.size(), "links": sim.region_links.size(), "held": held(sim),
+			"closed": sim.traffic.closed.duplicate(), "plazas": sim.parks.trails.plazas.duplicate()}
 	if PLACE_TYPES.has(type):
 		return {"type": type, "money": sim.economy.money, "ids": things(sim, type).keys()}
 	return null
@@ -64,6 +65,13 @@ func after(sim: CitySim, snap: Dictionary) -> void:
 		e.rev_before = snap.rev
 		e.rev = sim.network.revision
 		e.took = took(sim, snap.held)
+		# Car-free streets the build cut in two or made an avenue: car-free
+		# again on undo.
+		e.closed = {}
+		for seg in snap.closed:
+			if not sim.traffic.closed.has(seg):
+				e.closed[seg] = snap.closed[seg]
+		e.plazas = snap.plazas.filter(func(seg): return not seg in sim.parks.trails.plazas)
 	else:
 		var added: Array = things(sim, snap.type).keys().filter(func(k): return not k in snap.ids)
 		if added.size() != 1:
@@ -72,6 +80,16 @@ func after(sim: CitySim, snap: Dictionary) -> void:
 	entries.append(e)
 	if entries.size() > KEEP:
 		entries.pop_front()
+
+
+## A street made car-free: when the newest road build made that street,
+## undoing it refunds the pavers too (second reader, 2026-10-26).
+func note_car_free(sim: CitySim, seg: int, cost: int) -> void:
+	if entries.is_empty():
+		return
+	var e: Dictionary = entries.back()
+	if e.has("roads") and e.rev == sim.network.revision and not e.roads.segments.has(seg):
+		e.refund = int(e.refund) + cost
 
 
 ## The newest build that can still be undone, or {} (stale ones are dropped).
@@ -94,7 +112,9 @@ func undo(sim: CitySim) -> bool:
 	entries.pop_back()
 	if e.has("roads"):
 		sim.network.restore(e.roads)
+		sim.traffic.prune_lane_rules()
 		put_back(sim, e.took)
+		sim.put_back_closures({"closed": e.get("closed", {}), "plazas": e.get("plazas", [])})
 		# The road built before this one is current again if no road change
 		# came between; something placed between (a park, a tower) doesn't
 		# count (reviewer 2026-10-27: three undos left the first street in).

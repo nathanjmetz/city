@@ -43,6 +43,15 @@ The browser's renderer (Compatibility) uses the same sun, sky and colours: `brow
 - Sky, shade light and stars: a table by sun height. It runs from day, through a golden horizon at 3° and an orange one at 0°, to blue hour at −3° to −6°. Nautical twilight is at −12° and night at −18°. The first stars appear at −5°, and almost all are out by −13°.
 - Haze through the year: humidity = 0.5 − 0.5 cos(2π (month − 0.55)/12). That is 0 in mid-January and 1 in mid-July, when Indiana's dew points peak. Haze thickness runs from 0.75× (about 32 km visibility) to 1.25× (about 19 km) of the tuned 24 km. The summer horizon is whiter and the winter one bluer.
 
+**Dusk and night on the desktop (2026-10-29, look round gap 6).** The critic found dusk an even pink band with no glow where the sun went down, a pure black night sky with fat soft stars, and house walls lit bright blue at 11 pm. The desktop app (Forward+) now draws these; the browser keeps the look above.
+
+- Twilight (`cloud_sky.gd`, from a sun 12° up to 15° under): a bright orange-gold core about 20° either side of where the sun set, inside a warm band most of the way round; opposite it the earth's shadow (blue-grey) under a pink band, the belt of Venus. The horizon's colour stays low under a clear blue overhead. Clouds are lit orange and pink from under the horizon. After sunset the light is the moon's, so SkyLight sends the sky the sun's real place (`sun_dir`), only while the sun is under 13° and when it has moved half a degree.
+- Night (`Daylight.at(e, humid, true)`): the zenith stays a deep navy (`NIGHT_ZENITH`), never black, and the horizon turns to the town's warm grey-orange glow (`NIGHT_GLOW`). The fog's veil over the whole sky dome fades out from a low sun, since it greyed both to purple and brown. Stars are sharp points a pixel or so across, worked out in the sky shader and lost in the haze low down.
+- Light on the town: the shade light drops to 30% of its daytime strength at full night and turns grey-blue (`NIGHT_SHADE`), and the moon to 0.25 from 0.7, greyer. Walls are dark; lamps and lit windows do the lighting.
+- Daylight is unchanged (every day, rain and snow look round shot has the same average colour and spread as round 0's), and `tests/test_sun_path.gd` checks both.
+- Cost: none measurable. Four paired look-round runs of the dusk and night shots (Cinematic, 1920×1080) drew in 12.6 and 13.6 ms on main against 13.3 and 12.9 ms here, with ±3 ms between runs.
+- Not done: porch lights, and the row of far lights along the horizon at night (those are lamps, not stars).
+
 **Moon:** this is unchanged. There is still a full moon opposite the sun, at least 25° up. A real moon phase doesn't fit the game's calendar, because a whole lunar month would pass in one game day.
 
 ## Tests
