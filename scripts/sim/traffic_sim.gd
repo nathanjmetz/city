@@ -3099,6 +3099,16 @@ static func _docks(kind: String) -> bool:
 	return kind in DOCK_KINDS
 
 
+## The place a ref stands for if it is already worked out and still holds
+## for what stands there now, else {}; never works one out or claims its
+## spots (for views that only read, like StateView). Treat it as read-only.
+func cached_place(ref: String) -> Dictionary:
+	var pl: Dictionary = _places.get(ref, {})
+	if pl.is_empty() or pl.has("seed") and _place_seed(ref) != pl.seed:
+		return {}
+	return pl
+
+
 ## A copy of `d` with its keys as plain strings in sorted order: a lot in
 ## the running town has some keys as StringNames, in the order they were
 ## added, and one loaded from a save has them sorted, so a car that carries

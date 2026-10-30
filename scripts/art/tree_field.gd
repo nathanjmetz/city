@@ -89,6 +89,8 @@ var _shown_at := Vector4(INF, INF, INF, INF)  # the camera (local) and reaches t
 ##   {"planted": tick}: planted then as nursery stock, it grows on with the
 ##     game's clock toward the size in its transform (the size it reaches
 ##     at TreeKinds.REF_AGE, and it keeps growing after);
+##   {"planted": tick, "start": years}: the same, but already this old on
+##     that day (a grown yard tree, yard_age), growing on from there;
 ##   {"age": years}: this old, drawn at the size in its transform;
 ##   {"shrub": true}: brush, never grown up close.
 ## Without facts the age comes from the size.
@@ -183,7 +185,7 @@ static func resolve(t: Array, world := Transform3D.IDENTITY) -> Array:
 	var size := xf.basis.get_scale().y
 	var age: float
 	if facts.has("planted"):
-		var start := TreeKinds.nursery_age(sp)
+		var start := maxf(float(facts.get("start", 0.0)), TreeKinds.nursery_age(sp))
 		age = maxf(start + extra_years + float(now_tick - int(facts.planted)) / float(REGROW_TICKS * 12), start)
 		var now := size * TreeKinds.size_at(sp, age)
 		xf = Transform3D(xf.basis.scaled(Vector3.ONE * (now / maxf(size, 0.001))), xf.origin)
@@ -192,6 +194,50 @@ static func resolve(t: Array, world := Transform3D.IDENTITY) -> Array:
 	else:
 		age = TreeKinds.age_for_size(sp, size)
 	return [xf, sp, t[2], age, seed_of(world * xf.origin), not facts.has("shrub")]
+
+
+## Yard trees in a new neighbourhood start already grown (Nathan,
+## 2026-10-29: "A. Yes, back-yard trees start grown; street trees still
+## start small and grow"), at the mixed ages of an established Indiana
+## street: about one in seven a young tree (13 years), most 18, 25 or 33
+## years, and about one in eight a big old one (56). Street trees are the
+## town's and go in as nursery stock. The ages are grown trees' own mesh
+## ages (GrownTrees.BUCKETS), so a new street's yard trees share a few
+## meshes (fewer draw calls) instead of each being its own.
+const YARD_YOUNG := 0.14
+const YARD_OLD := 0.88
+const YARD_PICKS := [13.0, 18.0, 25.0, 33.0, 56.0]
+## The ages a tree kept younger to fit is put back to (the largest that fits).
+const YARD_STEPS := [9.0, 13.0, 18.0, 25.0, 33.0, 43.0, 56.0]
+
+
+## How old a yard tree of kind `sp` is the day its yard is finished, from
+## `seed` (a whole number from the lot's own seed: the same lot always gets
+## the same trees). `room`: how big the crown may grow, as a share of the
+## size its planter gave it (the size at TreeKinds.REF_AGE): a tree with
+## no room to spread past that (a wall, a pool, the next tree or the lot
+## line near) is kept young enough to fit. Whole-number maths for the
+## pick, so every computer agrees.
+static func yard_age(sp: int, seed: int, room := 1.0) -> float:
+	var u := float(posmod(seed, 1000003)) / 1000003.0
+	var v := float(posmod(seed / 1000003, 997)) / 997.0
+	var young := TreeKinds.nursery_age(sp)
+	var age: float
+	if u < YARD_YOUNG:
+		age = YARD_PICKS[0]
+	elif u < YARD_OLD:
+		age = YARD_PICKS[1 + mini(int(v * 3.0), 2)]
+	else:
+		age = YARD_PICKS[4]
+	# No older than the crown has room for: the oldest step that fits, or
+	# nursery stock.
+	if room < TreeKinds.size_at(sp, age):
+		var fits := TreeKinds.age_for_size(sp, room)
+		age = young
+		for s in YARD_STEPS:
+			if s <= fits:
+				age = s
+	return maxf(age, young)
 
 
 ## A tree's seed: from where it stands in the region (a view position plus

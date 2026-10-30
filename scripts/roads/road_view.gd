@@ -84,6 +84,7 @@ var _mats := {
 	"apron": RoadStyle.material(Color(0.5, 0.44, 0.38)),  # tinted, textured-look concrete
 	"tunnel": RoadStyle.material(Color(0.1, 0.1, 0.12, 0.45), true),
 	"domes": Surfaces.concrete(Junction.DOMES_COLOR),
+	"domes yellow": Surfaces.concrete(Junction.DOMES_YELLOW),
 	"iron": _iron(Color(0.17, 0.16, 0.15)),  # grates and manhole covers
 	"drain": RoadStyle.material(Color(0.03, 0.03, 0.03)),  # the dark under them
 	"wear": Surfaces.lane_wear(),  # oil down the middle of each lane
@@ -157,9 +158,32 @@ func is_drawn() -> bool:
 		and _corners_later.is_empty()
 
 
+## Junctions the player put lights at, as last drawn (their corners get
+## a ramp in line with each crosswalk: Junction.plan).
+var _drawn_signals := {}
+var _signal_check := 1.0
+
+
+## The junctions the player put traffic lights at.
+func _signals() -> Dictionary:
+	var out := {}
+	if sim == null:
+		return out
+	for n in sim.traffic.overrides:
+		if int(sim.traffic.overrides[n]) == TrafficSim.Rule.SIGNAL:
+			out[n] = true
+	return out
+
+
 ## Rebuilds when a road has turned from country road to town street or back
 ## (checked at most once a second while the town grows).
 func _process(delta: float) -> void:
+	# Lights put up or taken down: those corners' ramps change.
+	_signal_check -= delta
+	if _signal_check < 0.0 and not _building:
+		_signal_check = 1.0
+		if _signals() != _drawn_signals:
+			rebuild()
 	# The graphics tier moved across High: curbs stand up or lie flat, all
 	# streets redrawn once nothing else is being drawn (never mid-rebuild,
 	# which would leave the town's streets half judged as country roads).
@@ -447,7 +471,8 @@ func _rebuild_all(gen: int) -> void:
 			for side in g[seg]:
 				gaps[seg][side] = g[seg][side]
 	# Town street junctions get real corners; their roads stop short of them.
-	var junctions := Junction.plan(network, _rural, _urban)
+	_drawn_signals = _signals()
+	var junctions := Junction.plan(network, _rural, _urban, _drawn_signals)
 	if junctions != plans:
 		plans = junctions
 		plans_version += 1
@@ -479,6 +504,10 @@ func _rebuild_all(gen: int) -> void:
 		var ja := Junction.trim(junctions, sg.a, id)
 		var jb := Junction.trim(junctions, sg.b, id)
 		var line_cuts := Vector2(JunctionMarks.line_cut(junctions, sg.a, id), JunctionMarks.line_cut(junctions, sg.b, id))
+		# The curb drops for ramps in line with the crosswalk, not where a
+		# corner has one diagonal ramp instead.
+		var dips := Vector2(1.0 if Junction.pair_ramps(junctions, sg.a, id) else 0.0,
+			1.0 if Junction.pair_ramps(junctions, sg.b, id) else 0.0)
 		# Where side roads come in at a country junction, this road's edge
 		# line and shoulder stop: [side, metres, at the start].
 		var breaks := []
@@ -521,7 +550,7 @@ func _rebuild_all(gen: int) -> void:
 			var urban := _urban.has(id)
 			if urban:
 				rural = false
-			var key := [pts, type, rural, seg_gaps, Terrain.shift, line_cuts, breaks, urban]
+			var key := [pts, type, rural, seg_gaps, Terrain.shift, line_cuts, breaks, urban, dips]
 			var cached: Array = _street_cache.get(id, [])
 			if cached.is_empty() or cached[0] != key:
 				if (sliced or not cached.is_empty()) and (Perf.now() - t0) / 1000.0 > _remesh_ms():
@@ -530,10 +559,10 @@ func _rebuild_all(gen: int) -> void:
 					# them); a street keeps its old look a few frames while
 					# they're redrawn. A new street is drawn at once, except a
 					# neighbor's, which just appears a few frames late.
-					_later[id] = [key, pts, type, seg_gaps, rural, line_cuts, breaks, urban]
+					_later[id] = [key, pts, type, seg_gaps, rural, line_cuts, breaks, urban, dips]
 				else:
 					cached = [key, Terrain.drape(RoadMesh.street(pts, type, _mats, seg_gaps, rural, line_cuts, breaks,
-						urban))]
+						urban, dips))]
 			if not cached.is_empty():
 				street_cache[id] = cached
 				mi.mesh = cached[1]
@@ -690,8 +719,8 @@ func _rebuild_all(gen: int) -> void:
 ## The parts a junction's corner is drawn in (country corners add gravel
 ## and paint), each an empty list of meshes.
 static func _corner_lists() -> Dictionary:
-	return {"asphalt": [], "curb": [], "walk": [], "domes": [], "shoulder": [], "white": [], "yellow": [],
-		"gravel road": []}
+	return {"asphalt": [], "curb": [], "walk": [], "domes": [], "domes yellow": [], "iron": [], "shoulder": [],
+		"white": [], "yellow": [], "gravel road": []}
 
 
 ## One junction's corner pieces: {part: mesh}.
@@ -701,7 +730,8 @@ func _corner_meshes(node: int, plan) -> Dictionary:
 		parts[key] = SurfaceTool.new()
 		parts[key].begin(Mesh.PRIMITIVE_TRIANGLES)
 	Junction.draw({node: plan}, parts.asphalt, parts.curb, parts.walk, parts.domes,
-		{"shoulder": parts.shoulder, "white": parts.white, "yellow": parts.yellow, "gravel road": parts["gravel road"]})
+		{"shoulder": parts.shoulder, "white": parts.white, "yellow": parts.yellow, "gravel road": parts["gravel road"],
+			"domes yellow": parts["domes yellow"], "iron": parts.iron})
 	var meshes := {}
 	for key in parts:
 		meshes[key] = Terrain.drape(parts[key].commit(), false, 6.0)
@@ -991,7 +1021,8 @@ func _remesh_later() -> void:
 		var mi: MeshInstance3D = _seg_mi.get(id)
 		if mi == null or not is_instance_valid(mi):
 			continue
-		var mesh := Terrain.drape(RoadMesh.street(job[1], job[2], _mats, job[3], job[4], job[5], job[6], job[7]))
+		var mesh := Terrain.drape(RoadMesh.street(job[1], job[2], _mats, job[3], job[4], job[5], job[6], job[7],
+			job[8]))
 		_street_cache[id] = [job[0], mesh]
 		mi.mesh = mesh
 		if (Perf.now() - t) / 1000.0 > _remesh_ms():

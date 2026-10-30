@@ -92,7 +92,7 @@ func _corner(n: int) -> Dictionary:
 	var country := false
 	for t in [t1, t2]:
 		country = country or RoadStyle.TYPES[t].get("rural", false) or not RoadStyle.TYPES[t].get("walk", true)
-	var r := Junction.corner_radius(t1, t2, country)
+	var r := Junction.corner_radius(t1, t2, country, Junction.node_look(sim.network, n))
 	var ctr = Geometry2D.line_intersects_line(side * (h1 + r), d1, side2 * (h2 + r), d2)
 	var at := Vector2(p.x, p.z) + (corner as Vector2) + (side + side2).normalized() * 1.2
 	if ctr != null and (ctr as Vector2).distance_to(corner) > 0.1:

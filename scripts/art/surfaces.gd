@@ -11,6 +11,10 @@ extends RefCounted
 ##     patchy elsewhere
 ## All shaders are cheap world-space ones that run in the Compatibility renderer.
 ## Ribbon meshes from RoadMesh carry the distance along the road in UV.y / 4.
+## On the desktop (LampLight.GLSL) they also take the streetlights' light,
+## and in and after rain at High and up (Weather) they go wet: darker and
+## glossy, with puddles in the low spots and along the curbs, the wheel
+## paths drying first. The browser draws them dry and lit by flat pools.
 
 ## Sidewalk slabs are 5 ft long (the usual US contraction-joint spacing).
 const SLAB := 1.524
@@ -195,9 +199,61 @@ void fragment() {
 		rough = mix(rough, 0.7 + ph.y * 0.3, near);
 		NORMAL = photo_normal_view(ph.zw * (1.0 - packed) * (1.0 - crack), VIEW_MATRIX);
 	}
+	rough -= crack * 0.4 + packed * 0.15;
+	float spec = 0.3;
+	// Rain, benchmarked against photos of wet Indiana streets: the asphalt
+	// goes much darker and glossy and mirrors the sky; water stands in the
+	// low spots, in settled patches and along the curb; once it stops, the
+	// wheel paths dry first, then the rest, the puddles last.
+	vec4 wl = wet_now();
+	// Screen-space slopes, taken outside any branch: how fast the ground
+	// and UV.x run across the screen.
+	vec2 dpx = dFdx(p);
+	vec2 dpy = dFdy(p);
+	float dax = dFdx(across);
+	float day = dFdy(across);
+	if (wl.x > 0.0) {
+		// Metres across from the road's middle, from how fast UV.x runs
+		// over the ground (junction pads carry no across: no paths there).
+		float det = dpx.x * dpy.y - dpx.y * dpy.x;
+		vec2 ga = vec2(0.0);
+		if (abs(det) > 1e-9) {
+			ga = vec2(dax * dpy.y - day * dpx.y, dpx.x * day - dpy.x * dax) / det;
+		}
+		float width = 1.0 / max(length(ga), 1e-4);
+		float valid = step(3.0, width) * step(width, 40.0);
+		float x = (across - 0.5) * width;
+		float to_edge = (0.5 - abs(across - 0.5)) * width;
+		// Tyres run 0.9 m either side of each 3.6 m lane's middle.
+		float wheel = abs(mod(abs(x), 1.8) - 0.9);
+		float track = (1.0 - smoothstep(0.2, 0.42, wheel + (texture(noise_grain, p / 2.1).r - 0.5) * 0.12))
+			* smoothstep(1.0, 1.6, to_edge) * valid * clamp(0.5 / max(footprint, 1e-3) - 0.5, 0.0, 1.0);
+		float low = texture(noise_soft, p / 13.0 + 0.61).r * 0.65 + texture(noise_soft, turn(p, 2.1) / 4.3).r * 0.35;
+		low += (1.0 - smoothstep(0.15, 0.9, to_edge)) * 0.32 * valid + in_patch * 0.08 + crack * 0.12;
+		float t = 0.06 + 0.42 * track - 0.22 * smoothstep(0.5, 0.72, low);
+		float film = smoothstep(t, t + 0.18, wl.x);
+		float lvl = 0.8 - 0.16 * wl.x;
+		float pud = smoothstep(lvl, lvl + 0.02, low) * smoothstep(0.12, 0.4, wl.x);
+		// The film keeps the stones' texture; standing water is a mirror.
+		col *= mix(1.0, 0.42, film) * mix(1.0, 0.85, pud);
+		rough = mix(mix(rough, 0.38, film), 0.02, pud);
+		spec = mix(mix(spec, 0.36, film), 0.5, pud);
+		vec3 up = (VIEW_MATRIX * vec4(0.0, 1.0, 0.0, 0.0)).xyz;
+		vec3 water = up;
+		if (wl.y > 0.01) {
+			// Raindrops ringing the water.
+			vec2 q1 = p * 2.3 + vec2(TIME * 0.31, TIME * 0.17);
+			vec2 q2 = turn(p, 1.0) * 2.9 - vec2(TIME * 0.23, TIME * 0.29);
+			vec2 rip = vec2(texture(noise_grain, q1).r - texture(noise_grain, q2).r,
+				texture(noise_grain, q1 + 0.37).r - texture(noise_grain, q2 + 0.61).r);
+			water = normalize(up + (VIEW_MATRIX * vec4(rip.x, 0.0, rip.y, 0.0)).xyz * 0.35 * wl.y * close);
+		}
+		NORMAL = normalize(mix(mix(NORMAL, up, film * 0.5), water, pud));
+	}
 	ALBEDO = col;
-	ROUGHNESS = rough - crack * 0.4 - packed * 0.15;
-	SPECULAR = 0.3;
+	ROUGHNESS = rough;
+	SPECULAR = spec;
+	EMISSION = lamp_light(world_pos, col, rough, NORMAL, VIEW, VIEW_MATRIX, spec);
 }
 """
 
@@ -241,9 +297,21 @@ void fragment() {
 			NORMAL = photo_normal_view(ph.zw * (1.0 - cover), VIEW_MATRIX);
 		}
 	}
+	float spec = 0.3;
+	// Rain: concrete darkens and takes a sheen, the joints and stains
+	// staying wet longest; it dries ahead of the street.
+	vec4 wl = wet_now();
+	if (wl.x > 0.0) {
+		float low = texture(noise_soft, p / 7.0 + 0.23).r + stain * 0.15 + joint * 0.2;
+		float film = smoothstep(0.2 - low * 0.18, 0.4 - low * 0.18, wl.x) * (1.0 - cover);
+		col *= mix(1.0, 0.68, film);
+		rough = mix(rough, 0.42, film);
+		spec = mix(spec, 0.4, film);
+	}
 	ALBEDO = col;
 	ROUGHNESS = rough;
-	SPECULAR = 0.3;
+	SPECULAR = spec;
+	EMISSION = lamp_light(world_pos, col, rough, NORMAL, VIEW, VIEW_MATRIX, spec);
 }
 """ % [SLAB, SLAB, SLAB, SLAB]
 
@@ -255,9 +323,14 @@ void fragment() {
 	float wear = texture(noise_grain, turn(p, 0.9) / 1.3).r * 0.6
 		+ texture(noise_soft, p / 40.0).r * 0.4;
 	vec3 col = mix(paint.rgb, under.rgb, smoothstep(0.42, 0.68, wear) * 0.6);
+	// Wet paint darkens a little and shines; worn spots like the asphalt.
+	float wf = smoothstep(0.08, 0.3, wet_now().x);
+	col *= mix(1.0, mix(0.85, 0.6, smoothstep(0.42, 0.68, wear)), wf);
+	float rough = mix(0.7, 0.25, wf);
 	ALBEDO = col;
-	ROUGHNESS = 0.7;
+	ROUGHNESS = rough;
 	SPECULAR = 0.35;
+	EMISSION = lamp_light(world_pos, col, rough, NORMAL, VIEW, VIEW_MATRIX, 0.35);
 }
 """
 
@@ -280,9 +353,13 @@ void fragment() {
 	// The odd tuft of grass, small and soft-edged.
 	float weeds = smoothstep(0.72, 0.86, texture(noise_soft, turn(p, 1.7) / 1.8).r);
 	col = mix(col, vec3(0.18, 0.23, 0.10) * (0.8 + grain * 0.4), weeds * 0.5);
+	float wf = smoothstep(0.1, 0.4, wet_now().x);
+	col *= mix(1.0, 0.72, wf);
+	float rough = mix(0.95, 0.6, wf);
 	ALBEDO = col;
-	ROUGHNESS = 0.95;
+	ROUGHNESS = rough;
 	SPECULAR = 0.2;
+	EMISSION = lamp_light(world_pos, col, rough, NORMAL, VIEW, VIEW_MATRIX, 0.2);
 }
 """
 
@@ -330,9 +407,13 @@ void fragment() {
 	// Even from far off, the stone reads a little mottled, never flat.
 	col *= 0.94 + texture(noise_grain, p / 1.6).r * 0.12;
 	col = mix(col, vec3(0.86, 0.88, 0.9), snow * 0.85);
+	float wf = smoothstep(0.1, 0.4, wet_now().x) * (1.0 - snow);
+	col *= mix(1.0, 0.72, wf);
+	float rough = mix(0.97, 0.6, wf);
 	ALBEDO = col;
-	ROUGHNESS = 0.97;
+	ROUGHNESS = rough;
 	SPECULAR = 0.15;
+	EMISSION = lamp_light(world_pos, col, rough, NORMAL, VIEW, VIEW_MATRIX, 0.15);
 }
 """
 
@@ -365,9 +446,14 @@ void fragment() {
 	col *= 1.0 + (texture(noise_grain, p / 0.5).r - 0.5) * 0.12 * close;
 	float cover = smoothstep(0.2, 0.6, snow + texture(noise_soft, p / 6.0).r * 0.3 - 0.15);
 	col = mix(col, vec3(0.80, 0.83, 0.88), cover * 0.9);
+	// Wet brick: deeper red, the worn tops glossy, the sand joints dark.
+	float wf = smoothstep(0.08, 0.35, wet_now().x) * (1.0 - cover);
+	col *= mix(1.0, mix(0.66, 0.5, joint), wf);
+	float rough = mix(0.85, mix(0.25, 0.6, joint), wf);
 	ALBEDO = col;
-	ROUGHNESS = 0.85;
+	ROUGHNESS = rough;
 	SPECULAR = 0.3;
+	EMISSION = lamp_light(world_pos, col, rough, NORMAL, VIEW, VIEW_MATRIX, 0.3);
 }
 """
 
@@ -399,9 +485,15 @@ void fragment() {
 	col = mix(col, weed, max(edge, crown * weeds * 0.8) * 0.85);
 	float cover = smoothstep(0.15, 0.55, snow * 0.9 + patch * 0.35 - 0.1) * mix(1.0, 0.45, rut);
 	col = mix(col, vec3(0.80, 0.83, 0.88) * (0.93 + grain * 0.07), cover);
+	// Wet: darker dirt, water standing in the wheel ruts.
+	float wf = smoothstep(0.1, 0.4, wet_now().x) * (1.0 - cover);
+	float pool = rut * smoothstep(0.55, 0.7, patch) * smoothstep(0.3, 0.6, wet_now().x);
+	col *= mix(1.0, 0.7, wf) * mix(1.0, 0.75, pool);
+	float rough = mix(mix(0.95, 0.65, wf), 0.05, pool);
 	ALBEDO = col;
-	ROUGHNESS = 0.95;
+	ROUGHNESS = rough;
 	SPECULAR = 0.2;
+	EMISSION = lamp_light(world_pos, col, rough, NORMAL, VIEW, VIEW_MATRIX, 0.2);
 }
 """
 
@@ -676,8 +768,9 @@ static func paint(color: Color) -> ShaderMaterial:
 static func _make(key: String, body: String, params: Dictionary, common := COMMON) -> ShaderMaterial:
 	if _cache.has(key):
 		return _cache[key]
+	LampLight.ensure_globals()
 	var shader := Shader.new()
-	shader.code = common + body
+	shader.code = common + LampLight.GLSL + body
 	var mat := ShaderMaterial.new()
 	mat.shader = shader
 	if _soft == null:

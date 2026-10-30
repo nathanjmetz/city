@@ -114,6 +114,7 @@ jobs:
           run_alone tests/test_home_screen.gd
           run_test tests/test_roads.gd
           run_test tests/test_junction_marks.gd
+          run_test tests/test_junction_looks.gd
           run_test tests/test_curbs.gd
           run_test tests/test_country_roads.gd
           run_test tests/test_county_rail.gd
@@ -126,6 +127,7 @@ jobs:
           run_test tests/test_water.gd
           run_test tests/test_advisor.gd
           run_test tests/test_build_menus.gd
+          run_test tests/test_road_catalog.gd
           run_test tests/test_first_town.gd
           run_test tests/test_pad.gd
           run_test tests/test_camera_zoom.gd
@@ -172,6 +174,7 @@ jobs:
           run_test tests/test_transit.gd
           run_test tests/test_loading.gd
           run_test tests/test_terrain.gd
+          run_test tests/test_lawns.gd
           run_test tests/test_permits.gd
           run_test tests/test_subdivisions.gd
           run_test tests/test_land_plan.gd
@@ -248,6 +251,7 @@ jobs:
           run_test tests/test_house_lots.gd
           run_test tests/test_street_trees.gd
           run_test tests/test_lot_grade.gd
+          run_test tests/test_state_layer.gd
 
       - name: Stamp the build
         run: |

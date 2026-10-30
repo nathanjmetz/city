@@ -5,7 +5,8 @@ extends Node3D
 ## Signs follow MUTCD: a 30 in red octagon with a white border and STOP on a
 ## galvanised post, 7 ft to the bottom of the sign, green street-name blades
 ## on top. Shaped town junctions are painted by JunctionMarks' rules
-## (crosswalks on every leg, stop and yield lines); other junctions get a
+## (each leg's crosswalk by the junction's control and look, stop and yield
+## lines, fresh or worn); other junctions get a
 ## stop bar and crosswalk across each controlled approach.
 
 const POLE_H := 5.8
@@ -20,6 +21,9 @@ const HEAD_H := 1.05
 const HEAD_D := 0.3
 ## Where lane arrows' heads sit behind the stop line, metres.
 const ARROW_BACK := 4.0
+## Junction paint a few years on, and long overdue for redoing.
+const WORN := Color(0.70, 0.70, 0.67)
+const GHOST := Color(0.53, 0.53, 0.51)
 
 var traffic: TrafficSim
 ## The road view, for where shaped town junctions make each road stop short.
@@ -44,6 +48,9 @@ var _no_rights: MultiMeshInstance3D
 var _paint := MeshInstance3D.new()
 ## [node, way] for each signal head, in instance order.
 var _head_ways := []
+## Worn and ghost paint at junctions whose look has it (JunctionMarks.wear).
+var _worn := MeshInstance3D.new()
+var _ghost := MeshInstance3D.new()
 
 
 func setup(t: TrafficSim) -> void:
@@ -96,6 +103,11 @@ func _ready() -> void:
 	_paint.material_override = Surfaces.paint(RoadStyle.MARKING_WHITE)
 	_paint.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(_paint)
+	_worn.material_override = Surfaces.paint(WORN)
+	_ghost.material_override = Surfaces.paint(GHOST)
+	for mi in [_worn, _ghost]:
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		add_child(mi)
 
 
 func _process(_delta: float) -> void:
@@ -144,34 +156,28 @@ func _rebuild_all() -> void:
 	# Shaped junctions: painted by the rule book, each kept until it changes.
 	var cache := {}
 	var pieces := []
+	var faded := [[], []]  # worn, ghost
 	var marked := plans.keys()
 	marked.sort()
 	for n in marked:
 		var plan: Dictionary = plans[n]
 		if not JunctionMarks.marked(plan):
 			continue
-		var rules := {}
-		var j: Dictionary = traffic.junctions.get(n, {})
-		for wid in traffic.ways_into(n):
-			var rule := ""
-			if j.is_empty() or j.control == TrafficSim.Rule.NONE:
-				pass
-			elif j.control == TrafficSim.Rule.PRIORITY and j.major.has(wid):
-				pass
-			elif j.control == TrafficSim.Rule.PRIORITY and j.sign == "yield":
-				rule = "yield"
-			else:
-				rule = "stop"
-			rules[traffic.ways[wid].seg] = rule
-		var key := [plan, rules, Terrain.shift]
+		var rules := JunctionMarks.leg_rules(traffic, n)
+		var control := JunctionMarks.control_of(traffic.junctions.get(n, {}))
+		var shut := JunctionMarks.car_free_legs(traffic, plan)
+		var key := [plan, rules, Terrain.shift, control, shut]
 		var hit: Array = _paint_cache.get(n, [])
 		if hit.is_empty() or hit[0] != key:
 			var st := SurfaceTool.new()
 			st.begin(Mesh.PRIMITIVE_TRIANGLES)
-			JunctionMarks.paint(plan, rules, st, RoadStyle.Y_JUNCTION + 0.02)
-			hit = [key, Terrain.drape(st.commit(), false, 4.0)]
+			JunctionMarks.paint(plan, rules, st, RoadStyle.Y_JUNCTION + 0.02, control, shut)
+			hit = [key, Terrain.drape(st.commit(), false, 4.0), JunctionMarks.wear(plan, control)]
 		cache[n] = hit
-		pieces.append(hit[1])
+		if hit[2] > 0:
+			faded[hit[2] - 1].append(hit[1])
+		else:
+			pieces.append(hit[1])
 	_paint_cache = cache
 	var sign_at := {}  # way -> [post, facing back, right] of its stop sign or signal pole
 	for n in nodes:
@@ -333,6 +339,8 @@ func _rebuild_all() -> void:
 	if any_paint:
 		pieces.append(Terrain.drape(paint.commit(), false, 4.0))
 	_paint.mesh = RoadView._merge(pieces) if not pieces.is_empty() else null
+	_worn.mesh = RoadView._merge(faded[0]) if not faded[0].is_empty() else null
+	_ghost.mesh = RoadView._merge(faded[1]) if not faded[1].is_empty() else null
 
 
 ## The way along road `seg` into junction `node`, or -1.

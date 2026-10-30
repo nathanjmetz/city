@@ -55,6 +55,7 @@ static func build(seed: int, to_curb: float, lot := {}, level := 0) -> Array:
 	b._cf_units = 4 if plan.style == "fourplex" else 2  # a meter and carts for each home
 	b._utilities(info)
 	b._front_yard(info)
+	b._yard_room()
 	return [b._commit_house(), b._commit_flat(), b.trees]
 
 

@@ -17,6 +17,7 @@ func _init() -> void:
 	_far_matches_cards()
 	_grown_matches_cards()
 	_lit_alike()
+	_dappled_shadows()
 	_no_swelling()
 	_shares()
 	_jitter()
@@ -147,6 +148,66 @@ func _lit_alike() -> void:
 		worst, worst_kind])
 	_check("LEAF_INNER" in TreeLook.LEAF_SHADER and not "* mix(0.85, 1.2, tp) * 2.0" in TreeLook.LEAF_SHADER,
 		"the leaf shader shades the crown's inside and underside, not a glow from within")
+
+
+## A tree's shadow is dappled, not a solid hole: in the sun's shadow map
+## the sun comes through a share OPEN_CORE of a crown's middle and OPEN_RIM
+## of its rim (the look critic, 2026-10-29: "tree shadows are near-black
+## holes", 22,29,45 on a road lit at 111,103,101). Counted on the same sums
+## the shader does (TreeLook.leaf_open, sun_keep): the share of shadow-map
+## pixels thrown away (sun through) is the share meant, never its opposite
+## (review of #932: the first try kept the gaps and let the leaves through).
+## Toward the end of a tier's near tree shadows they only ever get lighter,
+## to nothing left, so they end with no dark ring; a trunk's thins out the
+## same way.
+func _dappled_shadows() -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 11
+	var pts := PackedVector2Array()
+	for i in 20000:
+		pts.append(Vector2(rng.randf_range(-3000.0, 3000.0), rng.randf_range(-3000.0, 3000.0)))
+	var core := _through(pts, TreeLook.leaf_open(0.0, false, 0.0))
+	var rim := _through(pts, TreeLook.leaf_open(1.0, false, 0.0))
+	var spruce := _through(pts, TreeLook.leaf_open(0.0, true, 0.0))
+	_check(absf(core - 0.18) < 0.02 and absf(rim - 0.5) < 0.02 and absf(spruce - 0.09) < 0.02,
+		"sun through a crown's middle %.3f (0.18 meant), its rim %.3f (0.5), a spruce's middle %.3f (0.09)" % [core, rim, spruce])
+	var shares := []
+	var rising := true
+	var last := -1.0
+	for f in [0.0, 0.2, 0.4, 0.6, 0.8, 0.9, 0.95, 0.99, 1.0]:
+		var s := _through(pts, TreeLook.leaf_open(0.0, false, f))
+		shares.append(snappedf(s, 0.001))
+		rising = rising and s > last
+		last = s
+	_check(rising and last == 1.0 and shares[shares.size() - 2] > 0.98,
+		"toward the end of Medium's tree shadows the sun gets through more and more, to all of it (%s)" % [shares])
+	var trunk := [_through(pts, 0.0), _through(pts, 0.5), _through(pts, 1.0)]
+	_check(trunk[0] == 0.0 and absf(trunk[1] - 0.5) < 0.02 and trunk[2] == 1.0,
+		"a trunk's shadow is whole, then thins out with its crown's (%s)" % [trunk])
+	# Gaps a few tenths of a metre across: flecks the size real ones are,
+	# big enough for the shadow map to show near the camera.
+	var flips := 0
+	var steps := 0
+	for i in 400:
+		var p := Vector2(rng.randf_range(-500.0, 500.0), rng.randf_range(-500.0, 500.0))
+		var was := TreeLook.sun_keep(p, TreeLook.OPEN_RIM)
+		for k in 20:
+			p.x += 0.05
+			var now := TreeLook.sun_keep(p, TreeLook.OPEN_RIM)
+			flips += 1 if now != was else 0
+			was = now
+			steps += 1
+	var run := 0.05 * steps / maxf(flips, 1.0)
+	_check(run > 0.1 and run < 0.6, "the gaps and leaf clusters run about %.2f m across" % run)
+
+
+## The share of these points of the plane where the sun comes through.
+static func _through(pts: PackedVector2Array, open: float) -> float:
+	var n := 0
+	for p in pts:
+		if TreeLook.sun_keep(p, open) < 0.5:
+			n += 1
+	return float(n) / pts.size()
 
 
 static func _mean_colour(cols: PackedColorArray) -> Color:

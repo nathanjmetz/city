@@ -86,6 +86,11 @@ var _recs := {}  # lot key -> {sq, xf, centre, front, look, sign, chain, site}
 var _by_sq := {}  # Vector2i -> {lot key: true}, the buildings in each 128 m square
 var _far_sq := FarSquares.new()
 var _near := NearDetail.new()
+## A finished building was filed (drawn and in place), or one was let go
+## (torn down, or about to be drawn again): for the views that follow
+## buildings one at a time (StateView).
+signal building_placed(key: String)
+signal building_removed(key: String)
 var _batches := {}  # Vector2i -> BatchSquare: squares drawn in full
 var _fill: Array = []  # buildings a square drawn in full still waits for, nearest last
 ## The queue wants sorting before the next fill (sorted once a frame, not
@@ -302,8 +307,10 @@ func _draw(key: String, lot: Dictionary, b: Dictionary, fit: Dictionary, s: int)
 		fit = fit.duplicate()
 		fit.added_from = int(b.added_from)  # floors added on top of a block this tall
 	HouseBuilder.keep_arrays = true
+	HouseBuilder.flat_weeds = not LawnMap.paints(sim)
 	var built := build_for(BuildingTypes.type_of(b), storeys, s, lot.to_curb, fit, spec, int(b.get("units", 2)), b.get("chain", "general"), int(b.get("level", 0)))
 	HouseBuilder.keep_arrays = false
+	HouseBuilder.flat_weeds = true
 	HouseBuilder.owner_care = 0
 	HouseBuilder.restored = false
 	if built.size() < 2:
@@ -376,10 +383,13 @@ func _spawn(key: String, refill := false) -> void:
 		fit.side = SiteLayout.corner_side(sim.network, lot)
 	if BuildingTypes.type_of(b) in ["row_home", "apartments"]:
 		fit.alley = SiteLayout.back_lane(sim.network, lot)
+	HouseBuilder.last_info = {}
 	var drawn := _draw(key, lot, b, fit, rng.randi())
 	if drawn.is_empty():
 		return
 	var masses: Array = HouseBuilder.last_masses
+	# A house's plan as drawn (its walk and all), for the yard props.
+	var plan: Dictionary = HouseBuilder.last_info.duplicate() if BuildingTypes.type_of(b) == "house" else {}
 	# On a hillside a building stands on the highest ground under its walls,
 	# with a walkout foundation down to the low side: never with the hill
 	# coming up through the floor (Brawn's homes built through a forest).
@@ -393,6 +403,9 @@ func _spawn(key: String, refill := false) -> void:
 	var labels: Array = drawn[3]
 	if refill:
 		var had: Dictionary = _recs[key]
+		if not masses.is_empty():
+			had.masses = masses.duplicate()
+		had.plan = plan
 		if _batches.has(had.sq):
 			_batches[had.sq].set_building(key, had.xf, solid, draped, footing, labels)
 			_merge_soon(had.sq)
@@ -420,6 +433,8 @@ func _spawn(key: String, refill := false) -> void:
 	if bulk.is_empty():
 		var box := MeshParts.aabb(solid)
 		bulk = [Rect2(box.position.x, box.position.z, box.size.x, box.size.z)]
+	rec.masses = bulk.duplicate()  # its footprints, for the yard props (StateView)
+	rec.plan = plan
 	var pitched: bool = BuildingTypes.type_of(b) in ["house", "duplex", "row_home"]
 	var far := far_arrays(_far_surfaces(solid), bulk, int(b.zone) == ZoneMap.Zone.INDUSTRIAL,
 		_wall_colour(int(b.zone), rng), _roof_colour(pitched, rng), flat[0][1] if not flat.is_empty() else [])
@@ -473,11 +488,13 @@ func _place(key: String, parts: Array) -> void:
 		_batches[rec.sq].set_building(key, rec.xf, parts[0], parts[1], parts[2], parts[5])
 		_merge_soon(rec.sq)
 	_near.index(key, rec.centre)
+	building_placed.emit(key)
 
 
 func _unspawn(key: String) -> void:
 	var rec: Dictionary = _recs[key]
 	_recs.erase(key)
+	building_removed.emit(key)
 	if _by_sq.has(rec.sq):
 		_by_sq[rec.sq].erase(key)
 		if _by_sq[rec.sq].is_empty():
@@ -524,6 +541,13 @@ func _set_trees(key: String, always := true) -> int:
 	var b: Dictionary = sim.buildings.get(key, {})
 	var when := {"planted": int(b.get("built", sim.tick_count)) + Construction.duration(
 		CitySim.profile_of(b))}
+	# A home's own yard trees come in grown, at mixed ages from the lot's seed
+	# (TreeField.yard_age), unless the building was begun before this came
+	# in (a town saved before keeps its trees as they were:
+	# CitySim.grown_yards_from).
+	# Street trees are the town's and go in as nursery stock.
+	var grown := int(b.get("built", sim.tick_count)) >= sim.grown_yards_from
+	var lot_seed := int(b.get("seed", hash(key)))
 	var mailbox := _mailbox_at(key)
 	# Which trees stand (by number), to tell whether anything changed.
 	var kept := PackedInt32Array()
@@ -531,15 +555,21 @@ func _set_trees(key: String, always := true) -> int:
 		var t: Array = planted[i]
 		var yaw := Basis(Vector3.UP, fposmod(t[0].x * 7.3 + t[0].z * 3.1, TAU))
 		var at := frame * Transform3D(yaw.scaled(Vector3.ONE * t[3]), t[0])
+		var facts := when
 		if t[0].z < -0.5:
 			# Out past the lot line: a tree in the parkway.
 			var q := Vector2(at.origin.x, at.origin.z)
 			if not _parkway_free(q) or q.distance_to(mailbox) < MAILBOX_CLEAR:
 				continue
 			street += 1
+		elif grown and t.size() > 4:
+			# A home's yard tree, with its room to spread (HouseBuilder._yard_room).
+			# Shops', factories', civic and apartment lots' trees go in as
+			# nursery stock, as before.
+			facts = {"planted": when.planted, "start": TreeField.yard_age(t[1], hash([lot_seed, i]), float(t[4]))}
 		kept.append(i)
 		at.origin.y = Terrain.ground_y(at.origin.x, at.origin.z) + t[0].y
-		trees.append([at, t[1], t[2], when])
+		trees.append([at, t[1], t[2], facts])
 	var side := _side_trees(key)
 	for i in side.size():
 		var q: Vector2 = side[i][0]
@@ -992,6 +1022,34 @@ func _near_parts(key: String) -> Array:
 func lot_xf(key: String) -> Variant:
 	var rec: Dictionary = _recs.get(key, {})
 	return rec.xf if not rec.is_empty() else null
+
+## A building's footprints as drawn (Rect2s in its lot's frame: x across,
+## z back from the street edge), or [] before it is drawn.
+func masses_of(key: String) -> Array:
+	return _recs.get(key, {}).get("masses", [])
+
+
+## The trees a lot's builder planted, in the world: [[position, species,
+## size, room to spread or -1 (a street tree or a non-home's)], ...].
+func trees_of(key: String) -> Array:
+	if not _planted.has(key):
+		return []
+	var frame: Transform3D = _planted[key][0]
+	var out := []
+	for t: Array in _planted[key][1]:
+		out.append([frame * (t[0] as Vector3), int(t[1]), float(t[3]), float(t[4]) if t.size() > 4 else -1.0])
+	return out
+
+
+## The buildings finished and in place (for a view set up after some were).
+func placed_keys() -> Array:
+	return _recs.keys().filter(func(k): return _recs[k].site == null)
+
+
+## A house's plan as its builder drew it (HouseBuilder.last_info: drive,
+## garage, door, porch, front walk), or {} for anything else.
+func plan_of(key: String) -> Dictionary:
+	return _recs.get(key, {}).get("plan", {})
 
 
 ## True when nothing is waiting to be drawn, merged or grown (for tools and

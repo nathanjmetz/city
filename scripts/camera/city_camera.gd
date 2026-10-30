@@ -93,6 +93,11 @@ func _ready() -> void:
 
 # Camera input runs in _input so it works over any tool.
 func _input(event: InputEvent) -> void:
+	# A panel over the town (All roads) takes every wheel, gesture and drag.
+	if MenuState.covering:
+		_rotating = false
+		_panning = false
+		return
 	if event is InputEventMouseButton:
 		var mb := event as InputEventMouseButton
 		# The right stick scrolls lists with wheel clicks; those never zoom.
@@ -133,8 +138,12 @@ func _input(event: InputEvent) -> void:
 				var scale := _dist * 0.0016
 				_goal_target -= (_right() * mm.relative.x - _forward() * mm.relative.y) * scale
 	elif event is InputEventMagnifyGesture:
-		_zoom(1.0 / (event as InputEventMagnifyGesture).factor)
+		if not MenuState.showing:
+			_zoom(1.0 / (event as InputEventMagnifyGesture).factor)
 	elif event is InputEventPanGesture:
+		# Two fingers over a list scroll it, as the wheel does.
+		if MenuState.showing or _over_list():
+			return
 		# The desktop app on a Mac: a Magic Mouse or a two-finger trackpad
 		# scroll arrives as a pan gesture, not wheel clicks (the browser turns
 		# them into wheel events). Scrolling down zooms out, like the wheel.
@@ -146,9 +155,10 @@ func _input(event: InputEvent) -> void:
 
 
 func _process(delta: float) -> void:
-	# Ignore keys while typing in a text box or with the pause menu up.
+	# Ignore keys while typing in a text box, or with the pause menu or a
+	# panel over the town (arrows move between All roads' cards instead).
 	var focus := get_viewport().gui_get_focus_owner()
-	if not (focus is LineEdit or focus is TextEdit or MenuState.showing):
+	if not (focus is LineEdit or focus is TextEdit or MenuState.owns_input()):
 		var boost := FAST if Input.is_key_pressed(KEY_SHIFT) else 1.0
 		var move := Vector2.ZERO
 		if KeyBinds.held("move_forward") or Input.is_key_pressed(KEY_UP):
@@ -180,7 +190,7 @@ func _process(delta: float) -> void:
 			_zoom_rate(keys * rate, delta)
 		else:
 			_zoom_hold = 0.0
-	if _pad != null and not MenuState.showing:
+	if _pad != null and not MenuState.owns_input():
 		_pad_input(delta)
 	_zoom_glide(delta)
 	_fit_min_dist()
