@@ -475,7 +475,9 @@ static func _road_problem(sim: CitySim, id: int, c: Array, rigid: bool) -> Strin
 	var saved := sim.reserves.crosses(RoadNetwork.sample_curve(c[0], c[1], c[2], 24))
 	if saved != "":
 		return "That land is reserved for %s. Clear the reserve first." % Reserves.KINDS[saved]
-	return ""
+	# The ground rules every road is built by (RoadNetwork.ground_check: a
+	# county railroad's track), moved roads too.
+	return sim.network.ground_check.call(c, type) if sim.network.ground_check.is_valid() else ""
 
 
 ## Moved roads against the roads staying put: a crossing must meet level or

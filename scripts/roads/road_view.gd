@@ -751,8 +751,14 @@ func _country_node(node: int) -> bool:
 	return true
 
 
+## Metres a utility pole stands from a county railroad's middle line at
+## least: off the ballast's shoulder (2.3 m) and its ditch.
+const POLE_RAIL_CLEAR := 4.0
+
+
 ## For a pole line: true where a pole would stand on another road (its
-## pavement and shoulder) or near a junction, where the corners flare out.
+## pavement and shoulder), near a junction, where the corners flare out, or
+## on a county railroad's ballast.
 func _pole_blocked(own: Array) -> Callable:
 	if _road_grid.is_empty() or _road_grid_version != _gen:
 		_road_grid = StreetLights._pieces(network)
@@ -769,8 +775,12 @@ func _pole_blocked(own: Array) -> Callable:
 	var mine := {}
 	for s in own:
 		mine[s] = true
+	# Never on a county railroad's ballast (where a road crosses it).
+	var rail_off: Vector2 = sim.terrain_offset if sim != null and sim.county_rail else Vector2.INF
 	return func(p: Vector3) -> bool:
 		var q := Vector2(p.x, p.z)
+		if rail_off != Vector2.INF and not CountyRail.near(q.x + rail_off.x, q.y + rail_off.y, POLE_RAIL_CLEAR).is_empty():
+			return true
 		var c := Vector2i(floori(q.x / StreetLights.PIECE_CELL), floori(q.y / StreetLights.PIECE_CELL))
 		for dx in [-1, 0, 1]:
 			for dz in [-1, 0, 1]:

@@ -192,9 +192,25 @@ func total_length() -> float:
 
 # --- Commands ---------------------------------------------------------------
 
+## Why a road of this shape (curve [start, ctrl, end], town coordinates) and
+## type can't be laid on the ground, or "": set by the town (CitySim
+## road_ground: a county railroad's track, CountyRail.road_check). Every
+## build_road asks it, so no builder lays a road the rules refuse.
+var ground_check := Callable()
+## Why the last build_road was refused by ground_check, or "".
+var refused := ""
+
 ## Builds a road from start to end bent toward ctrl. Joins existing junctions
 ## and roads it starts on, ends on, or crosses.
 func build_road(start: Vector3, ctrl: Vector3, end: Vector3, type := 0, oneway := false) -> bool:
+	refused = ""
+	# Whatever builds it (the road tool, a grid, a subdivision, the town's
+	# engineer, a hub's road, a roundabout, the highway out of town), a road
+	# goes only where the ground lets it (ground_check).
+	if ground_check.is_valid():
+		refused = ground_check.call([start, ctrl, end], type)
+		if refused != "":
+			return false
 	# The roads it cuts on the way (where it starts, ends or crosses) and the
 	# road itself are one change, so `changed` fires once.
 	begin_batch()

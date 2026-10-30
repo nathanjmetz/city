@@ -609,8 +609,18 @@ func _starter_town(sim: CitySim) -> Array:
 	var side := along.orthogonal()
 	var out := []
 	for k in [[Services.Kind.SUBSTATION, 330], [Services.Kind.WATER_TOWER, 270]]:
-		var p: Vector2 = along * k[1] + side * 40
-		var site := Services.site_near(sim.network, k[0], Vector3(p.x, 0, p.y))
+		# The first side of the road the site may go on: a county railroad
+		# runs beside this road, and its right of way is no place for one.
+		var site := []
+		for off in [40, -40]:
+			var p: Vector2 = along * k[1] + side * off
+			site = Services.site_near(sim.network, k[0], Vector3(p.x, 0, p.y))
+			if not site.is_empty() and sim.services.site_problem(sim.network, k[0], site[0], site[1]) == "":
+				break
+			site = []
+		_check(not site.is_empty(), "the starter town finds a site for its %s off the railroad" % Services.KINDS[k[0]].name)
+		if site.is_empty():
+			continue
 		out.append({"type": "place_service", "kind": k[0], "pos": [site[0].x, site[0].z], "dir": [site[1].x, site[1].z]})
 	for d in range(100, 380, 10):
 		var a: Vector2 = along * d - side * 25
