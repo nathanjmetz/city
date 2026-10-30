@@ -364,6 +364,32 @@ static func build_for(type: String, storeys: int, s: int, to_curb: float, fit: D
 	return built
 
 
+## The lot `key` as its builder is handed it (frame `xf`): _local_lot, a
+## corner shop's side street, a row's back lane, and a corner house's drive
+## kept away from the corner (SiteLayout.drive_away) with its street trees
+## off the mailbox beside that drive (CurbClaims.mailbox_at). Shared with
+## tools/overlap_audit.gd.
+func fit_of(key: String, xf: Transform3D) -> Dictionary:
+	var lot: Dictionary = sim.lots[key]
+	var b: Dictionary = sim.buildings[key]
+	var fit := _local_lot(lot, xf)
+	if fit.corner and int(b.zone) == ZoneMap.Zone.COMMERCIAL:
+		fit.side = SiteLayout.corner_side(sim.network, lot)
+	if BuildingTypes.type_of(b) in ["row_home", "apartments"]:
+		fit.alley = SiteLayout.back_lane(sim.network, lot)
+	var away := SiteLayout.drive_away(sim, key)
+	if away != 0.0:
+		fit.drive_away = away
+	if int(b.get("built", 0)) >= sim.curb_drives_from and int(b.zone) == ZoneMap.Zone.RESIDENTIAL:
+		# Where the box goes by its own drive alone (its neighbours come and
+		# go; the trees must not move with them). A town saved before keeps
+		# its street trees where they grew.
+		var box := CurbClaims.of(sim).mailbox_at(key, true)
+		if box.is_finite():
+			fit.mail_x = (xf.affine_inverse() * Vector3(box.x, xf.origin.y, box.y)).x
+	return fit
+
+
 ## Draws building `key` (or, `refill`, only fetches its full drawing again
 ## for a square that came near): has its builder draw it as plain arrays,
 ## seats it on the land, and files its far version, its trees, and, when
@@ -378,11 +404,7 @@ func _spawn(key: String, refill := false) -> void:
 		Vector3(lot.front.x, Terrain.base_y(lot.pos.x, lot.pos.z), lot.front.z))
 	var rng := RandomNumberGenerator.new()
 	rng.seed = b.seed
-	var fit := _local_lot(lot, xf)
-	if fit.corner and int(b.zone) == ZoneMap.Zone.COMMERCIAL:
-		fit.side = SiteLayout.corner_side(sim.network, lot)
-	if BuildingTypes.type_of(b) in ["row_home", "apartments"]:
-		fit.alley = SiteLayout.back_lane(sim.network, lot)
+	var fit := fit_of(key, xf)
 	HouseBuilder.last_info = {}
 	var drawn := _draw(key, lot, b, fit, rng.randi())
 	if drawn.is_empty():
@@ -619,10 +641,11 @@ const REFILTER_MS := 1.0
 
 
 ## What the parkway's keep-clear spots are worked out from: the roads and
-## the bus stops.
+## the bus stops, and the corners' curb ramps and crosswalks (CurbClaims).
 func _parkway_stamp() -> Array:
 	var stops = sim.get("buses")
-	return [sim.network.revision, sim.network.segments.size(), stops.stops.size() if stops != null else 0]
+	return [sim.network.revision, sim.network.segments.size(), stops.stops.size() if stops != null else 0,
+		CurbClaims.of(sim).junction_version]
 
 
 ## Works the keep-clear spots out again when the roads or the bus stops
@@ -802,24 +825,20 @@ func _keep_clear(p: Vector2, r: float) -> void:
 			_clear[c].append([p, r])
 
 
-## True when a street tree may stand at `q` (this view's frame).
+## True when a street tree may stand at `q` (this view's frame): clear of
+## the keep-clear spots, and its trunk off the corners' curb ramps and
+## crosswalks (CurbClaims).
 func _parkway_free(q: Vector2) -> bool:
 	for e in _clear.get(Vector2i(floori(q.x / CLEAR_CELL), floori(q.y / CLEAR_CELL)), []):
 		if q.distance_to(e[0]) < e[1]:
 			return false
-	return true
+	return CurbClaims.of(sim).junction_free(q, CurbClaims.TRUNK_HALF)
 
 
-## Where a home's curbside mailbox stands (MailView._mailboxes), or far off.
+## Where a home's curbside mailbox stands (CurbClaims.mailbox_at, as
+## MailView draws it), or far off.
 func _mailbox_at(key: String) -> Vector2:
-	var lot: Dictionary = sim.lots.get(key, {})
-	var b: Dictionary = sim.buildings.get(key, {})
-	if lot.is_empty() or int(b.get("zone", -1)) != ZoneMap.Zone.RESIDENTIAL:
-		return Vector2.INF
-	var n: Vector3 = lot.normal
-	var p: Vector3 = lot.front - n * maxf(float(lot.get("to_curb", 4.0)) - 0.5, 0.3) \
-		+ (lot.dir as Vector3) * float(lot.get("width", 15.0)) * 0.3
-	return Vector2(p.x, p.z)
+	return CurbClaims.of(sim).mailbox_at(key)
 
 
 ## Merges a square soon: at once the first time, or when a building

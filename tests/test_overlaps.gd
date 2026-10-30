@@ -16,6 +16,9 @@ extends SceneTree
 const Audit := preload("res://tools/overlap_audit.gd")
 
 ## Today's known clashes (2026-10-29), per town: "a vs b" -> the most allowed.
+## Signs, signal and No Turn posts, streetlights and mailboxes in drives'
+## curb cuts or on curb ramps, and street trees on ramps, are down to none
+## (CurbClaims), so any of those fails.
 const KNOWN := {
 	"small": {
 		"rail_bed:county vs building": 79,
@@ -29,13 +32,7 @@ const KNOWN := {
 		"rail_bed:county vs post:stop_sign": 5,
 		"rail_bed:county vs post:signal_pole": 1,
 		"building vs public_site": 5,
-		"post:stop_sign vs curb_cut": 5,
-		"post:no_turn_sign vs curb_cut": 1,
-		"post:streetlight vs curb_cut": 7,
-		"post:mailbox vs curb_cut": 33,
-		"post:mailbox vs curb_ramp": 5,
 		"prop vs sidewalk_line": 8,
-		"tree_trunk vs curb_ramp": 3,
 		"lot vs lot": 32,
 	},
 	"county_small": {
@@ -49,14 +46,7 @@ const KNOWN := {
 		"rail_bed:county vs prop": 2,
 		"rail_bed:county vs post:stop_sign": 1,
 		"building vs public_site": 5,
-		"post:stop_sign vs curb_cut": 3,
-		"post:signal_pole vs curb_cut": 1,
-		"post:no_turn_sign vs curb_cut": 1,
-		"post:streetlight vs curb_cut": 10,
-		"post:mailbox vs curb_cut": 35,
-		"post:mailbox vs curb_ramp": 7,
 		"prop vs sidewalk_line": 8,
-		"tree_trunk vs curb_ramp": 3,
 		"lot vs lot": 33,
 	},
 }

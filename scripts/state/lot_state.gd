@@ -189,8 +189,7 @@ static func yard_of(sim, key: String, masses := [], plan := {}, trees := []) -> 
 		if pl.has("lay"):
 			lay = pl.lay
 		else:
-			lay = SiteLayout.for_building(int(b.zone), int(b.seed), lot, storeys, type, int(b.get("level", 0)),
-				sim.network, int(b.get("added_from", 0)))
+			lay = SiteLayout.for_lot(sim, key)
 		y.door = lay.door
 		y.front_z = float(lay.door.y)
 		y.drive_x = float(lay.cut_x)

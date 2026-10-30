@@ -51,6 +51,11 @@ var _head_ways := []
 ## Worn and ghost paint at junctions whose look has it (JunctionMarks.wear).
 var _worn := MeshInstance3D.new()
 var _ghost := MeshInstance3D.new()
+## The curb claims' version the posts were last stood by, and how long
+## before they may be looked at again.
+var _claims_seen := -1
+var _claims_wait := 0.0
+const CLAIMS_EVERY := 2.0
 
 
 func setup(t: TrafficSim) -> void:
@@ -114,9 +119,14 @@ func _process(_delta: float) -> void:
 	if traffic == null:
 		return
 	var pv := roads.plans_version if roads != null else 0
-	if traffic.version != _version or pv != _plans_version:
+	# What stands on the curb changed (a drive built at a corner): the posts
+	# looked at again, at most every CLAIMS_EVERY seconds.
+	_claims_wait -= _delta
+	var cv: int = roads.sim.curb.version if roads != null and roads.sim != null and roads.sim.curb != null else _claims_seen
+	if traffic.version != _version or pv != _plans_version or (cv != _claims_seen and _claims_wait <= 0.0):
 		_version = traffic.version
 		_plans_version = pv
+		_claims_wait = CLAIMS_EVERY
 		_rebuild()
 	for i in _head_ways.size():
 		var hw: Array = _head_ways[i]
@@ -127,6 +137,24 @@ func _process(_delta: float) -> void:
 		for k in 3:
 			var c: Color = LENS_COLORS[k]
 			_lenses.multimesh.set_instance_color(i * 3 + k, c if k == on else c * LENS_DARK)
+
+
+## Where a stop, yield or signal post meant for `base` stands (Terrain not
+## lifted yet; `dir` toward the junction): slid back along its curb off any
+## drive, curb ramp or crosswalk (CurbClaims.post_spot). Shared with
+## tools/overlap_audit.gd.
+static func _post_spot(claims: CurbClaims, base: Vector3, dir: Vector3, signal_pole: bool) -> Vector3:
+	if claims == null:
+		return base
+	return claims.post_spot(base, -dir, 0.25 if signal_pole else 0.15)
+
+
+## A No Left or No Right Turn post 2.5 m before the stop sign: slid further
+## back only (never onto the stop sign) when it would stand in a drive.
+static func no_turn_spot(claims: CurbClaims, post: Vector3, dir: Vector3) -> Vector3:
+	if claims == null:
+		return post
+	return claims.post_spot(post, -dir, 0.15, CurbClaims.POST_BACK, 0.0)
 
 
 func _rebuild() -> void:
@@ -180,6 +208,9 @@ func _rebuild_all() -> void:
 			pieces.append(hit[1])
 	_paint_cache = cache
 	var sign_at := {}  # way -> [post, facing back, right] of its stop sign or signal pole
+	# Posts keep off drives, curb ramps and crosswalks (CurbClaims).
+	var claims: CurbClaims = CurbClaims.of(roads.sim) if roads != null and roads.sim != null else null
+	_claims_seen = claims.version if claims != null else -1
 	for n in nodes:
 		var j: Dictionary = traffic.junctions[n]
 		if j.control == TrafficSim.Rule.NONE:
@@ -223,7 +254,7 @@ func _rebuild_all() -> void:
 				var back: float = Junction.SHOULDER + 0.6 if arm.get("country", true) \
 					else RoadStyle.CURB_WIDTH + RoadStyle.PARKWAY_WIDTH * 0.5
 				var off := JunctionMarks.country_edge(country_plan, arm, s) + back
-				base = Terrain.lift(at[0] + right * off)
+				base = Terrain.lift(_post_spot(claims, at[0] + right * off, dir, j.control == TrafficSim.Rule.SIGNAL))
 				if stops_here and not RoadStyle.unpaved(arm.type):  # no paint on gravel
 					JunctionMarks.country_bar(country_plan, arm, paint, RoadStyle.Y_JUNCTION + 0.02)
 					any_paint = true
@@ -241,7 +272,7 @@ func _rebuild_all() -> void:
 				if not RoadStyle.TYPES[traffic.ways[wid].type].oneway:
 					# On the near-side corner, in the grass strip beside the curb.
 					base = sl.pos + right * (half + RoadStyle.CURB_WIDTH + RoadStyle.PARKWAY_WIDTH * 0.5) - dir * back
-				base = Terrain.lift(base)
+				base = Terrain.lift(_post_spot(claims, base, dir, j.control == TrafficSim.Rule.SIGNAL))
 				if stops_here and not painted and not RoadStyle.TYPES[traffic.ways[wid].type].oneway:
 					# A crosswalk only where there are sidewalks to join.
 					var spec: Dictionary = RoadStyle.TYPES[traffic.ways[wid].type]
@@ -320,6 +351,7 @@ func _rebuild_all() -> void:
 			if sign_at.has(wid):
 				dir = sign_at[wid][1]
 				post = sign_at[wid][0] - dir * 2.5
+			post = no_turn_spot(claims, post, dir)
 			var top := 2.51 + 0.8 * (faces.size() - 1)
 			poles.append(Transform3D(Basis().scaled(Vector3(0.45, top, 0.45)), post + Vector3(0, top * 0.5, 0)))
 			for i in faces.size():

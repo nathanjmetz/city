@@ -24,20 +24,23 @@ const WALK_Z := -1.05
 ## "aisle_z": float (z of the lane inside the lot cars drive along),
 ## "walk_z": float (front walk), "main_street": bool}. `lot` is the sim's
 ## lot, which the builders are fitted to (width, depth, outline).
+## `drive_away`: the side a corner house puts its drive on (drive_away()).
 static func for_building(zone: int, bseed: int, lot := {}, storeys := 0, type := "", level := 0,
-		net: RoadNetwork = null, added := 0) -> Dictionary:
+		net: RoadNetwork = null, added := 0, drive_away := 0.0) -> Dictionary:
 	var r := RandomNumberGenerator.new()
 	r.seed = bseed
 	var art_seed := r.randi()  # BuildingView passes this to the builder
 	var fit := _fit(lot)
+	if drive_away != 0.0 and fit.has("art"):
+		fit.art.drive_away = drive_away  # as BuildingView._spawn adds it
 	if zone == ZoneMap.Zone.COMMERCIAL and fit.has("art") and fit.art.corner:
 		fit.art.side = corner_side(net, lot)  # as BuildingView._spawn adds it
 	match zone:
 		ZoneMap.Zone.RESIDENTIAL:
 			if type == "duplex":
 				var p := DuplexBuilder.plan_info(art_seed, fit.get("art", {"width": fit.half * 2.0, "depth": fit.depth}), level)
-				return {"spots": p.spots, "door": Vector2(p.doors[0], p.front_z), "cut_x": p.drives[0][0], "aisle_z": 0.0,
-					"walk_z": p.walk_z, "main_street": false}
+				return {"spots": p.spots, "door": Vector2(p.doors[0], p.front_z), "cut_x": p.drives[0][0],
+					"cut_w": p.drives[0][1], "aisle_z": 0.0, "walk_z": p.walk_z, "main_street": false}
 			if type in ["row_home", "apartments"]:
 				# MetroBuilder's flats, courtyards and walkups draw no drive:
 				# like a real city block of them, residents park on the street.
@@ -115,7 +118,7 @@ static func house(art_seed: int, fit := {"half": LOT_HALF, "depth": 32.0}, store
 			"kind": "drive"})
 	# The garage doors the art drew (DoorLog), so the traffic can open the
 	# one a car drives in or out of (DoorEvents).
-	return {"spots": spots, "door": Vector2(h.door_x, h.front_z), "cut_x": drive_x, "aisle_z": 0.0,
+	return {"spots": spots, "door": Vector2(h.door_x, h.front_z), "cut_x": drive_x, "cut_w": h.drive_w, "aisle_z": 0.0,
 		"walk_z": h.walk_z, "main_street": false, "doors": DoorLog.placed(h)}
 
 
@@ -216,6 +219,34 @@ static func factory(art_seed: int, fit := {"half": LOT_HALF, "depth": 32.0}) -> 
 		x += STALL
 	return {"spots": spots, "door": Vector2(ox, zf - 5.0), "cut_x": w * 0.12, "aisle_z": -0.6,
 		"walk_z": zf - 5.6, "main_street": false}
+
+
+## The layout of built lot `key` in `sim`, as its building is drawn
+## (for_building with the town's network and the corner rule).
+static func for_lot(sim: CitySim, key: String) -> Dictionary:
+	var b: Dictionary = sim.buildings.get(key, {})
+	var lot: Dictionary = sim.lots.get(key, {})
+	if b.is_empty() or lot.is_empty():
+		return empty_lot()
+	return for_building(int(b.zone), int(b.seed), lot, BuildingTypes.storeys(b), BuildingTypes.type_of(b),
+		int(b.get("level", 0)), sim.network, int(b.get("added_from", 0)), drive_away(sim, key))
+
+
+## Which side (the lot's local x, +1 or -1) a corner house puts its drive
+## on: away from the corner, so the drive meets its street well clear of
+## the intersection, as US access codes ask (they follow AASHTO's corner
+## clearance: a home's drive on a local street at least 30 ft, 9.1 m, from
+## the intersecting street's curb line). 0 for any other lot, and for a
+## house begun before this rule came in (CitySim.curb_drives_from), so a
+## town saved before keeps its houses as they were built.
+static func drive_away(sim: CitySim, key: String) -> float:
+	var b: Dictionary = sim.buildings.get(key, {})
+	var lot: Dictionary = sim.lots.get(key, {})
+	if b.is_empty() or lot.is_empty() or not lot.get("corner", false) or BuildingTypes.type_of(b) != "house":
+		return 0.0
+	if int(b.get("built", 0)) < sim.curb_drives_from:
+		return 0.0
+	return -corner_side(sim.network, lot)
 
 
 ## The lot's frame in the world, as BuildingView places a building.

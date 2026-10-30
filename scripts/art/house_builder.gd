@@ -184,6 +184,9 @@ var _yard_from := 0  # the home's yard trees: trees[_yard_from] up to _yard_to
 var _yard_to := 0
 ## Where the home's curbside mailbox stands across the lot (local x), or INF.
 var mail_x := INF
+## A corner house's garage and drive go on this side (local x, +1 or -1),
+## away from the corner (SiteLayout.drive_away); 0 to let the dice pick.
+var drive_away := 0.0
 var rng: RandomNumberGenerator
 ## Set around a shop's display windows on the desktop: the glass shows a
 ## lit sales floor behind it (HouseMaterials GLASS, UV.x 2..3).
@@ -210,6 +213,7 @@ func _fit(lot: Dictionary) -> void:
 	half = float(lot.get("width", LOT_HALF * 2.0)) * 0.5
 	pad = float(lot.get("pad", 0.0))
 	mail_x = float(lot.get("mail_x", INF))
+	drive_away = signf(float(lot.get("drive_away", 0.0)))
 	alley = bool(lot.get("alley", true))
 	outline = lot.get("outline", PackedVector2Array())
 	depth = float(lot.get("depth", 32.0)) - pad
@@ -790,6 +794,8 @@ func _plan(storeys: int, info_only := false) -> Dictionary:
 	var plan: int = plans[rng.randi() % plans.size()]
 	var scheme: int = schemes[rng.randi() % schemes.size()]
 	var gs := -1.0 if rng.randf() < 0.5 else 1.0  # which side the garage is on
+	if drive_away != 0.0:
+		gs = drive_away  # a corner house's drive keeps away from the corner (the dice still rolled)
 	var wide := _bucket(half * 2.0, WIDTHS)
 	var deep := _bucket(depth, DEPTHS)
 	# Not every owner set the house on the builder's line (Nathan, 2026-10-25:
@@ -1010,12 +1016,15 @@ func _seat(plans: Array, storeys: int, wide: float, gs: float, zf: float, deep: 
 	var plan: int = plans[0]
 	var widths := WIDTHS.filter(func(w): return w <= wide)
 	widths.reverse()
+	# A corner house tries every plan with its drive away from the corner
+	# before it would turn one round to the corner side.
+	var sides := [gs, -gs] if drive_away == 0.0 else [gs]
 	for back in [0.0, 2.0, 4.0, 6.0]:
 		var z: float = zf + back
 		var room := _bucket(deep - z, ROOMS)
 		for p in plans:
 			for w in widths:
-				for g in [gs, -gs]:
+				for g in sides:
 					var shape := _shape([era, p, w, room, storeys, force_kind])
 					var x := 0.0
 					while x <= half:
@@ -1023,6 +1032,12 @@ func _seat(plans: Array, storeys: int, wide: float, gs: float, zf: float, deep: 
 							if _fits(shape, g, z, d):
 								return [w, g, z, d, room, p]
 						x += 0.5
+	if drive_away != 0.0:
+		var keep := drive_away
+		drive_away = 0.0
+		var seat := _seat(plans, storeys, wide, gs, zf, deep)
+		drive_away = keep
+		return seat
 	# Nothing fits (a remnant too small or odd to build on): the smallest
 	# plan where the least of it stands past the lot lines.
 	unseated += 1

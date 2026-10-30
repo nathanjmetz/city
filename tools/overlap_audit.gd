@@ -20,9 +20,9 @@ extends SceneTree
 ## keeps its result only inside its drawing (noted "mirrors").
 ##
 ## Corners cut (each can make a count a little off, none hides a kind):
-## the mirrored stop, yield, No Turn and signal posts and mailboxes can drift
-## from their views if those change (junction_view.gd 183-327, mail_view.gd
-## 160-175); a car out on the drive is counted for every garage whose drive
+## the mirrored stop, yield, No Turn and signal posts can drift from their
+## view if it changes (junction_view.gd _rebuild_all; where they slide off
+## drives is shared: JunctionView._post_spot); a car out on the drive is counted for every garage whose drive
 ## is long enough (the game draws two cars in three there); shop, office and
 ## factory curb cuts are taken as 6 m wide (a duplex's 3 m), their builders
 ## keep the true width to themselves; streets are straight strips to the
@@ -80,7 +80,7 @@ const SRC := {
 	"post:street_name": "scripts/roads/street_sign_view.gd _corner",
 	"post:streetlight": "scripts/art/street_lights.gd place",
 	"post:utility_pole": "scripts/roads/pole_line.gd place (runs: road_view.gd _pole_runs/_pole_key/_pole_blocked)",
-	"post:mailbox": "scripts/mail/mail_view.gd _mailboxes (mirrored here)",
+	"post:mailbox": "scripts/sim/curb_claims.gd mailbox_at (drawn by scripts/mail/mail_view.gd _mailboxes)",
 	"post:bus_stop": "scripts/transit/bus_net.gd _place_stop, bus_view.gd _draw_stops",
 	"tree_trunk": "scripts/art/house_builder.gd _yard_trees/_street_trees (BuildingView.trees_of)",
 	"prop": "scripts/state/lot_state.gd items/_free (StateView._place)",
@@ -487,6 +487,9 @@ static func collect(sim: CitySim) -> Array:
 	rv._rural = rv._rural_segments()
 	rv._urban = rv._urban_next
 	var plans := Junction.plan(net, rv._rural, rv._urban, rv._signals())
+	# The curb claims as the game has them (RoadView pushes its plans).
+	var claims := CurbClaims.of(sim)
+	claims.set_junctions(plans)
 	_roads(out, sim, rv, plans)
 	_junction_bits(out, sim, plans)
 	_rail(out, sim)
@@ -494,7 +497,7 @@ static func collect(sim: CitySim) -> Array:
 	_public(out, sim)
 	_signs(out, sim, rv, plans)
 	_name_posts(out, sim)
-	for l in StreetLights.place(net, rv._rural):
+	for l in StreetLights.place(net, rv._rural, claims):
 		var p: Vector3 = l[1]
 		_add(out, "post", "streetlight", "", _sq(Vector2(p.x, p.z), POST.streetlight))
 	_poles(out, sim, rv)
@@ -584,51 +587,11 @@ static func _roads(out: Array, sim: CitySim, rv: RoadView, plans: Dictionary) ->
 
 
 ## Curb ramps and crosswalks at shaped town corners (Junction._draw_node,
-## JunctionMarks.paint): across each arm from d + 0.3 to d + 2.7 m out.
-static func _junction_bits(out: Array, sim: CitySim, plans: Dictionary) -> void:
-	for n in plans:
-		var j: Dictionary = plans[n]
-		if j.get("country", false) or j.has("bend"):
-			continue
-		var center: Vector3 = j.center
-		var key := "node:%d" % n
-		var ramps := Junction.ramps(j)
-		for r in ramps:
-			var c: Dictionary = j.corners[r[0]]
-			var a: Dictionary = j.arms[c.a]
-			var b: Dictionary = j.arms[c.b]
-			if r[1] == "pair":
-				for pair in [[a, 1.0], [b, -1.0]]:
-					var arm: Dictionary = pair[0]
-					var from: float = float(arm.d) + Junction.RAMP_GAP
-					if from + Junction.RAMP_WIDTH > float(arm.length) * 0.5:
-						continue
-					_arm_band(out, "curb_ramp", "pair", key, center, arm, pair[1], float(arm.hw),
-						float(arm.hw) + RoadStyle.CURB_WIDTH + RoadStyle.PARKWAY_WIDTH, from, from + Junction.RAMP_WIDTH)
-			else:
-				# A diagonal ramp at the corner's middle: a square at the curb return.
-				var mid := (Vector2(a.n) * -1.0 + Vector2(b.n)).normalized()
-				var arm_hw := maxf(float(a.hw), float(b.hw))
-				var at := Vector2(center.x, center.z) + mid * (arm_hw + float(c.r) * 0.4)
-				_add(out, "curb_ramp", "diagonal", key, _sq(at, 1.2))
-		if JunctionMarks.marked(j):
-			for arm in j.arms:
-				var d: float = float(arm.d)
-				if d + JunctionMarks.CROSS_FAR > float(arm.length) * 0.5:
-					continue
-				_arm_band(out, "crosswalk", "shaped", key, center, arm, 1.0, -float(arm.hw), float(arm.hw),
-					d + JunctionMarks.CROSS_NEAR, d + JunctionMarks.CROSS_FAR)
-
-
-static func _arm_band(out: Array, cat: String, what: String, key: String, center: Vector3, arm: Dictionary,
-		side: float, o0: float, o1: float, from: float, to: float) -> void:
-	var p0: Array = LotPlanner.point_at(arm.pts, from)
-	var p1: Array = LotPlanner.point_at(arm.pts, to)
-	var a := Vector2(p0[0].x, p0[0].z)
-	var b := Vector2(p1[0].x, p1[0].z)
-	var dir := Vector2(p0[1].x, p0[1].z).normalized()
-	var nrm := Vector2(-dir.y, dir.x) * side
-	_add(out, cat, what, key, PackedVector2Array([a + nrm * o0, b + nrm * o0, b + nrm * o1, a + nrm * o1]))
+## JunctionMarks.paint), as the curb claims hold them
+## (CurbClaims.junction_shapes: across each arm from d + 0.3 to d + 2.7 m out).
+static func _junction_bits(out: Array, _sim: CitySim, plans: Dictionary) -> void:
+	for s in CurbClaims.junction_shapes(plans):
+		_add(out, "curb_ramp" if s[0] == "ramp" else "crosswalk", s[0], s[1], s[2])
 
 
 static func _rail(out: Array, sim: CitySim) -> void:
@@ -691,9 +654,11 @@ static func _public(out: Array, sim: CitySim) -> void:
 
 ## Stop, yield and No Left/Right posts and signal poles, where
 ## JunctionView._rebuild_all stands them (mirrors junction_view.gd 183-327:
-## positions only).
+## positions only; each slid off drives and ramps by the same
+## JunctionView._post_spot and no_turn_spot).
 static func _signs(out: Array, sim: CitySim, rv: RoadView, plans: Dictionary) -> void:
 	var traffic := sim.traffic
+	var claims := CurbClaims.of(sim)
 	var nodes := traffic.junctions.keys()
 	nodes.sort()
 	var sign_at := {}
@@ -729,7 +694,7 @@ static func _signs(out: Array, sim: CitySim, rv: RoadView, plans: Dictionary) ->
 				var back: float = Junction.SHOULDER + 0.6 if arm.get("country", true) \
 					else RoadStyle.CURB_WIDTH + RoadStyle.PARKWAY_WIDTH * 0.5
 				var off := JunctionMarks.country_edge(country_plan, arm, s) + back
-				base = at[0] + right * off
+				base = JunctionView._post_spot(claims, at[0] + right * off, dir, j.control == TrafficSim.Rule.SIGNAL)
 			else:
 				var walk := plain
 				if Junction.trim(plans, n, seg) > 0.0:
@@ -738,6 +703,7 @@ static func _signs(out: Array, sim: CitySim, rv: RoadView, plans: Dictionary) ->
 				base = sl.pos + right * sl.curb - dir * 1.0
 				if not RoadStyle.TYPES[traffic.ways[wid].type].oneway:
 					base = sl.pos + right * (half + RoadStyle.CURB_WIDTH + RoadStyle.PARKWAY_WIDTH * 0.5) - dir * back
+				base = JunctionView._post_spot(claims, base, dir, j.control == TrafficSim.Rule.SIGNAL)
 				# A crosswalk at a plain (unshaped) corner (_markings).
 				var stops_here: bool = j.control == TrafficSim.Rule.SIGNAL or j.control == TrafficSim.Rule.ALL_STOP \
 					or (j.control == TrafficSim.Rule.PRIORITY and not j.major.has(wid) and j.sign != "yield")
@@ -767,8 +733,11 @@ static func _signs(out: Array, sim: CitySim, rv: RoadView, plans: Dictionary) ->
 			continue
 		var sl := traffic.stop_line(wid)
 		var post: Vector3 = sl.pos + sl.right * (sl.curb + 0.9) - sl.dir * 1.5
+		var pdir: Vector3 = sl.dir
 		if sign_at.has(wid):
-			post = sign_at[wid][0] - sign_at[wid][1] * 2.5
+			pdir = sign_at[wid][1]
+			post = sign_at[wid][0] - pdir * 2.5
+		post = JunctionView.no_turn_spot(claims, post, pdir)
 		_add(out, "post", "no_turn_sign", "node:%d" % node, _sq(Vector2(post.x, post.z), POST.no_turn_sign))
 
 
@@ -853,12 +822,8 @@ static func _built(out: Array, sim: CitySim) -> void:
 		var xf := Transform3D(Basis.looking_at(-lot.normal, Vector3.UP), Vector3(lot.front.x, 0.0, lot.front.z))
 		var rng := RandomNumberGenerator.new()
 		rng.seed = b.seed
-		var fit := BuildingView._local_lot(lot, xf)
+		var fit := bv.fit_of(key, xf)
 		var type := BuildingTypes.type_of(b)
-		if fit.corner and int(b.zone) == ZoneMap.Zone.COMMERCIAL:
-			fit.side = SiteLayout.corner_side(net, lot)
-		if type in ["row_home", "apartments"]:
-			fit.alley = SiteLayout.back_lane(net, lot)
 		HouseBuilder.last_info = {}
 		var before := HouseBuilder.last_masses
 		HouseBuilder.last_masses = []
@@ -900,8 +865,7 @@ static func _built(out: Array, sim: CitySim) -> void:
 			_add(out, "tree_trunk", "street" if e[4] else "yard", key, _sq(Vector2(w.x, w.z), TRUNK))
 		var tc := float(lot.get("to_curb", 2.0))
 		# Drive and curb cut, front walk.
-		var lay := SiteLayout.for_building(int(b.zone), int(b.seed), lot, BuildingTypes.storeys(b), type,
-			int(b.get("level", 0)), net, int(b.get("added_from", 0)))
+		var lay := SiteLayout.for_lot(sim, key)
 		if type == "house" and plan.has("drive_x"):
 			var dx := float(plan.drive_x)
 			var dw := float(plan.drive_w)
@@ -949,10 +913,8 @@ static func _built(out: Array, sim: CitySim) -> void:
 					var front := at - face * 6.2
 					if (front - face * CAR.y * 0.5).y >= 2.6 and (front - face * CAR.y).y >= 0.0:
 						_add(out, "drive_car", type, key, _local_obb(frame, front - face * CAR.y * 0.5, face, CAR.y * 0.5, CAR.x * 0.5))
-		if int(b.zone) == ZoneMap.Zone.RESIDENTIAL:
-			var n: Vector3 = lot.normal
-			var p: Vector3 = lot.front - n * maxf(tc - 0.5, 0.3) + (lot.dir as Vector3) * float(lot.get("width", 15.0)) * 0.3
-			_add(out, "post", "mailbox", key, _sq(Vector2(p.x, p.z), POST.mailbox))
+		if int(b.zone) == ZoneMap.Zone.RESIDENTIAL and mailbox.is_finite():
+			_add(out, "post", "mailbox", key, _sq(mailbox, POST.mailbox))
 	bv.free()
 	if stale > 0:
 		print("overlap_audit: %d buildings drew no masses of their own (BuildingView would reuse the last one's)" % stale)

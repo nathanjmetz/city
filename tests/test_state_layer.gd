@@ -174,8 +174,7 @@ func _process(_d: float) -> bool:
 			drives.append(Rect2(float(plan.drive_x) - dw * 0.5, -tc, dw, maxf(float(plan.get("garage_z", 6.0)), 6.0) + tc))
 			walk = plan.walk
 			walks["straight" if walk.position.y < 0.0 else "across"] += 1
-		var lay := SiteLayout.for_building(int(b.zone), int(b.seed), lot, BuildingTypes.storeys(b),
-			BuildingTypes.type_of(b), int(b.get("level", 0)), sim.network, int(b.get("added_from", 0)))
+		var lay := SiteLayout.for_lot(sim, key)
 		var cars := []
 		for sp in lay.spots:
 			var at: Vector2 = sp.pos
@@ -279,8 +278,7 @@ func _clashes(s: CitySim, all: Dictionary) -> Dictionary:
 		var walk1 := -tc + RoadStyle.CURB_WIDTH + RoadStyle.PARKWAY_WIDTH + RoadStyle.SIDEWALK_WIDTH
 		var clear := {"sidewalk": [Rect2(-100.0, walk1 - RoadStyle.SIDEWALK_WIDTH, 200.0, RoadStyle.SIDEWALK_WIDTH)],
 			"drive": [], "walk": [], "parking": []}
-		var lay := SiteLayout.for_building(int(b.zone), int(b.seed), lot, BuildingTypes.storeys(b),
-			BuildingTypes.type_of(b), int(b.get("level", 0)), s.network, int(b.get("added_from", 0)))
+		var lay := SiteLayout.for_lot(s, key)
 		for sp in lay.spots:
 			var at: Vector2 = sp.pos
 			clear.parking.append(Rect2(at - Vector2(1.0, 2.45), Vector2(2.0, 4.9)))
