@@ -1260,6 +1260,23 @@ func set_treatment(seg: int, mph: int, truck: bool, park_off: Array, aprons_off:
 			any = true
 	if any:
 		_wcost.clear()  # worked out again, every way as after a rebuild
+		_tpen_key = []  # the law's extra for trucks and carts is per second
+		_cpen_key = []
+
+
+## Rules for road pieces that are gone (removed, cut in two, undone).
+func forget_gone_treatments() -> void:
+	for seg in treat_mph.keys():
+		if not network.segments.has(int(seg)):
+			treat_mph.erase(seg)
+	for seg in treat_trucks.keys():
+		if not network.segments.has(int(seg)):
+			treat_trucks.erase(seg)
+			_tpen_key = []
+	for d in [no_parking, no_aprons]:
+		for k in d.keys():
+			if not network.segments.has(int(k) >> 1):
+				d.erase(k)
 
 
 func clear_treatments() -> void:

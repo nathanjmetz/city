@@ -93,6 +93,9 @@ var _len := {}  # seg -> [its curve, metres]
 var _judge_all := false
 ## Buildings or lots changed since the last look (or a building is done).
 var _scan := true
+## Buildings rebuilt in place, as a save had them: lot key -> [side key,
+## kind, cm] of what stood there (used by the first scan after a load).
+var _held_saved := {}
 var _going := {}  # what's going up, as the last scan saw it
 
 
@@ -195,6 +198,8 @@ func update(sim) -> void:
 		_judge_all = false
 		for k in shares:
 			keys[k] = true
+		for k in sides:
+			keys[k] = true
 	_decide_all(sim, keys.keys())
 	Perf.add("sim.treatments", t)
 
@@ -213,7 +218,7 @@ func _decide_all(sim, keys: Array) -> void:
 		if locks.has(k):
 			want = str(locks[k])
 		else:
-			var d := decide(str(cur.kind), shares.get(k, {}))
+			var d := _judge(str(cur.kind), shares.get(k, {}))
 			want = d[0]
 			if d[1]:
 				fade = int(cur.get("fade", -1))
@@ -252,12 +257,12 @@ func _decide_all(sim, keys: Array) -> void:
 		changed.emit(segs)
 
 
-func _set_mid(sim, seg: int) -> void:
+func _set_mid(sim, seg: int, repaved := false) -> void:
 	var want := heavier(kind(seg, -1), kind(seg, 1))
 	var have := mid(seg)
 	if want == have:
 		return
-	if have != "" and rank(want) > rank(have) and not _repaved_since(sim, seg, int(mids[seg].at)):
+	if have != "" and rank(want) > rank(have) and not repaved and not _repaved_since(sim, seg, int(mids[seg].at)):
 		return  # the concrete stays till the street is next resurfaced
 	if want == "":
 		mids.erase(seg)
@@ -268,6 +273,21 @@ func _set_mid(sim, seg: int) -> void:
 static func _repaved_since(sim, seg: int, at: int) -> bool:
 	var paved: Dictionary = sim.street_age.paved
 	return int(paved.get(StreetAge.cell_of(sim, seg), -1)) > at
+
+
+## decide, with the holds that keep fixtures in place (spec rule 6, and
+## Nathan's "A" on 2026-10-29: the lanterns and brick stay and wear): a side
+## goes to a lighter kind only after HOLD, and a main street whose shops
+## drop under Balance.MAIN_STREET_SHOPS (one being rebuilt, say) stays a
+## main street through the same hold rather than turning Strip and back.
+## Heavier kinds still take a side right away, past the margin.
+static func _judge(cur: String, side_shares: Dictionary) -> Array:
+	var d := decide(cur, side_shares)
+	if cur == MAIN and d[0] == STRIP and not side_shares.has(MAIN):
+		return [MAIN, true, STRIP]  # the same shops, relabelled: held
+	if cur != "" and d[0] != cur and rank(d[0]) > rank(cur):
+		return [cur, true, d[0]]  # lighter: held a game year
+	return d
 
 
 ## A side's kind from its kind now and the shares of its length:
@@ -296,6 +316,10 @@ static func decide(cur: String, side_shares: Dictionary) -> Array:
 func warm(sim) -> void:
 	var t := Perf.now()
 	_frontage_changes(sim)
+	# Frontage that changed in the ticks before the save hasn't been judged
+	# yet: the first look judges every side (a side with nothing new comes
+	# out as it is), as the town that saved would have.
+	_judge_all = true
 	Perf.add("load.treatments", t)
 
 
@@ -390,12 +414,26 @@ func _scan_buildings(sim, changed: Dictionary) -> void:
 		var lot = lots.get(key)
 		var z = blds[key].zone
 		var part = _by_key.get(key)
-		var counts: bool = lot != null and not (any_going and going.has(key))
+		var rising: bool = any_going and going.has(key)
+		var counts: bool = lot != null and not rising
 		if part != null:
-			if is_same(part[0], lot) and part[1] == z and part[2] == counts:
+			if rising and int(part[3]) >= 0:
+				# Rebuilt in place (redevelopment): what stood there counts
+				# until the new one is done, so a main street doesn't flip
+				# to Strip and back while a shop is rebuilt.
+				part[6] = true
+				continue
+			if not part[6] and is_same(part[0], lot) and part[1] == z and part[2] == counts:
 				continue
 			_take(part, changed)
-		part = [lot, z, counts, -1, "", 0]
+		elif rising and _held_saved.has(key):
+			# Saved as rebuilt in place: counts as what stood there.
+			var h: Array = _held_saved[key]
+			part = [lot, z, false, int(h[0]), str(h[1]), int(h[2]), true]
+			_put(part, changed)
+			_by_key[key] = part
+			continue
+		part = [lot, z, counts, -1, "", 0, false]
 		if counts and sim.network.segments.has(int(lot.get("seg", -1))):
 			var what := ""
 			if z == ZoneMap.Zone.INDUSTRIAL:
@@ -415,6 +453,7 @@ func _scan_buildings(sim, changed: Dictionary) -> void:
 			if not sim.buildings.has(key):
 				_take(_by_key[key], changed)
 				_by_key.erase(key)
+	_held_saved.clear()
 
 
 func _put(part: Array, changed: Dictionary) -> void:
@@ -522,7 +561,7 @@ func push_all(sim) -> void:
 # -------------------------------------------------------- roads changing
 
 ## A road piece cut in two: both halves keep its sides, middle and locks.
-func split(seg: int, first: int, second: int) -> void:
+func split(seg: int, first: int, second: int, sim = null) -> void:
 	for side in [0, 1]:
 		var k: int = seg * 2 + side
 		for half in [first, second]:
@@ -541,6 +580,13 @@ func split(seg: int, first: int, second: int) -> void:
 		mids[second] = mids[seg].duplicate()
 		mids.erase(seg)
 	_dirty = true
+	if sim != null:
+		# The halves carry the street's rules at once, as a reloaded copy
+		# would (review, 2026-10-30: they looked treated but drove plain).
+		sim.traffic.set_treatment(seg, 0, false, [], [])
+		push(sim, [first, second])
+		revision += 1
+		changed.emit([first, second])
 
 
 ## The roads changed: what was on road pieces now gone goes with them.
@@ -555,7 +601,42 @@ func roads_changed(sim) -> void:
 	for seg in mids.keys():
 		if not sim.network.segments.has(seg):
 			mids.erase(seg)
+	sim.traffic.forget_gone_treatments()
 	_dirty = true
+
+
+## What undo puts back with the roads (UndoLog): each side's kind, the
+## middles and the locks, as they were before a road command.
+func snapshot() -> Dictionary:
+	return {"sides": sides.duplicate(true), "mids": mids.duplicate(true), "locks": locks.duplicate()}
+
+
+## Puts back a snapshot() once the roads are as they were, and hands the
+## rules to the traffic again.
+func restore(sim, snap: Dictionary) -> void:
+	var segs := {}
+	for k in sides:
+		segs[int(k) >> 1] = true
+	for seg in mids:
+		segs[seg] = true
+	sides = snap.sides.duplicate(true)
+	mids = snap.mids.duplicate(true)
+	locks = snap.locks.duplicate()
+	_fading.clear()
+	for k in sides:
+		segs[int(k) >> 1] = true
+		if int(sides[k].get("fade", -1)) >= 0:
+			_fading[k] = true
+	for seg in mids:
+		segs[seg] = true
+	roads_changed(sim)
+	_dirty = true
+	_scan = true
+	revision += 1
+	push_all(sim)
+	var list := segs.keys().filter(func(seg): return sim.network.segments.has(seg))
+	list.sort()
+	changed.emit(list)
 
 
 # ---------------------------------------------------------------- locking
@@ -583,6 +664,15 @@ func set_lock(sim, seg: int, side: int, want: String) -> int:
 	else:
 		locks[k] = want
 	_decide_all(sim, [k])
+	if cost > 0:
+		# Paid for as a resurfacing: the middle is laid new at once (no
+		# waiting for the next natural repave), and its rules with it.
+		var was := mid(seg)
+		_set_mid(sim, seg, true)
+		if mid(seg) != was:
+			revision += 1
+			push(sim, [seg])
+			changed.emit([seg])
 	return cost
 
 
@@ -683,7 +773,15 @@ func to_dict() -> Dictionary:
 	keys.sort()
 	for k in keys:
 		l.append([k, str(locks[k])])
-	return {"sides": s, "mids": m, "locks": l}
+	# Buildings being rebuilt in place, counted as what stood there.
+	var h := []
+	keys = _by_key.keys()
+	keys.sort()
+	for key in keys:
+		var part: Array = _by_key[key]
+		if part[6] and int(part[3]) >= 0:
+			h.append([key, int(part[3]), str(part[4]), int(part[5])])
+	return {"sides": s, "mids": m, "locks": l, "held": h}
 
 
 ## `d` empty (a town saved before treatments): worked out fresh on the
@@ -699,6 +797,9 @@ func from_dict(d: Dictionary) -> void:
 		mids[int(e[0])] = {"kind": str(e[1]), "at": int(e[2])}
 	for e in d.get("locks", []):
 		locks[int(e[0])] = str(e[1])
+	_held_saved.clear()
+	for e in d.get("held", []):
+		_held_saved[str(e[0])] = [int(e[1]), str(e[2]), int(e[3])]
 	_dirty = true
 	_next_done = -1
 	_fading.clear()

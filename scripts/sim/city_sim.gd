@@ -391,7 +391,7 @@ func _init() -> void:
 	network.changed.connect(_drop_stale_closures)
 	# Road treatments follow their road the same way, and look again at
 	# whatever is built along the roads when it changes.
-	network.split.connect(func(seg: int, first: int, second: int): treatments.split(seg, first, second))
+	network.split.connect(func(seg: int, first: int, second: int): treatments.split(seg, first, second, self))
 	network.changed.connect(func(): treatments.roads_changed(self))
 	for sig in [buildings_changed, lots_changed, big_factories_changed, warehouses_changed]:
 		sig.connect(treatments.touch)
@@ -620,6 +620,10 @@ func _apply_cmd(cmd: Dictionary) -> bool:
 			ok = cost >= 0
 			if ok:
 				economy.money -= cost
+				# On a road piece the newest road build made, an undo of
+				# that build refunds this too.
+				if cost > 0:
+					undo.note_paid(self, seg, cost)
 		"upgrade_road":
 			var cost := upgrade_cost(int(cmd.seg), _road(cmd))
 			if network.segments.has(int(cmd.seg)) and (RoadStyle.is_ring(network.segments[int(cmd.seg)].type)

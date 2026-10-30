@@ -16,6 +16,8 @@ extends SceneTree
 ## Run: godot --headless -s tests/test_road_treatments.gd
 
 var _failed := false
+## The main street speed on a street (Nathan's pick, 20 or 25).
+const MPH := RoadTreatments.MAIN_MPH_STREET
 
 
 func _init() -> void:
@@ -32,6 +34,9 @@ func _init() -> void:
 	_mesh()
 	_lock(sim, seg)
 	_split(sim, seg)
+	_undo_keeps_locks()
+	_save_mid_change()
+	_rebuilt_shop()
 	print("ALL TESTS PASSED" if not _failed else "TESTS FAILED")
 	quit(1 if _failed else 0)
 
@@ -120,10 +125,10 @@ func _mixed(sim: CitySim, seg: int) -> void:
 	_check(homes > 4, "the home streets are judged as homes (%d sides)" % homes)
 	var rows := t.rows(sim, seg)
 	var text := str(rows)
-	_check("Factory" in text and "Main street" in text and "Truck route" in text and "20 mph" in text
+	_check("Factory" in text and "Main street" in text and "Truck route" in text and ("%d mph" % MPH) in text
 		and "No parking on the" in text, "the road's card says each side, why, and the rules: %s" % text)
 	var card := Inspect.describe(sim, {"type": "road", "id": seg})
-	_check(str(card.rows).contains("20 mph") and not card.get("actions", []).is_empty(),
+	_check(str(card.rows).contains("%d mph" % MPH) and not card.get("actions", []).is_empty(),
 		"the click card shows it, with the lock buttons")
 
 
@@ -154,10 +159,10 @@ func _rules(sim: CitySim, seg: int) -> void:
 	_check(tr.treat_trucks.has(seg), "the factory street is a truck route")
 	_check(tr.no_parking.has(seg * 2) and not tr.no_parking.has(seg * 2 + 1), "no car parking on the factory side only")
 	_check(tr.no_aprons.has(seg * 2 + 1), "no driveway cuts on the main street side")
-	_check(int(tr.treat_mph.get(seg, 0)) == 20, "a main street side slows the street to 20 mph")
+	_check(int(tr.treat_mph.get(seg, 0)) == MPH, "a main street side slows the street to %d mph" % MPH)
 	var w: Dictionary = tr.ways.get(seg * 2 + 1, {})
-	_check(not w.is_empty() and absf(float(w.vmax) - 20.0 * RoadStyle.MPH) < 0.01,
-		"its lanes run at 20 mph (%.2f m/s)" % float(w.get("vmax", 0.0)))
+	_check(not w.is_empty() and absf(float(w.vmax) - MPH * RoadStyle.MPH) < 0.01,
+		"its lanes run at %d mph (%.2f m/s)" % [MPH, float(w.get("vmax", 0.0))])
 	# Truck routes law: the factory street is a preference for through
 	# trucks (half the extra a home street costs), never free and never
 	# shut, so trucks spread over the town's roads instead of all taking it.
@@ -227,7 +232,7 @@ func _saves(sim: CitySim, seg: int) -> void:
 	copy.from_dict(JSON.parse_string(JSON.stringify(data)))
 	_check(copy.treatments.kind(seg, -1) == RoadTreatments.FACTORY and copy.treatments.kind(seg, 1) == RoadTreatments.MAIN,
 		"a loaded town has its sides at once")
-	_check(int(copy.traffic.treat_mph.get(seg, 0)) == 20 and copy.traffic.treat_trucks.has(seg),
+	_check(int(copy.traffic.treat_mph.get(seg, 0)) == MPH and copy.traffic.treat_trucks.has(seg),
 		"and the traffic has its rules before its first tick")
 	for i in 40:
 		sim.tick()
@@ -350,6 +355,8 @@ func _lock(sim: CitySim, seg: int) -> void:
 	_check(sim.apply({"type": "road_treatment", "seg": seg, "side": -1, "kind": RoadTreatments.MAIN}),
 		"make the factory side a main street")
 	_check(sim.economy.money == money - cost and t.kind(seg, -1) == RoadTreatments.MAIN, "it is, and it was paid for")
+	_check(t.mid(seg) == RoadTreatments.MAIN and not t.truck_route(seg) and not sim.traffic.treat_trucks.has(seg),
+		"paid for as a resurfacing, the middle is laid new at once: no concrete truck route (%s)" % t.mid(seg))
 	for i in 30:
 		sim.tick()
 	_check(t.kind(seg, -1) == RoadTreatments.MAIN, "a locked side never changes on its own")
@@ -374,3 +381,127 @@ func _split(sim: CitySim, seg: int) -> void:
 			halves.append(id)
 	_check(halves.size() == 2 and t.kind(halves[0], -1) == before and t.kind(halves[1], -1) == before,
 		"both halves keep the side's treatment")
+	var tr := sim.traffic
+	var ruled := 0
+	for h in halves:
+		if int(tr.treat_mph.get(h, 0)) == MPH and tr.treat_trucks.has(h) and tr.no_parking.has(h * 2) \
+				and tr.no_aprons.has(h * 2 + 1):
+			ruled += 1
+	_check(halves.size() == 2 and ruled == 2, "and the traffic has both halves' rules at once")
+	_check(not tr.treat_mph.has(seg) and not tr.treat_trucks.has(seg) and not tr.no_parking.has(seg * 2),
+		"the cut road piece's own rules are gone")
+	var copy := CitySim.new()
+	copy.from_dict(JSON.parse_string(JSON.stringify(sim.to_dict())))
+	_check(_rules_of(copy.traffic) == _rules_of(tr), "the live town's rules equal a reloaded copy's")
+
+
+static func _rules_of(tr: TrafficSim) -> String:
+	var out := []
+	for d: Dictionary in [tr.treat_mph, tr.treat_trucks, tr.no_parking, tr.no_aprons]:
+		var keys := d.keys()
+		keys.sort()
+		out.append(keys.map(func(k): return [int(k), d[k]]))
+	return JSON.stringify(out)
+
+
+## Lock a side, draw a cross street, undo: the lock is back, and a change
+## paid for on the new road's pieces is refunded with the road.
+func _undo_keeps_locks() -> void:
+	var made := _town()
+	var sim: CitySim = made[0]
+	var seg: int = made[1]
+	var t := sim.treatments
+	sim.apply({"type": "road_treatment", "seg": seg, "side": 1, "kind": RoadTreatments.MAIN})
+	var money: float = sim.economy.money
+	var c := sim.network.curve_of(seg)
+	var at := RoadNetwork.bezier(c[0], c[1], c[2], 0.5)
+	_check(sim.apply({"type": "build_road", "start": [at.x, at.z], "ctrl": [at.x, at.z + 40.0], "end": [at.x, at.z + 80.0]}),
+		"a cross street cuts the locked block")
+	var half := -1
+	for id in sim.network.segments:
+		if t.locks.has(id * 2 + 1):
+			half = id
+	_check(half >= 0 and not sim.network.segments.has(seg), "its halves carry the lock")
+	var paid := t.lock_cost(sim, half, -1, RoadTreatments.MAIN)
+	sim.apply({"type": "road_treatment", "seg": half, "side": -1, "kind": RoadTreatments.MAIN})
+	_check(paid > 0 and t.kind(half, -1) == RoadTreatments.MAIN, "a half's factory side made a main street, paid")
+	_check(sim.apply({"type": "undo"}), "undo the cross street")
+	_check(sim.network.segments.has(seg) and t.locks.get(seg * 2 + 1, "") == RoadTreatments.MAIN
+		and t.kind(seg, 1) == RoadTreatments.MAIN and t.kind(seg, -1) == RoadTreatments.FACTORY,
+		"the block is back with its lock and its factory side")
+	_check(absf(sim.economy.money - money) < 1.0, "the road and the paid change are both refunded (%.0f vs %.0f)"
+		% [sim.economy.money, money])
+	_check(int(sim.traffic.treat_mph.get(seg, 0)) == MPH and sim.traffic.treat_trucks.has(seg), "and its rules are back")
+
+
+## Frontage that changed just before a save is judged after the load, as
+## the town that saved judges it.
+func _save_mid_change() -> void:
+	var made := _town(false)
+	var sim: CitySim = made[0]
+	var seg: int = made[1]
+	while sim.tick_count % RoadTreatments.EVERY != 0:
+		sim.tick()
+	_fill(sim, seg)  # factories done, between two looks
+	var copy := CitySim.new()
+	copy.from_dict(JSON.parse_string(JSON.stringify(sim.to_dict())))
+	for i in RoadTreatments.EVERY + 2:
+		sim.tick()
+		copy.tick()
+	_check(sim.treatments.kind(seg, -1) == RoadTreatments.FACTORY and copy.treatments.kind(seg, -1) == RoadTreatments.FACTORY,
+		"a side that changed just before the save is judged after the load too")
+	_check(JSON.stringify(copy.treatments.to_dict()) == JSON.stringify(sim.treatments.to_dict()),
+		"the loaded copy and the town that saved agree")
+
+
+## A shop rebuilt in place counts as what stood there till it's done, and a
+## main street whose shops drop under two stays one through the hold, not
+## Strip and back.
+func _rebuilt_shop() -> void:
+	var made := _town()
+	var sim: CitySim = made[0]
+	var seg: int = made[1]
+	var t := sim.treatments
+	var shops := []
+	for key in sim.buildings:
+		if int(sim.lots[key].seg) == seg and int(sim.lots[key].side) == 1:
+			shops.append(key)
+	shops.sort()
+	_check(t.kind(seg, 1) == RoadTreatments.MAIN and shops.size() >= 2, "a main street side with %d shops" % shops.size())
+	var share: float = t.shares.get(seg * 2 + 1, {}).get(RoadTreatments.MAIN, 0.0)
+	# Each shop but one rebuilt at once (redevelopment.gd's way: a new record
+	# and its construction).
+	for key in shops.slice(1):
+		var lot: Dictionary = sim.lots[key]
+		var b: Dictionary = sim.buildings[key].duplicate()
+		b.built = sim.tick_count
+		sim.buildings[key] = b
+		sim.construction.start("lot:" + key, "shop", sim.tick_count, lot.front, -lot.normal, lot.to_curb)
+	sim.buildings_changed.emit()
+	for i in 2 * RoadTreatments.EVERY:
+		sim.tick()
+	_check(t.kind(seg, 1) == RoadTreatments.MAIN and is_equal_approx(float(t.shares.get(seg * 2 + 1, {}).get(RoadTreatments.MAIN, 0.0)), share),
+		"while they're rebuilt they count as the shops they were: still a main street")
+	var copy := CitySim.new()
+	copy.from_dict(JSON.parse_string(JSON.stringify(sim.to_dict())))
+	for i in RoadTreatments.EVERY:
+		sim.tick()
+		copy.tick()
+	_check(JSON.stringify(copy.treatments.to_dict()) == JSON.stringify(sim.treatments.to_dict())
+		and is_equal_approx(float(copy.treatments.shares.get(seg * 2 + 1, {}).get(RoadTreatments.MAIN, 0.0)), share),
+		"a save mid-rebuild keeps counting them")
+	# Now they're gone for good: one shop left, too few for a main street.
+	for key in shops.slice(1):
+		sim.buildings.erase(key)
+		sim.construction.sites.erase("lot:" + key)
+	sim.buildings_changed.emit()
+	for i in 2 * RoadTreatments.EVERY:
+		sim.tick()
+	_check(t.kind(seg, 1) == RoadTreatments.MAIN and t._fading.has(seg * 2 + 1),
+		"down to one shop, the side stays a main street and starts its hold (%s)" % t.kind(seg, 1))
+	var fade: int = t.sides[seg * 2 + 1].fade
+	t._decide_all(sim, [seg * 2 + 1])
+	sim.tick_count = fade + RoadTreatments.HOLD
+	t._decide_all(sim, [seg * 2 + 1])
+	_check(t.kind(seg, 1) != RoadTreatments.MAIN, "after the hold it lets go (%s)" % t.kind(seg, 1))
+

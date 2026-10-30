@@ -47,7 +47,8 @@ func before(sim: CitySim, cmd: Dictionary) -> Variant:
 	if type in ROAD_TYPES:
 		return {"type": type, "money": sim.economy.money, "roads": sim.network.snapshot(), "rev": sim.network.revision,
 			"county": sim.county_joined.size(), "links": sim.region_links.size(), "held": held(sim),
-			"closed": sim.traffic.closed.duplicate(), "plazas": sim.parks.trails.plazas.duplicate()}
+			"closed": sim.traffic.closed.duplicate(), "plazas": sim.parks.trails.plazas.duplicate(),
+			"treat": sim.treatments.snapshot()}
 	if PLACE_TYPES.has(type):
 		return {"type": type, "money": sim.economy.money, "ids": things(sim, type).keys()}
 	return null
@@ -72,6 +73,8 @@ func after(sim: CitySim, snap: Dictionary) -> void:
 			if not sim.traffic.closed.has(seg):
 				e.closed[seg] = snap.closed[seg]
 		e.plazas = snap.plazas.filter(func(seg): return not seg in sim.parks.trails.plazas)
+		# Street sides' treatments and locks, as they were (RoadTreatments).
+		e.treat = snap.treat
 	else:
 		var added: Array = things(sim, snap.type).keys().filter(func(k): return not k in snap.ids)
 		if added.size() != 1:
@@ -85,6 +88,12 @@ func after(sim: CitySim, snap: Dictionary) -> void:
 ## A street made car-free: when the newest road build made that street,
 ## undoing it refunds the pavers too (second reader, 2026-10-26).
 func note_car_free(sim: CitySim, seg: int, cost: int) -> void:
+	note_paid(sim, seg, cost)
+
+
+## Something paid for on a road piece (pavers, a street side's treatment):
+## when the newest road build made that piece, undoing it refunds this too.
+func note_paid(sim: CitySim, seg: int, cost: int) -> void:
 	if entries.is_empty():
 		return
 	var e: Dictionary = entries.back()
@@ -115,6 +124,8 @@ func undo(sim: CitySim) -> bool:
 		sim.traffic.prune_lane_rules()
 		put_back(sim, e.took)
 		sim.put_back_closures({"closed": e.get("closed", {}), "plazas": e.get("plazas", [])})
+		if e.has("treat"):
+			sim.treatments.restore(sim, e.treat)
 		# The road built before this one is current again if no road change
 		# came between; something placed between (a park, a tower) doesn't
 		# count (reviewer 2026-10-27: three undos left the first street in).
