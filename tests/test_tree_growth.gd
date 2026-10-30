@@ -289,6 +289,51 @@ func _facts() -> void:
 	_check(absf(float(wild[3]) - TreeKinds.age_for_size(sp, 0.9)) < 0.01, "a tree without a date is as old as its size")
 	_check(not TreeField.resolve([xf, sp, Color.GREEN, {"shrub": true}])[5], "brush never grows up close")
 	TreeField.now_tick = 0
+	_grown_yards()
+
+
+## A yard that comes in grown (Nathan, 2026-10-29: "A. Yes, back-yard trees
+## start grown; street trees still start small and grow"): its trees start
+## at an established street's mixed ages, the same for the same lot, and
+## grow on from there without a jump.
+func _grown_yards() -> void:
+	var sp := TreeField.Species.MAPLE
+	var ages := []
+	var same := true
+	for i in 3000:
+		var s := hash([12345, i])
+		var a := TreeField.yard_age(sp, s, 9.0)
+		same = same and a == TreeField.yard_age(sp, s, 9.0)
+		ages.append(a)
+	var young := ages.filter(func(a): return a < 15.0).size()
+	var most := ages.filter(func(a): return a >= 15.0 and a <= 40.0).size()
+	var old := ages.filter(func(a): return a > 40.0).size()
+	_check(same, "the same lot's seed gives the same yard tree ages")
+	var off_step := ages.filter(func(a): return not GrownTrees.BUCKETS.has(a))
+	_check(off_step.is_empty(), "every yard tree starts at a grown mesh's own age, so they share meshes %s" % [off_step.slice(0, 3)])
+	_check(young > 300 and young < 600 and most > 2000 and old > 200 and old < 500 and ages.min() >= TreeKinds.nursery_age(sp) - 0.001
+		and ages.max() <= 75.001,
+		"yard trees start mostly 15 to 40 years old, some young, a few big old ones (%d young, %d 15-40, %d old of 3000)" % [young, most, old])
+	# No room to spread past half its planned crown: kept young enough to fit.
+	var fits := true
+	for i in 200:
+		for k in TreeKinds.count():
+			var a := TreeField.yard_age(k, hash([7, i]), 0.5)
+			fits = fits and (TreeKinds.size_at(k, a) <= 0.5 + 0.002 or absf(a - TreeKinds.nursery_age(k)) < 0.001)
+			fits = fits and TreeField.yard_age(k, hash([7, i]), 1.0) <= TreeKinds.REF_AGE + 0.01
+	_check(fits, "a yard tree with little room starts young enough to fit, never smaller than nursery stock")
+	# It grows on from its starting age with the clock, no jump.
+	var xf := Transform3D(Basis().scaled(Vector3.ONE * 0.9), Vector3(10, 0, 20))
+	var year := Seasons.OLD_TICKS_PER_MONTH * 12
+	var at := []
+	for years in [0.0, 0.05, 1.0, 10.0]:
+		TreeField.now_tick = 1000 + int(year * years)
+		at.append(TreeField.resolve([xf, sp, Color.GREEN, {"planted": 1000, "start": 25.0}]))
+	TreeField.now_tick = 0
+	var h := at.map(func(r): return (r[0] as Transform3D).basis.get_scale().y)
+	_check(absf(float(at[0][3]) - 25.0) < 0.01 and absf(float(at[3][3]) - 35.0) < 0.01
+		and absf(h[0] - 0.9 * TreeKinds.size_at(sp, 25.0)) < 0.001 and h[1] - h[0] < 0.01 and h[1] >= h[0] and h[3] > h[2] and h[2] > h[0],
+		"a grown yard tree starts at its age and grows on from it (%.2f, %.2f, %.2f, %.2f of its size)" % h)
 
 
 ## Two copies of a town agree on every tree after a save and load: yard

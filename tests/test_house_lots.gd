@@ -30,6 +30,7 @@ func _init() -> void:
 			if b._wall_gap(p) < need - 0.01:
 				bad.append("lot %d: %s %.1f m from the house, crown %.1f m" % [i, TreeField.Species.keys()[t[1]], b._wall_gap(p), need])
 	_check(trees > 100 and bad.is_empty(), "yard trees keep their crowns off the walls (%d trees) %s" % [trees, bad.slice(0, 3)])
+	_grown_yards(lots)
 
 	# The foundation and far-off blocks cover the house and garage, not the
 	# whole lot out to the back-yard fences (critic round 25: concrete slabs
@@ -214,6 +215,77 @@ func _init() -> void:
 
 	print("ALL TESTS PASSED" if not _failed else "TESTS FAILED")
 	quit(1 if _failed else 0)
+
+
+## A yard that comes in grown (TreeField.yard_age) gets no tree older than
+## its room: at its starting age no crown reaches a wall, and two yard
+## trees' crowns at most touch. The same lot always gets the same room.
+func _grown_yards(lots: Array) -> void:
+	var bad := []
+	var trees := 0
+	var capped := 0
+	var ages := []
+	var drives := 0
+	var props := 0
+	for i in lots.size():
+		var runs := []
+		var b: HouseBuilder
+		for k in 2:
+			b = HouseBuilder.new()
+			b.rng = RandomNumberGenerator.new()
+			b.rng.seed = i * 7919 + 13
+			b._fit(lots[i])
+			runs.append(b._house(6.0, [0, 1, 2][i % 3]))
+		var built: Array = runs[0]
+		var yard := (built[2] as Array).filter(func(t): return (t[0] as Vector3).z > 0.0)
+		if JSON.stringify(built[2]) != JSON.stringify(runs[1][2]):
+			bad.append("lot %d: built twice, different trees" % i)
+		var reach := []
+		for t in yard:
+			if t.size() < 5:
+				bad.append("lot %d: a yard tree with no room given" % i)
+				continue
+			var age := TreeField.yard_age(t[1], hash([i, t[0].x]), float(t[4]))
+			var free := TreeField.yard_age(t[1], hash([i, t[0].x]), 99.0)
+			capped += 1 if age < free - 0.01 else 0
+			ages.append(age)
+			reach.append(TreeField.SPREAD[t[1]] * float(t[3]) * TreeKinds.size_at(t[1], age))
+			# At its starting age the crown keeps off the walls, and by the
+			# same rule (its reach times 0.9) off the garage, shed, pool,
+			# cottage, the paved drive and its parking, and the thing out back.
+			var q := Vector2(t[0].x, t[0].z)
+			var need: float = reach[-1] * 0.9 - 0.01
+			if age > TreeKinds.nursery_age(t[1]) + 0.01:
+				for what in [["the house", b._masses], ["the garage", [b._keep_out]], ["the shed or pool", [b._improved]],
+						["the cottage", [b._cottage_at]], ["the drive", b._paved], ["the thing out back", b._props]]:
+					var rects: Array = (what[1] as Array).filter(func(r): return (r as Rect2).has_area())
+					if not rects.is_empty() and HouseBuilder._gap_to(rects, q) < need:
+						bad.append("lot %d: a %d-year %s %.1f m from %s, crown %.1f m" % [i, age,
+							TreeField.Species.keys()[t[1]], HouseBuilder._gap_to(rects, q), what[0], reach[-1]])
+				# And off the drive as painted (wide paving only: not the walks).
+				for k in 13:
+					var at := q if k == 12 else q + Vector2.from_angle(k * TAU / 12.0) * need
+					if _on_drive(built[1], at) and _on_drive(built[1], at + Vector2(0.95, 0)) and _on_drive(built[1], at - Vector2(0.95, 0)) \
+							and _on_drive(built[1], at + Vector2(0, 0.95)) and _on_drive(built[1], at - Vector2(0, 0.95)):
+						bad.append("lot %d: a %d-year %s's crown over the painted drive" % [i, age, TreeField.Species.keys()[t[1]]])
+						break
+			trees += 1
+		drives += 1 if not b._paved.is_empty() else 0
+		props += b._props.size()
+		for a in yard.size():
+			for c in range(a + 1, yard.size()):
+				var d := Vector2(yard[a][0].x, yard[a][0].z).distance_to(Vector2(yard[c][0].x, yard[c][0].z))
+				# A sapling can't be any smaller (nursery stock is the least).
+				var young: bool = ages[ages.size() - yard.size() + a] <= TreeKinds.nursery_age(yard[a][1]) + 0.01 \
+					or ages[ages.size() - yard.size() + c] <= TreeKinds.nursery_age(yard[c][1]) + 0.01
+				if reach.size() == yard.size() and reach[a] + reach[c] > d * 1.15 + 0.01 and not young:
+					bad.append("lot %d: two yard trees %.1f m apart, crowns %.1f and %.1f m" % [i, d, reach[a], reach[c]])
+	var old := ages.filter(func(a): return a > 40.0).size()
+	_check(trees > 100 and bad.is_empty() and old > 0,
+		"a grown yard's trees fit their room: crowns off house, garage, shed, pool, drive and the things out back, at most touching (%d trees, %d kept younger to fit, %d over 40 years) %s"
+		% [trees, capped, old, bad.slice(0, 3)])
+	_check(drives > lots.size() * 0.9 and props > 20,
+		"the room counts every lot's drive (%d of %d) and the things out back (%d)" % [drives, lots.size(), props])
 
 
 ## The most wooded spot near the start (as test_vegetation finds it).

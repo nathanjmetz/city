@@ -220,6 +220,78 @@ func _town() -> void:
 			if r[1] not in [TreeField.Species.SPRUCE, TreeField.Species.CRABAPPLE] and h < 2.6:
 				small.append("%s %.1f m" % [TreeField.Species.keys()[r[1]], h])
 	_check(small.is_empty(), "new yard and street trees go in at nursery size, never saplings %s" % [small.slice(0, 3)])
+	_grown_yards()
+
+
+## Yards come in grown (Nathan, 2026-10-29: "A. Yes, back-yard trees start
+## grown; street trees still start small and grow"); the same lot always
+## gets the same trees; a town saved before keeps its trees' sizes.
+func _grown_yards() -> void:
+	var yard := []
+	var street := []
+	var homes := []
+	for key in view._planted:
+		if int(sim.buildings[key].zone) != ZoneMap.Zone.RESIDENTIAL or not sim.lots.has(key):
+			continue
+		homes.append(key)
+		var lot: PackedVector2Array = sim.lots[key].corners
+		for t in view._trees._trees.get(key, []):
+			var o: Vector3 = (t[0] as Transform3D).origin
+			# Its age the day it was planted.
+			var age := maxf(float(t[3].get("start", 0.0)), TreeKinds.nursery_age(t[1]))
+			if Geometry2D.is_point_in_polygon(Vector2(o.x, o.z), lot):
+				yard.append(age)
+			else:
+				street.append(age - TreeKinds.nursery_age(t[1]))
+	var grown := yard.filter(func(a): return a >= 15.0).size()
+	var old := yard.filter(func(a): return a > 40.0).size()
+	_check(yard.size() > 40 and grown > yard.size() * 0.55 and old > 0 and yard.min() >= 2.0,
+		"yard trees start grown: %d of %d 15 years or older, %d over 40, youngest %.0f" % [grown, yard.size(), old, yard.min()])
+	_check(street.size() > 40 and absf(street.max()) < 0.01 and absf(street.min()) < 0.01,
+		"street trees still go in as nursery stock (%d)" % street.size())
+	# The same lot gives the same trees, filed again.
+	var first := {}
+	for key in homes.slice(0, 40):
+		first[key] = JSON.stringify(view._trees._trees[key])
+		view._set_trees(key)
+	var same := homes.slice(0, 40).all(func(key): return JSON.stringify(view._trees._trees[key]) == first[key])
+	_check(same, "the same lot gives the same trees")
+	# The town saved and loaded keeps its grown yards; a save from before
+	# grown yards keeps every tree it had at the size it was.
+	var mine := sim
+	for old_save in [false, true]:
+		var d: Dictionary = JSON.parse_string(JSON.stringify(sim.to_dict()))
+		if old_save:
+			d.erase("grown_yards_from")
+		var copy := CitySim.new()
+		copy.from_dict(d)
+		view.sim = copy
+		var kept := true
+		var planted := 0
+		for key in homes.slice(0, 60):
+			view._set_trees(key)
+			for t in view._trees._trees[key]:
+				var start := float(t[3].get("start", 0.0))
+				planted += 1
+				if old_save:
+					kept = kept and start == 0.0
+			if not old_save:
+				kept = kept and JSON.stringify(view._trees._trees[key]) == first.get(key, JSON.stringify(view._trees._trees[key]))
+		if old_save:
+			# A home finished after the old town is loaded comes in grown.
+			var any := false
+			for key in homes.slice(0, 30):
+				copy.buildings[key].built = copy.tick_count + 1
+				view._set_trees(key)
+				for t in view._trees._trees[key]:
+					any = any or t[3].has("start")
+			_check(kept and planted > 60 and any and copy.grown_yards_from == copy.tick_count + 1,
+				"a town saved before grown yards keeps its trees as they were (%d), new homes' yards come in grown [%s %s %d %d]" % [planted, kept, any, copy.grown_yards_from, copy.tick_count])
+		else:
+			_check(kept and copy.grown_yards_from == 0, "a town saved and loaded keeps its grown yards (%d trees)" % planted)
+	view.sim = mine
+	for key in homes:
+		view._set_trees(key)
 
 
 ## Street trees inside a junction's sight-line clearance.

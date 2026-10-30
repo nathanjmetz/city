@@ -163,8 +163,17 @@ var _cottage_at := Rect2()
 ## flats it now holds (0 while it is one home).
 var _cf_stair := Rect2()
 var _cf_units := 0
-## Trees this lot plants: [local position, TreeField species, tint, scale].
+## Trees this lot plants: [local position, TreeField species, tint, scale],
+## and a home's own yard trees a fifth: their room to grow (_yard_room).
 var trees := []
+## What a grown yard tree's crown keeps off besides the walls (_yard_room):
+## the paved drive and its parking (2 m or more each way, so not the
+## walks), the things out back (_back_yard), the garage's keep-out.
+var _paved := []  # Rect2s
+var _props := []  # Rect2s
+var _keep_out := Rect2()
+var _yard_from := 0  # the home's yard trees: trees[_yard_from] up to _yard_to
+var _yard_to := 0
 ## Where the home's curbside mailbox stands across the lot (local x), or INF.
 var mail_x := INF
 var rng: RandomNumberGenerator
@@ -265,6 +274,7 @@ func _house(to_curb: float, storeys := 0) -> Array:
 	_utilities(info)
 	_front_yard(info)
 	_drive_hoop(info)
+	_yard_room()
 	return [_commit_house(), _commit_flat(), trees]
 
 
@@ -2046,6 +2056,7 @@ func _yard_trees(h: Dictionary, _to_curb: float) -> void:
 	var spots := []
 	var span := half - 2.0
 	var back: float = h.front_z + 13.0
+	var first := trees.size()
 	if rng.randf() < 0.8:
 		spots.append([Vector3(rng.randf_range(-span, span), 0, rng.randf_range(1.5, h.front_z - 3.5)), true])
 	rng.randf()  # was the street tree's roll, kept so the back yard stays as it was
@@ -2080,6 +2091,70 @@ func _yard_trees(h: Dictionary, _to_curb: float) -> void:
 			if _wall_gap(p) < TreeField.SPREAD[pick[0]] * size * 0.9:
 				continue
 		trees.append([p, pick[0], pick[1], size])
+	_yard_from = first
+	_yard_to = trees.size()
+	_keep_out = h.get("keep_out", Rect2())
+
+
+## Everything a grown yard tree's crown keeps off, as rects (lot x/z): the
+## walls (_masses), the garage's keep-out, the shed and pool (_improved),
+## the backyard cottage, the paved drive and its parking, and the thing
+## out back (_back_yard).
+func _crown_keep() -> Array:
+	var out := _masses.duplicate()
+	for k in [_keep_out, _improved, _cottage_at] + _paved + _props:
+		if (k as Rect2).has_area():
+			out.append(k)
+	return out
+
+
+## How far a spot is from the nearest of `rects` (m).
+static func _gap_to(rects: Array, q: Vector2) -> float:
+	var gap := INF
+	for k: Rect2 in rects:
+		var dx := maxf(maxf(k.position.x - q.x, q.x - k.end.x), 0.0)
+		var dz := maxf(maxf(k.position.y - q.y, q.y - k.end.y), 0.0)
+		gap = minf(gap, Vector2(dx, dz).length())
+	return gap
+
+
+## How much room each of the home's yard trees has to spread, as a share
+## of the crown its size gives it (TreeField.SPREAD at TreeKinds.REF_AGE),
+## added as the tree's fifth entry (which marks it a home's yard tree): a
+## yard that comes in grown (TreeField.yard_age) gets no older tree than
+## this. Its crown keeps off everything in _crown_keep by the rule the
+## walls already have (the crown's reach times 0.9), at most touches the
+## next yard tree, and hangs over the side and back lot lines by no more
+## than a third. Runs once the yard is finished (after _back_yard). Plain
+## geometry: no random draws, so the lot looks as it always did.
+func _yard_room() -> void:
+	var keep := _crown_keep()
+	# The side and back lot lines (the front one runs along the sidewalk:
+	# a crown over the walk is any shade tree's).
+	var lines := []
+	var pts := outline
+	if pts.size() < 3:
+		pts = PackedVector2Array([Vector2(-half, 0), Vector2(half, 0), Vector2(half, depth), Vector2(-half, depth)])
+	for i in pts.size():
+		var a := pts[i]
+		var b := pts[(i + 1) % pts.size()]
+		if a.y > 0.5 or b.y > 0.5:
+			lines.append([a, b])
+	for i in range(_yard_from, _yard_to):
+		var t: Array = trees[i]
+		var p: Vector3 = t[0]
+		var q := Vector2(p.x, p.z)
+		var r: float = TreeField.SPREAD[t[1]] * float(t[3])
+		var room := _gap_to(keep, q) / (r * 0.9)
+		for j in range(_yard_from, _yard_to):
+			if j != i:
+				var o: Array = trees[j]
+				var d := q.distance_to(Vector2(o[0].x, o[0].z))
+				room = minf(room, 1.15 * d / (r + TreeField.SPREAD[o[1]] * float(o[3])))
+		for l in lines:
+			var c := Geometry2D.get_closest_point_to_segment(q, l[0], l[1])
+			room = minf(room, q.distance_to(c) / (r * 0.67))
+		t.append(room)
 
 
 ## Street trees: shade trees down the middle of the parkway (the grass strip
@@ -2225,6 +2300,10 @@ func _back_yard(h: Dictionary) -> void:
 	for tr in trees:
 		if Vector2(tr[0].x, tr[0].z).distance_to(Vector2(spot.x, spot.z)) < 3.5:
 			return
+	if thing < 0.76 and (thing < 0.62 or era != "recent"):
+		# Shed 2.4 x 3 m, bed 3 x 5, swing set, a 6 m clothesline: the yard's
+		# grown trees keep their crowns off it (_yard_room).
+		_props.append(Rect2(spot.x - 2.0, spot.z - 3.1, 4.0, 6.2))
 	if thing < 0.3:
 		_yard_shed(spot)
 	elif thing < 0.48:
@@ -3008,6 +3087,8 @@ func _glass(c: Vector3, right: Vector3, w: float, h: float, blinds: float) -> vo
 ## Flat ground work. Kinds (packed into vertex alpha for the yard shader):
 ## drive (concrete), asphalt, line (painted, in `col`), mulch or gravel (in `col`).
 func _flat_rect(kind: String, x0: float, x1: float, z0: float, z1: float, y: float, col := MULCH) -> void:
+	if kind == "drive" and absf(x1 - x0) >= 2.0 and absf(z1 - z0) >= 2.0:
+		_paved.append(Rect2(minf(x0, x1), minf(z0, z1), absf(x1 - x0), absf(z1 - z0)))
 	if _dry:
 		return
 	var alpha := {"drive": 0.0, "asphalt": 0.4, "line": 0.72, "mulch": 1.0, "gravel": 1.0}
