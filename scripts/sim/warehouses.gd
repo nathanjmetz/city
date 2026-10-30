@@ -196,6 +196,60 @@ static func site_near(network: RoadNetwork, hit: Vector3) -> Array:
 	return [Vector3(p.x, 0.0, p.z) + normal * front, -normal, near.seg]
 
 
+## The x of each dock door along the front wall, in the drawing's local
+## frame (x across the site, as WarehouseBuilder lays the docks out: the
+## office at one front corner, then a door every DOCK_SPACING to 2 m short
+## of the far corner). Plain math from the spec, the same every time.
+static func dock_xs(w: Dictionary) -> Array:
+	var out := []
+	if is_store(w):
+		return out
+	var s := spec(w)
+	var bw: float = s.w
+	var cx := -site_width(w) * 0.5 + bw * 0.5
+	var ow := clampf(bw * 0.22, 8.0, 24.0)
+	var ox := cx - bw * 0.5 + ow * 0.5
+	var x0 := ox + ow * 0.5 + 2.5
+	var x1 := cx + bw * 0.5 - 2.0
+	var n := mini(int(s.docks), int((x1 - x0) / WarehouseBuilder.DOCK_SPACING))
+	var start := x1 - n * WarehouseBuilder.DOCK_SPACING
+	for i in n:
+		out.append(start + (i + 0.5) * WarehouseBuilder.DOCK_SPACING)
+	return out
+
+
+## Where trucks turn in off the street: the middle of the dock run, where
+## the art cuts the curb (local x).
+static func gate_x(w: Dictionary) -> float:
+	var xs := dock_xs(w)
+	if xs.is_empty():
+		return 0.0
+	return (float(xs[0]) - WarehouseBuilder.DOCK_SPACING * 0.5 + float(xs[-1]) + WarehouseBuilder.DOCK_SPACING * 0.5) * 0.5
+
+
+## Its dock doors as DoorLog has them ([kind, centre, facing, width,
+## height, colour]) in the drawing's local frame (centred on the site, -z
+## toward the road): the doors WarehouseBuilder._dock_door logs.
+static func dock_doors(w: Dictionary) -> Array:
+	var zf := -site_depth(w) * 0.5 + float(spec(w).court)
+	var out := []
+	for x in dock_xs(w):
+		out.append(["dock", Vector3(x, WarehouseBuilder.DOCK_HEIGHT + 1.5, zf - 0.07), Vector3(0, 0, -1),
+			2.7, 3.0, CivicBuilder.WHITE])
+	return out
+
+
+## Where its drawing stands, flat (WarehouseView seats it on the ground).
+static func frame(w: Dictionary) -> Transform3D:
+	return Transform3D(Basis.looking_at(w.dir, Vector3.UP), center(w))
+
+
+## The place TrafficSim keeps for warehouse `id` (Logistics sends its
+## trucks to {"ref": "wh:<id>", "pos": its front}).
+static func traffic_ref(id: int, w: Dictionary) -> String:
+	return "wh:%d@%d,%d" % [id, roundi(snappedf(w.pos.x, 0.01)), roundi(snappedf(w.pos.z, 0.01))]
+
+
 ## Loads it can hold at its height and floor area.
 static func capacity(w: Dictionary) -> int:
 	if is_store(w):
