@@ -1,8 +1,11 @@
 extends SceneTree
 ## Run: godot --headless -s tests/test_junction_marks.gd
 ## Junction paint by the Indiana MUTCD rules: every leg of a town junction
-## gets its crosswalk at the curb ramps, painted lines end there, cars stop
-## at the painted stop line, and a gentle bend keeps its sidewalk whole.
+## has room for its crosswalk at the curb ramps, painted lines end there,
+## cars stop at the painted stop line, and a gentle bend keeps its sidewalk
+## whole. The paint the game draws (each leg's crosswalk by the junction's
+## control and look, JunctionMarks.style) is marked where the rules say,
+## always at a signal, and never across a car-free street.
 
 var failed := false
 
@@ -58,6 +61,7 @@ func _init() -> void:
 			rules[arm.seg] = "stop"
 		JunctionMarks.paint(j, rules, st, 0.1)
 		_check(st.commit().get_surface_count() == 1, "%s: paint drawn" % name)
+		_real_paint(sim, node, name)
 
 	# A street bending a little at a node: a bend plan fills its outside,
 	# with no trim and no crosswalks.
@@ -77,6 +81,60 @@ func _init() -> void:
 	_check(gj.get("country", false) and not JunctionMarks.marked(gj), "gravel meets a street in a country junction, unmarked")
 
 	quit(1 if failed else 0)
+
+
+## The paint the game draws at a junction (as JunctionView paints it): as
+## the town controls it, then with lights the player put up, then with one
+## leg made car-free.
+func _real_paint(sim: CitySim, node: int, name: String) -> void:
+	sim.tick()  # traffic sets up its junctions
+	_legs(sim, node, Junction.plan(sim.network).get(node, {}), "%s as built" % name, false)
+	sim.traffic.set_rule(node, TrafficSim.Rule.SIGNAL)
+	var lit: Dictionary = Junction.plan(sim.network, {}, {}, {node: true}).get(node, {})
+	_check(not lit.is_empty() and Junction.ramps(lit).all(func(r): return r[1] == "pair"),
+		"%s with lights: a ramp in line with each crosswalk" % name)
+	_legs(sim, node, lit, "%s with lights" % name, true)
+	sim.traffic.close_segment(lit.arms[0].seg, true)
+	_legs(sim, node, lit, "%s with lights and a car-free leg" % name, true)
+	sim.traffic.close_segment(lit.arms[0].seg, false)
+
+
+## Each leg is painted across exactly when its style says it is marked;
+## `lit`: every leg open to cars must be.
+func _legs(sim: CitySim, node: int, j: Dictionary, what: String, lit: bool) -> void:
+	if j.is_empty():
+		_check(false, "%s: shaped" % what)
+		return
+	var t := sim.traffic
+	var rules := JunctionMarks.leg_rules(t, node)
+	var control := JunctionMarks.control_of(t.junctions.get(node, {}))
+	var shut := JunctionMarks.car_free_legs(t, j)
+	if lit:
+		_check(control == "signal", "%s: the junction has lights" % what)
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	JunctionMarks.paint(j, rules, st, 0.1, control, shut)
+	var m := st.commit()
+	var faces := m.get_faces() if m.get_surface_count() > 0 else PackedVector3Array()
+	var center: Vector3 = j.center
+	for arm in j.arms:
+		var style := JunctionMarks.style(j, arm, rules.get(arm.seg, ""), control, shut)
+		var across := false  # paint on the crosswalk
+		var on := false  # paint anywhere up to the stop line
+		for k in range(0, faces.size(), 3):
+			var mid: Vector3 = (faces[k] + faces[k + 1] + faces[k + 2]) / 3.0 - center
+			var p := Vector2(mid.x, mid.z)
+			var along: float = p.dot(arm.u)
+			if absf(p.dot(arm.n)) >= arm.hw or along < arm.d:
+				continue
+			across = across or along < arm.d + JunctionMarks.CROSS_FAR
+			on = on or along < arm.d + JunctionMarks.STOP + 0.5
+		if shut.has(arm.seg):
+			_check(style == "none" and not on, "%s: no paint across car-free leg %d" % [what, arm.seg])
+			continue
+		_check(across == (style != "none"), "%s: leg %d is %s" % [what, arm.seg, "marked" if across else "unmarked"])
+		if lit:
+			_check(style != "none", "%s: leg %d is marked at the signal" % [what, arm.seg])
 
 
 func _node_at(net: RoadNetwork, p: Vector3) -> int:
