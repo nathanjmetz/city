@@ -175,6 +175,12 @@ const INACTIVE := {"detail": 1.0, "shadow_m": 2000.0, "tree_shadows": true, "gro
 const BROWSER_GROW_MS := 3.0
 ## The browser lays out its far woods on its one thread too: not as far.
 const BROWSER_FAR_WOODS := 2600.0
+## How far each tier draws the state layer's yard props (knob "state_m";
+## StateView, docs/spec-state-layer.md): none on Low, a light 100 m on
+## Medium (Nathan's 8 GB Mac mini; decided 2026-10-29), 150 m from High up.
+## Never in the browser. Kept out of BUDGETS so it merges beside other
+## views' knobs; a headless run or test (INACTIVE) gets 0 unless it asks.
+const STATE_M := [0.0, 100.0, 150.0, 150.0, 150.0]
 
 ## Each kind of machine's budget: the frame it aims for (slow_ms: drawing
 ## slower than this counts against the tier; room_ms: the whole frame under
@@ -745,6 +751,7 @@ static func budget_for(t: int, on_browser := false) -> Dictionary:
 	b["detail"] = r.detail
 	b["shadow_m"] = r.shadow_reach
 	b["tree_shadows"] = r.tree_shadows
+	b["state_m"] = 0.0 if on_browser else STATE_M[t]
 	if on_browser:
 		b["grow_ms"] = minf(b.grow_ms, BROWSER_GROW_MS)
 		b["far_woods"] = minf(b.far_woods, BROWSER_FAR_WOODS)

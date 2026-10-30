@@ -43,6 +43,17 @@ extends SceneTree
 ## jumps to the hour) for a before-and-after count.
 ## Never change a shot here between rounds without saying so in the round's
 ## notes: the point is that round N and round N+1 compare like with like.
+##
+## The mixed test town (docs/spec-state-layer.md, from round state-layer-1 on;
+## its "before" set was retaken with it): after the warm ticks, every built
+## lot is set to the middle of a tier picked by its 80 m square (-2 derelict
+## to 2 showpiece, posmod(cx * 2 + cz * 3, 5)), so every shot from 40 to
+## 100 m shows several; trash is piled on the two streets nearest shot 01,
+## and the pavement is aged out on the streets in derelict squares.
+## --no-state hides the state layer's yard props (StateView), for a "before"
+## set of the same town. --close adds three 40 m shots after the fixed 10
+## (11 a run-down home street, 12 a showpiece one, 13 derelict shops), which
+## frames.json lists too; they are extra, never part of the fixed list.
 
 ## Fair-weather day: July 15, 10:30 in the morning.
 const DAY := [7, 15, 10.5]
@@ -103,6 +114,8 @@ const HOME_TICKS := 600
 ## Milliseconds of ticking per frame while a window is open (the rest is the
 ## frame), so the window keeps answering.
 const WARM_MS := 30
+## The test town's tiers, by 80 m square (PropertyCare.NEAR_CELL).
+const TOWN_TIERS := [-2, -1, 0, 1, 2]
 ## Frames to wait after a move before checking the views, the calm frames
 ## in a row everything must read drawn, the most frames to wait, and the
 ## frames timed.
@@ -204,6 +217,7 @@ func _process(_delta: float) -> bool:
 		return false
 	if _stage == 4:
 		if _warm(WARM_MS):
+			_mixed_town(_main.sim)
 			_wait = 0
 			_stage = 2
 		return false
@@ -212,6 +226,8 @@ func _process(_delta: float) -> bool:
 		# warm-up runs while it draws in).
 		if not _warm(WARM_MS):
 			return false
+		if _wait == 0:
+			_mixed_town(_main.sim)
 		_wait += 1
 		if _wait < 300 or (not _drawn() and _wait < MAX_WAIT * 2):
 			return false
@@ -276,8 +292,11 @@ func _build() -> void:
 			_cam = c
 		if c is Weather:
 			_weather = c
-		# The picture is of the town: no panels, tour or status icons.
+		# The picture is of the town: no panels, tour or status icons, and no
+		# tool's ring under wherever the mouse happens to be.
 		if c is CanvasLayer or c is LotAlerts:
+			c.visible = false
+		if c is Node3D and c.get_script() != null and String(c.get_script().get_global_name()).ends_with("Tool"):
 			c.visible = false
 	DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
 	Engine.max_fps = 0
@@ -287,7 +306,17 @@ func _build() -> void:
 	_dusk_hour = _dusk(DAY[0], DAY[1])
 	_street_aim(sim)
 	_shop_aim(sim)
-	for a in OS.get_cmdline_user_args():
+	_mixed_town(sim)
+	var args := OS.get_cmdline_user_args()
+	if "--close" in args:
+		_close_shots(sim)
+	if "--no-state" in args:
+		for c in _main.get_children():
+			if c is StateView:
+				c.reach = 0.0
+				c.set_process(false)
+				c.visible = false
+	for a in args:
 		if a.begins_with("--only="):
 			var only := a.trim_prefix("--only=").split(",")
 			SHOTS = SHOTS.filter(func(s): return s[0].left(2) in only)
@@ -303,7 +332,7 @@ func _drawn() -> bool:
 	if not _main._gate.missing().is_empty() or CropCalendar.busy():
 		return false
 	for c in _main.get_children():
-		if c is BuildingView and not c.idle():
+		if (c is BuildingView or c is StateView) and c.is_processing() and not c.idle():
 			return false
 	return true
 
@@ -316,6 +345,8 @@ func _next() -> void:
 		_finish()
 		return
 	var s: Array = SHOTS[_shot]
+	if _close.has(s[0]):
+		_close_aim(s, true)
 	_row = {"name": s[0], "frame_ms": 0.0, "render_cpu_ms": 0.0, "draw_calls": 0.0,
 		"triangles": 0.0, "when": s[5], "weather": s[6]}
 	_set_shot(s)
@@ -516,6 +547,111 @@ func _census(sim: CitySim) -> Dictionary:
 	return c
 
 
+## The mixed test town: each built lot at the middle of the tier its 80 m
+## square picks, its building drawn again to match; trash piled on the two
+## streets nearest shot 01; the pavement aged out in derelict squares. Set
+## again after each shot's warm-up (the town's own upkeep and garbage trucks
+## run while it ticks), and only redrawn where something moved.
+func _mixed_town(sim: CitySim) -> void:
+	var at: Array = Balance.CARE_TIERS
+	var bands := [at[0] * 0.5, (at[0] + at[1]) * 0.5, (at[1] + at[2]) * 0.5, (at[2] + at[3]) * 0.5, (at[3] + 1.0) * 0.5]
+	var derelict := {}
+	var changed := false
+	for key in sim.buildings:
+		if not sim.lots.has(key):
+			continue
+		var t := town_tier(sim.lots[key].pos)
+		if sim.care.tier_of(key) != t or sim.care.cond_of(key) != bands[t + 2]:
+			changed = true
+		sim.care.cond[key] = bands[t + 2]
+		sim.care.tier[key] = t
+		if t == -2:
+			derelict[sim.lots[key].seg] = true
+	var want: Vector3 = SHOTS[0][1]
+	var near := []
+	for id in sim.network.segments:
+		var pts := sim.network.sample_segment(id)
+		var mid := pts[pts.size() / 2]
+		near.append([Vector2(mid.x, mid.z).distance_to(Vector2(want.x, want.z)), id])
+	near.sort()
+	for i in mini(2, near.size()):
+		sim.hubs.trash[near[i][1]] = Balance.GARBAGE_PILE_LB * 1.5
+	for id in derelict:
+		if sim.network.segments.has(id):
+			sim.street_age.paved[StreetAge.cell_of(sim, id)] = sim.tick_count - StreetAge._life_ticks()
+	if changed:
+		sim.buildings_changed.emit()
+
+
+## The tier the test town gives a point's 80 m square.
+static func town_tier(p: Vector3) -> int:
+	var cx := floori(p.x / PropertyCare.NEAR_CELL)
+	var cz := floori(p.z / PropertyCare.NEAR_CELL)
+	return TOWN_TIERS[posmod(cx * 2 + cz * 3, 5)]
+
+
+## Three close shots (40 m) after the fixed ten, each seen from its street
+## at an angle: the home nearest the middle of town in a run-down square
+## with a car on blocks in its yard, one in a showpiece square with flower
+## beds and a flag, and a shop in a derelict one with its banner up. The
+## candidates are listed here (nearest first); which one is shot is settled
+## when its turn comes and the buildings are drawn (_close_aim), so the
+## items are really there, trees and all.
+var _close := {}  # shot name -> [items wanted, tier, [lot keys, nearest first]]
+
+
+func _close_shots(sim: CitySim) -> void:
+	for want in [["11_close_rundown", "home", -1, ["car_blocks"]], ["12_close_showpiece", "home", 2, ["beds", "flag"]],
+			["13_close_shops", "shop", -2, ["lease", "dumpster"]]]:
+		var keys := []
+		for key in sim.buildings:
+			if not sim.lots.has(key) or LotState.kind_of(sim.buildings[key]) != want[1]:
+				continue
+			var lot: Dictionary = sim.lots[key]
+			if town_tier(lot.pos) != want[2] or BuildingTypes.type_of(sim.buildings[key]) == "row_home":
+				continue
+			var shows := LotState.shown(sim.city_seed, key, int(sim.buildings[key].seed), want[1], want[2],
+				sim.care.cond_of(key), false)
+			if (want[3] as Array).any(func(i): return not i in shows):
+				continue
+			keys.append([Vector2(lot.pos.x, lot.pos.z).distance_to(Vector2(MID.x, MID.z)), key])
+		keys.sort()
+		if keys.is_empty():
+			continue
+		_close[want[0]] = [want[3], want[2], keys.slice(0, 40).map(func(e): return e[1])]
+		SHOTS.append([want[0], Vector3.ZERO, 0.0, 32.0, 40.0, "day", FAIR])
+		_close_aim(SHOTS[-1], false)
+
+
+## Aims a close shot at its first candidate whose wanted items fit in its
+## yard as drawn (`drawn`: with the buildings' footprints, plans and trees;
+## else from the builders' plans alone, before anything is drawn).
+func _close_aim(s: Array, drawn: bool) -> void:
+	var sim: CitySim = _main.sim
+	var view: BuildingView = null
+	for c in _main.get_children():
+		if c is BuildingView:
+			view = c
+	var c: Array = _close[s[0]]
+	for key in c[2]:
+		if not sim.buildings.has(key):
+			continue
+		var yard := LotState.yard_of(sim, key)
+		if drawn and view != null:
+			if view.masses_of(key).is_empty():
+				continue
+			yard = LotState.yard_of(sim, key, view.masses_of(key), view.plan_of(key), view.trees_of(key))
+		var placed := LotState.items(sim.city_seed, key, int(sim.buildings[key].seed), c[1], sim.care.cond_of(key),
+			yard, false).map(func(e): return e.item)
+		if (c[0] as Array).any(func(i): return not i in placed):
+			continue
+		var lot: Dictionary = sim.lots[key]
+		var n: Vector3 = lot.normal
+		s[1] = lot.front + n * 3.0
+		s[2] = rad_to_deg(atan2(-n.x, -n.z)) + 25.0
+		return
+
+
 func _save_shot() -> void:
 	var img := root.get_texture().get_image()
 	_row.picture_size = [img.get_width(), img.get_height()]
@@ -529,6 +665,11 @@ func _save_shot() -> void:
 	_row.triangles = roundi(_row.triangles)
 	var cam := _cam.camera.global_position
 	_row.camera = [snappedf(cam.x, 0.1), snappedf(cam.y, 0.1), snappedf(cam.z, 0.1)]
+	for c in _main.get_children():
+		if c is StateView and c.is_processing():
+			_row.state_props = c.counts()
+			_row.state_place_ms_max = snappedf(c.place_ms_max(), 0.01)
+			_row.state_jobs_ms_max = c.job_ms_max().duplicate()
 	_rows.append(_row)
 	print("look_round: %s  %.1f ms  %d calls  %d tris  %.0f MB" % [_row.name, _row.frame_ms, _row.draw_calls,
 		_row.triangles, _row.video_mb])

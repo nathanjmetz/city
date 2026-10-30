@@ -195,6 +195,14 @@ func _ready() -> void:
 	var ambient := AmbientLife.new()
 	ambient.setup(sim, (walkers.get_child(0) as MultiMeshInstance3D).material_override)
 	add_child(ambient)
+	# The state layer: what stands in the yards, at the curbs and by the shop
+	# doors near the camera shows how well each lot is kept (the desktop
+	# download only; Nathan, 2026-10-29: "we should primarily only build the
+	# desktop download, not the browser").
+	if not OS.has_feature("web"):
+		var state := StateView.new()
+		state.setup(sim, buildings)
+		add_child(state)
 
 	var look := DayNight.new()
 	look.setup(sim, sky, _tick_fraction)
