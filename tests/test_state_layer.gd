@@ -286,7 +286,10 @@ func _clashes(s: CitySim, all: Dictionary) -> Dictionary:
 			var r := RandomNumberGenerator.new()
 			r.seed = int(b.seed)
 			var fit := SiteLayout._fit(lot)
-			var h := HouseBuilder.plan_info(r.randi(), fit.art, BuildingTypes.storeys(b))
+			var art: Dictionary = fit.art.duplicate()
+			if SiteLayout.drive_away(s, key) != 0.0:
+				art.drive_away = SiteLayout.drive_away(s, key)  # a corner house's drive, as built
+			var h := HouseBuilder.plan_info(r.randi(), art, BuildingTypes.storeys(b))
 			var dx := float(h.drive_x)
 			var dw := float(h.drive_w)
 			clear.drive.append(Rect2(dx - dw * 0.5, -tc, dw, maxf(float(h.get("garage_z", 6.0)), 6.0) + tc))
