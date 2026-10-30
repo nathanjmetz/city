@@ -96,6 +96,10 @@ var _scan := true
 ## Buildings rebuilt in place, as a save had them: lot key -> [side key,
 ## kind, cm] of what stood there (used by the first scan after a load).
 var _held_saved := {}
+## The shares a save last judged with (from_dict, until warm compares them)
+## and the sides whose frontage changed since, to judge on the first look.
+var _saved_shares = null
+var _pending := {}
 var _going := {}  # what's going up, as the last scan saw it
 
 
@@ -194,11 +198,12 @@ func update(sim) -> void:
 	Perf.add("sim.treatments.sums", t)
 	for k in _fading:
 		keys[k] = true
+	for k in _pending:
+		keys[k] = true
+	_pending.clear()
 	if _judge_all:
 		_judge_all = false
 		for k in shares:
-			keys[k] = true
-		for k in sides:
 			keys[k] = true
 	_decide_all(sim, keys.keys())
 	Perf.add("sim.treatments", t)
@@ -316,11 +321,30 @@ static func decide(cur: String, side_shares: Dictionary) -> Array:
 func warm(sim) -> void:
 	var t := Perf.now()
 	_frontage_changes(sim)
-	# Frontage that changed in the ticks before the save hasn't been judged
-	# yet: the first look judges every side (a side with nothing new comes
-	# out as it is), as the town that saved would have.
-	_judge_all = true
+	# Frontage that changed in the ticks before the save, not yet judged
+	# there: its shares differ from the ones the save last judged with, and
+	# the first look judges those sides, as the town that saved would have
+	# (review, 2026-10-30).
+	if _saved_shares != null:
+		var keys := {}
+		for k in shares:
+			keys[k] = true
+		for k in _saved_shares:
+			keys[k] = true
+		for k in keys:
+			if not _same_row(shares.get(k, {}), _saved_shares.get(k, {})):
+				_pending[k] = true
+		_saved_shares = null
 	Perf.add("load.treatments", t)
+
+
+static func _same_row(a: Dictionary, b: Dictionary) -> bool:
+	if a.size() != b.size():
+		return false
+	for what in a:
+		if not b.has(what) or absf(float(a[what]) - float(b[what])) > 0.00001:
+			return false
+	return true
 
 
 ## Every side's frontage: side key -> {kind: share of its length}, worked
@@ -781,7 +805,14 @@ func to_dict() -> Dictionary:
 		var part: Array = _by_key[key]
 		if part[6] and int(part[3]) >= 0:
 			h.append([key, int(part[3]), str(part[4]), int(part[5])])
-	return {"sides": s, "mids": m, "locks": l, "held": h}
+	# The shares each side was last judged with: a loaded copy judges the
+	# sides whose frontage changed since (warm).
+	var sh := []
+	keys = shares.keys()
+	keys.sort()
+	for k in keys:
+		sh.append([k, shares[k]])
+	return {"sides": s, "mids": m, "locks": l, "held": h, "shares": sh}
 
 
 ## `d` empty (a town saved before treatments): worked out fresh on the
@@ -797,6 +828,12 @@ func from_dict(d: Dictionary) -> void:
 		mids[int(e[0])] = {"kind": str(e[1]), "at": int(e[2])}
 	for e in d.get("locks", []):
 		locks[int(e[0])] = str(e[1])
+	_pending.clear()
+	_saved_shares = null
+	if d.has("shares"):
+		_saved_shares = {}
+		for e in d.shares:
+			_saved_shares[int(e[0])] = e[1]
 	_held_saved.clear()
 	for e in d.get("held", []):
 		_held_saved[str(e[0])] = [int(e[1]), str(e[2]), int(e[3])]
@@ -814,5 +851,5 @@ func from_dict(d: Dictionary) -> void:
 	_len.clear()
 	_scan = true
 	_going = {}
-	_judge_all = d.is_empty()
+	_judge_all = not d.has("shares")  # an older save: judge every side once
 	revision += 1
