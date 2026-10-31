@@ -14,7 +14,7 @@ extends SceneTree
 const Audit := preload("res://tools/overlap_audit.gd")
 ## Pairs of lots each town still has sharing ground: a corner more than
 ## half a metre in, left as the planner cut it (tests/test_overlaps.gd).
-const SHARED := {"small": 1, "county_small": 1}
+const SHARED := {"small": 3, "county_small": 3}
 
 var _failed := false
 

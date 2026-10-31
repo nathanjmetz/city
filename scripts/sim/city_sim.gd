@@ -3945,7 +3945,7 @@ func _clear_lot_overlaps(frozen: Dictionary) -> void:
 				if poly.size() >= 3 and GroundMap.overlap(poly, lots[other].corners)[0] >= LOT_OVERLAP_MIN:
 					poly = _push_out(poly, lots[other].corners)
 					trim = true
-			if trim and poly.size() >= 3 and not _crosses_itself(poly) \
+			if trim and poly.size() >= 3 and not _crosses_itself(poly) and _straight_kept(lot.corners, poly) \
 					and absf(LotPlanner._area(poly)) >= absf(LotPlanner._area(lot.corners)) * (1.0 - LOT_OVERLAP_KEEP):
 				var clear := true
 				for other in near:
@@ -3959,30 +3959,75 @@ func _clear_lot_overlaps(frozen: Dictionary) -> void:
 	_lot_trims = trimmed
 
 
-## The outline with each of its corners that stands inside `other` moved
-## out to other's nearest edge (and a millimetre past): the same corners,
-## the lot a sliver shorter or narrower where they met. Empty when a corner
-## is more than LOT_PUSH_MAX inside (not a sliver: left as cut).
+## The outline moved back off `other` across the one edge of other its
+## corners inside it are all nearest: every corner on that edge's line or
+## past it goes to a millimetre this side of it, so the same corners, an
+## edge moved in whole (still straight), the lot a sliver shorter or
+## narrower where they met. Empty when that takes more than
+## LOT_PUSH_MAX (not a sliver: left as cut).
 const LOT_PUSH_MAX := 0.5
 static func _push_out(poly: PackedVector2Array, other: PackedVector2Array) -> PackedVector2Array:
-	var out := poly.duplicate()
-	var n := other.size()
+	var inside := []
 	for i in poly.size():
-		var q := poly[i]
-		if not Geometry2D.is_point_in_polygon(q, other):
+		if Geometry2D.is_point_in_polygon(poly[i], other):
+			inside.append(i)
+	if inside.is_empty():
+		return PackedVector2Array()
+	var mid := LotPlanner._centroid(other)
+	var best_n := Vector2.ZERO
+	var best_a := Vector2.ZERO
+	var best := INF
+	var m := other.size()
+	for k in m:
+		var a := other[k]
+		var b := other[(k + 1) % m]
+		if a.distance_to(b) < 0.001:
 			continue
-		var best := q
-		var best_d := INF
-		for k in n:
-			var c := Geometry2D.get_closest_point_to_segment(q, other[k], other[(k + 1) % n])
-			if q.distance_to(c) < best_d:
-				best_d = q.distance_to(c)
-				best = c
-		if best_d > LOT_PUSH_MAX:
-			return PackedVector2Array()  # deep in: not a sliver
-		if best_d > 0.0:
-			out[i] = best + (best - q) / best_d * 0.001
+		var along := (b - a).normalized()
+		var n := Vector2(-along.y, along.x)
+		if n.dot(mid - a) < 0.0:
+			n = -n
+		var deepest := 0.0
+		for i in inside:
+			deepest = maxf(deepest, (poly[i] - a).dot(n))
+		if deepest < best:
+			best = deepest
+			best_n = n
+			best_a = a
+	if best > LOT_PUSH_MAX:
+		return PackedVector2Array()
+	# Every corner on that line or past it (the whole edge, its ends too,
+	# so it stays straight) goes back to just this side of it.
+	var out := poly.duplicate()
+	for i in poly.size():
+		var t := (poly[i] - best_a).dot(best_n)
+		if t > LOT_PUSH_MAX:
+			return PackedVector2Array()
+		if t > -0.01:
+			out[i] = poly[i] - best_n * (t + 0.001)
 	return out
+
+
+## True when every straight run of `was` (three corners in a line) is still
+## straight in `now`: a trim moves whole edges, never puts a little bend in
+## one (a neighbour's picture keeps only the bends, PostcardPicture).
+static func _straight_kept(was: PackedVector2Array, now: PackedVector2Array) -> bool:
+	var n := was.size()
+	for i in n:
+		var a := was[(i + n - 1) % n]
+		var b := was[i]
+		var c := was[(i + 1) % n]
+		if absf((b - a).normalized().cross((c - b).normalized())) > 0.001:
+			continue  # a real corner
+		var a2 := now[(i + n - 1) % n]
+		var b2 := now[i]
+		var c2 := now[(i + 1) % n]
+		if a2.distance_to(c2) < 0.001:
+			return false
+		var cl := Geometry2D.get_closest_point_to_segment(b2, a2, c2)
+		if cl.distance_to(b2) > 0.002:
+			return false
+	return true
 
 
 ## True when an outline's edges cross or touch anywhere but at their shared

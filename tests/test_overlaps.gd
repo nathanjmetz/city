@@ -28,7 +28,7 @@ const Audit := preload("res://tools/overlap_audit.gd")
 ## only at grade crossings; posts, lamps, mailboxes and street trees keep
 ## off the beds (the ground map, step 2), all but those two stop signs.
 ## Lots don't share ground (the ground map, step 3: a lot planned against
-## another gives up the sliver they'd share), but for one pair a town where
+## another gives up the sliver they'd share), but for three pairs a town where
 ## a corner reaches more than half a metre in (left as cut: moving it would
 ## reshape the lot).
 const KNOWN := {
@@ -44,14 +44,14 @@ const KNOWN := {
 		# next lot along the street (none of these lots were trimmed: the
 		# fix is a builder that keeps to the lot's width).
 		"building vs lot": 1,
-		"lot vs lot": 1,
+		"lot vs lot": 3,
 		"rail_bed:county vs post:stop_sign": 2,
 		"post:stop_sign vs curb_cut": 2,
 	},
 	"county_small": {
 		"building vs public_site": 4,
 		"building vs lot": 2,
-		"lot vs lot": 1,
+		"lot vs lot": 3,
 		"post:stop_sign vs curb_cut": 1,
 	},
 }
