@@ -282,20 +282,23 @@ static func _sheds_open(p: Dictionary, doors: Array) -> Array:
 
 ## The shed doors standing open on the farmsteads built close up and
 ## faded in, within `reach` metres (flat) of `eye`, for the door view:
-## [ref, door index, door in the view's world, 1.0 (all the way up)] each.
+## [ref, door index, door in the view's world, -1 (going up at its own
+## pace, from shut when first seen, so it never pops in open)] each.
 func open_doors(eye: Vector3, reach: float) -> Array:
 	var out := []
 	for k in _built:
 		var e: Dictionary = _built[k]
-		if e.fade < 1.0 or e.get("doors", []).is_empty() or not is_instance_valid(e.node) or not e.node.is_inside_tree():
+		if e.fade < 1.0 or e.get("doors", []).is_empty() or not is_instance_valid(e.node):
 			continue
-		var xf: Transform3D = e.node.global_transform
+		# (This view and the door view both stand untransformed in the
+		# game's world, so the farmstead's own frame places it.)
+		var xf: Transform3D = e.node.transform
 		if Vector2(xf.origin.x - eye.x, xf.origin.z - eye.z).length() > reach + 60.0:
 			continue
 		for i in e.doors.size():
 			var d: Array = e.doors[i]
 			out.append(["farm:%d,%d" % [k.x, k.y], i, [d[0], xf * (d[1] as Vector3), (xf.basis * (d[2] as Vector3)).normalized(),
-				d[3], d[4], d[5]], 1.0])
+				d[3], d[4], d[5]], -1.0])
 	return out
 
 

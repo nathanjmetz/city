@@ -242,12 +242,23 @@ func step(eye: Vector3) -> void:
 			_shown[key] = [0.0, e[2], xf]
 		var sh: Array = _shown[key]
 		sh[1] = e[2]  # (a farmstead's are placed in the world afresh each time)
-		sh[0] = float(e[3]) if float(e[3]) >= 0.0 else minf(float(sh[0]) + go / DoorEvents.ticks_of(sh[1][0], key), 1.0)
+		var paced := minf(float(sh[0]) + go / DoorEvents.ticks_of(sh[1][0], key), 1.0)
+		if float(e[3]) < 0.0:
+			sh[0] = paced
+		elif sh[1][0] == "bay":
+			# A truck waiting in a plant's bay: up at least as far as its
+			# wait says (a door already up for it stays up).
+			sh[0] = maxf(float(e[3]), paced)
+		else:
+			sh[0] = float(e[3])
 	var r2 := reach * reach
 	var list := []
 	for key in _shown.keys():
 		var sh: Array = _shown[key]
 		if not _open.has(key):
+			if _gone(key, sh):
+				_shown.erase(key)  # its building was taken down or drawn anew
+				continue
 			sh[0] = maxf(float(sh[0]) - go / DoorEvents.ticks_of(sh[1][0], key), 0.0)
 		var at: Vector3 = (sh[2] as Transform3D) * (sh[1][1] as Vector3)
 		var d2 := Vector2(at.x - eye.x, at.z - eye.z).length_squared()
@@ -259,6 +270,21 @@ func step(eye: Vector3) -> void:
 		list.sort_custom(func(a, b): return a[0] < b[0])
 		list.resize(cap)
 	_draw(list)
+
+
+## True when door `key` going down (shown as `sh`) belongs to a building no
+## longer drawn, or drawn anew without it: it goes at once, not over the
+## door's closing time.
+func _gone(key: String, sh: Array) -> bool:
+	var ref := key.get_slice("#", 0)
+	if _xf(ref) == null:
+		return true
+	if not (ref.begins_with("lot:") or ref.begins_with("svc:")) or not sh[1][0] in ["bay", "rollup"] \
+			or not events.doors_of.is_valid():
+		return false
+	var doors: Array = events.doors_of.call(ref)
+	var i := int(key.get_slice("#", 1))
+	return i >= doors.size() or not is_same(doors[i], sh[1])
 
 
 ## Where the building with the doors of place `ref` is drawn, or null.

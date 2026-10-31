@@ -506,7 +506,9 @@ func _spawn(key: String, refill := false) -> void:
 		if not masses.is_empty():
 			had.masses = masses.duplicate()
 		had.plan = plan
-		had.doors = drawn[4] if int(b.zone) != ZoneMap.Zone.RESIDENTIAL else []
+		had.erase("doors")
+		if not drawn[4].is_empty() and int(b.zone) != ZoneMap.Zone.RESIDENTIAL:
+			had.doors = drawn[4]
 		if _batches.has(had.sq):
 			_batches[had.sq].set_building(key, had.xf, solid, draped, footing, labels)
 			_merge_soon(had.sq)
@@ -536,7 +538,8 @@ func _spawn(key: String, refill := false) -> void:
 		bulk = [Rect2(box.position.x, box.position.z, box.size.x, box.size.z)]
 	rec.masses = bulk.duplicate()  # its footprints, for the yard props (StateView)
 	rec.plan = plan
-	rec.doors = drawn[4] if int(b.zone) != ZoneMap.Zone.RESIDENTIAL else []
+	if not drawn[4].is_empty() and int(b.zone) != ZoneMap.Zone.RESIDENTIAL:
+		rec.doors = drawn[4]  # (never in the browser: DoorLog.collect)
 	var pitched: bool = BuildingTypes.type_of(b) in ["house", "duplex", "row_home"]
 	var far := far_arrays(_far_surfaces(solid), bulk, int(b.zone) == ZoneMap.Zone.INDUSTRIAL,
 		_wall_colour(int(b.zone), rng), _roof_colour(pitched, rng), flat[0][1] if not flat.is_empty() else [])

@@ -33,15 +33,21 @@ static var drawn = null
 static func add(b: Object, kind: String, centre: Vector3, facing: Vector3, width: float, height: float,
 		colour: Color) -> void:
 	var log: Array = b.get_meta("door_log", [])
-	log.append([kind, centre, facing, width, height, colour])
+	var d := [kind, centre, facing, width, height, colour]
+	log.append(d)
 	b.set_meta("door_log", log)
 	if drawn != null:
-		drawn.append([kind, centre, facing, width, height, colour])
+		drawn.append(d)  # (the same entry, not a copy)
 
 
 ## The doors logged while `draw` runs (it draws one building): the list a
-## view keeps beside the building's drawing. Nests safely.
+## view keeps beside the building's drawing. An outer collection is put
+## back after (it doesn't see the inner one's doors). In the browser, which
+## has no door view, it only draws and collects nothing.
 static func collect(draw: Callable) -> Array:
+	if OS.has_feature("web"):
+		draw.call()
+		return []
 	var keep = drawn
 	drawn = []
 	draw.call()

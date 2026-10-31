@@ -35,7 +35,10 @@ extends RefCounted
 ##     of its bays from about BAY_LEAD seconds out (the door is slow), while
 ##     it drives in, while it stands in the bay with a trip ahead of it, and
 ##     while it pulls out; it comes down once the truck is in the street.
-##     The door opened is the one the builder drew nearest the bay.
+##     A truck setting off waits inside while its door goes up (bay_t,
+##     TrafficSim.BAY_WAIT: exactly as far up as the wait says, all the way
+##     as it pulls out). The door opened is the one the builder drew
+##     nearest the bay.
 ##   - a shop's stockroom roll-up ("rollup") goes up while a delivery truck
 ##     is coming within SHOP_NEAR metres, parked for the shop, or pulling
 ##     away (until SHOP_NEAR on).
@@ -45,8 +48,7 @@ extends RefCounted
 ##     SVC_NEAR metres: the door nearest the vehicle. A fire station's stay
 ##     shut (fire calls don't exist yet).
 ##   - a farmstead's machine shed by the month (`more`: FarmsteadNear.open_doors).
-## A truck still leaves the moment its trip starts, as it always did: its
-## door starts up as it pulls out (nothing here waits, so no trip changes).
+## Nothing here feeds back into the simulation.
 
 ## Ticks a garage door takes to go all the way up or down (10 s, as a real
 ## opener does; a tick is TrafficSim.DT).
@@ -110,6 +112,17 @@ var _near_eye := Vector3.INF
 var _near_tick := -1
 const NEAR_AGAIN := 16.0
 const NEAR_TICKS := 300
+## Those plants and shops are kept by square (CELL metres a side, each
+## looked over again after NEAR_TICKS), and no more than CELLS_AT_ONCE
+## squares are looked over in one call, so a camera sweeping across town
+## never stops a frame to look at every lot it passes.
+const CELL := 64.0
+const CELLS_AT_ONCE := 3
+var _cells := {}  # Vector2i -> [tick looked over, [lot refs]]
+var _cells_due := false
+## _garage_of, kept by trip (a trip's ends don't change while it drives):
+## trip id -> its answer.
+var _garage_memo := {}
 ## The vehicles a service garage keeps: its ambulances, cruisers and buses.
 const GARAGE_KINDS := {"ambulance": true, "police": true, "city_bus": true, "school_bus": true, "coach": true}
 
@@ -307,26 +320,38 @@ func _works(out: Dictionary, eye: Vector3, reach: float) -> bool:
 		return false
 	var r2 := reach * reach
 	var tick: int = traffic._tick
-	if _flat(eye, _near_eye) > NEAR_AGAIN or tick - _near_tick > NEAR_TICKS or tick < _near_tick:
+	if _flat(eye, _near_eye) > NEAR_AGAIN or tick - _near_tick > NEAR_TICKS or tick < _near_tick or _cells_due:
 		_near_eye = eye
 		_near_tick = tick
-		_near_lots.clear()
 		var r := reach + 40.0
-		var keys: Array = sim.lots.keys() if r > 4000.0 else sim.lots_near(Rect2(eye.x - r, eye.z - r, r * 2.0, r * 2.0))
-		for key in keys:
-			var z := _zone(sim, "lot:" + key)
-			if z != ZoneMap.Zone.INDUSTRIAL and z != ZoneMap.Zone.COMMERCIAL:
-				continue
-			# Only those drawn with a door that opens (most shops have none).
-			for d in doors_of.call("lot:" + key):
-				if d[0] == "bay" or d[0] == "rollup":
-					_near_lots.append("lot:" + key)
-					break
-		_near_lots.sort()
 		_near_set.clear()
-		for ref in _near_lots:
-			_near_set[ref] = true
+		if r > 4000.0:
+			for ref in _door_lots(sim, sim.lots.keys()):  # (a test's look at the whole town)
+				_near_set[ref] = true
+		else:
+			_cells_due = false
+			var made := 0
+			if _cells.size() > 4096:
+				_cells.clear()
+			for cx in range(floori((eye.x - r) / CELL), floori((eye.x + r) / CELL) + 1):
+				for cz in range(floori((eye.z - r) / CELL), floori((eye.z + r) / CELL) + 1):
+					var c := Vector2i(cx, cz)
+					var e = _cells.get(c)
+					if e == null or tick - int(e[0]) > NEAR_TICKS or tick < int(e[0]):
+						if made >= CELLS_AT_ONCE:
+							_cells_due = true  # the rest next time
+							if e == null:
+								continue
+						else:
+							made += 1
+							e = [tick, _door_lots(sim, sim.lots_near(Rect2(cx * CELL, cz * CELL, CELL, CELL)))]
+							_cells[c] = e
+					for ref in e[1]:
+						_near_set[ref] = true
+		_near_lots = _near_set.keys()
+		_near_lots.sort()
 		_near_svcs = _garages_near(sim, eye, reach)
+		_garage_memo.clear()
 	# Parked: a truck in a factory's bay with a trip ahead of it, or one
 	# stopped at a shop with somewhere to go next (one simply based there
 	# opens nothing).
@@ -339,24 +364,49 @@ func _works(out: Dictionary, eye: Vector3, reach: float) -> bool:
 					var pl := traffic.cached_place(ref)
 					var i := int(car.get("spot", -1))
 					if i >= 0 and i < pl.get("spots", []).size() and pl.spots[i].kind == "bay":
-						_put_site(out, ref, _bay_door(ref, pl.spots[i].local))
+						var up := -1.0
+						if car.has("bay_t"):
+							up = clampf(float(tick - int(car.bay_t)) / TrafficSim.BAY_WAIT, 0.0, 1.0)
+						_put_site(out, ref, _bay_door(ref, pl.spots[i].local), up)
 				ZoneMap.Zone.COMMERCIAL:
 					_put_site(out, ref, _rollup(ref, car))
 	return not _near_lots.is_empty() or not _near_svcs.is_empty()
+
+
+## Of lots `keys`, the plants and shops drawn with a door that opens (most
+## shops have none), as refs.
+func _door_lots(sim: CitySim, keys: Array) -> Array:
+	var out := []
+	for key in keys:
+		var z := int(sim.buildings.get(key, {}).get("zone", -1))
+		if z != ZoneMap.Zone.INDUSTRIAL and z != ZoneMap.Zone.COMMERCIAL:
+			continue
+		var ref: String = "lot:" + key
+		for d in doors_of.call(ref):
+			if d[0] == "bay" or d[0] == "rollup":
+				out.append(ref)
+				break
+	return out
 
 
 ## A truck coming to or going from a plant or a shop near the camera, or a
 ## service garage's own vehicle leaving it or coming back.
 func _work_car(out: Dictionary, car: Dictionary, eye: Vector3, r2: float) -> void:
 	var sim: CitySim = town if town != null else traffic._sim
-	var from: String = car.get("from_place", "")
-	var to: String = car.get("to_place", "")
-	if float(car.len) > 6.5 and (_near_set.has(from) or _near_set.has(to)):
-		_lot_truck(out, sim, car, from, to, eye, r2)
+	if float(car.len) > 6.5:
+		var from: String = car.get("from_place", "")
+		var to: String = car.get("to_place", "")
+		if _near_set.has(from) or _near_set.has(to):
+			_lot_truck(out, sim, car, from, to, eye, r2)
 	if not _near_svcs.is_empty() and GARAGE_KINDS.has(car.kind):
-		var id := _garage_of(sim, car, from, to)
-		if _near_svcs.has(id):
-			_put_garage(out, sim, car, id, _near_svcs[id])
+		# Worked out once a trip, not every tick for every bus in town.
+		var trip: int = car.get("trip", -1)
+		var g: int = _garage_memo.get(trip, -2)
+		if g == -2:
+			g = _garage_of(sim, car.get("from_place", ""), car.get("to_place", ""))
+			_garage_memo[trip] = g
+		if g >= 0 and _near_svcs.has(g >> 1):
+			_put_garage(out, sim, car, g >> 1, _near_svcs[g >> 1], g & 1 == 1)
 
 
 ## A truck coming to or going from a factory's bay or a shop.
@@ -426,12 +476,18 @@ func _rollup(ref: String, car: Dictionary) -> int:
 	return -1 if ups.is_empty() else ups[posmod(int(car.id), ups.size())]
 
 
-func _put_site(out: Dictionary, ref: String, door: int) -> void:
+## Lists door `door` of `ref` as up: exactly `exact` of the way (0 to 1),
+## or going up at its own pace (-1); with two trucks at one door, the one
+## going in or out keeps it going up, else the further up wins.
+func _put_site(out: Dictionary, ref: String, door: int, exact := -1.0) -> void:
 	if door < 0:
 		return
 	var key := "%s#%d" % [ref, door]
-	if not out.has(key):
-		out[key] = [ref, door, doors_of.call(ref)[door], -1.0]
+	var had: Array = out.get(key, [])
+	if not had.is_empty():
+		had[3] = -1.0 if exact < 0.0 or had[3] < 0.0 else maxf(exact, had[3])
+		return
+	out[key] = [ref, door, doors_of.call(ref)[door], exact]
 
 
 ## The service garages near the camera with bay doors drawn: id -> [its
@@ -457,9 +513,10 @@ func _garages_near(sim: CitySim, eye: Vector3, reach: float) -> Dictionary:
 	return out
 
 
-## The service garage `car` is the ambulance, cruiser or bus of, leaving
-## it or coming back to it (its trip starts or ends there), or -1.
-func _garage_of(sim: CitySim, car: Dictionary, from: String, to: String) -> int:
+## The service garage a vehicle with trip ends `from` and `to` (an
+## ambulance, cruiser or bus) leaves or comes back to: its id times 2, plus
+## 1 when coming back; -1 for none.
+func _garage_of(sim: CitySim, from: String, to: String) -> int:
 	for ref: String in [from, to]:
 		var id := -1
 		if ref.begins_with("police:") or ref.begins_with("hospital:"):
@@ -476,15 +533,22 @@ func _garage_of(sim: CitySim, car: Dictionary, from: String, to: String) -> int:
 		var at := ref.get_slice("@", 1)
 		var p := Vector3(float(at.get_slice(",", 0)), 0.0, float(at.get_slice(",", 1)))
 		if _flat(p, b.pos) <= Services.size_of(b).length() * 0.5 + 15.0:
-			return id
+			return id * 2 + (1 if ref == to else 0)
 	return -1
 
 
-## Opens the bay door of garage `id` nearest `car`, while it is within SVC_NEAR.
-func _put_garage(out: Dictionary, sim: CitySim, car: Dictionary, id: int, g: Array) -> void:
+## Opens the bay door of garage `id` nearest `car`, while it is within
+## SVC_NEAR; one coming back, from as far out as it drives while the door
+## goes up, so the door is up as it gets there.
+func _put_garage(out: Dictionary, sim: CitySim, car: Dictionary, id: int, g: Array, coming: bool) -> void:
 	var at: Vector3 = traffic.car_pose(car)[0]
 	var b: Dictionary = sim.services.buildings.get(id, {})
-	if b.is_empty() or _flat(at, b.pos) > SVC_NEAR + Services.size_of(b).length() * 0.5:
+	if b.is_empty():
+		return
+	var near := SVC_NEAR + Services.size_of(b).length() * 0.5
+	if coming:
+		near += maxf(float(car.get("v", 0.0)), LEAD_V) * GARAGE_TICKS * TrafficSim.DT
+	if _flat(at, b.pos) > near:
 		return
 	var local: Vector3 = (g[0] as Transform3D).affine_inverse() * at
 	var doors: Array = doors_of.call("svc:%d" % id)

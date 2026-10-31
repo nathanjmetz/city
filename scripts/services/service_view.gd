@@ -431,7 +431,9 @@ func _spawn(id: int, b: Dictionary) -> Node3D:
 	var size: Vector2 = Services.size_of(b)
 	root.set_meta("size", size)
 	var box := []  # (a lambda can't set the caller's variable)
-	root.set_meta("doors", DoorLog.collect(func(): box.append(build_of(sim, id, b))))
+	var doors := DoorLog.collect(func(): box.append(build_of(sim, id, b)))
+	if not doors.is_empty():
+		root.set_meta("doors", doors)  # (never in the browser: DoorLog.collect)
 	var built: Array = box[0]
 	built[1] = Terrain.drape_local(built[1], Transform3D(root.basis, root.position))
 	# A surface lot's light poles stand on their own concrete bases.
