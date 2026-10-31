@@ -155,6 +155,12 @@ func is_drawn() -> bool:
 	return true
 
 
+## The machine sheds standing open close up, for the door view
+## (FarmsteadNear.open_doors).
+func open_doors(eye: Vector3, reach: float) -> Array:
+	return _near.open_doors(eye, reach) if _near != null else []
+
+
 ## Chooses the blocks to build: those within reach of the camera that aren't
 ## built (or that the town changed), the nearest first. Blocks well past
 ## reach are let go, so a long flight over the county doesn't keep it all.

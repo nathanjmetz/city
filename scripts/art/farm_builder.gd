@@ -788,6 +788,8 @@ func _county_shed(s: Dictionary) -> void:
 	var dh := minf(eave - 0.6, 4.9)
 	var dx := cx - l * 0.18
 	var t := 0.14
+	DoorLog.add(self, "slider" if s.year < 1995 else "bay", part_xf * Vector3(dx, 0.2 + dh * 0.5, face - 0.04), Vector3(0, 0, -1),
+		dw, dh, wall.darkened(0.06) if s.year < 1995 else Color("#e8e6df"))
 	if s.year < 1995:
 		var leaf := wall.darkened(0.06)
 		for e in [-1.0, 1.0]:
@@ -879,6 +881,7 @@ func _county_quonset(s: Dictionary) -> void:
 	var dw := r * 1.1
 	var dh := sqrt(r * r - dw * dw * 0.25) - 0.4
 	_box("metal", Vector3(0.08, dh, dw), Vector3(x, 0.2 + dh * 0.5, c.y), steel.darkened(0.2))
+	DoorLog.add(self, "slider", part_xf * Vector3(x + e * 0.04, 0.2 + dh * 0.5, c.y), Vector3(e, 0, 0), dw, dh, steel.darkened(0.2))
 	for f in [-1.0, 0.0, 1.0]:
 		_box("paint", Vector3(0.1, dh, 0.12), Vector3(x + e * 0.03, 0.2 + dh * 0.5, c.y + f * (dw * 0.5 - 0.06)), steel.darkened(0.4))
 	_box("paint", Vector3(0.18, 0.22, dw + 0.4), Vector3(x + e * 0.08, 0.3 + dh, c.y), steel.darkened(0.4))

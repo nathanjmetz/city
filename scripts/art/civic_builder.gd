@@ -1463,6 +1463,7 @@ func _flat_roofed_at(mat: String, cx: float, w: float, d: float, cz: float, deck
 func _overhead_door(x: float, z: float, w: float, h: float, col: Color, back := false) -> void:
 	var s := 1.0 if back else -1.0
 	_glass_log.append([Vector3(x, 0.3 + h * 0.5, z), Vector3(1, 0, 0), w + 0.6, h + 0.5])
+	DoorLog.add(self, "bay", Vector3(x, 0.3 + h * 0.5, z + s * 0.07), Vector3(0, 0, s), w, h, col)
 	_box("siding", Vector3(w, h, 0.08), Vector3(x, 0.3 + h * 0.5, z + s * 0.03), Color(col, 0.0))
 	_glass(Vector3(x, 0.3 + h * 0.72, z + s * 0.08), Vector3(1 if back else -1, 0, 0), w - 0.5, 0.45, 0.0)
 	_box("paint", Vector3(w + 0.3, 0.18, 0.12), Vector3(x, 0.3 + h + 0.09, z + s * 0.06), Color("#cfcbc2"))

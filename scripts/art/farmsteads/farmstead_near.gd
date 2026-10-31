@@ -229,6 +229,8 @@ func _work() -> void:
 			b.step(_job.i)
 		else:
 			_finish(_job.key, _job.plan, b.commit())
+			if not OS.has_feature("web"):  # (the browser has no door view)
+				_built[_job.key].doors = _sheds_open(_job.plan, b.get_meta("door_log", []))
 		var took := (Time.get_ticks_usec() - t) / 1000.0
 		if took > worst_step_ms:
 			worst_step_ms = took
@@ -262,6 +264,42 @@ func _finish(key: Vector2i, p: Dictionary, meshes: Array) -> void:
 	add_child(node)
 	_built[key] = {"plan": p, "node": node, "fade": 0.0, "want": true}
 	built_count += 1
+
+
+## The big doors of the sheds whose machines are out this month
+## (FarmsteadParked.sheds_out, the month the yard was parked for), as the
+## builder logged them (DoorLog, the farmstead's frame).
+static func _sheds_open(p: Dictionary, doors: Array) -> Array:
+	var out := []
+	for q in FarmsteadParked.sheds_out(p, FarmsteadParked.month):
+		var r: Rect2 = FarmsteadPlan._extent(q).grow(1.0)
+		for d in doors:
+			var c: Vector3 = d[1]
+			if d[0] in ["slider", "bay"] and r.has_point(Vector2(c.x, c.z)):
+				out.append(d)
+	return out
+
+
+## The shed doors standing open on the farmsteads built close up and
+## faded in, within `reach` metres (flat) of `eye`, for the door view:
+## [ref, door index, door in the view's world, -1 (going up at its own
+## pace, from shut when first seen, so it never pops in open)] each.
+func open_doors(eye: Vector3, reach: float) -> Array:
+	var out := []
+	for k in _built:
+		var e: Dictionary = _built[k]
+		if e.fade < 1.0 or e.get("doors", []).is_empty() or not is_instance_valid(e.node):
+			continue
+		# (This view and the door view both stand untransformed in the
+		# game's world, so the farmstead's own frame places it.)
+		var xf: Transform3D = e.node.transform
+		if Vector2(xf.origin.x - eye.x, xf.origin.z - eye.z).length() > reach + 60.0:
+			continue
+		for i in e.doors.size():
+			var d: Array = e.doors[i]
+			out.append(["farm:%d,%d" % [k.x, k.y], i, [d[0], xf * (d[1] as Vector3), (xf.basis * (d[2] as Vector3)).normalized(),
+				d[3], d[4], d[5]], -1.0])
+	return out
 
 
 ## The yard light at night: the lamp's glow and its pool on the yard.
