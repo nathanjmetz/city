@@ -353,7 +353,7 @@ void fragment() {
 	float s_k = lb.r * min(length(s2), 1.0) * (1.0 - smoothstep(LAWN_STRIPE_FADE.x, LAWN_STRIPE_FADE.y, foot / 1.8))
 		* (1.0 - season_look.w * 0.8) * (1.0 - smoothstep(0.1, 0.4, snow));
 	col *= 1.0 + s_sq * mix(s_face, 1.0, 0.2) * 0.11 * s_k;
-#endif
+""" + LawnLook.SOD_GLSL + """#endif
 	// Spring green-up, then cool-season grass going tan and dormant in the
 	// late-summer dry spell and over winter (Indiana pasture). A town's
 	// mowed lawns (bluegrass and fescue) only go a muted olive, never sand:

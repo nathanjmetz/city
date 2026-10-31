@@ -35,7 +35,7 @@ var _cap := 0
 ## Vector2i tile -> [layer, Image a, Image b] (images with mipmaps)
 var _tiles := {}
 var _blank := []  # [Image a, Image b]: an empty layer
-## lot key -> [lot, look, tiles, marks, tier, zone]
+## lot key -> [lot, look, tiles, marks, tier, zone, young]
 var _lots := {}
 ## Vector2i tile -> {lot key: true}
 var _tile_lots := {}
@@ -153,14 +153,15 @@ func _scan_some() -> void:
 		if building == null:
 			continue
 		var zone := int(building.get("zone", ZoneMap.Zone.RESIDENTIAL))
+		var young := _is_young(building)
 		seen[key] = true
 		var had: Array = _lots.get(key, [])
-		if not had.is_empty() and is_same(had[0], lot) and had[4] == tier and had[5] == zone and not _replat:
+		if not had.is_empty() and is_same(had[0], lot) and had[4] == tier and had[5] == zone and had[6] == young and not _replat:
 			continue
-		if not had.is_empty() and not _replat_changed(had[0], lot) and had[4] == tier and had[5] == zone:
+		if not had.is_empty() and not _replat_changed(had[0], lot) and had[4] == tier and had[5] == zone and had[6] == young:
 			had[0] = lot
 			continue
-		_set_lot(key, lot, tier, zone)
+		_set_lot(key, lot, tier, zone, young)
 	_scan[1] = stop
 	if stop >= keys.size():
 		for key in _lots.keys():
@@ -175,12 +176,17 @@ static func _replat_changed(a: Dictionary, b: Dictionary) -> bool:
 	return a.get("corners") != b.get("corners") or a.get("front") != b.get("front") or a.get("normal") != b.get("normal")
 
 
-func _set_lot(key: String, lot: Dictionary, tier: int, zone: int) -> void:
+## Whether a building is new enough that its lawn is still sod or seed.
+func _is_young(building: Dictionary) -> bool:
+	return sim.tick_count - int(building.get("built", 0)) < LawnLook.YOUNG_DAYS * Seasons.TICKS_PER_DAY
+
+
+func _set_lot(key: String, lot: Dictionary, tier: int, zone: int, young := false) -> void:
 	_drop_lot(key)
-	var look := LawnLook.of(sim.city_seed, key, tier, zone == ZoneMap.Zone.RESIDENTIAL)
+	var look := LawnLook.of(sim.city_seed, key, tier, zone == ZoneMap.Zone.RESIDENTIAL, young)
 	var marks := LawnLook.wear_marks(lot, look)
 	var tiles := _tiles_of(lot)
-	_lots[key] = [lot, look, tiles, marks, tier, zone]
+	_lots[key] = [lot, look, tiles, marks, tier, zone, young]
 	for c in tiles:
 		if not _tile_lots.has(c):
 			_tile_lots[c] = {}

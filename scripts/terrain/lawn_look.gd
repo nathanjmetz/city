@@ -31,6 +31,35 @@ const TILE_PX := 128
 const NEUTRAL_A := Color(0.5, 0.0, 0.5, 0.0)
 const NEUTRAL_B := Color(0.0, 0.5, 0.5, 0.0)
 
+## A young lot's lawn (a building under YOUNG_DAYS game days old; Nathan,
+## 2026-10-31: "focus on what is least realistic ... in the first 3 - 4
+## hours"): every tier-0 yard of a young town drew from the same narrow band
+## and looked alike. A real new Indiana subdivision varies lot to lot: fresh
+## sod with its seams still showing, seeded lots thin and patchy, a few
+## mown in stripes, and an edge browner where the sprinklers miss. Fresh sod
+## is told to the ground shader by a grass kind of exactly 1.0 (SOD_KIND;
+## no other lawn reaches it), seeded thinness by a base wear in the alpha of
+## the texel, the sprinkler miss by an "edge_miss" wear line.
+const YOUNG_DAYS := 96
+const SOD_KIND := 1.0
+const SEED_WEAR := 0.36
+## The shader's seams: a piece of sod is 0.4 m by 1.5 m, laid brick-fashion;
+## its seams and tones fade where a piece is under a few pixels (no moire).
+## Runs after the mower stripes (s_ang is the lot's row direction).
+const SOD_GLSL := """	float sod_on = smoothstep(0.96, 1.0, la.b);
+	if (sod_on > 0.0) {
+		vec2 sd = vec2(cos(s_ang), sin(s_ang));
+		float sv = dot(p, vec2(-sd.y, sd.x)) / 0.4;
+		float srow = floor(sv);
+		float su = dot(p, sd) / 1.5 + fract(sin(srow * 12.9898) * 43758.5453);
+		float spiece = floor(su);
+		float stone = fract(sin(dot(vec2(srow, spiece), vec2(41.3, 289.1))) * 43758.5453);
+		float sfade = (1.0 - smoothstep(0.03, 0.09, foot)) * (1.0 - smoothstep(0.1, 0.4, snow));
+		float seam = smoothstep(0.42, 0.49, max(abs(fract(sv) - 0.5), abs(fract(su) - 0.5) * 0.8));
+		col *= 1.0 + ((stone - 0.5) * 0.12 - seam * 0.16) * sod_on * sfade;
+	}
+"""
+
 ## Mower stripes fade out between these shares of a pass pair (1.8 m) per
 ## pixel: gone by 0.25 m a pixel, where a pair still spans 7 pixels, far
 ## above the 2 a pattern needs not to alias, so they can never turn into a
@@ -91,7 +120,9 @@ static func roll(seed: int, key: String, what: String) -> float:
 ## stripe_turn (radians more, a showpiece's diagonal), watered, wear: [[kind,
 ## a, b, radius, strength] in the lot's own metres (x across the frontage
 ## from its middle, z back from the front line)]}.
-static func of(seed: int, key: String, tier: int, home := true) -> Dictionary:
+static func of(seed: int, key: String, tier: int, home := true, young := false) -> Dictionary:
+	if young and tier >= 0:
+		return _young(seed, key, tier, home)
 	var t := clampi(tier, -2, 2) + 2
 	var watered: bool = roll(seed, key, "water") < float(WATERED[t])
 	var lush := clampf(LUSH[t] + (roll(seed, key, "lush") - 0.5) * 0.36 + (0.12 if watered else 0.0), 0.0, 1.0)
@@ -101,7 +132,7 @@ static func of(seed: int, key: String, tier: int, home := true) -> Dictionary:
 		weeds = 0.6 * pow(roll(seed, key, "weeds"), 2.5)
 	var kind := roll(seed, key, "kind")
 	if tier >= 2:
-		kind = 0.65 + kind * 0.35  # sodded bluegrass
+		kind = 0.65 + kind * 0.3  # sodded bluegrass (never SOD_KIND)
 	var stripes := 0.0
 	if roll(seed, key, "stripes") < STRIPED[t]:
 		stripes = 0.9 if tier >= 2 else 0.65
@@ -112,6 +143,32 @@ static func of(seed: int, key: String, tier: int, home := true) -> Dictionary:
 	var out := {"lush": lush, "weeds": weeds, "kind": kind, "stripes": stripes, "stripe_along": along,
 		"stripe_turn": turn, "watered": watered, "wear": []}
 	out.wear = _wear(seed, key, t, home)
+	return out
+
+
+## A young lot's lawn: fresh sod (seams showing), seeded (thin, patchy,
+## fescue-and-rye) or sod already mown in stripes, whatever the owner's care
+## so far; no worn paths yet, and on half of them an edge the sprinklers miss.
+static func _young(seed: int, key: String, _tier: int, _home: bool) -> Dictionary:
+	var pick := roll(seed, key, "young")
+	var out := {"lush": 0.55, "weeds": 0.0, "kind": SOD_KIND, "stripes": 0.0, "stripe_along": roll(seed, key, "rows") < 0.6,
+		"stripe_turn": 0.0, "watered": false, "wear": [], "base_wear": 0.0, "young": true}
+	if pick < 0.42:
+		# Fresh sod: deep, even, bluegrass, seams in it.
+		out.lush = clampf(0.6 + (roll(seed, key, "lush") - 0.5) * 0.2, 0.0, 1.0)
+	elif pick < 0.82:
+		# Seeded: thin and patchy, straw where it hasn't come in, a few weeds.
+		out.lush = clampf(0.3 + (roll(seed, key, "lush") - 0.5) * 0.14, 0.0, 1.0)
+		out.weeds = 0.05 + 0.2 * roll(seed, key, "weeds")
+		out.kind = roll(seed, key, "kind") * 0.35
+		out.base_wear = SEED_WEAR + (roll(seed, key, "thin") - 0.5) * 0.08
+	else:
+		# Sod that has had its first mowings: striped, the seams gone.
+		out.lush = clampf(0.62 + (roll(seed, key, "lush") - 0.5) * 0.16, 0.0, 1.0)
+		out.kind = 0.7 + roll(seed, key, "kind") * 0.25
+		out.stripes = 0.65
+	if roll(seed, key, "miss") < 0.5:
+		out.wear.append(["edge_miss", -1.0 if roll(seed, key, "miss_side") < 0.5 else 1.0, 0.0, 1.5, 0.3 + 0.1 * roll(seed, key, "miss_k")])
 	return out
 
 
@@ -171,6 +228,9 @@ static func wear_marks(lot: Dictionary, look: Dictionary) -> Array:
 		match m[0]:
 			"edge":
 				out.append([at.call(-w * 0.5 + 0.8, 0.4), at.call(w * 0.5 - 0.8, 0.4), m[3], m[4]])
+			"edge_miss":
+				var x: float = m[1] * (w * 0.5 - 1.0)
+				out.append([at.call(x, 2.0), at.call(x, d - 1.5), m[3], m[4]])
 			"door":
 				var p: Vector2 = at.call(m[1] * w, house_back + 1.2)
 				out.append([p, p, m[3], m[4]])
@@ -197,7 +257,7 @@ static func stripe_angle(lot: Dictionary, look: Dictionary) -> float:
 ## shade are added after).
 static func colours(lot: Dictionary, look: Dictionary) -> Array:
 	var ang := stripe_angle(lot, look) * 2.0
-	var a := Color(look.lush, look.weeds, look.kind, 0.0)
+	var a := Color(look.lush, look.weeds, look.kind, float(look.get("base_wear", 0.0)))
 	var b := Color(look.stripes, cos(ang) * 0.5 + 0.5, sin(ang) * 0.5 + 0.5, 0.0)
 	return [a, b]
 

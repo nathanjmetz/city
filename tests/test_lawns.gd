@@ -73,6 +73,22 @@ func _seasons() -> void:
 	# critic, 2026-10-26: the town read as desert all winter).
 	var tired := LawnLook.resp_of(0.0)
 	var fed := LawnLook.resp_of(1.0)
+	# A young town's lots differ: sod, seed, striped; deterministic; no worn paths.
+	var kinds := {}
+	var misses := 0
+	for i in 200:
+		var y := LawnLook.of(5, "3:0:%d" % (i * 7), 0, true, true)
+		_check(y == LawnLook.of(5, "3:0:%d" % (i * 7), 0, true, true), "a young lot's lawn is the same every time")
+		kinds["sod" if y.kind == LawnLook.SOD_KIND else ("striped" if y.stripes > 0.0 else "seed")] = true
+		if y.kind != LawnLook.SOD_KIND and y.stripes == 0.0:
+			_check(y.base_wear > 0.2 and y.lush < 0.4, "a seeded lot is thin and patchy")
+		for m in y.wear:
+			_check(m[0] == "edge_miss", "a young lot has no worn path yet")
+			misses += 1
+		_check(LawnLook.of(5, "3:0:%d" % (i * 7), 0, true)["kind"] != LawnLook.SOD_KIND, "only a young lot is fresh sod")
+	_check(kinds.size() == 3 and misses > 60 and misses < 140, "sod, seed and striped lots, and sprinkler-missed edges (%d)" % misses)
+	_check(not LawnLook.of(5, "3:0:1", -1, true, true).has("young"), "a run-down lot is never young")
+	_check(TerrainView.SHADER.contains(LawnLook.SOD_GLSL), "the ground shader draws sod seams")
 	_check(is_equal_approx(LawnLook.resp_of(0.5), 1.0) and tired > 2.0 and fed < 0.5, "how hard lawns brown by watering")
 	var winter_ok := true
 	var capped := true
@@ -120,7 +136,8 @@ func _painted(field: TreeField) -> void:
 	for key in keys:
 		var lot: Dictionary = sim.lots[key]
 		var look := LawnLook.of(sim.city_seed, key, sim.care.tier_of(key),
-			int(sim.buildings[key].zone) == ZoneMap.Zone.RESIDENTIAL)
+			int(sim.buildings[key].zone) == ZoneMap.Zone.RESIDENTIAL,
+			sim.tick_count - int(sim.buildings[key].built) < LawnLook.YOUNG_DAYS * Seasons.TICKS_PER_DAY)
 		var tx := map.texel(Vector2(lot.pos.x, lot.pos.z))
 		if not tx.is_empty() and absf(tx[0].r - look.lush) < 0.01 and absf(tx[0].g - look.weeds) < 0.01:
 			right += 1
