@@ -72,44 +72,174 @@ const SRC := {
 ## owner: "lot:" + a lot key, "seg:N", "node:N", "rail:N", "county:N",
 ## "service:N", "warehouse:N", "run:N", "stop:N"), poly (world x/z), box, id}.
 static func collect(sim: CitySim) -> Array:
+	var r := Reader.new(sim)
+	r.step()
+	return r.out
+
+
+## Reads the town's footprints a little at a time (the game's ground survey
+## after a town opens, GroundMap.survey_step): step() until it says it's
+## done, then `out` holds what collect gives. Every step puts the builders'
+## shared settings back as it found them, so a building the game draws
+## between two steps is drawn as it would have been.
+class Reader:
+	extends RefCounted
+	var sim: CitySim
 	var out := []
-	var net := sim.network
-	# The road view's own reading of which streets are country roads, which
-	# are town streets, and its junction plans (curb returns, ramps).
-	var rv := RoadView.new()
-	rv.sim = sim
-	rv.network = net
-	rv._rural = rv._rural_segments()
-	rv._urban = rv._urban_next
-	var plans := Junction.plan(net, rv._rural, rv._urban, rv._signals())
-	# The curb claims as the game has them (RoadView pushes its plans).
-	var claims := CurbClaims.of(sim)
-	claims.set_junctions(plans)
-	_roads(out, sim, rv, plans)
-	_junction_bits(out, sim, plans)
-	_rail(out, sim)
-	_lots(out, sim)
-	_public(out, sim)
-	# The buildings first: their builders' aprons claim the curb (as the game's
-	# signs and lamps stand once the town is drawn).
-	_built(out, sim)
-	_signs(out, sim, rv, plans)
-	_name_posts(out, sim)
-	for l in StreetLights.place(net, rv._rural, claims):
-		var p: Vector3 = l[1]
-		_add(out, "post", "streetlight", "seg:%d" % int(l[6]), _sq(Vector2(p.x, p.z), POST.streetlight))
-	_poles(out, sim, rv)
-	rv.free()
-	for id in sim.buses.stops:
-		var st: Dictionary = sim.buses.stops[id]
-		var pos: Vector3 = st.pos
-		var pt: Vector3 = st.get("pt", pos)
-		var outward := Vector3(pos.x - pt.x, 0.0, pos.z - pt.z).normalized()
-		var at := pos + outward * (RoadStyle.CURB_WIDTH + RoadStyle.PARKWAY_WIDTH * 0.5)
-		_add(out, "post", "bus_stop", "stop:%s" % id, _sq(Vector2(at.x, at.z), POST.bus_stop))
-	for i in out.size():
-		out[i].id = i
-	return out
+	## Tells CurbClaims the junction plans worked out here (the auditor and
+	## tests: no road view does it for them). The game's survey leaves the
+	## road view's own plans be.
+	var push_junctions := true
+	var _stage := 0
+	var _i := 0
+	var _segs := []
+	var _keys := []
+	var _rv: RoadView
+	var _plans := {}
+	var _bv: BuildingView
+	var _drawn := {}  # lot key -> [masses, plan, trees (world entries)]
+	var _tree_grid := {}  # Vector2i (40 m) -> [world tree entries]
+	var _stale := 0
+
+	func _init(town: CitySim, push := true) -> void:
+		sim = town
+		push_junctions = push
+
+	func done() -> bool:
+		return _stage >= 12
+
+	## Reads on for about `usec` microseconds (at least one piece; all of it
+	## when 0). True once everything is read.
+	func step(usec := 0) -> bool:
+		var t0 := Time.get_ticks_usec()
+		var keep := GroundFootprints._builder_state()
+		while not done():
+			_work()
+			if usec > 0 and Time.get_ticks_usec() - t0 >= usec:
+				break
+		GroundFootprints._restore_builder_state(keep)
+		return done()
+
+	## What's left to read, about (0 to 1).
+	func share() -> float:
+		var per := float(_keys.size()) * 3.0 + 12.0
+		var at := float(_stage)
+		if _stage in [6, 7, 8]:
+			at += float(_stage - 6) * _keys.size() + _i
+		elif _stage > 8:
+			at += 3.0 * _keys.size()
+		return clampf(at / per, 0.0, 1.0)
+
+	func _work() -> void:
+		match _stage:
+			0:
+				# The road view's own reading of which streets are country
+				# roads, which are town streets, and its junction plans (curb
+				# returns, ramps).
+				_rv = RoadView.new()
+				_rv.sim = sim
+				_rv.network = sim.network
+				_rv._rural = _rv._rural_segments()
+				_rv._urban = _rv._urban_next
+				_plans = Junction.plan(sim.network, _rv._rural, _rv._urban, _rv._signals())
+				if push_junctions:
+					# The curb claims as the game has them (RoadView pushes its plans).
+					CurbClaims.of(sim).set_junctions(_plans)
+				_segs = sim.network.segments.keys()
+				_i = 0
+				_stage = 1
+			1:
+				# Streets and sidewalks, a few at a time.
+				var n := mini(_i + 24, _segs.size())
+				for i in range(_i, n):
+					GroundFootprints._road(out, sim, _rv, _plans, _segs[i])
+				_i = n
+				if _i >= _segs.size():
+					_stage = 2
+			2:
+				GroundFootprints._junction_bits(out, sim, _plans)
+				GroundFootprints._rail(out, sim)
+				GroundFootprints._lots(out, sim)
+				GroundFootprints._public(out, sim)
+				_stage = 3
+			3:
+				# The buildings first: their builders' aprons claim the curb (as
+				# the game's signs and lamps stand once the town is drawn).
+				_bv = BuildingView.new()
+				_bv.sim = sim
+				_bv._check_parkways()  # the view's keep-clear spots for street trees
+				_keys = sim.buildings.keys()
+				_keys.sort()
+				_i = 0
+				_stage = 6
+			6:
+				if _i < _keys.size():
+					GroundFootprints._built_one(self, _keys[_i])
+				_next_key(7)
+			7:
+				# Mailboxes once every lot is drawn (they keep off the neighbours' drives).
+				if _i < _keys.size():
+					GroundFootprints._mailbox_of(self, _keys[_i])
+				_next_key(8)
+			8:
+				if _i == 0:
+					_bv.free()
+					_bv = null
+					if _stale > 0:
+						print("ground_footprints: %d buildings drew no masses of their own (BuildingView would reuse the last one's)" % _stale)
+				if _i < _keys.size():
+					GroundFootprints._props_of(self, _keys[_i])
+				_next_key(9)
+			9:
+				GroundFootprints._signs(out, sim, _rv, _plans)
+				GroundFootprints._name_posts(out, sim)
+				_stage = 10
+			10:
+				for l in StreetLights.place(sim.network, _rv._rural, CurbClaims.of(sim)):
+					var p: Vector3 = l[1]
+					GroundFootprints._add(out, "post", "streetlight", "seg:%d" % int(l[6]), GroundFootprints._sq(Vector2(p.x, p.z), GroundFootprints.POST.streetlight))
+				GroundFootprints._poles(out, sim, _rv)
+				_rv.free()
+				_rv = null
+				_stage = 11
+			11:
+				for id in sim.buses.stops:
+					var st: Dictionary = sim.buses.stops[id]
+					var pos: Vector3 = st.pos
+					var pt: Vector3 = st.get("pt", pos)
+					var outward := Vector3(pos.x - pt.x, 0.0, pos.z - pt.z).normalized()
+					var at := pos + outward * (RoadStyle.CURB_WIDTH + RoadStyle.PARKWAY_WIDTH * 0.5)
+					GroundFootprints._add(out, "post", "bus_stop", "stop:%s" % id, GroundFootprints._sq(Vector2(at.x, at.z), GroundFootprints.POST.bus_stop))
+				for i in out.size():
+					out[i].id = i
+				_stage = 12
+
+	func _next_key(then: int) -> void:
+		_i += 1
+		if _i >= _keys.size():
+			_i = 0
+			_stage = then
+
+
+## The builders' shared settings (HouseBuilder's statics), to put back.
+static func _builder_state() -> Array:
+	return [HouseBuilder.last_masses, HouseBuilder.last_info, HouseBuilder.cuts_drawn, HouseBuilder.dry_all,
+		HouseBuilder.keep_arrays, HouseBuilder.owner_care, HouseBuilder.restored, HouseBuilder.flat_weeds,
+		HouseBuilder.grown, HouseBuilder.drawn, HouseBuilder.unseated]
+
+
+static func _restore_builder_state(k: Array) -> void:
+	HouseBuilder.last_masses = k[0]
+	HouseBuilder.last_info = k[1]
+	HouseBuilder.cuts_drawn = k[2]
+	HouseBuilder.dry_all = k[3]
+	HouseBuilder.keep_arrays = k[4]
+	HouseBuilder.owner_care = k[5]
+	HouseBuilder.restored = k[6]
+	HouseBuilder.flat_weeds = k[7]
+	HouseBuilder.grown = k[8]
+	HouseBuilder.drawn = k[9]
+	HouseBuilder.unseated = k[10]
 
 
 static func _add(out: Array, cat: String, what: String, key: String, poly: PackedVector2Array) -> void:
@@ -155,32 +285,32 @@ static func _strip(out: Array, cat: String, what: String, key: String, pts: Pack
 		_add(out, cat, what, key, PackedVector2Array([a + n * o0, b + n * o0, b + n * o1, a + n * o1]))
 
 
-static func _roads(out: Array, sim: CitySim, rv: RoadView, plans: Dictionary) -> void:
+## One street's pavement and its sidewalks' walking lines.
+static func _road(out: Array, sim: CitySim, rv: RoadView, plans: Dictionary, id: int) -> void:
 	var net := sim.network
-	for id in net.segments:
-		var sg: Dictionary = net.segments[id]
-		var type: int = sg.type
-		var pts := net.sample_segment(id)
-		if absf(pts[pts.size() / 2].y) > 1.0:
-			continue  # a bridge or tunnel: it claims no ground at grade
-		var hw := RoadStyle.half_width(type)
-		var key := "seg:%d" % id
-		_strip(out, "road", RoadStyle.TYPES[type].get("name", str(type)), key, pts, -hw, hw)
-		var spec: Dictionary = RoadStyle.TYPES[type]
-		if RoadStyle.is_freeway(type) or not spec.get("walk", true):
-			continue
-		var urban: bool = rv._urban.has(id)
-		var rural: bool = (rv._rural.has(id) or spec.get("rural", false))
-		if not urban and (spec.get("rural", false) or (rural and float(spec.median) == 0.0)):
-			continue  # a country road: no sidewalk
-		# Its sidewalks, trimmed where a shaped corner takes over.
-		var ja := Junction.trim(plans, sg.a, id)
-		var jb := Junction.trim(plans, sg.b, id)
-		if ja > 0.0 or jb > 0.0:
-			pts = RoadMesh._between(pts, ja, RoadNetwork.polyline_length(pts) - jb)
-		var mid := hw + RoadStyle.CURB_WIDTH + RoadStyle.PARKWAY_WIDTH + RoadStyle.SIDEWALK_WIDTH * 0.5
-		for side in [-1.0, 1.0]:
-			_strip(out, "sidewalk_line", "sidewalk", key, pts, side * (mid - WALK_CENTRE_HALF), side * (mid + WALK_CENTRE_HALF))
+	var sg: Dictionary = net.segments[id]
+	var type: int = sg.type
+	var pts := net.sample_segment(id)
+	if absf(pts[pts.size() / 2].y) > 1.0:
+		return  # a bridge or tunnel: it claims no ground at grade
+	var hw := RoadStyle.half_width(type)
+	var key := "seg:%d" % id
+	_strip(out, "road", RoadStyle.TYPES[type].get("name", str(type)), key, pts, -hw, hw)
+	var spec: Dictionary = RoadStyle.TYPES[type]
+	if RoadStyle.is_freeway(type) or not spec.get("walk", true):
+		return
+	var urban: bool = rv._urban.has(id)
+	var rural: bool = (rv._rural.has(id) or spec.get("rural", false))
+	if not urban and (spec.get("rural", false) or (rural and float(spec.median) == 0.0)):
+		return  # a country road: no sidewalk
+	# Its sidewalks, trimmed where a shaped corner takes over.
+	var ja := Junction.trim(plans, sg.a, id)
+	var jb := Junction.trim(plans, sg.b, id)
+	if ja > 0.0 or jb > 0.0:
+		pts = RoadMesh._between(pts, ja, RoadNetwork.polyline_length(pts) - jb)
+	var mid := hw + RoadStyle.CURB_WIDTH + RoadStyle.PARKWAY_WIDTH + RoadStyle.SIDEWALK_WIDTH * 0.5
+	for side in [-1.0, 1.0]:
+		_strip(out, "sidewalk_line", "sidewalk", key, pts, side * (mid - WALK_CENTRE_HALF), side * (mid + WALK_CENTRE_HALF))
 
 
 ## Curb ramps and crosswalks at shaped town corners (Junction._draw_node,
@@ -445,162 +575,161 @@ static func _poles(out: Array, sim: CitySim, rv: RoadView) -> void:
 			_add(out, "post", "utility_pole", "run:%d" % int(run.id), _sq(Vector2(b.x, b.z), POST.utility_pole))
 
 
-## Each building as its builder draws it (BuildingView._spawn's own steps:
+## One building as its builder draws it (BuildingView._spawn's own steps:
 ## its footprints, its plan, its trees), then what stands on its lot: the
-## drive and curb cut, the front walk, parking and docks, garage doors' aprons,
-## a car drawn out on the drive, the mailbox, the yard props.
-static func _built(out: Array, sim: CitySim) -> void:
-	var bv := BuildingView.new()
-	bv.sim = sim
-	bv._check_parkways()  # the view's keep-clear spots for street trees
-	var net := sim.network
-	var keys := sim.buildings.keys()
-	keys.sort()
-	var drawn := {}  # key -> [masses, plan, trees (world entries)]
-	var tree_grid := {}  # Vector2i (40 m) -> [world tree entries]
-	var stale := 0
-	for key in keys:
-		if not sim.lots.has(key):
-			continue
-		var lot: Dictionary = sim.lots[key]
-		var b: Dictionary = sim.buildings[key]
-		var frame := SiteLayout.frame(lot)
-		var xf := Transform3D(Basis.looking_at(-lot.normal, Vector3.UP), Vector3(lot.front.x, 0.0, lot.front.z))
-		var rng := RandomNumberGenerator.new()
-		rng.seed = b.seed
-		var fit := bv.fit_of(key, xf)
-		var type := BuildingTypes.type_of(b)
-		HouseBuilder.last_info = {}
-		var before := HouseBuilder.last_masses
-		HouseBuilder.last_masses = []
-		# What its builder paves across the parkway, as it draws it (the
-		# curb claims read the plan instead, so the two are checked apart).
-		HouseBuilder.cuts_drawn = []
-		var parts := bv._draw(key, lot, b, fit, rng.randi())
-		var paved: Array = HouseBuilder.cuts_drawn
-		HouseBuilder.cuts_drawn = null
-		var masses: Array = HouseBuilder.last_masses
-		if masses.is_empty() and not before.is_empty():
-			stale += 1  # BuildingView would have used the previous building's masses here
-		var plan: Dictionary = HouseBuilder.last_info.duplicate() if type == "house" else {}
-		var trees := []
-		# The trees as BuildingView._set_trees keeps them: street trees off
-		# its keep-clear spots and the mailbox, a corner lot's side-street
-		# trees too.
-		var mailbox := CurbClaims.of(sim).mailbox_at(key, true)  # BuildingView._set_trees' own reading
-		var planted := []
-		if parts.size() > 2:
-			for t: Array in parts[2]:
-				var w := frame * (t[0] as Vector3)
-				var street := (t[0] as Vector3).z < -0.5
-				if street and (not bv._parkway_free(Vector2(w.x, w.z)) \
-						or Vector2(w.x, w.z).distance_to(mailbox) < BuildingView.MAILBOX_CLEAR):
-					continue
-				planted.append([w, int(t[1]), float(t[3]), float(t[4]) if t.size() > 4 else -1.0, street])
-		for t: Array in bv._side_trees(key):
-			var q: Vector2 = t[0]
-			if bv._parkway_free(q):
-				planted.append([Vector3(q.x, 0.0, q.y), int(t[1]), float(t[3]), -1.0, true])
-		for e in planted:
-			var w: Vector3 = e[0]
-			trees.append(e)
-			var c := Vector2i(floori(w.x / 40.0), floori(w.z / 40.0))
-			if not tree_grid.has(c):
-				tree_grid[c] = []
-			tree_grid[c].append(e)
-		drawn[key] = [masses, plan, trees]
-		for m: Rect2 in masses:
-			_add(out, "building", type, "lot:" + key, _rect(frame, m))
-		for e in trees:
-			var w: Vector3 = e[0]
-			_add(out, "tree_trunk", "street" if e[4] else "yard", "lot:" + key, _sq(Vector2(w.x, w.z), TRUNK))
-		var tc := float(lot.get("to_curb", 2.0))
-		# Drive and curb cut, front walk.
-		var lay := SiteLayout.for_lot(sim, key)
-		if type == "house" and plan.has("drive_x"):
-			var dx := float(plan.drive_x)
-			var dw := float(plan.drive_w)
-			_add(out, "drive", "house", "lot:" + key, _rect(frame, Rect2(dx - dw * 0.5, 0.0, dw, maxf(float(plan.get("garage_z", 6.0)), 1.0))))
-			_add(out, "curb_cut", "house", "lot:" + key, _rect(frame, Rect2(dx - dw * 0.5, -tc, dw, tc)))
-			if plan.has("walk"):
-				# Where an L walk meets the drive, the drive takes over.
-				var wr: Rect2 = plan.walk
-				if wr.end.x > dx - dw * 0.5 and wr.position.x < dx + dw * 0.5 and wr.size.y < 2.0:
-					if wr.position.x < dx:
-						wr = Rect2(wr.position, Vector2(maxf(dx - dw * 0.5 - wr.position.x, 0.0), wr.size.y))
-					else:
-						wr = Rect2(Vector2(dx + dw * 0.5, wr.position.y), Vector2(maxf(wr.end.x - dx - dw * 0.5, 0.0), wr.size.y))
-				if wr.size.x > 0.1:
-					_add(out, "front_walk", "house", "lot:" + key, _rect(frame, wr))
-			for d in DoorLog.placed(plan):
-				if d[0] != "garage":
-					continue
-				var c: Vector3 = d[1]
-				var f: Vector3 = d[2]
-				var w := float(d[3])
-				var a2 := Vector2(c.x, c.z) + Vector2(f.x, f.z) * 1.5
-				var poly := PackedVector2Array()
-				for q in _obb(a2, Vector2(f.x, f.z), 1.5, w * 0.5):
-					var wq := frame * Vector3(q.x, 0.0, q.y)
-					poly.append(Vector2(wq.x, wq.z))
-				_add(out, "garage_apron", "house", "lot:" + key, poly)
-		else:
-			if type == "duplex":
-				if not lay.get("main_street", false) and not lay.spots.is_empty():
-					var dcx := float(lay.cut_x)
-					_add(out, "curb_cut", type, "lot:" + key, _rect(frame, Rect2(dcx - 1.5, -tc, 3.0, tc)))
-			else:
-				for c in paved:
-					_add(out, "curb_cut", type, "lot:" + key, _paved_poly(frame, c))
+## drive and curb cut, the front walk, parking and docks, garage doors'
+## aprons, a car drawn out on the drive. Its builder runs dry (its plan laid
+## out, no surfaces made: the same plan, as HouseBuilder.dry_all promises).
+static func _built_one(r: Reader, key: String) -> void:
+	var sim := r.sim
+	var out := r.out
+	var bv := r._bv
+	if not sim.lots.has(key):
+		return
+	var lot: Dictionary = sim.lots[key]
+	var b: Dictionary = sim.buildings[key]
+	var frame := SiteLayout.frame(lot)
+	var xf := Transform3D(Basis.looking_at(-lot.normal, Vector3.UP), Vector3(lot.front.x, 0.0, lot.front.z))
+	var rng := RandomNumberGenerator.new()
+	rng.seed = b.seed
+	var fit := bv.fit_of(key, xf)
+	var type := BuildingTypes.type_of(b)
+	HouseBuilder.last_info = {}
+	var before := HouseBuilder.last_masses
+	HouseBuilder.last_masses = []
+	# What its builder paves across the parkway, as it draws it (the
+	# curb claims read the plan instead, so the two are checked apart).
+	HouseBuilder.cuts_drawn = []
+	HouseBuilder.dry_all = true
+	var parts := bv._draw(key, lot, b, fit, rng.randi())
+	HouseBuilder.dry_all = false
+	var paved: Array = HouseBuilder.cuts_drawn
+	HouseBuilder.cuts_drawn = null
+	var masses: Array = HouseBuilder.last_masses
+	if masses.is_empty() and not before.is_empty():
+		r._stale += 1  # BuildingView would have used the previous building's masses here
+	var plan: Dictionary = HouseBuilder.last_info.duplicate() if type == "house" else {}
+	var trees := []
+	# The trees as BuildingView._set_trees keeps them: street trees off
+	# its keep-clear spots and the mailbox, a corner lot's side-street
+	# trees too.
+	var mailbox := CurbClaims.of(sim).mailbox_at(key, true)  # BuildingView._set_trees' own reading
+	var planted := []
+	if parts.size() > 2:
+		for t: Array in parts[2]:
+			var w := frame * (t[0] as Vector3)
+			var street := (t[0] as Vector3).z < -0.5
+			if street and (not bv._parkway_free(Vector2(w.x, w.z)) \
+					or Vector2(w.x, w.z).distance_to(mailbox) < BuildingView.MAILBOX_CLEAR):
+				continue
+			planted.append([w, int(t[1]), float(t[3]), float(t[4]) if t.size() > 4 else -1.0, street])
+	for t: Array in bv._side_trees(key):
+		var q: Vector2 = t[0]
+		if bv._parkway_free(q):
+			planted.append([Vector3(q.x, 0.0, q.y), int(t[1]), float(t[3]), -1.0, true])
+	for e in planted:
+		var w: Vector3 = e[0]
+		trees.append(e)
+		var c := Vector2i(floori(w.x / 40.0), floori(w.z / 40.0))
+		if not r._tree_grid.has(c):
+			r._tree_grid[c] = []
+		r._tree_grid[c].append(e)
+	r._drawn[key] = [masses, plan, trees]
+	for m: Rect2 in masses:
+		_add(out, "building", type, "lot:" + key, _rect(frame, m))
+	for e in trees:
+		var w: Vector3 = e[0]
+		_add(out, "tree_trunk", "street" if e[4] else "yard", "lot:" + key, _sq(Vector2(w.x, w.z), TRUNK))
+	var tc := float(lot.get("to_curb", 2.0))
+	# Drive and curb cut, front walk.
+	var lay := SiteLayout.for_lot(sim, key)
+	if type == "house" and plan.has("drive_x"):
+		var dx := float(plan.drive_x)
+		var dw := float(plan.drive_w)
+		_add(out, "drive", "house", "lot:" + key, _rect(frame, Rect2(dx - dw * 0.5, 0.0, dw, maxf(float(plan.get("garage_z", 6.0)), 1.0))))
+		_add(out, "curb_cut", "house", "lot:" + key, _rect(frame, Rect2(dx - dw * 0.5, -tc, dw, tc)))
+		if plan.has("walk"):
+			# Where an L walk meets the drive, the drive takes over.
+			var wr: Rect2 = plan.walk
+			if wr.end.x > dx - dw * 0.5 and wr.position.x < dx + dw * 0.5 and wr.size.y < 2.0:
+				if wr.position.x < dx:
+					wr = Rect2(wr.position, Vector2(maxf(dx - dw * 0.5 - wr.position.x, 0.0), wr.size.y))
+				else:
+					wr = Rect2(Vector2(dx + dw * 0.5, wr.position.y), Vector2(maxf(wr.end.x - dx - dw * 0.5, 0.0), wr.size.y))
+			if wr.size.x > 0.1:
+				_add(out, "front_walk", "house", "lot:" + key, _rect(frame, wr))
+		for d in DoorLog.placed(plan):
+			if d[0] != "garage":
+				continue
+			var c: Vector3 = d[1]
+			var f: Vector3 = d[2]
+			var w := float(d[3])
+			var a2 := Vector2(c.x, c.z) + Vector2(f.x, f.z) * 1.5
+			var poly := PackedVector2Array()
+			for q in _obb(a2, Vector2(f.x, f.z), 1.5, w * 0.5):
+				var wq := frame * Vector3(q.x, 0.0, q.y)
+				poly.append(Vector2(wq.x, wq.z))
+			_add(out, "garage_apron", "house", "lot:" + key, poly)
+	else:
+		if type == "duplex":
 			if not lay.get("main_street", false) and not lay.spots.is_empty():
-				var cx := float(lay.cut_x)
-				var cw := 3.0 if type == "duplex" else 6.0  # the drive on the lot (as #940 measured it)
-				_add(out, "drive", type, "lot:" + key, _rect(frame, Rect2(cx - cw * 0.5, 0.0, cw, maxf(float(lay.get("aisle_z", 0.0)), 3.0))))
-		for sp in lay.spots:
-			var at: Vector2 = sp.pos
-			var face: Vector2 = sp.get("face", Vector2(0, 1))
-			match String(sp.kind):
-				"stall":
-					_add(out, "parking_stall", type, "lot:" + key, _local_obb(frame, at, face, STALL.y * 0.5, STALL.x * 0.5))
-				"bay", "dock":
-					_add(out, "dock", type, "lot:" + key, _local_obb(frame, at - face * 3.0, face, 3.0, 1.8))
-				"garage":
-					if int(b.zone) != ZoneMap.Zone.RESIDENTIAL:
-						continue
-					# Drawn out on the drive where it's long enough (TrafficView._out_pick).
-					var front := at - face * 6.2
-					if (front - face * CAR.y * 0.5).y >= 2.6 and (front - face * CAR.y).y >= 0.0:
-						_add(out, "drive_car", type, "lot:" + key, _local_obb(frame, front - face * CAR.y * 0.5, face, CAR.y * 0.5, CAR.x * 0.5))
-	# Mailboxes once every lot is drawn (they keep off the neighbours' drives).
-	for key in keys:
-		if drawn.has(key) and int(sim.buildings[key].zone) == ZoneMap.Zone.RESIDENTIAL:
-			var box := bv._mailbox_at(key)
-			if box.is_finite():
-				_add(out, "post", "mailbox", "lot:" + key, _sq(box, POST.mailbox))
-	bv.free()
-	if stale > 0:
-		print("ground_footprints: %d buildings drew no masses of their own (BuildingView would reuse the last one's)" % stale)
-	# Yard props (StateView._place: the drawn masses, plan and nearby trees).
-	for key in keys:
-		if not drawn.has(key) or LotState.kind_of(sim.buildings[key]) == "":
-			continue
-		var p: Vector3 = sim.lots[key].pos
-		var near := []
-		var c0 := Vector2i(floori(p.x / 40.0), floori(p.z / 40.0))
-		for dx in [-1, 0, 1]:
-			for dz in [-1, 0, 1]:
-				for e in tree_grid.get(c0 + Vector2i(dx, dz), []):
-					if Vector2(e[0].x, e[0].z).distance_to(Vector2(p.x, p.z)) < 40.0:
-						near.append([e[0], e[1], e[2], e[3]])
-		var yard := LotState.yard_of(sim, key, drawn[key][0], drawn[key][1], near)
-		var b: Dictionary = sim.buildings[key]
-		var piled := float(sim.hubs.trash.get(int(sim.lots[key].seg), 0.0)) >= Balance.GARBAGE_PILE_LB
-		var items := LotState.items(sim.city_seed, key, int(b.seed), sim.care.tier_of(key), sim.care.cond_of(key), yard, piled)
-		var frame := SiteLayout.frame(sim.lots[key])
-		for it in items:
-			if it.item in ["lease", "flag"]:
-				continue  # a sign on a post or a flag pole: stands where it's meant to
-			_add(out, "prop", String(it.item), "lot:" + key, _rect(frame, LotState.footprint(it.item, it.at, it.yaw)))
+				var dcx := float(lay.cut_x)
+				_add(out, "curb_cut", type, "lot:" + key, _rect(frame, Rect2(dcx - 1.5, -tc, 3.0, tc)))
+		else:
+			for c in paved:
+				_add(out, "curb_cut", type, "lot:" + key, _paved_poly(frame, c))
+		if not lay.get("main_street", false) and not lay.spots.is_empty():
+			var cx := float(lay.cut_x)
+			var cw := 3.0 if type == "duplex" else 6.0  # the drive on the lot (as #940 measured it)
+			_add(out, "drive", type, "lot:" + key, _rect(frame, Rect2(cx - cw * 0.5, 0.0, cw, maxf(float(lay.get("aisle_z", 0.0)), 3.0))))
+	for sp in lay.spots:
+		var at: Vector2 = sp.pos
+		var face: Vector2 = sp.get("face", Vector2(0, 1))
+		match String(sp.kind):
+			"stall":
+				_add(out, "parking_stall", type, "lot:" + key, _local_obb(frame, at, face, STALL.y * 0.5, STALL.x * 0.5))
+			"bay", "dock":
+				_add(out, "dock", type, "lot:" + key, _local_obb(frame, at - face * 3.0, face, 3.0, 1.8))
+			"garage":
+				if int(b.zone) != ZoneMap.Zone.RESIDENTIAL:
+					continue
+				# Drawn out on the drive where it's long enough (TrafficView._out_pick).
+				var front := at - face * 6.2
+				if (front - face * CAR.y * 0.5).y >= 2.6 and (front - face * CAR.y).y >= 0.0:
+					_add(out, "drive_car", type, "lot:" + key, _local_obb(frame, front - face * CAR.y * 0.5, face, CAR.y * 0.5, CAR.x * 0.5))
+
+
+## A home's curbside mailbox (once every lot is drawn: it keeps off the
+## neighbours' drives).
+static func _mailbox_of(r: Reader, key: String) -> void:
+	if r._drawn.has(key) and int(r.sim.buildings[key].zone) == ZoneMap.Zone.RESIDENTIAL:
+		var box := r._bv._mailbox_at(key)
+		if box.is_finite():
+			_add(r.out, "post", "mailbox", "lot:" + key, _sq(box, POST.mailbox))
+
+
+## A lot's yard props (StateView._place: the drawn masses, plan and nearby trees).
+static func _props_of(r: Reader, key: String) -> void:
+	var sim := r.sim
+	if not r._drawn.has(key) or LotState.kind_of(sim.buildings[key]) == "":
+		return
+	var p: Vector3 = sim.lots[key].pos
+	var near := []
+	var c0 := Vector2i(floori(p.x / 40.0), floori(p.z / 40.0))
+	for dx in [-1, 0, 1]:
+		for dz in [-1, 0, 1]:
+			for e in r._tree_grid.get(c0 + Vector2i(dx, dz), []):
+				if Vector2(e[0].x, e[0].z).distance_to(Vector2(p.x, p.z)) < 40.0:
+					near.append([e[0], e[1], e[2], e[3]])
+	var yard := LotState.yard_of(sim, key, r._drawn[key][0], r._drawn[key][1], near)
+	var b: Dictionary = sim.buildings[key]
+	var piled := float(sim.hubs.trash.get(int(sim.lots[key].seg), 0.0)) >= Balance.GARBAGE_PILE_LB
+	var items := LotState.items(sim.city_seed, key, int(b.seed), sim.care.tier_of(key), sim.care.cond_of(key), yard, piled)
+	var frame := SiteLayout.frame(sim.lots[key])
+	for it in items:
+		if it.item in ["lease", "flag"]:
+			continue  # a sign on a post or a flag pole: stands where it's meant to
+		_add(r.out, "prop", String(it.item), "lot:" + key, _rect(frame, LotState.footprint(it.item, it.at, it.yaw)))
 
 
 ## Paving a builder drew out to the curb ([x0, x1, curb z, flare], lot
