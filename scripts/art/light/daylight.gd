@@ -65,6 +65,17 @@ static func humidity(months: float) -> float:
 	return 0.5 - 0.5 * cos(TAU * (fposmod(months, 12.0) - 0.55) / 12.0)
 
 
+## How dark the land is for a sun at height `e` (degrees), 0 to 1: low
+## through civil twilight (to 6 degrees down: the street still clearly
+## readable under a blue-violet sky, at most 0.25), then darker through
+## nautical twilight, full night by about 13 degrees down. Until
+## 2026-10-31 it was the lights' curve (lights_on), half dark at 2 degrees
+## down and near night by 4, so dusk came on as night.
+static func dark_at(e: float) -> float:
+	var civil := 0.25 * (1.0 - smoothstep(-6.0, 3.0, e))
+	return lerpf(civil, 1.0, 1.0 - smoothstep(-13.0, -6.0, e))
+
+
 ## The light for a sun at height `e` (degrees, as seen) on air of humidity
 ## `humid` (0 to 1). Colours are as the editor shows them (sRGB), like
 ## SkyLight's own; strengths are relative to the tuned 40-degree look.
@@ -95,7 +106,10 @@ static func at(e: float, humid: float, rich := false) -> Dictionary:
 		"fog_color": Color(0.05, 0.06, 0.1).lerp(haze, day).lerp(Color(0.62, 0.5, 0.5),
 			0.35 * (1.0 - smoothstep(0.0, 22.0, absf(e))) * (1.0 - smoothstep(-1.0, 6.0, -e))),
 		"haze": lerpf(HAZE_THIN, HAZE_THICK, humid),
-		"darkness": 1.0 - smoothstep(-7.0, 3.0, e),
+		"darkness": dark_at(e),
+		# The lights coming on: streetlights on their photocells, lit
+		# windows, signs and headlamps, from about sunset (unchanged).
+		"lights_on": 1.0 - smoothstep(-7.0, 3.0, e),
 		# First stars at the end of civil twilight, most of them by nautical.
 		"stars": 0.9 * (1.0 - smoothstep(-13.0, -5.0, e)),
 	}

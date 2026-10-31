@@ -137,7 +137,14 @@ func _light() -> void:
 	_check(Daylight.air_mass(90.0) < 1.001 and absf(Daylight.air_mass(0.0) - 38.1) < 0.5, "air mass 1 overhead, 38 at the horizon")
 	var k := Daylight.kelvin_color(6600.0)
 	_check(k.r > 0.98 and k.g > 0.97 and k.b > 0.97, "6,600 K is white")
-	_check(noon.darkness == 0.0 and Daylight.at(-10.0, 0.5).darkness == 1.0, "dark only well after sunset")
+	_check(noon.darkness == 0.0 and Daylight.at(-13.0, 0.5).darkness == 1.0, "dark only well after sunset")
+	# Real twilight (2026-10-31): civil twilight (to 6 degrees down) keeps
+	# the street readable, nautical (to 12) darkens it; the lights still come
+	# on at about sunset.
+	_check(Daylight.at(-2.0, 0.5).darkness < 0.2 and Daylight.at(-6.0, 0.5).darkness <= 0.25 + 0.001,
+		"civil twilight stays light (%.2f at -2, %.2f at -6)" % [Daylight.at(-2.0, 0.5).darkness, Daylight.at(-6.0, 0.5).darkness])
+	_check(Daylight.at(-9.0, 0.5).darkness > 0.4 and Daylight.at(-12.0, 0.5).darkness > 0.9, "nautical twilight goes dark")
+	_check(Daylight.at(-2.0, 0.5).lights_on > 0.45 and Daylight.at(5.0, 0.5).lights_on == 0.0, "the lights come on around sunset")
 	var blue := Daylight.at(-5.0, 0.5)
 	_check(blue.zenith.b > blue.zenith.r * 3.0 and blue.stars < 0.3, "blue hour: deep blue sky, few stars yet")
 	_check(Daylight.at(-15.0, 0.5).stars > 0.85, "stars out at night")
