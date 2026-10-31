@@ -691,8 +691,9 @@ func _nearest_node(p: Vector3, r: float) -> int:
 ## {pos, parent, radius (per node; 0 = not there), main (heaviest child per
 ## node, -1 none), height, crown (centre, radii), trunk (node ids up the
 ## main stem)}. All at once; AgeCut does the same a slice at a time.
-## `street`: kept as a town keeps a street tree (AgeCut.STREET).
-func at_age(age: float, street := false) -> Dictionary:
+## `street`: kept as a town keeps a street tree (AgeCut: NOT_STREET,
+## NARROW or RAISED).
+func at_age(age: float, street := AgeCut.NOT_STREET) -> Dictionary:
 	var cut := AgeCut.new(self, age, street)
 	while not cut.step(1_000_000_000):
 		pass
@@ -713,6 +714,7 @@ class AgeCut:
 	##   biggest its leaves stay over the parkway (towns plant narrow
 	##   cultivars, and trim a young tree back off the walk and the street).
 	const RAISE_TRUNK := 0.5
+	enum { NOT_STREET, NARROW, RAISED }
 	const PASSES := 10
 	var tree := {}
 	var _g: TreeGrower
@@ -735,11 +737,11 @@ class AgeCut:
 	var _hi := -Vector3(1e9, 1e9, 1e9)
 	var _scale := 1.0
 
-	func _init(g: TreeGrower, age: float, street := false) -> void:
+	func _init(g: TreeGrower, age: float, street := NOT_STREET) -> void:
 		_g = g
 		_age = age
-		_street = street
-		if street and not TreeKinds.street_raised(g.sp, age):
+		_street = street != NOT_STREET
+		if street == NARROW:
 			_young_reach = 0.0  # worked out from its height (_narrowed)
 		_n = g.pos.size()
 
@@ -901,7 +903,8 @@ class AgeCut:
 			if _keep[i] == 1 and _on_trunk[i] == 0 \
 					and Vector2(pos[i].x - pos[0].x, pos[i].z - pos[0].z).length() > RAISE_TRUNK:
 				low = minf(low, pos[i].y)
-		var want := TreeKinds.STREET_LIFT + TreeMesher.CARD[0] * 0.5
+		# Clear of the biggest leaf cards, the light trees' (lod 1).
+		var want := TreeKinds.STREET_LIFT + TreeMesher.CARD[1] * 0.5
 		if low == INF or low >= want:
 			return pos
 		var dy := want - low

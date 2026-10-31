@@ -245,14 +245,18 @@ static func yard_age(sp: int, seed: int, room := 1.0) -> float:
 ## Street trees on a new street come in grown too (2026-10-31; Nathan, on
 ## tree ages: "Make smart choices"), the parkway of an established Indiana
 ## street the town planted decades back and has replanted one tree at a
-## time since: the maples and honey locusts planted when the elms died, now
-## 25 to 56 years old, and about one in six a young replacement for an ash
-## the emerald ash borer took or one lost to a storm (nursery stock or 13
-## years). In all: about one in twelve nursery stock, one in twelve 13
-## years, half 18 to 33, and a quarter big old ones (56). The yards' own
-## mesh ages (YARD_PICKS), so a street adds no meshes the yards haven't.
+## time since: the maples and honey locusts planted when the elms died,
+## now 25 to 56 years old, and about one in ten a young replacement
+## (nursery stock) for an ash the emerald ash borer took or one lost to a
+## storm. In all: one in ten nursery stock, three in ten 25 years, a third
+## 33 and a quarter big old ones (56); a kind not yet tall enough at 25 to
+## be pruned up over the street (TreeKinds.street_raised) is 33. Corners,
+## streetlights and wires start some younger (street_age): under a pole
+## line's wires every one is nursery stock (the game has no small
+## utility-friendly street kind yet). The yards' own mesh ages
+## (YARD_PICKS), so a street adds no meshes the yards haven't.
 ## Each entry: [share of trees up to here, age] (0: nursery stock).
-const STREET_MIX := [[0.08, 0.0], [0.16, 13.0], [0.28, 18.0], [0.48, 25.0], [0.76, 33.0], [1.0, 56.0]]
+const STREET_MIX := [[0.10, 0.0], [0.40, 25.0], [0.75, 33.0], [1.0, 56.0]]
 
 
 ## How old a street tree of kind `sp` is the day its lot's home is
@@ -269,6 +273,9 @@ static func street_age(sp: int, seed: int, size := 1.0, reach := INF, top := INF
 	var young := TreeKinds.nursery_age(sp)
 	var k := 0
 	while k < STREET_MIX.size() - 1 and u >= float(STREET_MIX[k][0]):
+		k += 1
+	# A pick too young to be pruned up over the street is the next age that is.
+	while k > 0 and k < STREET_MIX.size() - 1 and not TreeKinds.street_raised(sp, float(STREET_MIX[k][1])):
 		k += 1
 	# Stepped down through the mix until it fits, and is tall enough to be
 	# pruned up over the street (TreeKinds.street_raised): a younger one is

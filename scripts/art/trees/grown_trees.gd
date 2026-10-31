@@ -364,13 +364,12 @@ func _file(rec: Array, xf: Transform3D, d: float, lod: int, shadow := false) -> 
 	# its mesh never older than the tree, so drawn at its size the crown is
 	# never lower; a young one's kept narrow, its mesh never younger, so
 	# drawn at its size never wider.
-	var street := rec.size() > 6 and bool(rec[6])
-	if street:
-		var age := float(rec[3])
-		var lo := b - 1 if b > 0 and float(BUCKETS[b]) > age + 0.001 else b
-		var hi := b + 1 if b < BUCKETS.size() - 1 and float(BUCKETS[b]) < age - 0.001 else b
-		b = lo if TreeKinds.street_raised(sp, BUCKETS[lo]) else hi
-	var key := mesh_key(sp, posmod(int(rec[4]), TreeGrower.VARIANTS), b, lod, street)
+	var mode := TreeGrower.AgeCut.NOT_STREET
+	if rec.size() > 6 and bool(rec[6]):
+		var pick := street_mesh(sp, float(rec[3]))
+		b = pick.x
+		mode = pick.y
+	var key := mesh_key(sp, posmod(int(rec[4]), TreeGrower.VARIANTS), b, lod, mode)
 	var size := xf.basis.get_scale().y
 	var yaw := atan2(xf.basis.x.z, xf.basis.x.x)
 	var group := key
@@ -529,17 +528,41 @@ static func bucket_size(sp: int, b: int) -> float:
 
 ## A mesh's key: kind, variant, age bucket, level and whether it is a
 ## street tree's (STREET_BIT) packed in one number.
-static func mesh_key(sp: int, variant: int, b: int, lod: int, street := false) -> int:
-	return (sp << 7) | (variant << 5) | (b << 1) | lod | (STREET_BIT if street else 0)
+static func mesh_key(sp: int, variant: int, b: int, lod: int, street := 0) -> int:
+	var bits := 0
+	if street == TreeGrower.AgeCut.NARROW:
+		bits = STREET_BIT
+	elif street == TreeGrower.AgeCut.RAISED:
+		bits = RAISED_BIT
+	return (sp << 7) | (variant << 5) | (b << 1) | lod | bits
 
 
-## Keys of street trees' meshes (below SHADOW_BIT; kinds fit in the four
-## bits under it).
+## Keys of young street trees' narrow meshes (below SHADOW_BIT; kinds fit
+## in the four bits under it), and of tall ones' raised meshes (above it).
 const STREET_BIT := 1 << 11
+const RAISED_BIT := 1 << 13
 
 
-static func key_street(key: int) -> bool:
-	return (key & STREET_BIT) != 0
+## How a key's mesh is kept as a street tree (TreeGrower.AgeCut's modes).
+static func key_street(key: int) -> int:
+	if (key & RAISED_BIT) != 0:
+		return TreeGrower.AgeCut.RAISED
+	return TreeGrower.AgeCut.NARROW if (key & STREET_BIT) != 0 else TreeGrower.AgeCut.NOT_STREET
+
+
+## A street tree's mesh at an age: Vector2i(bucket, AgeCut mode). Raised
+## from the bucket at or under its age (so drawn at its size its crown is
+## never lower than the mesh's) once that bucket is tall enough to be
+## raised; until then narrow, from the bucket at or over its age (so drawn
+## at its size never wider). Every raised mesh a street tree can be drawn
+## with is raised, and never drawn smaller than the mesh.
+static func street_mesh(sp: int, age: float) -> Vector2i:
+	var b := bucket(age)
+	var lo := b - 1 if b > 0 and float(BUCKETS[b]) > age + 0.001 else b
+	if TreeKinds.street_raised(sp, BUCKETS[lo]):
+		return Vector2i(lo, TreeGrower.AgeCut.RAISED)
+	var hi := b + 1 if b < BUCKETS.size() - 1 and float(BUCKETS[b]) < age - 0.001 else b
+	return Vector2i(hi, TreeGrower.AgeCut.NARROW)
 
 
 ## The group of card trees standing in for one kind at one level (below 0,
