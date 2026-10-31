@@ -5,8 +5,9 @@ extends RefCounted
 ##   - asphalt is a mid grey that varies by age from block to block, with
 ##     darker repair patches, crack sealer across the lanes, oil drips and a
 ##     speckled aggregate grain up close
-##   - sidewalks are pale concrete slabs with a joint every 5 ft and slightly
-##     different tints from slab to slab
+##   - sidewalks are weathered grey concrete slabs with a joint every 5 ft
+##     and different tints from slab to slab; on the desktop also the odd
+##     newer or patched slab and dirt along both grassy edges
 ##   - paint is worn: brightest at the edges of the wheel paths, faded and
 ##     patchy elsewhere
 ## All shaders are cheap world-space ones that run in the Compatibility renderer.
@@ -266,15 +267,53 @@ void fragment() {
 	float close = clamp(1.0 - length(VERTEX) / 200.0, 0.0, 1.0);
 	float along = UV.y * 4.0;
 	float slab = floor(along / %f);
-	float tint = fract(sin(slab * 12.9898 + 3.1) * 43758.5453);
+	float pick = fract(sin(slab * 12.9898 + 3.1) * 43758.5453);
 	// Slabs smaller than a few pixels blend to their average, so they don't
 	// shimmer while the camera moves.
-	tint = mix(tint, 0.5, smoothstep(0.1, 0.35, fwidth(along) / %f));
+	float blend = smoothstep(0.1, 0.35, fwidth(along) / %f);
+	float tint = mix(pick, 0.5, blend);
 	vec3 col = base.rgb * (0.94 + tint * 0.09);
 	// Weathering stains and grit.
 	float stain = texture(noise_soft, turn(p, 0.5) / 9.0).r;
+	float grit = texture(noise_grain, p / 0.5).r;
 	col *= 1.0 - smoothstep(0.55, 0.85, stain) * 0.06;
-	col *= 1.0 + (texture(noise_grain, p / 0.5).r - 0.5) * 0.16 * close;
+#if CURRENT_RENDERER != RENDERER_COMPATIBILITY
+	if (joints > 0.0) {
+		// An old town's walks (desktop only: the browser draws them plain):
+		// slabs poured in different years, so the grey spreads wider; about
+		// one in fifteen replaced in newer, paler concrete and one in twenty
+		// a darker patch; more stains; and dirt and moss along both edges,
+		// where the grass meets the walk. All of it per slab or fixed in
+		// the ground, so it never moves, and far off it blends to its average.
+		col = base.rgb * (0.88 + tint * 0.2);
+		float second = fract(pick * 91.7 + 0.37);
+		float newer = step(0.93, second) * (1.0 - blend);
+		float patched = step(second, 0.05) * (1.0 - blend);
+		col *= mix(vec3(1.0), vec3(1.1, 1.11, 1.13), newer);
+		col *= mix(vec3(1.0), vec3(0.76, 0.75, 0.72), patched);
+		col *= 1.0 - smoothstep(0.5, 0.85, stain) * 0.1 * (1.0 - newer);
+		// The walk's width from how fast UV.x crosses it: a street's walk
+		// runs 0 to 1 across, but a junction's pieces carry their own
+		// position (one a metre), which says nothing about their edges.
+		float across = UV.x * 4.0;
+		vec2 px = dFdx(p);
+		vec2 py = dFdy(p);
+		float ax = dFdx(across);
+		float ay = dFdy(across);
+		float det = px.x * py.y - px.y * py.x;
+		det = abs(det) < 1e-10 ? 1e-10 : det;
+		vec2 g = vec2(ax * py.y - ay * px.y, ay * px.x - ax * py.x) / det;
+		float width = 1.0 / max(length(g), 1e-4);
+		float street = step(0.08, abs(width - 1.0));
+		float edge = min(across, 1.0 - across) * width + (grit - 0.5) * 0.16;
+		float grime = (1.0 - smoothstep(0.02, 0.3, edge)) * street;
+		// Once a pixel is wider than the dirty band, its average instead,
+		// on every piece (so far corners don't read paler than the walks).
+		grime = mix(grime, 0.18, smoothstep(0.05, 0.3, fwidth(across) * width));
+		col *= mix(vec3(1.0), vec3(0.62, 0.64, 0.55), grime);
+	}
+#endif
+	col *= 1.0 + (grit - 0.5) * 0.16 * close;
 	// A tooled joint line every slab.
 	float d = abs(fract(along / %f + 0.5) - 0.5) * %f;
 	float joint = 1.0 - smoothstep(0.012, 0.012 + fwidth(along) * 1.5, d);

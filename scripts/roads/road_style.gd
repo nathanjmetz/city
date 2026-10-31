@@ -178,8 +178,17 @@ const Y_JUNCTION := 0.11
 const MIN_CURVE_RADIUS := 12.8
 
 const ASPHALT_COLOR := Color(0.23, 0.23, 0.24)
-const CURB_COLOR := Color(0.62, 0.61, 0.58)
-const SIDEWALK_COLOR := Color(0.72, 0.71, 0.67)
+## Weathered grey concrete, 20 to 60 years old, not new white pour
+## (critic round 3, 2026-10-30: 197 in sun, outlining every block in white
+## from 300 m). Measured albedo of real pavement (LBNL Heat Island Group,
+## EPA Cool Pavements): new concrete 0.35 to 0.45, aged 0.25 to 0.35; aged
+## asphalt 0.10 to 0.15, which the streets' own grey already is (about
+## 0.11 linear), and the repo's two photo scans (art/textures/roads) put
+## concrete at 2.1 times asphalt. So the walk is about 0.27 linear (0.48
+## before; 0.25 with its weathering, Surfaces.CONCRETE) and the curb,
+## splashed by the street, about 0.23.
+const CURB_COLOR := Color(0.53, 0.52, 0.49)
+const SIDEWALK_COLOR := Color(0.56, 0.55, 0.52)
 
 
 const MARKING_YELLOW := Color(0.85, 0.68, 0.18)
