@@ -176,6 +176,13 @@ func _ready() -> void:
 	if not OS.has_feature("web"):
 		var doors := DoorView.new()
 		doors.setup(sim.traffic, sim, cars.out_front, buildings.lot_xf, warehouse_view.xf_of)
+		# Plant bays, shop roll-ups, service garages and farm sheds, where
+		# their views drew them.
+		doors.sites(func(ref: String) -> Array:
+			if ref.begins_with("lot:"):
+				return buildings.doors_of(ref.substr(4))
+			return service_view.doors_of(int(ref.substr(4))) if ref.begins_with("svc:") else [],
+			service_view.xf_of, farmsteads.open_doors)
 		add_child(doors)
 
 	var bus_view := BusView.new()

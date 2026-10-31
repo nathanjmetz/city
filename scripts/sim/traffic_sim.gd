@@ -51,6 +51,14 @@ const DOOR_MIN := 30
 const DOCK_DWELL := 300
 const DOCK_KINDS := ["box_truck", "semi", "mail_semi", "delivery_van"]
 const DOCK_GAP := 0.35
+## A truck leaving a factory's bay waits BAY_WAIT ticks inside while the
+## overhead door rolls up (8 s of play), then pulls out. Nathan,
+## 2026-10-30, asked whether it should wait for its door ("A. Wait about 8
+## seconds"), answered: "A". bay_t is the tick its door started up, kept on
+## the truck's record (already saved); a save from before has none and the
+## truck leaves at once. The load still counts when it gets where it is
+## going; the truck is simply on the road 8 s later.
+const BAY_WAIT := 80
 ## The court's lane runs at least this far in from the site's front.
 const DOCK_LANE_MIN := 1.5
 ## From the end of a curb return to where cars stop: the crosswalk (0.3 to
@@ -2632,6 +2640,7 @@ func _cancel(car: Dictionary) -> void:
 	_release(car.get("to_place", ""), car.get("to_spot", -1), car.id)
 	_report(car, failed)
 	car.erase("pending")
+	car.erase("bay_t")  # (no wait left over for its next trip)
 	_shut_door(car)
 	_pend.erase(car.id)
 	for k in ["route", "leg", "d", "end_d", "goal", "dest", "park", "home", "to_place", "to_spot", "lane",
@@ -3881,6 +3890,13 @@ static func _behind_door(pl: Dictionary, spot: int) -> bool:
 		and int(pl.get("zone", -1)) == ZoneMap.Zone.RESIDENTIAL and DoorEvents.door_for(pl, spot) >= 0
 
 
+## True for a spot inside a factory's bay (an industrial lot's "bay"),
+## whose overhead door a truck waits for (BAY_WAIT).
+static func in_bay(pl: Dictionary, spot: int) -> bool:
+	return spot >= 0 and spot < pl.get("spots", []).size() and pl.spots[spot].kind == "bay" \
+		and int(pl.get("zone", -1)) == ZoneMap.Zone.INDUSTRIAL
+
+
 ## A car whose driver sets out on a `walk` ticks long to it: its garage
 ## door starts up so it is DOOR_SHARE of the way up as they get there.
 func _open_door(car: Dictionary, walk: int) -> void:
@@ -3915,7 +3931,7 @@ func _park(car: Dictionary, pl: Dictionary, spot: int) -> void:
 	car.pj = null
 	for k in ["route", "leg", "d", "end_d", "goal", "dest", "park", "home", "to_place", "to_spot", "lane",
 			"commit", "arrive", "stuck", "lc_from", "lc_t", "lc_cool", "held", "jd", "at", "facing", "pulled_over",
-			"door_t", "door_n", "backing", "dock_t"]:
+			"door_t", "door_n", "backing", "dock_t", "bay_t"]:
 		car.erase(k)
 	if not car.has("until"):
 		car.until = -1
@@ -4006,6 +4022,8 @@ func _send(car: Dictionary, to_ref: String, purpose: String, cargo: Dictionary, 
 		_flow_start(car)
 		return true
 	_fix_end(car)
+	if car.has("at_place") and in_bay(from_pl, int(car.get("spot", -1))):
+		car.bay_t = _tick  # its door starts up: it waits inside (BAY_WAIT)
 	if car.has("at_place"):
 		car.pending = true  # pulls out as soon as there's a gap
 		_pend[car.id] = car
@@ -4017,13 +4035,15 @@ func _send(car: Dictionary, to_ref: String, purpose: String, cargo: Dictionary, 
 
 ## A parked vehicle with a trip pulls out if there's a gap in traffic.
 func _try_launch(car: Dictionary, lanes := {}) -> bool:
+	if car.has("bay_t") and _tick < int(car.bay_t) + BAY_WAIT:
+		return false  # its factory door is still going up
 	if cars.size() >= max_cars or not _launch(car, lanes):
 		return false
 	if not lanes.is_empty():
 		_lane_add(lanes, car)
 	_release(car.at_place, car.spot, car.id)
 	_unpark(car)
-	for k in ["at_place", "spot", "pos", "face", "hidden", "pending"]:
+	for k in ["at_place", "spot", "pos", "face", "hidden", "pending", "bay_t"]:
 		car.erase(k)
 	_doored.erase(car.id)  # (door_t rides on while it backs out: DoorEvents)
 	return true

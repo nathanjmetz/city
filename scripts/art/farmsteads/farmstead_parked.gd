@@ -72,6 +72,27 @@ static func of(p: Dictionary, month: int) -> Array:
 	return out
 
 
+## The machine sheds standing open in `month` (parts of the plan): the one
+## the tractor is out of and, at harvest, the one the combine is out of,
+## each only when of() has that machine out in the yard (one left in a
+## full yard keeps its shed shut). Shut in winter. The door view opens
+## their big doors (DoorView, FarmsteadNear.open_doors).
+static func sheds_out(p: Dictionary, month: int) -> Array:
+	var sheds: Array = p.parts.filter(func(q): return q.kind == "shed" or q.kind == "quonset")
+	var out := []
+	if sheds.is_empty():
+		return out
+	for v in of(p, month):
+		var q = null
+		if str(v.kind).begins_with("tractor"):
+			q = sheds[0]
+		elif v.kind == "combine":
+			q = sheds[1] if sheds.size() > 1 else sheds[0]
+		if q != null and not out.has(q):
+			out.append(q)
+	return out
+
+
 ## Parks `v` where it fits clear of the buildings and what's parked
 ## already, sliding along the yard 5 m at a time if it doesn't; left in the
 ## shed if it can't (false).

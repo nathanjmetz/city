@@ -57,7 +57,7 @@ const SIM := {
 const FRAME := {
 	"frame.sim":       {"avg": 7.0, "max": 14.0, "what": "Simulation ticks run this frame"},
 	"frame.vehicles":  {"avg": 1.5, "max": 4.0, "what": "Placing every vehicle on screen"},
-	"frame.doors":     {"avg": 0.3, "max": 1.0, "what": "Garage doors going up and down near the camera"},
+	"frame.doors":     {"avg": 0.3, "max": 1.0, "what": "Garage, dock, plant, shop and shed doors going up and down near the camera"},
 	"frame.buildings": {"avg": 0.5, "max": 20.0, "what": "Adding new buildings to the scene"},
 	"frame.trees":     {"avg": 0.3, "max": 10.0, "what": "Tree batches"},
 	"frame.roads":     {"avg": 0.3, "max": 30.0, "what": "Road meshes (rebuilt after an edit)"},

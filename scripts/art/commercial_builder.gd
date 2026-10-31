@@ -249,6 +249,7 @@ func _rt_grown(w: float, d: float, h: float, zf: float, door_x: float, sw: float
 		for k in 10:
 			_box("paint", Vector3(3.0, 0.03, 0.1), Vector3(rx, 0.3 * (k + 0.5), back + ad + 0.06), Color("#a9a9a4"))
 		_box("paint", Vector3(3.3, 0.35, 0.3), Vector3(rx, 3.2, back + ad + 0.15), Color("#5a5e60"))
+		DoorLog.add(self, "rollup", Vector3(rx, 1.5, back + ad + 0.11), Vector3(0, 0, 1), 3.0, 3.0, Color("#c9c9c4"))
 		var mx := rx + (2.6 if rx < ax else -2.6)
 		if absf(mx - ax) < aw * 0.5 - 0.8:
 			_steel_door(Vector3(mx, 1.35, back + ad + 0.03), 1.0)
@@ -1612,6 +1613,7 @@ func _grocery_anchor(x0: float, x1: float, zf: float, cz: float, d: float, wall:
 		_flat_rect("asphalt", x0 + 2.0, x0 + 18.0, dock_z, minf(depth - 0.5, dock_z + 16.0), 0.07)
 		for k in 2:
 			_box("paint", Vector3(3.2, 3.4, 0.1), Vector3(x0 + 6.0 + k * 6.0, 1.7, dock_z + 0.06), Color("#5a5c5e"))  # dock doors
+			DoorLog.add(self, "rollup", Vector3(x0 + 6.0 + k * 6.0, 1.7, dock_z + 0.11), Vector3(0, 0, 1), 3.2, 3.4, Color("#5a5c5e"))
 			_box("paint", Vector3(3.6, 1.2, 0.5), Vector3(x0 + 6.0 + k * 6.0, 1.2, dock_z + 0.3), Color("#1e1f20"))  # seals
 
 
@@ -2227,6 +2229,7 @@ func _factory(to_curb: float) -> void:
 	for i in n:
 		var x := (i - (n - 1) * 0.5) * 5.0 + w * 0.12
 		_box("siding", Vector3(3.7, 4.3, 0.08), Vector3(x, 0.3 + 2.15, zf - 0.03), Color(TRIM, 0.0))
+		DoorLog.add(self, "bay", Vector3(x, 0.3 + 2.15, zf - 0.07), Vector3(0, 0, -1), 3.7, 4.3, TRIM)
 		_box("paint", Vector3(3.9, 0.15, 0.1), Vector3(x, 0.3 + 4.37, zf - 0.05), band)
 		_flat_rect("drive", x - 2.4, x + 2.4, zf - 6.0, zf, 0.08)
 	# Front office: a small brick box with storefront windows.

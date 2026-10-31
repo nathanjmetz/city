@@ -371,6 +371,7 @@ func _tank_coil(p: Vector3) -> void:
 ## An overhead door on a wall facing -z at (x, z).
 func _door(x: float, z: float, w := 3.7, h := 4.3) -> void:
 	_box("siding", Vector3(w, h, 0.08), Vector3(x, 0.3 + h * 0.5, z - 0.03), Color(TRIM, 0.0))
+	DoorLog.add(self, "bay", Vector3(x, 0.3 + h * 0.5, z - 0.07), Vector3(0, 0, -1), w, h, TRIM)
 
 
 ## A cone roof (bins, piles) from a base circle up to a point.
