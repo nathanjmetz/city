@@ -50,6 +50,15 @@ const NAMES := {FACTORY: "Factory", MAIN: "Main street", STRIP: "Shops", HOMES: 
 ## Share of a side's length the biggest kind must cover, and how far ahead
 ## of the side's kind another must be to take it over.
 const WIN := 0.40
+## A piece of street no longer than this (m) with nothing built along a
+## side of its own, between two main street pieces it runs straight on
+## from, is main street too (_bridged): the stretch between a junction and
+## the next one that a block's corner shops front onto, while their lots
+## belong to the streets either side. Real stalls run on past a junction
+## across the street; they stop only for the crosswalks and corners.
+const BRIDGE_M := 60.0
+## Pieces whose ends meet at least this straight (|cos|) run on as one street.
+const STRAIGHT := 0.97
 const MARGIN := 0.15
 ## A side whose kind's buildings are gone keeps its fixtures this long (a
 ## game year: 12 sim days, Seasons.pace_year).
@@ -216,6 +225,11 @@ func _decide_all(sim, keys: Array) -> void:
 	keys.sort()
 	var now: int = sim.tick_count
 	var touched := {}
+	# Short bare pieces next to the sides looked at, judged after them.
+	var bridge := {}
+	for k in keys:
+		for nk in _bridge_keys(sim, int(k)):
+			bridge[nk] = true
 	for k in keys:
 		var seg: int = int(k) >> 1
 		if not sim.network.segments.has(seg):
@@ -248,6 +262,22 @@ func _decide_all(sim, keys: Array) -> void:
 			_fading[k] = true
 		else:
 			_fading.erase(k)
+	var bks := bridge.keys()
+	bks.sort()
+	for k in bks:
+		var have := str(sides.get(k, {}).get("kind", ""))
+		if locks.has(k) or not shares.get(k, {}).is_empty() or not have in ["", MAIN]:
+			continue
+		if _bridged(sim, k):
+			# Held by its neighbours, not its own frontage: never fading.
+			sides[k] = {"kind": MAIN, "at": now if have != MAIN else int(sides[k].at), "fade": -1, "bridged": true}
+			_fading.erase(k)
+			if have != MAIN:
+				touched[k >> 1] = true
+		elif have == MAIN and sides[k].get("bridged", false):
+			sides.erase(k)
+			_fading.erase(k)
+			touched[k >> 1] = true
 	for seg in touched:
 		_set_mid(sim, seg)
 	# A lighter middle waits for the street to be resurfaced.
@@ -263,6 +293,60 @@ func _decide_all(sim, keys: Array) -> void:
 		revision += 1
 		push(sim, segs)
 		changed.emit(segs)
+
+
+## Where the street runs straight on from each end of `seg`: [other seg,
+## its side matching `side` of seg] at the start and at the end ([] where
+## it doesn't run straight on).
+static func _straight_on(sim, seg: int, side: int) -> Array:
+	var net = sim.network
+	var s: Dictionary = net.segments[seg]
+	var c: Array = net.curve_of(seg)
+	var out := []
+	for end in [0, 1]:
+		var node: int = int(s.a) if end == 0 else int(s.b)
+		var t: Vector3 = RoadNetwork.bezier_tangent(c[0], c[1], c[2], float(end)).normalized()
+		var n := Vector3(-t.z, 0.0, t.x) * float(side)
+		var found := []
+		for o in net.segments_at(node):
+			if int(o) == seg or not net.segments.has(int(o)):
+				continue
+			var os: Dictionary = net.segments[int(o)]
+			var oc: Array = net.curve_of(int(o))
+			var ot: Vector3 = RoadNetwork.bezier_tangent(oc[0], oc[1], oc[2], 0.0 if int(os.a) == node else 1.0).normalized()
+			if absf(ot.dot(t)) < STRAIGHT:
+				continue
+			found = [int(o), 1 if Vector3(-ot.z, 0.0, ot.x).dot(n) > 0.0 else -1]
+			break
+		out.append(found)
+	return out
+
+
+## True when side key `k` is a short bare piece between two main street
+## sides it runs straight on from (BRIDGE_M).
+func _bridged(sim, k: int) -> bool:
+	var seg := k >> 1
+	if not sim.network.segments.has(seg) or seg_length(sim, seg) > BRIDGE_M:
+		return false
+	for e: Array in _straight_on(sim, seg, 1 if k & 1 else -1):
+		if e.is_empty() or str(sides.get(key_of(e[0], e[1]), {}).get("kind", "")) != MAIN:
+			return false
+	return true
+
+
+## The side keys that may be bridged when side `k` changes: its own, if its
+## piece is short, and the short pieces it runs straight on into.
+func _bridge_keys(sim, k: int) -> Array:
+	var seg := k >> 1
+	if not sim.network.segments.has(seg):
+		return []
+	var out := []
+	if seg_length(sim, seg) <= BRIDGE_M:
+		out.append(k)
+	for e: Array in _straight_on(sim, seg, 1 if k & 1 else -1):
+		if not e.is_empty() and seg_length(sim, e[0]) <= BRIDGE_M:
+			out.append(key_of(e[0], e[1]))
+	return out
 
 
 func _set_mid(sim, seg: int, repaved := false) -> void:
@@ -797,7 +881,10 @@ func to_dict() -> Dictionary:
 	var keys := sides.keys()
 	keys.sort()
 	for k in keys:
-		s.append([k, str(sides[k].kind), int(sides[k].at), int(sides[k].get("fade", -1))])
+		var row := [k, str(sides[k].kind), int(sides[k].at), int(sides[k].get("fade", -1))]
+		if sides[k].get("bridged", false):
+			row.append(1)  # main street by its neighbours (_bridged)
+		s.append(row)
 	var m := []
 	keys = mids.keys()
 	keys.sort()
@@ -835,6 +922,8 @@ func from_dict(d: Dictionary) -> void:
 	shares.clear()
 	for e in d.get("sides", []):
 		sides[int(e[0])] = {"kind": str(e[1]), "at": int(e[2]), "fade": int(e[3])}
+		if e.size() > 4 and int(e[4]) == 1:
+			sides[int(e[0])].bridged = true
 	for e in d.get("mids", []):
 		mids[int(e[0])] = {"kind": str(e[1]), "at": int(e[2])}
 	for e in d.get("locks", []):
