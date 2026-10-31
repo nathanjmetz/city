@@ -3368,13 +3368,17 @@ func land_factor(key: String) -> float:
 
 
 func _lot_blocked(lot: Dictionary) -> bool:
-	if services.overlaps(lot.corners) or _on_block_land(lot):
+	# What keeps lots off the ground (services, farms, companies, hubs,
+	# parks, campuses, banks, the phone company, power, warehouses, big
+	# plants, reserves: LotGround's items), asked of the ground map once:
+	# only where one of their claims is near does each say for itself.
+	if _sites_filed and not GroundMap.of(self).sites_near(LotGround.lot_box(lot)):
+		for p in [lot.pos, lot.front, lot.zone_pt]:
+			# What's too spread out to claim a box: track and trails.
+			if rail.covers(p) or parks.trails.on_path(p):
+				return true
+	elif _sites_block(lot):
 		return true
-	for p in [lot.pos, lot.front, lot.zone_pt]:
-		if services.covers(p) or Capital.owner_of(self, p) != "" \
-				or reserves.kind_at(p) != "" or hubs.covers(p) or warehouses.covers(p) or parks.covers(p) or education.covers(p) \
-				or mail.covers(p) or power.covers(p) or banks.covers(p) or rail.covers(p) or telecom.covers(p) or big.covers(p):
-			return true
 	# No lots in the water, on ground too steep to build on, or on a state
 	# highway's right of way (the state's land, joined or not).
 	var at: Vector3 = lot.pos
@@ -3389,6 +3393,24 @@ func _lot_blocked(lot: Dictionary) -> bool:
 		return true
 	# Nor on a county railroad's right of way, the whole outline.
 	return _rail_under(lot.corners)
+
+
+## True when one of LotGround's items keeps lot `lot` off its ground (each
+## asked for itself: CitySim._lot_blocked's own checks).
+func _sites_block(lot: Dictionary) -> bool:
+	if services.overlaps(lot.corners) or _on_block_land(lot):
+		return true
+	for p in [lot.pos, lot.front, lot.zone_pt]:
+		if services.covers(p) or Capital.owner_of(self, p) != "" \
+				or reserves.kind_at(p) != "" or hubs.covers(p) or warehouses.covers(p) or parks.covers(p) or education.covers(p) \
+				or mail.covers(p) or power.covers(p) or banks.covers(p) or rail.covers(p) or telecom.covers(p) or big.covers(p):
+			return true
+	return false
+
+
+## True while the ground map holds LotGround's items as they stand (a lot
+## check, _plan_lots): _lot_blocked asks it first.
+var _sites_filed := false
 
 
 ## How far inside the railroad's right of way a lot may reach (m): the lot
@@ -3659,6 +3681,9 @@ const LOT_CELL := 64.0
 var _lot_ix := {}  # lot key -> the lot it was filed as (lots_near)
 var _lot_ix_stale := {}  # lot keys reshaped in place since (note_lots, touched_lots)
 var _lot_rev := 0  # goes up with every lots_changed
+## LotGround.items just worked out by _refresh, for _plan_lots to file in
+## the ground map without working them out again ({} once used).
+var _ground_items := {}
 ## What kept lots off the ground at the last full check (LotGround.items).
 ## Not saved: a loaded copy's first full check looks at every lot, which
 ## comes out the same.
@@ -3742,6 +3767,7 @@ func _refresh() -> void:
 			var ground := LotGround.items(self)
 			var changed = LotGround.diff(_ground_was, ground)
 			_ground_was = ground
+			_ground_items = ground  # the very items, for the lot check that follows
 			if changed != null:
 				full = false
 				near = changed + _lots_near
@@ -3773,6 +3799,7 @@ func _refresh() -> void:
 			_zone_check_lots = {}  # the buildings are checked against their zones, as after any check
 		else:
 			_plan_lots(was, full, near)
+		_ground_items = {}
 	# Buildings go away when their lot disappears or its zone changes, so
 	# this only needs a look after zoning, lots or buildings change.
 	_check_zones()
@@ -3781,6 +3808,11 @@ func _refresh() -> void:
 ## The part of _refresh that plans the lots again (see there).
 func _plan_lots(was: Dictionary, full: bool, near: Array) -> void:
 		var tr := Perf.now()
+		# What keeps lots off the ground, filed in the ground map for this
+		# check (nothing changes it while the lots are planned).
+		GroundMap.of(self).file_sites(_ground_items if not _ground_items.is_empty() else LotGround.items(self))
+		_ground_items = {}
+		_sites_filed = true
 		var plan_keys: int = ledger().sig
 		# Lots with buildings are parcels: they stay as they are unless a road
 		# now runs through them.
@@ -3821,6 +3853,8 @@ func _plan_lots(was: Dictionary, full: bool, near: Array) -> void:
 			blocked[lot.key] = [lot, no]
 			if not no:
 				lots[lot.key] = lot
+		_clear_lot_overlaps(frozen)
+		_sites_filed = false
 		_blocked_by = blocked
 		_usable_cache.clear()
 		_lots_delta(was, full)
@@ -3831,6 +3865,83 @@ func _plan_lots(was: Dictionary, full: bool, near: Array) -> void:
 		lots_changed.emit()
 		_planned = [plan_keys, _sites_sig(), _lot_rev]
 		_planned_lots = lots
+
+
+## Two lots never share ground (Nathan, 2026-10-29: "They run right
+## underneath the buildings"; docs/spec-ground-map.md, step 3). Lots planned
+## from different streets can meet with a sliver over each other's back or
+## side line. Each newly planned lot, in key order, gives up whatever it
+## would share with a built parcel or a lot kept before it (its outline
+## trimmed, as a public site trims the lots beside it); one that would lose
+## more than LOT_OVERLAP_KEEP of itself isn't platted. Built parcels stand
+## as they are (an older town's are left alone). The same lots come out on
+## every copy and after a load: the order is the keys', and a lot trimmed
+## the same way as last time is handed back as the same Dictionary.
+const LOT_OVERLAP_MIN := 0.5  # m2: less is rounding, not shared ground
+const LOT_OVERLAP_KEEP := 0.1
+func _clear_lot_overlaps(frozen: Dictionary) -> void:
+	var cell := 64.0
+	var grid := {}
+	var file := func(key: String, poly: PackedVector2Array) -> void:
+		var box := LotPlanner._box(poly)
+		for x in range(floori(box.position.x / cell), floori(box.end.x / cell) + 1):
+			for y in range(floori(box.position.y / cell), floori(box.end.y / cell) + 1):
+				var c := Vector2i(x, y)
+				if not grid.has(c):
+					grid[c] = []
+				grid[c].append(key)
+	var fresh := []
+	for key in lots:
+		if frozen.has(key):
+			file.call(key, lots[key].corners)
+		else:
+			fresh.append(key)
+	fresh.sort()
+	var trimmed := {}
+	for key in fresh:
+		var lot: Dictionary = lots[key]
+		var box := LotPlanner._box(lot.corners)
+		var seen := {}
+		var over := []
+		for x in range(floori(box.position.x / cell), floori(box.end.x / cell) + 1):
+			for y in range(floori(box.position.y / cell), floori(box.end.y / cell) + 1):
+				for other in grid.get(Vector2i(x, y), []):
+					if seen.has(other):
+						continue
+					seen[other] = true
+					var oc: PackedVector2Array = lots[other].corners
+					if LotPlanner._box(oc).intersects(box) and GroundMap.overlap(lot.corners, oc)[0] >= LOT_OVERLAP_MIN:
+						over.append(other)
+		if over.is_empty():
+			file.call(key, lot.corners)
+			continue
+		over.sort()
+		var sig := hash(over.map(func(o): return lots[o].corners))
+		var had: Array = _lot_trims.get(key, [])
+		var out = null
+		if not had.is_empty() and is_same(had[0], lot) and int(had[1]) == sig:
+			out = had[2]
+		else:
+			var poly: PackedVector2Array = lot.corners
+			for other in over:
+				poly = LotPlanner._largest(Geometry2D.clip_polygons(poly, lots[other].corners))
+				if poly.size() < 3:
+					break
+			if poly.size() >= 3 and absf(LotPlanner._area(poly)) >= absf(LotPlanner._area(lot.corners)) * (1.0 - LOT_OVERLAP_KEEP):
+				out = lot.duplicate()
+				LotPlanner._set_shape(out, poly)
+		trimmed[key] = [lot, sig, out]
+		if out == null:
+			lots.erase(key)
+		else:
+			lots[key] = out
+			file.call(key, out.corners)
+	_lot_trims = trimmed
+
+
+## Lots trimmed off their neighbours last time: key -> [the lot as planned,
+## what trimmed it, the lot as kept or null] (_clear_lot_overlaps).
+var _lot_trims := {}
 
 
 ## What the lots were last planned from: [the buildings' key set

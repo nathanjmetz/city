@@ -15,40 +15,29 @@ extends SceneTree
 
 const Audit := preload("res://tools/overlap_audit.gd")
 
-## Today's known clashes (2026-10-30), per town: "a vs b" -> the most allowed.
-## Signal and No Turn posts, streetlights and mailboxes in drives' curb
-## cuts or on curb ramps, and street trees on ramps, are down to none
-## (CurbClaims), so any of those fails. A few stop signs stay in a shop's
-## apron where the apron covers every spot MUTCD allows (within 50 ft of
-## the road it meets, behind the crosswalk): shops keeping their aprons
-## back from the corner is the fix still to come.
+## Today's known clashes (2026-10-31), per town: "a vs b" -> the most allowed.
+## Signal, stop and No Turn posts, streetlights and mailboxes in drives'
+## curb cuts or on curb ramps, and street trees on ramps or front walks,
+## are down to none (CurbClaims; a sign whose whole stretch a drive takes
+## stands just past it), so any of those fails.
 ## The county's railroads come first (#943): no lot, building, drive,
 ## parking, public site or street on their right of way, and streets cross
 ## only at grade crossings; posts, lamps, mailboxes and street trees keep
-## off the beds (the ground map, step 2), all but two stop signs at a
-## junction beside a crossing.
+## off the beds (the ground map, step 2).
+## No two lots share ground (the ground map, step 3: a lot planned against
+## another gives up the sliver they'd share).
 const KNOWN := {
 	"small": {
-		# Posts keep off railroad beds (CurbClaims asks the ground map,
-		# step 2); these two stop signs at one junction beside a crossing
-		# find no clear spot within reach of their stop line and stand
-		# where they were meant to.
-		"rail_bed:county vs post:stop_sign": 2,
-		# Raised from 5 (#943), the one count that went up: builders lay a
-		# building out by its lot's width and depth from the front, while
-		# the lot planner trims only the lot's outline where a public site
-		# cuts in, so a building can stand on the site. That is on main too;
-		# the rail lots leaving reshuffled every later building's random
-		# seed, and it lands on more lots here. The real fix is the ground
-		# map's step 3, "Lots and buildings" (docs/spec-ground-map.md, #941).
+		# Builders lay a shop's or plant's building out by its lot's width
+		# and depth from the front, while the lot planner trims only the
+		# lot's outline where a public site cuts in along its side, so a
+		# building can stand on the site. Not platting those lots fixes it
+		# but loses a tenth of the town's commercial lots; the fix is a
+		# builder that keeps to the outline (the ground map's step 4).
 		"building vs public_site": 9,
-		"lot vs lot": 31,
-		"post:stop_sign vs curb_cut": 2,
 	},
 	"county_small": {
 		"building vs public_site": 4,
-		"lot vs lot": 24,
-		"post:stop_sign vs curb_cut": 1,
 	},
 }
 ## Kinds the audit must find in each town, at least this many.

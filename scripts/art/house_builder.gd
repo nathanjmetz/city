@@ -2109,6 +2109,9 @@ func _yard_trees(h: Dictionary, _to_curb: float) -> void:
 			continue
 		if h.has("keep_out") and (h.keep_out as Rect2).grow(2.0).has_point(Vector2(p.x, p.z)):
 			continue
+		# Never on the front walk (its trunk and a little room).
+		if h.has("walk") and (h.walk as Rect2).grow(0.4).has_point(Vector2(p.x, p.z)):
+			continue
 		if _improved.has_area() and _improved.grow(1.5).has_point(Vector2(p.x, p.z)):
 			continue
 		if _cottage_at.grow(2.5).has_point(Vector2(p.x, p.z)):

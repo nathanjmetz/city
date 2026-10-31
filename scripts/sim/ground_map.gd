@@ -57,7 +57,7 @@ const RANK := {
 	"water": 0, "steep": 1,
 	"rail_bed:county": 10, "rail_bed:town": 10, "rail_row:county": 11,
 	"road": 20, "sidewalk_line": 21, "curb_ramp": 22, "crosswalk": 23, "curb_zone": 24,
-	"public_site": 30,
+	"public_site": 30, "site": 31,
 	"lot": 40,
 	"building": 50,
 	"drive": 60, "curb_cut": 61, "front_walk": 62, "parking_stall": 63, "garage_apron": 64, "dock": 65,
@@ -223,6 +223,7 @@ var _quick_seen := []  # the town's change counters at the last sync
 var last_sync_ms := 0.0
 var _bed_by := {}  # [kind, owner] -> [hash of its outlines, its claim]: the railroad beds
 var _row_at := {}  # Vector2i(route, point) -> its right-of-way claim
+var _site_by := {}  # LotGround item key -> [its hash, its claim]
 var _row_box := Rect2()  # town box the county's right of way is filed for
 var _row_offset := Vector2.INF
 var _row_seg := {}  # claim -> Vector2i(route, point) of a right-of-way piece
@@ -498,6 +499,37 @@ func _sync_rail(sim: CitySim) -> void:
 		if id >= 0:
 			_row_at[at] = id
 			_row_seg[id] = at
+
+
+## LotGround's items (what keeps lots off the ground: key -> [hash, boxes or
+## null]) filed as "site" claims, a claim an item, its boxes its pieces;
+## only items that came, went or changed are filed again. Items too spread
+## out to box (null) aren't claims: CitySim._lot_blocked asks them itself.
+func file_sites(items: Dictionary) -> void:
+	for key in _site_by.keys():
+		if not items.has(key) or items[key][0] != _site_by[key][0]:
+			release_ids(PackedInt32Array([_site_by[key][1]]))
+			_site_by.erase(key)
+	var keys := items.keys()
+	keys.sort()
+	for key in keys:
+		if _site_by.has(key) or items[key][1] == null:
+			continue
+		var polys := []
+		for b: Rect2 in items[key][1]:
+			polys.append(PackedVector2Array([b.position, Vector2(b.end.x, b.position.y), b.end, Vector2(b.position.x, b.end.y)]))
+		_site_by[key] = [items[key][0], register("site:" + str(key), "ground", "site", polys)]
+
+
+## True when a "site" claim's box meets `box` (borders count).
+func sites_near(box: Rect2) -> bool:
+	if not _kind_id.has("site"):
+		return false
+	var want: int = _kind_id["site"]
+	for p in _pieces_in(box):
+		if _kind[_p_claim[p]] == want and _piece_box(p).intersects(box, true):
+			return true
+	return false
 
 
 ## How near the county's railroad track comes to outline `poly` (town x/z),
@@ -932,6 +964,9 @@ func _compact() -> void:
 		mine.append(id)
 		_by_owner[_owner[id]] = mine
 	_ledger_ok = false
+	for site in _site_by:
+		var was_site: int = _site_by[site][1]
+		_site_by[site][1] = remap[was_site] if was_site >= 0 and was_site < remap.size() else -1
 	for bed in _bed_by:
 		var was: int = _bed_by[bed][1]
 		_bed_by[bed][1] = remap[was] if was >= 0 and was < remap.size() else -1
