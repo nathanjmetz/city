@@ -82,10 +82,11 @@ var calendar_from := 0
 ## The yard trees of a building begun on or after this tick start already
 ## grown, the mixed ages of an established neighbourhood (BuildingView,
 ## TreeField.yard_age; Nathan, 2026-10-29: "A. Yes, back-yard trees start
-## grown; street trees still start small and grow"). 0 for a town begun
-## with this; a town saved before it gets the tick after the one it was
-## first loaded on, so every tree it already had keeps the size it had and
-## only new yards come in grown.
+## grown; street trees still start small and grow"); since 2026-10-31 its
+## street trees too (TreeField.street_age). 0 for a town begun with this; a
+## town saved before it gets the tick after the one it was first loaded on,
+## so every tree it already had keeps the size it had and only new yards
+## and parkways come in grown.
 var grown_yards_from := 0
 ## A corner house begun on or after this tick decides as it goes up which
 ## side its drive goes, away from the corner (SiteLayout.decide_drive, kept

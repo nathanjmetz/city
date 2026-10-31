@@ -23,6 +23,11 @@ const CUT := [0.0125, 0.045]
 const CLUSTER := 4
 ## Leaf card size (m) for a full-grown crown; saplings get smaller cards.
 const CARD := [1.5, 2.8]
+
+
+## A broadleaf's leaf card size (m) at a level for a tree this tall.
+static func card_size(lod: int, height: float) -> float:
+	return CARD[lod] * clampf(sqrt(height / 16.0), 0.3, 1.0)
 ## Rings along a nearly straight limb are left out (up to this many in a row).
 const SKIP_BEND := 12.0
 const SKIP_RUN := 2
@@ -276,8 +281,7 @@ func _spots_slice(n: int) -> void:
 	var base := TreeKinds.crown_base(sp, 60.0) * _height / maxf(TreeKinds.height(sp, 60.0), 0.1)
 	_centre = Vector3((lo.x + hi.x) * 0.5, (maxf(base, lo.y) + hi.y) * 0.5, (lo.z + hi.z) * 0.5)
 	_radii = Vector3(maxf((hi.x - lo.x) * 0.5, 0.3), maxf((hi.y - maxf(base, lo.y)) * 0.5, 0.3), maxf((hi.z - lo.z) * 0.5, 0.3))
-	var grown_share := clampf(sqrt(_height / 16.0), 0.3, 1.0)
-	_size = CARD[lod] * grown_share * (0.8 if conifer else 1.0)
+	_size = card_size(lod, _height) * (0.8 if conifer else 1.0)
 	_i = 0
 	_phase = Phase.CARDS
 

@@ -640,9 +640,9 @@ func _set_trees(key: String, always := true) -> int:
 	Terrain.shift = Terrain.shift_for(self)
 	var trees := []
 	var street := 0
-	# Yard trees go in as nursery stock when the building is finished and
-	# grow with the game's years (TreeField, TreeKinds): the planting date is
-	# the building's own build date, so nothing new is saved.
+	# Trees go in (as nursery stock, unless grown below) when the building is
+	# finished and grow with the game's years (TreeField, TreeKinds): the
+	# planting date is the building's own build date, so nothing new is saved.
 	var b: Dictionary = sim.buildings.get(key, {})
 	var when := {"planted": int(b.get("built", sim.tick_count)) + Construction.duration(
 		CitySim.profile_of(b))}
@@ -650,9 +650,11 @@ func _set_trees(key: String, always := true) -> int:
 	# (TreeField.yard_age), unless the building was begun before this came
 	# in (a town saved before keeps its trees as they were:
 	# CitySim.grown_yards_from).
-	# Street trees are the town's and go in as nursery stock.
+	# Its street trees come in grown too, at a parkway's own mix of ages
+	# (TreeField.street_age, _street_facts).
 	var grown := int(b.get("built", sim.tick_count)) >= sim.grown_yards_from
 	var lot_seed := int(b.get("seed", hash(key)))
+	var front := int(sim.lots.get(key, {}).get("seg", -1))
 	# The mailbox by the lot's own drive (where it stands is worked out from
 	# the neighbours' drives too, which come and go; the trees must not).
 	var mailbox := CurbClaims.of(sim).mailbox_at(key, true)
@@ -669,6 +671,18 @@ func _set_trees(key: String, always := true) -> int:
 			if not _parkway_free(q) or q.distance_to(mailbox) < MAILBOX_CLEAR:
 				continue
 			street += 1
+			# Never drawn smaller or bigger than its crown is kept clear of
+			# the street for (TreeGrower.AgeCut's street trees).
+			var sz := at.basis.get_scale().y
+			var keep_sz := clampf(sz, TreeKinds.STREET_MIN_SCALE, TreeKinds.STREET_YOUNG_MAX_SCALE)
+			if not is_equal_approx(sz, keep_sz):
+				at.basis = at.basis.scaled(Vector3.ONE * (keep_sz / sz))
+			facts = {"planted": when.planted, "street": true}
+			if grown:
+				facts = _street_facts(when, q, front, t[1], keep_sz, hash([lot_seed, i, "street"]))
+				# Its age counts as part of which trees stand: a new
+				# streetlight or corner near it starts it again younger.
+				kept.append(-int(facts.start))
 		elif grown and t.size() > 4:
 			# A home's yard tree, with its room to spread (HouseBuilder._yard_room).
 			# Shops', factories', civic and apartment lots' trees go in as
@@ -683,9 +697,13 @@ func _set_trees(key: String, always := true) -> int:
 		if not _parkway_free(q):
 			continue
 		kept.append(1000 + i)
+		var facts := {"planted": when.planted, "street": true}
+		if grown:
+			facts = _street_facts(when, q, int(side[i][4]), side[i][1], side[i][3], hash([lot_seed, 1000 + i, "street"]))
+			kept.append(-int(facts.start))
 		var yaw := Basis(Vector3.UP, fposmod(q.x * 7.3 + q.y * 3.1, TAU))
 		trees.append([Transform3D(yaw.scaled(Vector3.ONE * float(side[i][3])), Vector3(q.x, Terrain.ground_y(q.x, q.y), q.y)),
-			side[i][1], side[i][2], when])
+			side[i][1], side[i][2], facts])
 		street += 1
 	Terrain.shift = was
 	if not always and _kept.get(key) == kept:
@@ -711,6 +729,19 @@ const LAMP_CLEAR := 5.0
 const STOP_CLEAR := 6.0
 const MAILBOX_CLEAR := 1.6
 const CLEAR_CELL := 32.0
+## A grown street tree's crown keeps this much farther from a junction's
+## centre than the widest road there's half width (about 20 ft past the
+## curb line: the stop line, the signal heads over it and the corner's
+## signs), and this far off a streetlight's pole on its far side (the head
+## reaches out over the street from there). A street tree near either
+## starts young enough that it does (_street_facts).
+const CORNER_CROWN := 6.0
+const LAMP_CROWN := 0.5
+## Where a pole line runs down the street (a state highway or county road
+## the town has grown along: RoadView.URBAN_TYPES), its street trees start
+## with their tops this far under the lowest wire (a north-south line's
+## neutral), as the utility keeps them trimmed.
+const WIRE_CLEAR := 1.0
 
 ## Street trees standing in the parkways now (for the tools and tests).
 var street_trees := 0
@@ -718,6 +749,7 @@ var _street_of := {}  # lot key -> street trees it has now
 var _planted := {}  # lot key -> [frame, trees as its builder planted them]
 var _clear_stamp := []
 var _clear := {}  # Vector2i cell -> [[Vector2 centre, radius], ...]
+var _crowns_off := {}  # Vector2i cell -> [[Vector2 centre, how far crowns keep off it], ...]
 var _pieces := {}  # the roads in short straight pieces (StreetLights._pieces), for side streets
 var _kept := {}  # lot key -> which of its trees stand (see _set_trees)
 var _refilter: Array = []  # lots still to look over since the keep-clear spots changed
@@ -741,6 +773,7 @@ func _check_parkways() -> void:
 		return
 	_clear_stamp = stamp
 	_clear.clear()
+	_crowns_off.clear()
 	var net: RoadNetwork = sim.network
 	_pieces = StreetLights._pieces(net)
 	for n in net.nodes:
@@ -752,8 +785,10 @@ func _check_parkways() -> void:
 			hw = maxf(hw, RoadStyle.half_width(net.segments[id].type))
 		var p: Vector3 = net.nodes[n]
 		_keep_clear(Vector2(p.x, p.z), hw + SIGHT_CLEAR)
+		_crowns_keep_off(Vector2(p.x, p.z), hw + CORNER_CROWN)
 	for l in StreetLights.place(net):
 		_keep_clear(Vector2(l[1].x, l[1].z), LAMP_CLEAR)
+		_crowns_keep_off(Vector2(l[1].x, l[1].z), LAMP_CROWN)
 	var stops = sim.get("buses")
 	if stops != null:
 		for sid in stops.stops:
@@ -780,7 +815,8 @@ func _refilter_some() -> void:
 ## shares with the second street it fronts, in that street's parkway, about
 ## every STREET_TREE_GAP, as the town plants both frontages of a corner
 ## (HouseBuilder._street_trees plants the front). Its own random numbers.
-## Each: [Vector2 where (this view's frame), species, tint, size].
+## Each: [Vector2 where (this view's frame), species, tint, size, the side
+## street's segment].
 func _side_trees(key: String) -> Array:
 	var lot: Dictionary = sim.lots.get(key, {})
 	var b: Dictionary = sim.buildings.get(key, {})
@@ -810,7 +846,7 @@ func _side_trees(key: String) -> Array:
 			if not planted or not c.is_finite() or c.distance_to(p) < 1.0:
 				continue
 			out.append([c + (p - c).normalized() * (float(street[1]) + RoadStyle.CURB_WIDTH + RoadStyle.PARKWAY_WIDTH * 0.5),
-				pick[0], pick[1], size])
+				pick[0], pick[1], size, int(street[0])])
 	return out
 
 
@@ -908,6 +944,35 @@ func _keep_clear(p: Vector2, r: float) -> void:
 			if not _clear.has(c):
 				_clear[c] = []
 			_clear[c].append([p, r])
+
+
+## Crowns keep `keep` metres off `p`: filed in every cell a crown that
+## could reach it stands in (the biggest street crown reaches about 10 m).
+func _crowns_keep_off(p: Vector2, keep: float) -> void:
+	var r := keep + 12.0
+	var lo := Vector2i(floori((p.x - r) / CLEAR_CELL), floori((p.y - r) / CLEAR_CELL))
+	var hi := Vector2i(floori((p.x + r) / CLEAR_CELL), floori((p.y + r) / CLEAR_CELL))
+	for x in range(lo.x, hi.x + 1):
+		for z in range(lo.y, hi.y + 1):
+			var c := Vector2i(x, z)
+			if not _crowns_off.has(c):
+				_crowns_off[c] = []
+			_crowns_off[c].append([p, keep])
+
+
+## A grown street tree's facts (see _set_trees' `when`): planted with its
+## home, already as old as TreeField.street_age picks from `seed`, no older
+## than its crown has room for by the corners and streetlights near `q`
+## (CORNER_CROWN, LAMP_CROWN) and the wires of a pole line down street
+## `seg` (WIRE_CLEAR).
+func _street_facts(when: Dictionary, q: Vector2, seg: int, sp: int, size: float, seed: int) -> Dictionary:
+	var reach := INF
+	for e in _crowns_off.get(Vector2i(floori(q.x / CLEAR_CELL), floori(q.y / CLEAR_CELL)), []):
+		reach = minf(reach, q.distance_to(e[0]) - float(e[1]))
+	var top := INF
+	if sim.network.segments.has(seg) and int(sim.network.segments[seg].type) in RoadView.URBAN_TYPES:
+		top = PoleLine.TOP - 1.0 - PoleLine.NEUTRAL_DROP - WIRE_CLEAR
+	return {"planted": when.planted, "start": TreeField.street_age(sp, seed, size, reach, top), "street": true}
 
 
 ## True when a street tree may stand at `q` (this view's frame): clear of

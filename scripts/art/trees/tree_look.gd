@@ -28,6 +28,16 @@ extends RefCounted
 const NEAR := 70.0
 const MID := 190.0
 const BAND := 14.0
+## The most any tier reaches with the full grown trees, the light ones and
+## TreeField's full cards (TreeField.NEAR scaled; card_near). With grown
+## street trees (2026-10-31) Cinematic's 175 m, 475 m and 950 m drew far
+## more leaves than the eye can tell apart at that range: 2 ms more to draw
+## a 100 m view, 3 ms in the snow (look round, M5 Max). At these the views
+## cost what they did before the street trees grew, and look the same from
+## 100 m up (rounds/fix-street-trees/probe/ab4).
+const NEAR_MOST := 110.0
+const MID_MOST := 400.0
+const CARD_MOST := 500.0
 
 ## Which share of the pixels each version of a tree draws, by its distance
 ## from the camera (shared by every card shader; see the header). The
@@ -759,7 +769,7 @@ static func radii() -> Vector2:
 	if browser():
 		# Low (the browser's start) keeps today's cheap trees everywhere.
 		return Vector2.ZERO if d < 0.6 else Vector2(0.0, MID * 0.55 * d)
-	return Vector2(NEAR * d, MID * d)
+	return Vector2(minf(NEAR * d, NEAR_MOST), minf(MID * d, MID_MOST))
 
 
 static func browser() -> bool:
@@ -807,7 +817,7 @@ static func set_eye(eye: Vector3, again := false) -> void:
 
 ## Where TreeField's full cards hand over to its light ones.
 static func card_near() -> float:
-	return TreeField.NEAR * GraphicsQuality.detail
+	return minf(TreeField.NEAR * GraphicsQuality.detail, CARD_MOST)
 
 
 ## The camera and reaches the shaders were last given (lod_eye, lod_dist).

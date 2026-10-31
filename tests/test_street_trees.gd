@@ -242,13 +242,20 @@ func _grown_yards() -> void:
 			if Geometry2D.is_point_in_polygon(Vector2(o.x, o.z), lot):
 				yard.append(age)
 			else:
-				street.append(age - TreeKinds.nursery_age(t[1]))
+				street.append(age)
 	var grown := yard.filter(func(a): return a >= 15.0).size()
 	var old := yard.filter(func(a): return a > 40.0).size()
 	_check(yard.size() > 40 and grown > yard.size() * 0.55 and old > 0 and yard.min() >= 2.0,
 		"yard trees start grown: %d of %d 15 years or older, %d over 40, youngest %.0f" % [grown, yard.size(), old, yard.min()])
-	_check(street.size() > 40 and absf(street.max()) < 0.01 and absf(street.min()) < 0.01,
-		"street trees still go in as nursery stock (%d)" % street.size())
+	# Street trees come in grown too (2026-10-31): mostly 18 to 33 years, a
+	# few young replacements, every one a grown mesh's own age.
+	var s_grown := street.filter(func(a): return a >= 18.0).size()
+	var s_young := street.filter(func(a): return a < 15.0).size()
+	var off_mesh := street.filter(func(a): return a >= 12.0 and not GrownTrees.BUCKETS.has(a))
+	_check(street.size() > 40 and s_grown > street.size() * 0.5 and s_young > 0 and off_mesh.is_empty()
+		and street.max() <= 56.001,
+		"street trees come in grown: %d of %d 18 years or older, %d young %s" % [s_grown, street.size(), s_young, off_mesh.slice(0, 3)])
+	_street_crowns()
 	# The same lot gives the same trees, filed again.
 	var first := {}
 	for key in homes.slice(0, 40):
@@ -292,6 +299,58 @@ func _grown_yards() -> void:
 	view.sim = mine
 	for key in homes:
 		view._set_trees(key)
+
+
+## A grown street tree's crown, the day it goes in, keeps off a corner's
+## stop line, signals and signs (BuildingView.CORNER_CROWN past the widest
+## road's half width) and off the far side of a streetlight's pole, unless
+## it is nursery stock.
+func _street_crowns() -> void:
+	var corners := []
+	for n in sim.network.nodes:
+		var segs := sim.network.segments_at(n)
+		if segs.size() < 2 or (segs.size() == 2 and BuildingView._straight_through(sim.network, n, segs)):
+			continue
+		var hw := 0.0
+		for id in segs:
+			hw = maxf(hw, RoadStyle.half_width(sim.network.segments[id].type))
+		var p: Vector3 = sim.network.nodes[n]
+		corners.append([Vector2(p.x, p.z), hw + BuildingView.CORNER_CROWN])
+	for l in StreetLights.place(sim.network):
+		corners.append([Vector2(l[1].x, l[1].z), BuildingView.LAMP_CROWN])
+	var over := []
+	var unmarked := []
+	var checked := 0
+	var near := 0
+	for key in view._planted:
+		if not sim.lots.has(key):
+			continue
+		var lot: PackedVector2Array = sim.lots[key].corners
+		for t in view._trees._trees.get(key, []):
+			var o: Vector3 = (t[0] as Transform3D).origin
+			var q := Vector2(o.x, o.z)
+			if Geometry2D.is_point_in_polygon(q, lot):
+				continue
+			# Every parkway tree is filed as a street tree (its crown kept
+			# clear of the street: TreeGrower.AgeCut), at a size its clearance
+			# allows for.
+			var sz := (t[0] as Transform3D).basis.get_scale().y
+			if not t[3].get("street", false) or sz < TreeKinds.STREET_MIN_SCALE - 0.001 or sz > TreeKinds.STREET_YOUNG_MAX_SCALE + 0.001:
+				unmarked.append("%s %.2f" % [key, sz])
+			if not t[3].has("start"):
+				continue
+			var age := maxf(float(t[3].start), TreeKinds.nursery_age(t[1]))
+			var reach: float = TreeField.SPREAD[t[1]] * (t[0] as Transform3D).basis.get_scale().y * TreeKinds.size_at(t[1], age)
+			checked += 1
+			for c in corners:
+				var room: float = q.distance_to(c[0]) - float(c[1])
+				if room < 12.0:
+					near += 1
+				if reach > room + 0.01 and age > TreeKinds.nursery_age(t[1]) + 0.01:
+					over.append("%s %.0f y reaches %.1f m, room %.1f" % [key, age, reach, room])
+	_check(unmarked.is_empty(), "every parkway tree is filed as a street tree, sized 0.8 to 1.1 %s" % [unmarked.slice(0, 3)])
+	_check(checked > 40 and near > 10 and over.is_empty(),
+		"grown street crowns keep off corners' signals and signs and streetlight heads (%d trees, %d near one) %s" % [checked, near, over.slice(0, 3)])
 
 
 ## Street trees inside a junction's sight-line clearance.

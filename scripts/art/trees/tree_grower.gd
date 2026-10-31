@@ -691,8 +691,10 @@ func _nearest_node(p: Vector3, r: float) -> int:
 ## {pos, parent, radius (per node; 0 = not there), main (heaviest child per
 ## node, -1 none), height, crown (centre, radii), trunk (node ids up the
 ## main stem)}. All at once; AgeCut does the same a slice at a time.
-func at_age(age: float) -> Dictionary:
-	var cut := AgeCut.new(self, age)
+## `street`: kept as a town keeps a street tree (AgeCut: NOT_STREET,
+## NARROW or RAISED).
+func at_age(age: float, street := AgeCut.NOT_STREET) -> Dictionary:
+	var cut := AgeCut.new(self, age, street)
 	while not cut.step(1_000_000_000):
 		pass
 	return cut.tree
@@ -702,6 +704,17 @@ func at_age(age: float) -> Dictionary:
 ## nodes goes a batch at a time, checking the clock between batches.
 class AgeCut:
 	const CHUNK := 512
+	## A street tree (`street`), kept clear for traffic and people on foot:
+	## - one tall enough (TreeKinds.street_raised) has its crown raised: the
+	##   trunk below the crown drawn out, so no leaf out past RAISE_TRUNK is
+	##   lower than TreeKinds.STREET_LIFT (a town street tree is trained to
+	##   a clear trunk, its scaffold limbs starting above the traffic);
+	## - a younger one is kept narrow, drawn in toward its trunk until its
+	##   twigs are within TreeKinds.street_young_reach of it, so drawn at its
+	##   biggest its leaves stay over the parkway (towns plant narrow
+	##   cultivars, and trim a young tree back off the walk and the street).
+	const RAISE_TRUNK := 0.5
+	enum { NOT_STREET, NARROW, RAISED }
 	const PASSES := 10
 	var tree := {}
 	var _g: TreeGrower
@@ -717,14 +730,19 @@ class AgeCut:
 	var _tips := PackedInt32Array()
 	var _on_trunk := PackedByteArray()
 	var _lift := 0.0
+	var _street := false
+	var _young_reach := INF
 	var _top := 0.0
 	var _lo := Vector3(1e9, 1e9, 1e9)
 	var _hi := -Vector3(1e9, 1e9, 1e9)
 	var _scale := 1.0
 
-	func _init(g: TreeGrower, age: float) -> void:
+	func _init(g: TreeGrower, age: float, street := NOT_STREET) -> void:
 		_g = g
 		_age = age
+		_street = street != NOT_STREET
+		if street == NARROW:
+			_young_reach = 0.0  # worked out from its height (_narrowed)
 		_n = g.pos.size()
 
 	## True when `tree` is ready.
@@ -867,11 +885,56 @@ class AgeCut:
 					at_chest = _radius[0]
 				_scale = want / maxf(at_chest, 1e-6)
 			9:
-				tree = {"pos": _g.pos, "parent": _g.parent, "radius": _radius, "main": _main, "height": _top,
+				var pos := _g.pos
+				if _street:
+					pos = _raised(pos) if _young_reach == INF else _narrowed(pos)
+				tree = {"pos": pos, "parent": _g.parent, "radius": _radius, "main": _main, "height": _top,
 					"trunk": _trunk(), "lo": _lo, "hi": _hi, "keep": _keep, "tips": _tips}
 				_weight = PackedFloat32Array()
 				_rn = PackedFloat32Array()
 				_on_trunk = PackedByteArray()
+
+	## A tall street tree's crown raised (see STREET): every node lifted by
+	## as much as the lowest twig out past the trunk is short of the lift,
+	## less near the ground (the trunk below the crown drawn out).
+	func _raised(pos: PackedVector3Array) -> PackedVector3Array:
+		var low := INF
+		for i in _n:
+			if _keep[i] == 1 and _on_trunk[i] == 0 \
+					and Vector2(pos[i].x - pos[0].x, pos[i].z - pos[0].z).length() > RAISE_TRUNK:
+				low = minf(low, pos[i].y)
+		# Clear of the biggest leaf cards, the light trees' (lod 1).
+		var want := TreeKinds.STREET_LIFT + TreeMesher.CARD[1] * 0.5
+		if low == INF or low >= want:
+			return pos
+		var dy := want - low
+		var out := pos.duplicate()
+		for i in _n:
+			out[i].y += dy * clampf(pos[i].y / maxf(low, 0.01), 0.0, 1.0)
+		_top += dy
+		_hi.y += dy
+		return out
+
+	## A young street tree kept narrow (see STREET): drawn in toward its
+	## trunk until no twig is farther out than _young_reach.
+	func _narrowed(pos: PackedVector3Array) -> PackedVector3Array:
+		_young_reach = TreeKinds.street_young_reach(_top)
+		var far := 0.0
+		for i in _n:
+			if _keep[i] == 1:
+				far = maxf(far, Vector2(pos[i].x - pos[0].x, pos[i].z - pos[0].z).length())
+		if far <= _young_reach:
+			return pos
+		var f := _young_reach / far
+		var out := pos.duplicate()
+		for i in _n:
+			out[i].x = pos[0].x + (pos[i].x - pos[0].x) * f
+			out[i].z = pos[0].z + (pos[i].z - pos[0].z) * f
+		_lo.x = pos[0].x + (_lo.x - pos[0].x) * f
+		_lo.z = pos[0].z + (_lo.z - pos[0].z) * f
+		_hi.x = pos[0].x + (_hi.x - pos[0].x) * f
+		_hi.z = pos[0].z + (_hi.z - pos[0].z) * f
+		return out
 
 	func _trunk() -> PackedInt32Array:
 		var trunk := PackedInt32Array([0])
