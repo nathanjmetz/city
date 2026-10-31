@@ -5,13 +5,16 @@ extends SceneTree
 ## just a part of the ground. They run right underneath the buildings. I
 ## also noticed street signs in the middle of driveways."):
 ##   - the live layer, updated after a road is built and the town has grown
-##     a little, is the same as one filed fresh from the town;
+##     a little, is the same as one filed fresh from the town, its curb
+##     worked out again without CurbClaims;
+##   - the same town saved and loaded gives the same live layer;
 ##   - lots keep off the county railroad's right of way by the map, with
 ##     CountyRail's own answers, near town and far from it;
 ##   - the footprints read a piece at a time are the ones read at once, and
 ##     reading puts the builders' shared settings back;
-##   - the survey files what the live layer doesn't, finds the clashes, and
-##     the Ground view draws them.
+##   - the survey files what the live layer doesn't into a map of its own,
+##     finds the clashes, finishes in a town that keeps growing, and the
+##     Ground view draws it all; the curb ledger holds live claims only.
 
 const Audit := preload("res://tools/overlap_audit.gd")
 
@@ -21,28 +24,52 @@ var _failed := false
 func _initialize() -> void:
 	var sim := Audit.town("small")
 	_check_updates(sim)
+	_check_reload(sim)
 	_check_reader(sim)
 	_check_survey(sim)
+	_check_growing()
 	_check_rail(Audit.town("county_small"))
 	quit(1 if _failed else 0)
 
 
-## The live layer updated as the town changes matches one filed fresh.
-func _check_updates(sim: CitySim) -> void:
-	GroundFootprints.collect(sim)  # the junction plans pushed to CurbClaims, as the road view does
-	var g := GroundMap.of(sim)
+## The junction plans as the road view works them out (a road view made for
+## the purpose), pushed to CurbClaims as the game's road view does.
+func _plans(sim: CitySim) -> Dictionary:
+	var rv := RoadView.new()
+	rv.sim = sim
+	rv.network = sim.network
+	rv._rural = rv._rural_segments()
+	rv._urban = rv._urban_next
+	var plans := Junction.plan(sim.network, rv._rural, rv._urban, rv._signals())
+	rv.free()
+	CurbClaims.of(sim).set_junctions(plans)
 	CurbClaims.of(sim).stamp()
-	_check(g.signature() == GroundMap.fresh_live(sim).signature(), "the live layer of the town as built matches a fresh one")
+	return plans
+
+
+## A live layer's claims by kind and owner ("kind owner part" -> pieces).
+func _groups(g: GroundMap) -> Dictionary:
+	var out := {}
+	for id in g.all_claims():
+		out["%s %s" % [g.kind_of(id), g.name_of(id)]] = g._pieces[id]
+	return out
+
+
+## The live layer updated as the town changes matches one filed fresh, its
+## curb worked out again from the plans and lots, not read from CurbClaims.
+func _check_updates(sim: CitySim) -> void:
+	var plans := _plans(sim)
+	var g := GroundMap.of(sim)
+	_check(g.signature() == GroundMap.fresh_live(sim, plans).signature(), "the live layer of the town as built matches a fresh one")
 	var roads := sim.network.segments.size()
 	# A street across the middle of town, through lots and over streets.
 	sim.apply({"type": "build_road", "start": [-150.0, 35.0], "ctrl": [0.0, 45.0], "end": [150.0, 35.0]})
 	for i in 30:
 		sim.tick()
-	GroundFootprints.collect(sim)
+	plans = _plans(sim)
 	g = GroundMap.of(sim)
-	CurbClaims.of(sim).stamp()
-	var fresh := GroundMap.fresh_live(sim)
-	_check(sim.network.segments.size() > roads and g.signature() == fresh.signature(),
+	var fresh := GroundMap.fresh_live(sim, plans)
+	_check(sim.network.segments.size() > roads and g.signature() == fresh.signature() and _groups(g) == _groups(fresh),
 		"after a new street and 30 ticks, the updated live layer matches a fresh one (%d roads, was %d; %d claims, fresh %d)" % [
 		sim.network.segments.size(), roads, g.stats().claims, fresh.stats().claims])
 	var kinds := {}
@@ -50,6 +77,37 @@ func _check_updates(sim: CitySim) -> void:
 		kinds[g.kind_of(id)] = true
 	for k in ["road", "rail_bed:county", "rail_row:county", "curb_cut", "curb_ramp", "crosswalk"]:
 		_check(kinds.has(k), "the live layer holds %s" % k)
+	# A road out past the town's edge: the railroads filed again only if
+	# their beds changed, and CurbClaims told only then.
+	var told := [0]
+	g.rail_changed.connect(func(_box): told[0] += 1)
+	var beds := _beds(g)
+	sim.apply({"type": "build_road", "start": [280.0, 280.0], "ctrl": [300.0, 300.0], "end": [320.0, 330.0]})
+	g = GroundMap.of(sim)
+	_check((_beds(g) == beds) == (told[0] == 0), "CurbClaims hears of the railroads only when their beds change (%d)" % told[0])
+
+
+## The railroad beds filed: [kind, owner, hash of outlines] each, in order.
+func _beds(g: GroundMap) -> Array:
+	var out := []
+	for k in g._bed_by:
+		out.append([k[0], k[1], g._bed_by[k][0]])
+	out.sort()
+	return out
+
+
+## The same town saved and loaded gives the same live layer.
+func _check_reload(sim: CitySim) -> void:
+	_plans(sim)
+	var g := GroundMap.of(sim)
+	var copy := CitySim.new()
+	copy.county_rail = true
+	copy.from_dict(JSON.parse_string(JSON.stringify(sim.to_dict())))
+	copy.county_trains.tick(copy)
+	_plans(copy)
+	var h := GroundMap.of(copy)
+	_check(_groups(h) == _groups(g), "saved and loaded: the same claims by kind and owner (%d)" % _groups(g).size())
+	_check(h.signature() == g.signature(), "saved and loaded: the same live layer")
 
 
 ## Read a piece at a time, the footprints are the ones read at once, and the
@@ -72,46 +130,45 @@ func _check_reader(sim: CitySim) -> void:
 	HouseBuilder.last_masses = []
 
 
-func _check_survey(sim: CitySim) -> void:
-	var g := GroundMap.of(sim)
+func _survey(g: GroundMap, ms := 2.0) -> int:
 	g.survey_start()
 	var frames := 0
-	while not g.survey_step(2.0) and frames < 100_000:
+	while not g.survey_step(ms) and frames < 100_000:
 		frames += 1
+	return frames
+
+
+func _check_survey(sim: CitySim) -> void:
+	var g := GroundMap.of(sim)
+	g.curb_gap(0, 1, 0.0, 30.0)  # the ledger put together before any survey
+	var ledger: int = g.stats().curb_claims
+	var live := g.signature()
+	var frames := _survey(g)
+	var s := g.survey
 	_check(g.surveyed() and frames > 10, "the survey finishes a few milliseconds at a time (%d frames, worst %.1f ms)" % [
 		frames, g.survey_max_ms])
 	var kinds := {}
-	var cuts_ok := true
-	for id in g.all_claims():
-		var k := g.kind_of(id)
+	for id in s.all_claims():
+		var k := s.kind_of(id)
 		kinds[k] = int(kinds.get(k, 0)) + 1
-		if k in ["curb_cut", "curb_ramp"]:
-			cuts_ok = cuts_ok and g._part[id].begins_with("curb.")
 	for k in ["lot", "building", "post:mailbox", "post:stop_sign", "tree_trunk", "drive", "sidewalk_line"]:
 		_check(int(kinds.get(k, 0)) > 0, "the survey filed %s (%d)" % [k, int(kinds.get(k, 0))])
-	_check(cuts_ok, "curb cuts and ramps come from CurbClaims alone, not twice")
+	for k in GroundMap.LIVE_KINDS:
+		_check(not kinds.has(k), "the survey leaves %s to the live layer" % k)
+	_check(g.signature() == live and g.stats().curb_claims == ledger,
+		"the live layer and its curb ledger are the same after the survey (%d on the curb)" % ledger)
 	var lot_clash := false
-	for p in g.clash_pieces:
-		lot_clash = lot_clash or g.kind_of(g._p_claim[p]) == "lot"
-	_check(g.clash_pairs > 0 and lot_clash, "the survey finds the clashes, two lots on one patch among them (%d)" % g.clash_pairs)
-	# Surveyed again, the same claims (the last survey's taken back first,
-	# the map packed together again), and the curb asked as before.
-	var sig := g.signature()
-	var claims := CurbClaims.of(sim)
-	var spots := []
-	for id in g.all_claims():
-		if g.kind_of(id) in ["post:mailbox", "post:stop_sign", "tree_trunk"]:
-			spots.append((g.claim(id).box as Rect2).get_center())
-	var free_before := spots.map(func(q): return claims.is_free(q, 0.3))
-	var size_before := g._owner.size()
+	for p in s.clash_pieces:
+		lot_clash = lot_clash or s.kind_of(s._p_claim[p]) == "lot"
+	_check(s.clash_pairs > 0 and lot_clash, "the survey finds the clashes, two lots on one patch among them (%d)" % s.clash_pairs)
+	# Surveyed again: the same map, and the last one shown until it's done.
+	var sig := s.signature()
 	g.survey_start()
+	g.survey_step(1.0)
+	_check(g.survey == s, "while the next survey runs, the last one finished stays")
 	while not g.survey_step(50.0):
 		pass
-	_check(g.signature() == sig, "a second survey of the same town gives the same map")
-	_check(g._owner.size() <= size_before, "and leaves no pile of taken-back claims (%d slots, %d before)" % [
-		g._owner.size(), size_before])
-	_check(spots.map(func(q): return claims.is_free(q, 0.3)) == free_before and spots.size() > 100,
-		"the curb answers the same after the map packs itself (%d spots)" % spots.size())
+	_check(g.survey != s and g.survey.signature() == sig, "a second survey of the same town gives the same map")
 	# The Ground view draws every claim, and outlines each clashing piece.
 	var view := GroundView.new()
 	view.sim = sim
@@ -119,14 +176,36 @@ func _check_survey(sim: CitySim) -> void:
 	view.set_on(true)
 	view.build_now()
 	var pieces := 0
-	for id in g.all_claims():
-		pieces += g._pieces[id]
-	_check(view.pieces_drawn == pieces and view.outlines_drawn == g.clash_pieces.size() and view._fill.mesh.get_surface_count() == 1
-		and view._lines.mesh.get_surface_count() == 1, "the Ground view draws %d pieces and outlines %d in red" % [
+	for m in [g, g.survey]:
+		for id in m.all_claims():
+			pieces += m._pieces[id]
+	_check(view.pieces_drawn == pieces and view.outlines_drawn == g.survey.clash_pieces.size() + g.survey.live_clashes.size()
+		and view._fill.mesh.get_surface_count() >= 1, "the Ground view draws %d pieces and outlines %d in red" % [
 		view.pieces_drawn, view.outlines_drawn])
 	view.set_on(false)
 	_check(not view.visible, "and off, it hides")
 	view.queue_free()
+
+
+## A town that keeps growing while it's surveyed still finishes a survey.
+func _check_growing() -> void:
+	var sim := Audit.town("small")
+	sim.require_utilities = false
+	var g := GroundMap.of(sim)
+	g.survey_start()
+	var frames := 0
+	var changed := false
+	while not g.surveyed() and frames < 20_000:
+		sim.tick()
+		if frames % 10 == 0:
+			# A new street every ten frames, out past the town.
+			var x := 420.0 + 30.0 * (frames / 10)
+			sim.apply({"type": "build_road", "start": [x, -200.0], "ctrl": [x, -170.0], "end": [x + 5.0, -140.0]})
+		changed = changed or g.survey_stale()
+		g.survey_step(3.0)
+		frames += 1
+	_check(g.surveyed() and changed, "a town growing all the while still gets its survey (%d frames, the town changed: %s)" % [
+		frames, changed])
 
 
 ## Lots keep off the county railroad's right of way by the map: the same

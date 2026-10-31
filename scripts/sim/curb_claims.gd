@@ -451,9 +451,7 @@ func near(box: Rect2, kinds := ALL) -> Array:
 		return out
 	if "cut" in kinds:
 		_sync()
-	if sim.ground == null:
-		GroundMap.of(sim)
-	var map: GroundMap = sim.ground
+	var map := GroundMap.of(sim)  # brought up to date with the town first
 	var want := []
 	for k in kinds:
 		want.append_array(MAP_KINDS.get(k, ["curb_zone"]))

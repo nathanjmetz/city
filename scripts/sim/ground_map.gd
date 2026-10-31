@@ -219,8 +219,12 @@ var _road_sig := {}  # seg -> hash of what its claim and street were filed from
 var _net_seen := -1  # network revision the streets were filed at
 var _rail_seen := []  # what the railroads were filed from
 var _quick_seen := []  # the town's change counters at the last sync
-var _rail_ids := PackedInt32Array()  # their claims
+## Milliseconds the last sync that had work to do took.
+var last_sync_ms := 0.0
+var _bed_by := {}  # [kind, owner] -> [hash of its outlines, its claim]: the railroad beds
+var _row_at := {}  # Vector2i(route, point) -> its right-of-way claim
 var _row_box := Rect2()  # town box the county's right of way is filed for
+var _row_offset := Vector2.INF
 var _row_seg := {}  # claim -> Vector2i(route, point) of a right-of-way piece
 ## Rails (town and county beds) changed in this box: for CurbClaims.
 signal rail_changed(box: Rect2)
@@ -228,23 +232,31 @@ signal rail_changed(box: Rect2)
 ## new id, or -1 for one taken back.
 signal compacted(remap: PackedInt32Array)
 
-## The survey (survey_start, survey_step).
+## The game's road and buildings views (main sets them), whose plans and
+## keep-clear spots the survey reads as they stand.
+var road_view: WeakRef
+var building_view: WeakRef
+
+## The last survey finished (a map of its own: everything the live layer
+## doesn't file), and the one under way.
+var survey: GroundMap
+var _next: GroundMap
 var _reader: GroundFootprints.Reader
-var _survey_stage := 0  # 0 idle, 1 reading, 2 clearing, 5 sorting out, 3 filing, 4 clashes
-var _survey_ids := PackedInt32Array()  # claims the survey filed
-var _survey_groups := []
+var _survey_stage := 0  # 0 idle, 1 reading, 2 sorting out, 3 filing, 4 its clashes, 5 the live layer's
+var _by_kind := {}
+var _groups_left := []
 var _survey_i := 0
-var _survey_list := []
-var _survey_dirty := true  # the town changed since the last survey
-var _survey_done := false
+var _piece_i := -1
+var _survey_dirty := true  # the town changed since the last survey started
 var _survey_t0 := 0
 ## Frames and wall milliseconds the last survey took, and its worst frame.
 var survey_frames := 0
 var survey_ms := 0.0
 var survey_max_ms := 0.0
-## Pieces in a "never" clash (piece -> true) and how many clashing pairs,
-## as the last survey found them.
+## On a survey's map: its pieces in a "never" clash (piece -> true), the
+## live layer's pieces in one (their outlines), and how many clashing pairs.
 var clash_pieces := {}
+var live_clashes := []
 var clash_pairs := 0
 
 
@@ -281,13 +293,25 @@ func _changed() -> void:
 	_survey_dirty = true
 
 
-## A fresh live layer of the town (no survey), filed from nothing: what an
-## updated one must match (tests).
-static func fresh_live(sim: CitySim) -> GroundMap:
+## A fresh live layer of the town (no survey), filed from nothing: the
+## curb worked out again here from the junction plans and the lots (the
+## way CurbClaims works it out), never read from CurbClaims. What an updated
+## one must match (tests).
+static func fresh_live(sim: CitySim, plans: Dictionary) -> GroundMap:
 	var g := GroundMap.new()
 	g._sim = weakref(sim)
 	g.sync()
-	CurbClaims.of(sim).file_into(g)
+	for sh in CurbClaims.junction_shapes(plans):
+		g.register(sh[1], CurbClaims._part_name(sh), CurbClaims.MAP_KINDS[sh[0]][0], [sh[2]])
+	var keys := sim.buildings.keys()
+	keys.sort()
+	for key in keys:
+		var lot = sim.lots.get(key)
+		if lot == null or not lot.has("front") or not lot.has("dir"):
+			continue
+		var b: Dictionary = sim.buildings[key]
+		for sh in CurbClaims._work_out(sim, key, b, lot, 0)[1]:
+			g.register(sh[1], CurbClaims._part_name(sh), "curb_cut", [sh[2]])
 	return g
 
 
@@ -302,14 +326,16 @@ func sync() -> void:
 	if quick == _quick_seen:
 		return
 	_quick_seen = quick
+	var t0 := Time.get_ticks_usec()
 	if sim.network.revision != _net_seen:
 		_net_seen = sim.network.revision
 		_sync_roads(sim)
-	var rail_key := [sim.rail.version, sim.rail.pieces.size(), sim.county_rail, sim.terrain_offset, _town_box(sim, 300.0),
-		_row_box_of(sim)]
+	var rail_key := [sim.rail.version, sim.rail.pieces.size(), sim.county_rail, sim.terrain_offset, _town_box(sim, 300.0)]
 	if rail_key != _rail_seen:
 		_rail_seen = rail_key
 		_sync_rail(sim)
+	_compact()
+	last_sync_ms = (Time.get_ticks_usec() - t0) / 1000.0
 
 
 func _sync_roads(sim: CitySim) -> void:
@@ -356,8 +382,10 @@ func _sync_roads(sim: CitySim) -> void:
 	_ledger_ok = false
 
 
-## The town's roads' box (town x/z), grown by `grow` metres ([] without roads).
-static func _town_box(sim: CitySim, grow: float) -> Array:
+## The town's roads' box (town x/z), grown by `grow` metres and rounded out
+## to 64 m steps, so it only changes when the roads reach new ground
+## (Rect2() without roads).
+static func _town_box(sim: CitySim, grow: float) -> Rect2:
 	var first := true
 	var box := Rect2()
 	for id in sim.network.nodes:
@@ -366,76 +394,108 @@ static func _town_box(sim: CitySim, grow: float) -> Array:
 			box = Rect2(Vector2(p.x, p.z), Vector2.ZERO)
 			first = false
 		box = box.expand(Vector2(p.x, p.z))
-	return [] if first else [box.grow(grow)]
-
-
-## How far round the town the county's right of way is filed (town x/z):
-## the roads' reach and 600 m more, in 64 m steps so it only changes when
-## the roads reach new ground.
-static func _row_box_of(sim: CitySim) -> Rect2:
-	var b := _town_box(sim, 600.0)
-	if b.is_empty() or not sim.county_rail:
+	if first:
 		return Rect2()
-	var box: Rect2 = b[0]
+	box = box.grow(grow)
 	var lo := (box.position / 64.0).floor() * 64.0
 	var hi := (box.end / 64.0).ceil() * 64.0
 	return Rect2(lo, hi - lo)
 
 
-## The town's and the county's railroads filed again: their beds (as
-## GroundFootprints reads them) and the county's right of way, a claim a
-## stretch of track.
+## How far round the town the county's right of way is filed (town x/z):
+## the roads' reach and 600 m more.
+static func _row_box_of(sim: CitySim) -> Rect2:
+	return _town_box(sim, 600.0) if sim.county_rail else Rect2()
+
+
+## The town's and the county's railroads filed again where they changed:
+## their beds (as GroundFootprints reads them, within 300 m of the roads in
+## 64 m steps), a route or town track at a time, and the county's right of
+## way, a claim a stretch of track, stretches coming and going as the box
+## grows. CurbClaims hears only where beds really changed.
 func _sync_rail(sim: CitySim) -> void:
-	var was := Rect2()
-	var any := false
-	for id in _rail_ids:
-		if _alive[id] == 1 and _kinds[_kind[id]] != "rail_row:county":
-			was = _claim_box(id) if not any else was.merge(_claim_box(id))
-			any = true
-	release_ids(_rail_ids)
-	_rail_ids = PackedInt32Array()
-	_row_seg.clear()
+	var box := _town_box(sim, 300.0)
 	var out := []
-	GroundFootprints._rail(out, sim)
+	GroundFootprints._rail(out, sim, box, sim.county_rail and box.has_area())
+	# A claim a 256 m square of each route (or town track), so a town reaching
+	# new ground files only the squares that changed.
 	var groups := {}
 	for sh in out:
-		var k := [sh.cat + ":" + sh.what, sh.key]
+		var t := Vector2i((sh.poly[0] / 256.0).floor())
+		var k := [sh.cat + ":" + sh.what, sh.key, "rail_bed@%d,%d" % [t.x, t.y]]
 		if not groups.has(k):
 			groups[k] = []
 		groups[k].append(sh.poly)
+	var changed := Rect2()
+	var any := false
+	for k in _bed_by.keys():
+		if not groups.has(k) or hash(groups[k]) != int(_bed_by[k][0]):
+			var id: int = _bed_by[k][1]
+			if id >= 0 and id < _alive.size() and _alive[id] == 1:
+				changed = _claim_box(id) if not any else changed.merge(_claim_box(id))
+				any = true
+			release_ids(PackedInt32Array([id]))
+			_bed_by.erase(k)
 	var keys := groups.keys()
 	keys.sort()
 	for k in keys:
-		var id := register(k[1], "rail_bed", k[0], groups[k])
+		if _bed_by.has(k):
+			continue
+		var id := register(k[1], k[2], k[0], groups[k])
+		_bed_by[k] = [hash(groups[k]), id]
 		if id >= 0:
-			_rail_ids.append(id)
-	_row_box = _row_box_of(sim)
-	if _row_box.has_area():
+			changed = _claim_box(id) if not any else changed.merge(_claim_box(id))
+			any = true
+	if any:
+		rail_changed.emit(changed)
+	var row := _row_box_of(sim)
+	if row == _row_box and _row_offset == sim.terrain_offset:
+		return
+	if _row_offset != sim.terrain_offset:
+		release_ids(PackedInt32Array(_row_at.values()))
+		_row_at.clear()
+		_row_seg.clear()
+	_row_box = row
+	_row_offset = sim.terrain_offset
+	var want := {}
+	if row.has_area():
 		var o := sim.terrain_offset
-		var rbox := Rect2(_row_box.position + o, _row_box.size)
+		var rbox := Rect2(row.position + o, row.size)
 		var routes: Array = CountyRail.all()
-		for r in routes.size():
-			var pts: PackedVector2Array = routes[r].pts
-			for i in pts.size() - 1:
-				var a := pts[i]
-				var b := pts[i + 1]
-				if not rbox.intersects(Rect2(a, Vector2.ZERO).expand(b).grow(0.01)):
-					continue
-				var u := (b - a).normalized() if a.distance_to(b) > 0.001 else Vector2.RIGHT
-				var n := Vector2(-u.y, u.x) * CountyRail.ROW_HALF
-				var id := register("county:%d" % r, "row:%d" % i, "rail_row:county",
-					[PackedVector2Array([a - n - o, b - n - o, b + n - o, a + n - o])])
-				if id >= 0:
-					_rail_ids.append(id)
-					_row_seg[id] = Vector2i(r, i)
-	var now := Rect2()
-	var some := false
-	for id in _rail_ids:
-		if _kinds[_kind[id]] != "rail_row:county":
-			now = _claim_box(id) if not some else now.merge(_claim_box(id))
-			some = true
-	if any or some:
-		rail_changed.emit(was.merge(now) if any and some else (was if any else now))
+		# The track's stretches in the box, from CountyRail's own bins.
+		for bx in range(floori(rbox.position.x / CountyRail.BIN), floori(rbox.end.x / CountyRail.BIN) + 1):
+			for bz in range(floori(rbox.position.y / CountyRail.BIN), floori(rbox.end.y / CountyRail.BIN) + 1):
+				for e in CountyRail._bins.get(Vector2i(bx, bz), []):
+					var at := Vector2i(e[0], e[1])
+					if want.has(at):
+						continue
+					var pts: PackedVector2Array = routes[at.x].pts
+					if rbox.intersects(Rect2(pts[at.y], Vector2.ZERO).expand(pts[at.y + 1]).grow(0.01)):
+						want[at] = true
+	var gone := PackedInt32Array()
+	for at in _row_at.keys():
+		if not want.has(at):
+			gone.append(_row_at[at])
+			_row_seg.erase(_row_at[at])
+			_row_at.erase(at)
+	release_ids(gone)
+	var o := sim.terrain_offset
+	var routes: Array = CountyRail.all()
+	var add := want.keys()
+	add.sort()
+	for at: Vector2i in add:
+		if _row_at.has(at):
+			continue
+		var pts: PackedVector2Array = routes[at.x].pts
+		var a := pts[at.y]
+		var b := pts[at.y + 1]
+		var u := (b - a).normalized() if a.distance_to(b) > 0.001 else Vector2.RIGHT
+		var n := Vector2(-u.y, u.x) * CountyRail.ROW_HALF
+		var id := register("county:%d" % at.x, "row:%d" % at.y, "rail_row:county",
+			[PackedVector2Array([a - n - o, b - n - o, b + n - o, a + n - o])])
+		if id >= 0:
+			_row_at[at] = id
+			_row_seg[id] = at
 
 
 ## How near the county's railroad track comes to outline `poly` (town x/z),
@@ -620,16 +680,26 @@ func _file_group(kind: String, owner: String, list: Array, cells) -> PackedInt32
 # ------------------------------------------------------------------ survey
 
 ## Starts surveying the town (GroundFootprints.Reader): everything the live
-## layer doesn't file, taken in a few milliseconds a frame (survey_step),
-## then the clashes among it all. The game starts one once a town has
-## opened, and the Ground view when the town changed since.
+## layer doesn't file, read a few milliseconds a frame into a map of its
+## own (survey_step), then the clashes among it all. The Ground view starts
+## one when it's turned on and the town changed since the last; until it
+## ends, `survey` stays the last one finished.
 func survey_start() -> void:
 	var sim: CitySim = _sim.get_ref() if _sim != null else null
 	if sim == null:
 		return
-	_reader = GroundFootprints.Reader.new(sim, false)
+	var rv = road_view.get_ref() if road_view != null else null
+	var bv = building_view.get_ref() if building_view != null else null
+	_reader = GroundFootprints.Reader.new(sim, false, rv, bv)
+	_reader.skip_rail = true
+	_next = GroundMap.new(cell)
+	_next._sim = _sim
+	_next._crossings = _crossings
+	_by_kind = {}
+	_groups_left = []
+	_survey_i = 0
+	_piece_i = -1
 	_survey_stage = 1
-	_survey_done = false
 	_survey_dirty = false
 	_survey_t0 = Time.get_ticks_msec()
 	survey_frames = 0
@@ -640,9 +710,9 @@ func surveying() -> bool:
 	return _survey_stage != 0
 
 
-## True once a survey has finished and none is under way.
+## True once a survey has finished (`survey` holds it).
 func surveyed() -> bool:
-	return _survey_done and _survey_stage == 0
+	return survey != null
 
 
 ## True when the town changed since the last survey started.
@@ -654,18 +724,20 @@ func survey_stale() -> bool:
 func survey_share() -> float:
 	match _survey_stage:
 		1:
-			return 0.85 * _reader.share()
-		2, 5:
-			return 0.85
+			return 0.8 * _reader.share()
+		2:
+			return 0.8 + 0.02 * float(_survey_i) / maxf(_reader.out.size(), 1.0)
 		3:
-			return 0.85 + 0.05 * float(_survey_i) / maxf(_survey_groups.size(), 1.0)
+			return 0.82 + 0.06 * float(_survey_i) / maxf(_groups_left.size(), 1.0)
 		4:
-			return 0.9 + 0.1 * float(_survey_i) / maxf(_survey_list.size(), 1.0)
-	return 1.0 if _survey_done else 0.0
+			return 0.88 + 0.08 * float(_survey_i) / maxf(_next._owner.size(), 1.0)
+		5:
+			return 0.96 + 0.04 * float(_survey_i) / maxf(_owner.size(), 1.0)
+	return 1.0
 
 
-## About `ms` milliseconds of the survey under way (at least one piece of
-## work). True when none is left.
+## About `ms` milliseconds of the survey under way (at least one small piece
+## of work: one street, one building, a few shapes). True when none is left.
 func survey_step(ms := SURVEY_MS) -> bool:
 	if _survey_stage == 0:
 		return true
@@ -678,76 +750,56 @@ func survey_step(ms := SURVEY_MS) -> bool:
 		match _survey_stage:
 			1:
 				if _reader.step(maxi(budget - (Time.get_ticks_usec() - t0), 1)):
-					_survey_list = Array(_survey_ids)
-					_survey_ids = PackedInt32Array()
 					_survey_i = 0
 					_survey_stage = 2
 			2:
-				# The last survey's claims taken back, a batch at a time.
-				var n := mini(_survey_i + 2000, _survey_list.size())
-				release_ids(PackedInt32Array(_survey_list.slice(_survey_i, n)))
-				_survey_i = n
-				if _survey_i >= _survey_list.size():
-					_survey_list = []
-					_survey_groups = []
-					_survey_i = 0
-					_survey_stage = 5
-					_compact()
-			5:
-				# This one's shapes by kind and owner (the order they're filed
-				# in changes no name, so they aren't sorted).
+				# The shapes by kind and owner, a batch at a time (the order
+				# they're filed in changes no name, so they aren't sorted).
 				var shapes: Array = _reader.out
-				var skip: Array = LIVE_KINDS
-				var by: Dictionary = {} if _survey_groups.is_empty() else _survey_groups[0]
-				if _survey_groups.is_empty():
-					_survey_groups.append(by)
-				var n := mini(_survey_i + 4000, shapes.size())
-				for i in range(_survey_i, n):
-					var sh: Dictionary = shapes[i]
+				while _survey_i < shapes.size():
+					var sh: Dictionary = shapes[_survey_i]
+					shapes[_survey_i] = null  # let go of a bit at a time, not all at once
+					_survey_i += 1
 					var kind: String = sh.cat + ":" + sh.what if sh.cat in ["post", "rail_bed"] else sh.cat
-					if kind in skip or (sh.cat == "crosswalk" and sh.what == "shaped"):
-						continue
-					var k := [kind, sh.key]
-					if not by.has(k):
-						by[k] = []
-					by[k].append(sh)
-				_survey_i = n
+					if not (kind in LIVE_KINDS or (sh.cat == "crosswalk" and sh.what == "shaped")):
+						var k := [kind, sh.key]
+						if not _by_kind.has(k):
+							_by_kind[k] = []
+							_groups_left.append(k)
+						_by_kind[k].append(sh)
+					if Time.get_ticks_usec() - t0 >= budget:
+						break
 				if _survey_i >= shapes.size():
 					_reader = null
-					_survey_groups = []
-					for k in by:
-						_survey_groups.append([k[0], k[1], by[k]])
 					_survey_i = 0
 					_survey_stage = 3
 			3:
-				while _survey_i < _survey_groups.size():
-					var g: Array = _survey_groups[_survey_i]
-					_survey_ids.append_array(_file_group(g[0], g[1], g[2], null))
+				while _survey_i < _groups_left.size():
+					var k: Array = _groups_left[_survey_i]
+					_next._file_group(k[0], k[1], _by_kind[k], null)
+					_by_kind.erase(k)  # let go as filed
 					_survey_i += 1
 					if Time.get_ticks_usec() - t0 >= budget:
 						break
-				if _survey_i >= _survey_groups.size():
-					_survey_groups = []
-					_ledger_ok = false
-					version += 1
-					clash_pieces = {}
-					clash_pairs = 0
-					_survey_list = []
-					for id in _owner.size():
-						if _alive[id] == 1:
-							_survey_list.append(id)
+				if _survey_i >= _groups_left.size():
+					_by_kind = {}
+					_groups_left = []
 					_survey_i = 0
+					_piece_i = -1
 					_survey_stage = 4
 			4:
-				while _survey_i < _survey_list.size():
-					_clashes_of(_survey_list[_survey_i])
-					_survey_i += 1
-					if Time.get_ticks_usec() - t0 >= budget:
-						break
-				if _survey_i >= _survey_list.size():
-					_survey_list = []
+				# Clashes among the survey's own claims and with the live layer.
+				if _clash_step(_next, t0, budget):
+					_survey_i = 0
+					_piece_i = -1
+					_survey_stage = 5
+			5:
+				# Clashes within the live layer itself.
+				if _clash_step(self, t0, budget):
+					_next.version = version
+					survey = _next
+					_next = null
 					_survey_stage = 0
-					_survey_done = true
 					survey_ms = Time.get_ticks_msec() - _survey_t0
 					version += 1
 	survey_frames += 1
@@ -755,9 +807,50 @@ func survey_step(ms := SURVEY_MS) -> bool:
 	return _survey_stage == 0
 
 
+## Works through `of`'s claims piece by piece for their "never" clashes
+## until the budget is spent; true once all are done. A clash within one
+## map counts from its lower piece; one between the survey and the live
+## layer from the survey's side, the live piece's outline kept with it.
+func _clash_step(of: GroundMap, t0: int, budget: int) -> bool:
+	while _survey_i < of._owner.size():
+		var id := _survey_i
+		if of._alive[id] == 1 and _rules_of().has(of._kinds[of._kind[id]].get_slice(":", 0)):
+			if _piece_i < 0:
+				_piece_i = of._first[id]
+			var kind := of._kinds[of._kind[id]]
+			while _piece_i < of._first[id] + of._pieces[id]:
+				var p := _piece_i
+				_piece_i += 1
+				var poly := of.piece_poly(p)
+				for h in of.hits(kind, poly, of._owner[id]):
+					var q: int = h[0]
+					if q <= p:
+						continue
+					_next.clash_pairs += 1
+					if of == _next:
+						_next.clash_pieces[p] = true
+						_next.clash_pieces[q] = true
+					else:
+						_next.live_clashes.append(poly)
+						_next.live_clashes.append(of.piece_poly(q))
+				if of == _next:
+					for h in hits(kind, poly, of._owner[id]):
+						_next.clash_pairs += 1
+						_next.clash_pieces[p] = true
+						_next.live_clashes.append(piece_poly(h[0]))
+				if Time.get_ticks_usec() - t0 >= budget:
+					return false
+		_survey_i += 1
+		_piece_i = -1
+		if Time.get_ticks_usec() - t0 >= budget:
+			return false
+	return true
+
+
 ## The map's claims packed together again, the taken-back ones dropped,
-## when they are more than half of it (a survey taken back leaves tens of
-## thousands). Claim ids change: `compacted` says from what to what.
+## when they are more than half of it (streets and lots filed again and
+## again over a long game). Claim ids change: `compacted` says from what
+## to what.
 func _compact() -> void:
 	var dead := 0
 	for a in _alive:
@@ -837,44 +930,21 @@ func _compact() -> void:
 		mine.append(id)
 		_by_owner[_owner[id]] = mine
 	_ledger_ok = false
-	var rails := PackedInt32Array()
-	for id in _rail_ids:
-		if id >= 0 and remap[id] >= 0:
-			rails.append(remap[id])
-	_rail_ids = rails
+	for bed in _bed_by:
+		var was: int = _bed_by[bed][1]
+		_bed_by[bed][1] = remap[was] if was >= 0 and was < remap.size() else -1
 	var rows := {}
-	for id in _row_seg:
-		if remap[id] >= 0:
-			rows[remap[id]] = _row_seg[id]
+	for at in _row_at:
+		var now: int = remap[_row_at[at]]
+		_row_at[at] = now
+		if now >= 0:
+			rows[now] = at
 	_row_seg = rows
-	var kept := PackedInt32Array()
-	for id in _survey_ids:
-		if id >= 0 and remap[id] >= 0:
-			kept.append(remap[id])
-	_survey_ids = kept
-	clash_pieces = {}
 	version += 1
 	compacted.emit(remap)
 
 
-## Claim `id`'s "never" clashes, each pair once (from its lower piece).
-func _clashes_of(id: int) -> void:
-	if _alive[id] == 0:
-		return
-	var kind := _kinds[_kind[id]]
-	if not _rules_of().has(kind.get_slice(":", 0)):
-		return
-	for p in range(_first[id], _first[id] + _pieces[id]):
-		for h in hits(kind, piece_poly(p), _owner[id]):
-			var q: int = h[0]
-			if q <= p:
-				continue
-			clash_pieces[p] = true
-			clash_pieces[q] = true
-			clash_pairs += 1
-
-
-# ------------------------------------------------------------------ claims# ------------------------------------------------------------------ claims
+# ------------------------------------------------------------------ claims
 
 ## Files a claim: `owner`'s `part`, of `kind`, its outline pieces `polys`
 ## (PackedVector2Array each, town x/z). Its id; -1 when it has no piece.
@@ -967,6 +1037,7 @@ func _add(owner: String, part: String, kind: String, polys: Array, cells) -> int
 	_curb_s.append(0.0)
 	_curb_s.append(0.0)
 	var all := Rect2()
+	var own_cells := {}  # Vector2i -> [its pieces], when filed straight into the grid
 	for i in pieces.size():
 		var poly: PackedVector2Array = pieces[i]
 		var box := Rect2(poly[0], Vector2.ZERO)
@@ -983,15 +1054,16 @@ func _add(owner: String, part: String, kind: String, polys: Array, cells) -> int
 		_p_n.append(poly.size())
 		_pts.append_array(poly)
 		_mark.append(0)
+		var into: Dictionary = cells if cells != null else own_cells
 		for c in _cells(box):
-			if cells != null:
-				if not cells.has(c):
-					cells[c] = []
-				cells[c].append(p)
-			else:
-				var list: PackedInt32Array = _grid.get(c, PackedInt32Array())
-				list.append(p)
-				_grid[c] = list
+			if not into.has(c):
+				into[c] = []
+			into[c].append(p)
+	# Straight into the grid: each square's list grown once for the claim.
+	for c in own_cells:
+		var list: PackedInt32Array = _grid.get(c, PackedInt32Array())
+		list.append_array(PackedInt32Array(own_cells[c]))
+		_grid[c] = list
 	_box.append(all.position.x)
 	_box.append(all.position.y)
 	_box.append(all.end.x)

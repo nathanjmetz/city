@@ -90,122 +90,220 @@ class Reader:
 	## tests: no road view does it for them). The game's survey leaves the
 	## road view's own plans be.
 	var push_junctions := true
+	## Leaves the railroads out (the game's survey: the live layer files them).
+	var skip_rail := false
 	var _stage := 0
 	var _i := 0
-	var _segs := []
+	var _list := []
 	var _keys := []
 	var _rv: RoadView
+	var _own_rv := true
 	var _plans := {}
 	var _bv: BuildingView
+	var _own_bv := true
 	var _drawn := {}  # lot key -> [masses, plan, trees (world entries)]
 	var _tree_grid := {}  # Vector2i (40 m) -> [world tree entries]
 	var _stale := 0
+	var _signs := {}
+	var _ssv: StreetSignView
+	var _lamp := {}
+	var _poles := []
+	var _waiting := false  # the game's traffic is still to work out its junctions
 
-	func _init(town: CitySim, push := true) -> void:
+	## The stages, in order.
+	const ORDER := [0, 1, 2, 15, 16, 17, 3, 6, 7, 8, 9, 18, 19, 10, 20, 11, 24, 21, 12, 22, 13, 23]
+	const DONE := 99
+
+	## `road_view` and `building_view`: the game's own, whose plans and
+	## keep-clear spots are read as they stand (made afresh here without).
+	func _init(town: CitySim, push := true, road_view: RoadView = null, building_view: BuildingView = null) -> void:
 		sim = town
 		push_junctions = push
+		if road_view != null and is_instance_valid(road_view):
+			_rv = road_view
+			_own_rv = false
+		if building_view != null and is_instance_valid(building_view):
+			_bv = building_view
+			_own_bv = false
 
 	func done() -> bool:
-		return _stage >= 14
+		return _stage == DONE
 
 	## Reads on for about `usec` microseconds (at least one piece; all of it
 	## when 0). True once everything is read.
 	func step(usec := 0) -> bool:
 		var t0 := Time.get_ticks_usec()
 		var keep := GroundFootprints._builder_state()
+		_waiting = false
 		while not done():
 			_work()
-			if usec > 0 and Time.get_ticks_usec() - t0 >= usec:
+			if _waiting or (usec > 0 and Time.get_ticks_usec() - t0 >= usec):
 				break
 		GroundFootprints._restore_builder_state(keep)
 		return done()
 
-	## What's left to read, about (0 to 1).
+	## How far the reading has got, about (0 to 1).
 	func share() -> float:
-		var per := float(_keys.size()) * 3.0 + 14.0
-		var at := float(_stage)
-		if _stage in [6, 7, 8]:
-			at += float(_stage - 6) * _keys.size() + _i
-		elif _stage > 8:
-			at += 3.0 * _keys.size()
-		return clampf(at / per, 0.0, 1.0)
+		if done():
+			return 1.0
+		var at := float(ORDER.find(_stage))
+		if not _list.is_empty():
+			at += float(_i) / _list.size()
+		return clampf(at / ORDER.size(), 0.0, 1.0)
+
+	## Moves to stage `then` over the items in `list` (straight past it when
+	## there are none).
+	func _over(list: Array, then: int) -> void:
+		_list = list
+		_i = 0
+		_stage = then
+
+	## The next item of the list under way, or the next stage when it's done.
+	func _next(then: int) -> bool:
+		_i += 1
+		if _i >= _list.size():
+			_list = []
+			_i = 0
+			_stage = then
+			return false
+		return true
 
 	func _work() -> void:
+		var net := sim.network
 		match _stage:
 			0:
 				# The road view's own reading of which streets are country
 				# roads, which are town streets, and its junction plans (curb
 				# returns, ramps).
-				_rv = RoadView.new()
-				_rv.sim = sim
-				_rv.network = sim.network
-				_rv._rural = _rv._rural_segments()
-				_rv._urban = _rv._urban_next
-				_plans = Junction.plan(sim.network, _rv._rural, _rv._urban, _rv._signals())
+				if _rv == null:
+					_rv = RoadView.new()
+					_rv.sim = sim
+					_rv.network = net
+					_rv._rural = _rv._rural_segments()
+					_rv._urban = _rv._urban_next
+				if not _own_rv and not _rv.plans.is_empty():
+					_plans = _rv.plans
+				else:
+					_plans = Junction.plan(net, _rv._rural, _rv._urban, _rv._signals())
 				if push_junctions:
 					# The curb claims as the game has them (RoadView pushes its plans).
 					CurbClaims.of(sim).set_junctions(_plans)
-				_segs = sim.network.segments.keys()
-				_i = 0
-				_stage = 1
+				_over(net.segments.keys(), 1)
 			1:
-				# Streets and sidewalks, a few at a time.
-				var n := mini(_i + 24, _segs.size())
-				for i in range(_i, n):
-					GroundFootprints._road(out, sim, _rv, _plans, _segs[i])
-				_i = n
-				if _i >= _segs.size():
-					_stage = 2
+				# Streets and sidewalks, one at a time.
+				if not _list.is_empty():
+					GroundFootprints._road(out, sim, _rv, _plans, _list[_i])
+				if not _next(1) or _list.is_empty():
+					_over(_plans.keys(), 2)
 			2:
-				GroundFootprints._junction_bits(out, sim, _plans)
-				GroundFootprints._rail(out, sim)
-				GroundFootprints._lots(out, sim)
+				if not _list.is_empty():
+					GroundFootprints._junction_bit(out, _plans, _list[_i])
+				if not _next(2) or _list.is_empty():
+					_stage = 15
+			15:
+				if not skip_rail:
+					GroundFootprints._rail(out, sim)
+				_over(sim.lots.keys(), 16)
+			16:
+				if not _list.is_empty():
+					GroundFootprints._lot(out, sim, _list[_i])
+				if not _next(16) or _list.is_empty():
+					_stage = 17
+			17:
 				GroundFootprints._public(out, sim)
 				_stage = 3
 			3:
 				# The buildings first: their builders' aprons claim the curb (as
 				# the game's signs and lamps stand once the town is drawn).
-				_bv = BuildingView.new()
-				_bv.sim = sim
-				_bv._check_parkways()  # the view's keep-clear spots for street trees
+				if _bv == null:
+					_bv = BuildingView.new()
+					_bv.sim = sim
+					_bv._check_parkways()  # the view's keep-clear spots for street trees
 				_keys = sim.buildings.keys()
 				_keys.sort()
-				_i = 0
-				_stage = 6
+				_over(_keys, 6)
 			6:
-				if _i < _keys.size():
-					GroundFootprints._built_one(self, _keys[_i])
-				_next_key(7)
+				if not _list.is_empty():
+					GroundFootprints._built_one(self, _list[_i])
+				if not _next(6) or _list.is_empty():
+					_over(_keys, 7)
 			7:
 				# Mailboxes once every lot is drawn (they keep off the neighbours' drives).
-				if _i < _keys.size():
-					GroundFootprints._mailbox_of(self, _keys[_i])
-				_next_key(8)
-			8:
-				if _i == 0:
-					_bv.free()
+				if not _list.is_empty():
+					GroundFootprints._mailbox_of(self, _list[_i])
+				if not _next(7) or _list.is_empty():
+					if _own_bv:
+						_bv.free()
 					_bv = null
 					if _stale > 0:
 						print("ground_footprints: %d buildings drew no masses of their own (BuildingView would reuse the last one's)" % _stale)
-				if _i < _keys.size():
-					GroundFootprints._props_of(self, _keys[_i])
-				_next_key(9)
+					_over(_keys, 8)
+			8:
+				if not _list.is_empty():
+					GroundFootprints._props_of(self, _list[_i])
+				if not _next(8) or _list.is_empty():
+					_stage = 9
 			9:
-				GroundFootprints._signs(out, sim, _rv, _plans)
+				if not push_junctions and sim.traffic._dirty:
+					# The game's traffic works its junctions out again on the
+					# next tick or car drawn: wait for it rather than do it here.
+					_waiting = true
+					return
+				_signs = GroundFootprints._signs_begin(sim)
+				_over(_signs.nodes, 18)
+			18:
+				if not _list.is_empty():
+					GroundFootprints._signs_at(out, sim, _rv, _plans, _signs, _list[_i])
+				if not _next(18) or _list.is_empty():
+					_stage = 19
+			19:
+				GroundFootprints._no_turns(out, sim, _signs)
+				_signs = {}
 				_stage = 10
 			10:
-				GroundFootprints._name_posts(out, sim)
-				_stage = 11
+				_ssv = StreetSignView.new()
+				_ssv.sim = sim
+				_over(net.nodes.keys(), 20)
+			20:
+				if not _list.is_empty():
+					GroundFootprints._name_post(out, _ssv, _list[_i])
+				if not _next(20) or _list.is_empty():
+					_ssv.free()
+					_ssv = null
+					_stage = 11
 			11:
-				for l in StreetLights.place(sim.network, _rv._rural, CurbClaims.of(sim)):
-					var p: Vector3 = l[1]
-					GroundFootprints._add(out, "post", "streetlight", "seg:%d" % int(l[6]), GroundFootprints._sq(Vector2(p.x, p.z), GroundFootprints.POST.streetlight))
-				_stage = 12
+				# The roads' pieces the lamps keep off, a road at a time.
+				_lamp = {"taken": {}, "pieces": {}, "claims": CurbClaims.of(sim), "out": []}
+				_over(net.segments.keys(), 24)
+			24:
+				if not _list.is_empty() and net.segments.has(_list[_i]):
+					StreetLights._pieces_of(_lamp.pieces, net, _list[_i])
+				if not _next(24) or _list.is_empty():
+					var ids := net.segments.keys()
+					ids.sort()
+					_over(ids, 21)
+			21:
+				if not _list.is_empty() and net.segments.has(_list[_i]):
+					StreetLights._place_one(_lamp.out, _lamp.taken, _lamp.pieces, net, _list[_i], _rv._rural, _lamp.claims)
+				if not _next(21) or _list.is_empty():
+					for l in _lamp.out:
+						var p: Vector3 = l[1]
+						GroundFootprints._add(out, "post", "streetlight", "seg:%d" % int(l[6]),
+							GroundFootprints._sq(Vector2(p.x, p.z), GroundFootprints.POST.streetlight))
+					_lamp = {}
+					_stage = 12
 			12:
-				GroundFootprints._poles(out, sim, _rv)
-				_rv.free()
-				_rv = null
-				_stage = 13
+				_poles = GroundFootprints._pole_runs(sim, _rv)
+				_over(_poles[0], 22)
+			22:
+				if not _list.is_empty():
+					GroundFootprints._pole_run(out, _rv, _list[_i], _poles[1])
+				if not _next(22) or _list.is_empty():
+					_poles = []
+					if _own_rv:
+						_rv.free()
+					_rv = null
+					_stage = 13
 			13:
 				for id in sim.buses.stops:
 					var st: Dictionary = sim.buses.stops[id]
@@ -214,15 +312,16 @@ class Reader:
 					var outward := Vector3(pos.x - pt.x, 0.0, pos.z - pt.z).normalized()
 					var at := pos + outward * (RoadStyle.CURB_WIDTH + RoadStyle.PARKWAY_WIDTH * 0.5)
 					GroundFootprints._add(out, "post", "bus_stop", "stop:%s" % id, GroundFootprints._sq(Vector2(at.x, at.z), GroundFootprints.POST.bus_stop))
-				for i in out.size():
+				_i = 0
+				_stage = 23
+			23:
+				var n := mini(_i + 5000, out.size())
+				for i in range(_i, n):
 					out[i].id = i
-				_stage = 14
-
-	func _next_key(then: int) -> void:
-		_i += 1
-		if _i >= _keys.size():
-			_i = 0
-			_stage = then
+				_i = n
+				if _i >= out.size():
+					_i = 0
+					_stage = DONE
 
 
 ## The builders' shared settings (HouseBuilder's statics), to put back.
@@ -292,6 +391,8 @@ static func _strip(out: Array, cat: String, what: String, key: String, pts: Pack
 ## One street's pavement and its sidewalks' walking lines.
 static func _road(out: Array, sim: CitySim, rv: RoadView, plans: Dictionary, id: int) -> void:
 	var net := sim.network
+	if not net.segments.has(id):
+		return  # taken out since the survey began
 	var sg: Dictionary = net.segments[id]
 	var type: int = sg.type
 	var pts := net.sample_segment(id)
@@ -323,37 +424,41 @@ static func _road(out: Array, sim: CitySim, rv: RoadView, plans: Dictionary, id:
 ## so a post the claims let stand on a ramp is still caught.
 static func _junction_bits(out: Array, sim: CitySim, plans: Dictionary) -> void:
 	for n in plans:
-		var j: Dictionary = plans[n]
-		if j.get("country", false) or j.has("bend"):
-			continue
-		var center: Vector3 = j.center
-		var key := "node:%d" % n
-		var ramps := Junction.ramps(j)
-		for r in ramps:
-			var c: Dictionary = j.corners[r[0]]
-			var a: Dictionary = j.arms[c.a]
-			var b: Dictionary = j.arms[c.b]
-			if r[1] == "pair":
-				for pair in [[a, 1.0], [b, -1.0]]:
-					var arm: Dictionary = pair[0]
-					var from: float = float(arm.d) + Junction.RAMP_GAP
-					if from + Junction.RAMP_WIDTH > float(arm.length) * 0.5:
-						continue
-					_arm_band(out, "curb_ramp", "pair", key, center, arm, pair[1], float(arm.hw),
-						float(arm.hw) + RoadStyle.CURB_WIDTH + RoadStyle.PARKWAY_WIDTH, from, from + Junction.RAMP_WIDTH)
-			else:
-				# A diagonal ramp at the corner's middle: a square at the curb return.
-				var mid := (Vector2(a.n) * -1.0 + Vector2(b.n)).normalized()
-				var arm_hw := maxf(float(a.hw), float(b.hw))
-				var at := Vector2(center.x, center.z) + mid * (arm_hw + float(c.r) * 0.4)
-				_add(out, "curb_ramp", "diagonal", key, _sq(at, 1.2))
-		if JunctionMarks.marked(j):
-			for arm in j.arms:
-				var d: float = float(arm.d)
-				if d + JunctionMarks.CROSS_FAR > float(arm.length) * 0.5:
+		_junction_bit(out, plans, n)
+
+
+static func _junction_bit(out: Array, plans: Dictionary, n: int) -> void:
+	var j: Dictionary = plans[n]
+	if j.get("country", false) or j.has("bend"):
+		return
+	var center: Vector3 = j.center
+	var key := "node:%d" % n
+	var ramps := Junction.ramps(j)
+	for r in ramps:
+		var c: Dictionary = j.corners[r[0]]
+		var a: Dictionary = j.arms[c.a]
+		var b: Dictionary = j.arms[c.b]
+		if r[1] == "pair":
+			for pair in [[a, 1.0], [b, -1.0]]:
+				var arm: Dictionary = pair[0]
+				var from: float = float(arm.d) + Junction.RAMP_GAP
+				if from + Junction.RAMP_WIDTH > float(arm.length) * 0.5:
 					continue
-				_arm_band(out, "crosswalk", "shaped", key, center, arm, 1.0, -float(arm.hw), float(arm.hw),
-					d + JunctionMarks.CROSS_NEAR, d + JunctionMarks.CROSS_FAR)
+				_arm_band(out, "curb_ramp", "pair", key, center, arm, pair[1], float(arm.hw),
+					float(arm.hw) + RoadStyle.CURB_WIDTH + RoadStyle.PARKWAY_WIDTH, from, from + Junction.RAMP_WIDTH)
+		else:
+			# A diagonal ramp at the corner's middle: a square at the curb return.
+			var mid := (Vector2(a.n) * -1.0 + Vector2(b.n)).normalized()
+			var arm_hw := maxf(float(a.hw), float(b.hw))
+			var at := Vector2(center.x, center.z) + mid * (arm_hw + float(c.r) * 0.4)
+			_add(out, "curb_ramp", "diagonal", key, _sq(at, 1.2))
+	if JunctionMarks.marked(j):
+		for arm in j.arms:
+			var d: float = float(arm.d)
+			if d + JunctionMarks.CROSS_FAR > float(arm.length) * 0.5:
+				continue
+			_arm_band(out, "crosswalk", "shaped", key, center, arm, 1.0, -float(arm.hw), float(arm.hw),
+				d + JunctionMarks.CROSS_NEAR, d + JunctionMarks.CROSS_FAR)
 
 
 static func _arm_band(out: Array, cat: String, what: String, key: String, center: Vector3, arm: Dictionary,
@@ -367,32 +472,36 @@ static func _arm_band(out: Array, cat: String, what: String, key: String, center
 	_add(out, cat, what, key, PackedVector2Array([a + nrm * o0, b + nrm * o0, b + nrm * o1, a + nrm * o1]))
 
 
-static func _rail(out: Array, sim: CitySim) -> void:
+static func _rail(out: Array, sim: CitySim, around := Rect2(), county := true) -> void:
 	for id in sim.rail.pieces:
 		var pc: Dictionary = sim.rail.pieces[id]
 		var pts: PackedVector3Array = PackedVector3Array(pc.get("pts", []))
 		if pts.size() < 2:
 			continue
 		_strip(out, "rail_bed", "town", "rail:%d" % id, pts, -RAIL_HALF, RAIL_HALF)
-	# The county's real railroads near the town (region -> local).
-	var box := Rect2()
-	var first := true
-	for id in sim.network.nodes:
-		var p: Vector3 = sim.network.nodes[id]
-		if first:
-			box = Rect2(Vector2(p.x, p.z), Vector2.ZERO)
-			first = false
-		box = box.expand(Vector2(p.x, p.z))
-	if first:
+	# The county's real railroads near the town (region -> local): within
+	# 300 m of its roads, or `around` (town x/z) when given.
+	if not county:
 		return
-	box = box.grow(300.0)
+	var box := around
+	if not box.has_area():
+		var first := true
+		for id in sim.network.nodes:
+			var p: Vector3 = sim.network.nodes[id]
+			if first:
+				box = Rect2(Vector2(p.x, p.z), Vector2.ZERO)
+				first = false
+			box = box.expand(Vector2(p.x, p.z))
+		if first:
+			return
+		box = box.grow(300.0)
 	var o := sim.terrain_offset
 	var rbox := Rect2(box.position + o, box.size)
 	for route in CountyRail.all().size():
 		var prof := CountyRail.profile(route)
 		var at: PackedVector2Array = prof.at
 		var kind: PackedByteArray = prof.kind
-		for i in at.size() - 1:
+		for i in _profile_in(route, rbox):
 			if not rbox.has_point(at[i]):
 				continue
 			if kind[i] == 3 or kind[i + 1] == 3 or kind[i] == 2 or kind[i + 1] == 2:
@@ -407,12 +516,46 @@ static func _rail(out: Array, sim: CitySim) -> void:
 				PackedVector2Array([a - n * RAIL_HALF, b - n * RAIL_HALF, b + n * RAIL_HALF, a + n * RAIL_HALF]))
 
 
+## Route profile points by 256 m square (route -> {Vector2i: [i...]}), made
+## once: a town's box finds its stretch of track without walking the county.
+static var _profile_tiles := {}
+const PROFILE_TILE := 256.0
+
+
+## The profile points of `route` that may lie in `rbox` (region x/z), in order.
+static func _profile_in(route: int, rbox: Rect2) -> PackedInt32Array:
+	if not _profile_tiles.has(route):
+		var tiles := {}
+		var at: PackedVector2Array = CountyRail.profile(route).at
+		for i in at.size() - 1:
+			var c := Vector2i(floori(at[i].x / PROFILE_TILE), floori(at[i].y / PROFILE_TILE))
+			if not tiles.has(c):
+				tiles[c] = PackedInt32Array()
+			var list: PackedInt32Array = tiles[c]
+			list.append(i)
+			tiles[c] = list
+		_profile_tiles[route] = tiles
+	var tiles: Dictionary = _profile_tiles[route]
+	var out := PackedInt32Array()
+	for cx in range(floori(rbox.position.x / PROFILE_TILE), floori(rbox.end.x / PROFILE_TILE) + 1):
+		for cz in range(floori(rbox.position.y / PROFILE_TILE), floori(rbox.end.y / PROFILE_TILE) + 1):
+			out.append_array(tiles.get(Vector2i(cx, cz), PackedInt32Array()))
+	out.sort()
+	return out
+
+
 static func _lots(out: Array, sim: CitySim) -> void:
 	for key in sim.lots:
-		var lot: Dictionary = sim.lots[key]
-		var c: PackedVector2Array = lot.get("corners", PackedVector2Array())
-		if c.size() >= 3:
-			_add(out, "lot", "built" if sim.buildings.has(key) else "empty", "lot:" + key, c)
+		_lot(out, sim, key)
+
+
+static func _lot(out: Array, sim: CitySim, key: String) -> void:
+	if not sim.lots.has(key):
+		return
+	var lot: Dictionary = sim.lots[key]
+	var c: PackedVector2Array = lot.get("corners", PackedVector2Array())
+	if c.size() >= 3:
+		_add(out, "lot", "built" if sim.buildings.has(key) else "empty", "lot:" + key, c)
 
 
 static func _public(out: Array, sim: CitySim) -> void:
@@ -430,75 +573,97 @@ static func _public(out: Array, sim: CitySim) -> void:
 ## positions only; each slid off drives and ramps by the same
 ## JunctionView._post_spot and no_turn_spot).
 static func _signs(out: Array, sim: CitySim, rv: RoadView, plans: Dictionary) -> void:
+	var st := _signs_begin(sim)
+	for n in st.nodes:
+		_signs_at(out, sim, rv, plans, st, n)
+	_no_turns(out, sim, st)
+
+
+## What the signs are read with: {claims, nodes (in order), sign_at}.
+static func _signs_begin(sim: CitySim) -> Dictionary:
 	var traffic := sim.traffic
 	if traffic._dirty:
 		traffic._rebuild()  # a town just loaded, not yet run: its junctions worked out (as car_pose does)
-	var claims := CurbClaims.of(sim)
 	var nodes := traffic.junctions.keys()
 	nodes.sort()
-	var sign_at := {}
-	for n in nodes:
-		var j: Dictionary = traffic.junctions[n]
-		if j.control == TrafficSim.Rule.NONE:
-			continue
-		var cross := 0.0
-		for w2 in traffic.ways_into(n):
-			cross = maxf(cross, RoadStyle.TYPES[traffic.ways[w2].type].width * 0.5)
-		var plain := cross + RoadStyle.CURB_WIDTH + RoadStyle.PARKWAY_WIDTH + RoadStyle.SIDEWALK_WIDTH * 0.5
-		var country_plan := {}
-		for wid in traffic.ways_into(n):
-			var seg: int = traffic.ways[wid].seg
-			var sl := traffic.stop_line(wid)
-			var dir: Vector3 = sl.dir
-			var right: Vector3 = sl.right
-			var half: float = RoadStyle.TYPES[traffic.ways[wid].type].width * 0.5
-			var base := Vector3.ZERO
-			var arm := {}
-			if _is_country(traffic, rv, plans, n, seg):
-				if country_plan.is_empty():
-					country_plan = _country_plan(traffic, rv, plans, n)
-				arm = _arm(country_plan, seg)
-			if not arm.is_empty():
-				var s := JunctionMarks.country_near(country_plan, arm) + JunctionMarks.BAR + 0.6
-				var at: Array = LotPlanner.point_at(arm.pts, s)
-				var t: Vector3 = at[1] if at.size() > 1 else Vector3.FORWARD
-				t.y = 0.0
-				t = t.normalized()
-				dir = -t
-				right = Vector3(-dir.z, 0.0, dir.x)
-				var back: float = Junction.SHOULDER + 0.6 if arm.get("country", true) \
-					else RoadStyle.CURB_WIDTH + RoadStyle.PARKWAY_WIDTH * 0.5
-				var off := JunctionMarks.country_edge(country_plan, arm, s) + back
-				var meant: Vector3 = at[0] + right * off
-				base = JunctionView._post_spot(claims, meant, dir, j.control == TrafficSim.Rule.SIGNAL,
-					JunctionView.post_back(sim.network.nodes[n], meant, dir, cross, j.control == TrafficSim.Rule.SIGNAL),
-					JunctionView.post_ahead(false, true))
-			else:
-				var walk := plain
-				if Junction.trim(plans, n, seg) > 0.0:
-					walk = -TrafficSim.CROSSWALK_AHEAD
-				var back := walk + 3.3
-				base = sl.pos + right * sl.curb - dir * 1.0
-				if not RoadStyle.TYPES[traffic.ways[wid].type].oneway:
-					base = sl.pos + right * (half + RoadStyle.CURB_WIDTH + RoadStyle.PARKWAY_WIDTH * 0.5) - dir * back
-				base = JunctionView._post_spot(claims, base, dir, j.control == TrafficSim.Rule.SIGNAL,
-					JunctionView.post_back(sim.network.nodes[n], base, dir, cross, j.control == TrafficSim.Rule.SIGNAL),
-					JunctionView.post_ahead(Junction.trim(plans, n, seg) > 0.0, false))
-				# A crosswalk at a plain (unshaped) corner (_markings).
-				var stops_here: bool = j.control == TrafficSim.Rule.SIGNAL or j.control == TrafficSim.Rule.ALL_STOP \
-					or (j.control == TrafficSim.Rule.PRIORITY and not j.major.has(wid) and j.sign != "yield")
-				var spec: Dictionary = RoadStyle.TYPES[traffic.ways[wid].type]
-				var walks: bool = spec.get("walk", true) and not spec.get("rural", false) and not rv._rural.has(seg)
-				if stops_here and not JunctionMarks.marked(plans.get(n, {})) and not spec.oneway and walks:
-					var c: Vector3 = sl.pos - dir * walk
-					_add(out, "crosswalk", "plain", "node:%d" % n, _obb(Vector2(c.x, c.z), Vector2(dir.x, dir.z), 1.2, half))
-			sign_at[wid] = [base, dir]
-			var at2 := Vector2(base.x, base.z)
-			if j.control == TrafficSim.Rule.SIGNAL:
-				_add(out, "post", "signal_pole", "node:%d" % n, _sq(at2, POST.signal_pole))
-			elif j.control == TrafficSim.Rule.ALL_STOP or (j.control == TrafficSim.Rule.PRIORITY and not j.major.has(wid)):
-				var what := "yield_sign" if j.sign == "yield" and j.control == TrafficSim.Rule.PRIORITY else "stop_sign"
-				_add(out, "post", what, "node:%d" % n, _sq(at2, POST.stop_sign))
+	return {"claims": CurbClaims.of(sim), "nodes": nodes, "sign_at": {}}
+
+
+## The posts at junction `n`.
+static func _signs_at(out: Array, sim: CitySim, rv: RoadView, plans: Dictionary, st: Dictionary, n: int) -> void:
+	var traffic := sim.traffic
+	var claims: CurbClaims = st.claims
+	var sign_at: Dictionary = st.sign_at
+	if not traffic.junctions.has(n):
+		return
+	var j: Dictionary = traffic.junctions[n]
+	if j.control == TrafficSim.Rule.NONE:
+		return
+	var cross := 0.0
+	for w2 in traffic.ways_into(n):
+		cross = maxf(cross, RoadStyle.TYPES[traffic.ways[w2].type].width * 0.5)
+	var plain := cross + RoadStyle.CURB_WIDTH + RoadStyle.PARKWAY_WIDTH + RoadStyle.SIDEWALK_WIDTH * 0.5
+	var country_plan := {}
+	for wid in traffic.ways_into(n):
+		var seg: int = traffic.ways[wid].seg
+		var sl := traffic.stop_line(wid)
+		var dir: Vector3 = sl.dir
+		var right: Vector3 = sl.right
+		var half: float = RoadStyle.TYPES[traffic.ways[wid].type].width * 0.5
+		var base := Vector3.ZERO
+		var arm := {}
+		if _is_country(traffic, rv, plans, n, seg):
+			if country_plan.is_empty():
+				country_plan = _country_plan(traffic, rv, plans, n)
+			arm = _arm(country_plan, seg)
+		if not arm.is_empty():
+			var s := JunctionMarks.country_near(country_plan, arm) + JunctionMarks.BAR + 0.6
+			var at: Array = LotPlanner.point_at(arm.pts, s)
+			var t: Vector3 = at[1] if at.size() > 1 else Vector3.FORWARD
+			t.y = 0.0
+			t = t.normalized()
+			dir = -t
+			right = Vector3(-dir.z, 0.0, dir.x)
+			var back: float = Junction.SHOULDER + 0.6 if arm.get("country", true) \
+				else RoadStyle.CURB_WIDTH + RoadStyle.PARKWAY_WIDTH * 0.5
+			var off := JunctionMarks.country_edge(country_plan, arm, s) + back
+			var meant: Vector3 = at[0] + right * off
+			base = JunctionView._post_spot(claims, meant, dir, j.control == TrafficSim.Rule.SIGNAL,
+				JunctionView.post_back(sim.network.nodes[n], meant, dir, cross, j.control == TrafficSim.Rule.SIGNAL),
+				JunctionView.post_ahead(false, true))
+		else:
+			var walk := plain
+			if Junction.trim(plans, n, seg) > 0.0:
+				walk = -TrafficSim.CROSSWALK_AHEAD
+			var back := walk + 3.3
+			base = sl.pos + right * sl.curb - dir * 1.0
+			if not RoadStyle.TYPES[traffic.ways[wid].type].oneway:
+				base = sl.pos + right * (half + RoadStyle.CURB_WIDTH + RoadStyle.PARKWAY_WIDTH * 0.5) - dir * back
+			base = JunctionView._post_spot(claims, base, dir, j.control == TrafficSim.Rule.SIGNAL,
+				JunctionView.post_back(sim.network.nodes[n], base, dir, cross, j.control == TrafficSim.Rule.SIGNAL),
+				JunctionView.post_ahead(Junction.trim(plans, n, seg) > 0.0, false))
+			# A crosswalk at a plain (unshaped) corner (_markings).
+			var stops_here: bool = j.control == TrafficSim.Rule.SIGNAL or j.control == TrafficSim.Rule.ALL_STOP \
+				or (j.control == TrafficSim.Rule.PRIORITY and not j.major.has(wid) and j.sign != "yield")
+			var spec: Dictionary = RoadStyle.TYPES[traffic.ways[wid].type]
+			var walks: bool = spec.get("walk", true) and not spec.get("rural", false) and not rv._rural.has(seg)
+			if stops_here and not JunctionMarks.marked(plans.get(n, {})) and not spec.oneway and walks:
+				var c: Vector3 = sl.pos - dir * walk
+				_add(out, "crosswalk", "plain", "node:%d" % n, _obb(Vector2(c.x, c.z), Vector2(dir.x, dir.z), 1.2, half))
+		sign_at[wid] = [base, dir]
+		var at2 := Vector2(base.x, base.z)
+		if j.control == TrafficSim.Rule.SIGNAL:
+			_add(out, "post", "signal_pole", "node:%d" % n, _sq(at2, POST.signal_pole))
+		elif j.control == TrafficSim.Rule.ALL_STOP or (j.control == TrafficSim.Rule.PRIORITY and not j.major.has(wid)):
+			var what := "yield_sign" if j.sign == "yield" and j.control == TrafficSim.Rule.PRIORITY else "stop_sign"
+			_add(out, "post", what, "node:%d" % n, _sq(at2, POST.stop_sign))
+
+
+## No Left and No Right posts (after every junction's signs).
+static func _no_turns(out: Array, sim: CitySim, st: Dictionary) -> void:
+	var traffic := sim.traffic
+	var claims: CurbClaims = st.claims
+	var sign_at: Dictionary = st.sign_at
 	var rule_keys := traffic.lane_rules.keys()
 	rule_keys.sort()
 	for k in rule_keys:
@@ -553,10 +718,16 @@ static func _name_posts(out: Array, sim: CitySim) -> void:
 	var ssv := StreetSignView.new()
 	ssv.sim = sim
 	for n in sim.network.nodes:
-		var spec := ssv._corner(n)
-		if not spec.is_empty():
-			_add(out, "post", "street_name", "node:%d" % n, _sq(spec.at, POST.street_name))
+		_name_post(out, ssv, n)
 	ssv.free()
+
+
+static func _name_post(out: Array, ssv: StreetSignView, n: int) -> void:
+	if not ssv.sim.network.nodes.has(n):
+		return
+	var spec := ssv._corner(n)
+	if not spec.is_empty():
+		_add(out, "post", "street_name", "node:%d" % n, _sq(spec.at, POST.street_name))
 
 
 ## Utility poles down country roads and town streets (RoadView's own runs,
@@ -573,10 +744,28 @@ static func _poles(out: Array, sim: CitySim, rv: RoadView) -> void:
 			segs[id] = true
 	var drives := rv._drives()
 	for run in rv._pole_runs(segs):
-		var pkey := rv._pole_key(run, drives)
-		for pole in PoleLine.place(run.pts, pkey[2], pkey[3], pkey[4], rv._pole_blocked(run.ids)):
-			var b: Vector3 = pole[0]
-			_add(out, "post", "utility_pole", "run:%d" % int(run.id), _sq(Vector2(b.x, b.z), POST.utility_pole))
+		_pole_run(out, rv, run, drives)
+
+
+## [the pole runs, the drives they keep off] (as _poles reads them).
+static func _pole_runs(sim: CitySim, rv: RoadView) -> Array:
+	var segs := {}
+	for id in sim.network.segments:
+		var pts := sim.network.sample_segment(id)
+		var spec: Dictionary = RoadStyle.TYPES[sim.network.segments[id].type]
+		if RoadStyle.is_freeway(sim.network.segments[id].type) or absf(pts[pts.size() / 2].y) > 1.0:
+			continue
+		var rural: bool = (rv._rural.has(id) or spec.get("rural", false)) and pts[pts.size() / 2].y < 1.0
+		if rv._urban.has(id) or rural:
+			segs[id] = true
+	return [rv._pole_runs(segs), rv._drives()]
+
+
+static func _pole_run(out: Array, rv: RoadView, run: Dictionary, drives) -> void:
+	var pkey := rv._pole_key(run, drives)
+	for pole in PoleLine.place(run.pts, pkey[2], pkey[3], pkey[4], rv._pole_blocked(run.ids)):
+		var b: Vector3 = pole[0]
+		_add(out, "post", "utility_pole", "run:%d" % int(run.id), _sq(Vector2(b.x, b.z), POST.utility_pole))
 
 
 ## One building as its builder draws it (BuildingView._spawn's own steps:
@@ -588,8 +777,8 @@ static func _built_one(r: Reader, key: String) -> void:
 	var sim := r.sim
 	var out := r.out
 	var bv := r._bv
-	if not sim.lots.has(key):
-		return
+	if not sim.lots.has(key) or not sim.buildings.has(key):
+		return  # taken out since the survey began
 	var lot: Dictionary = sim.lots[key]
 	var b: Dictionary = sim.buildings[key]
 	var frame := SiteLayout.frame(lot)
@@ -706,7 +895,7 @@ static func _built_one(r: Reader, key: String) -> void:
 ## A home's curbside mailbox (once every lot is drawn: it keeps off the
 ## neighbours' drives).
 static func _mailbox_of(r: Reader, key: String) -> void:
-	if r._drawn.has(key) and int(r.sim.buildings[key].zone) == ZoneMap.Zone.RESIDENTIAL:
+	if r._drawn.has(key) and r.sim.buildings.has(key) and int(r.sim.buildings[key].zone) == ZoneMap.Zone.RESIDENTIAL:
 		var box := r._bv._mailbox_at(key)
 		if box.is_finite():
 			_add(r.out, "post", "mailbox", "lot:" + key, _sq(box, POST.mailbox))
@@ -715,7 +904,7 @@ static func _mailbox_of(r: Reader, key: String) -> void:
 ## A lot's yard props (StateView._place: the drawn masses, plan and nearby trees).
 static func _props_of(r: Reader, key: String) -> void:
 	var sim := r.sim
-	if not r._drawn.has(key) or LotState.kind_of(sim.buildings[key]) == "":
+	if not r._drawn.has(key) or not sim.buildings.has(key) or not sim.lots.has(key) or LotState.kind_of(sim.buildings[key]) == "":
 		return
 	var p: Vector3 = sim.lots[key].pos
 	var near := []

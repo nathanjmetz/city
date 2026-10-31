@@ -1,8 +1,9 @@
 extends SceneTree
 ## How long the big test town takes to open in the game (the loading
-## screen, start to finish), and once it's open, how long the ground map's
-## survey (GroundMap.survey_step, a few milliseconds a frame) takes to
-## finish and the most one frame of it cost.
+## screen, start to finish), the worst frame of the game's own first ten
+## seconds open, and then with the Ground view turned on: how long its
+## survey (GroundMap.survey_step, a few milliseconds a frame) and drawing
+## take, and the most one frame of each cost.
 ##
 ## Run headless only, with HOME set to a scratch folder:
 ##   HOME=/tmp/x godot --headless -s tools/ground_load_bench.gd [-- --size=big --runs=3]
@@ -19,6 +20,12 @@ var _open_ms := []
 var _survey_ms := []
 var _survey_frames := []
 var _survey_max := []
+var _draw_ms := []
+var _draw_max := []
+var _worst_open := []
+var _worst := 0.0
+var _last := 0
+var _view: GroundView
 var _phase := 0  # 0 start a run, 1 loading, 2 surveying
 var _refused := false
 
@@ -69,16 +76,40 @@ func _process(_delta: float) -> bool:
 				return false
 			_open_ms.append(Time.get_ticks_msec() - _t0)
 			_t0 = Time.get_ticks_msec()
+			_last = Time.get_ticks_usec()
+			_worst = 0.0
+			_phase = 3
+		3:
+			# The game's own frames for its first ten seconds open.
+			var now := Time.get_ticks_usec()
+			_worst = maxf(_worst, (now - _last) / 1000.0)
+			_last = now
+			if Time.get_ticks_msec() - _t0 < 10_000:
+				return false
+			_worst_open.append(_worst)
+			_view = null
+			for c in _main.get_children():
+				if c is GroundView:
+					_view = c
+			if _view == null:
+				_phase = 4
+				return false
+			_view.set_on(true)  # as Views > Taken ground does
+			_t0 = Time.get_ticks_msec()
 			_phase = 2
 		2:
-			var g = _main.sim.get("ground")
-			var surveyed: bool = g == null or not g.has_method("surveyed") or g.surveyed()
-			if not surveyed and Time.get_ticks_msec() - _t0 < 300_000:
+			var g: GroundMap = _main.sim.ground
+			var view: GroundView = _view
+			if (not g.surveyed() or view._building or view.pieces_drawn == 0) and Time.get_ticks_msec() - _t0 < 300_000:
 				return false
-			if g != null and g.has_method("surveyed"):
-				_survey_ms.append(Time.get_ticks_msec() - _t0)
-				_survey_frames.append(int(g.survey_frames))
-				_survey_max.append(float(g.survey_max_ms))
+			_survey_ms.append(g.survey_ms)
+			_survey_frames.append(int(g.survey_frames))
+			_survey_max.append(float(g.survey_max_ms))
+			_draw_ms.append(Time.get_ticks_msec() - _t0)
+			_draw_max.append(float(view.max_step_ms))
+			view.set_on(false)
+			_phase = 4
+		4:
 			_main.queue_free()
 			_main = null
 			_run += 1
@@ -88,11 +119,12 @@ func _process(_delta: float) -> bool:
 
 func _report() -> void:
 	print("ground_load_bench: opening the %s town (ms, each run): %s" % [_size, str(_open_ms)])
+	print("ground_load_bench: worst frame in the first 10 s open (ms, whole frame): %s" % str(_worst_open))
 	if not _survey_ms.is_empty():
-		print("ground_load_bench: survey after opening (ms): %s, frames %s, most in one frame (ms) %s" % [
+		print("ground_load_bench: Ground view on: survey (ms) %s over %s frames, its worst frame (ms) %s" % [
 			str(_survey_ms), str(_survey_frames), str(_survey_max)])
-	else:
-		print("ground_load_bench: no ground survey in this build")
+		print("ground_load_bench: Ground view on to first drawing (ms) %s, the drawing's worst frame (ms) %s" % [
+			str(_draw_ms), str(_draw_max)])
 
 
 func _finalize() -> void:

@@ -443,6 +443,9 @@ func _ready() -> void:
 	ground_view.sim = sim
 	add_child(ground_view)
 	hud.ground_view = ground_view
+	# Its survey reads the plans and keep-clear spots these views already hold.
+	GroundMap.of(sim).road_view = weakref(roads)
+	sim.ground.building_view = weakref(buildings)
 	hud.select_tool = select_tool
 	hud.lot_alerts = lot_alerts
 	add_child(hud)
@@ -578,9 +581,6 @@ func _settle() -> void:
 	if screen != null and screen.has_method("finish"):
 		screen.finish()
 	loading = false
-	# The ground map's survey (what stands where, for the Ground view), a few
-	# milliseconds a frame now the town is open (GroundMap.survey_step).
-	GroundMap.of(sim).survey_start()
 	# A brand-new town gets the guided first town.
 	get_tree().call_group("first_town_tour", "maybe_start")
 
@@ -598,6 +598,7 @@ func _process(delta: float) -> void:
 		guard += 1
 		sim.tick()
 	Perf.add("frame.sim", t)
+	# The Ground view's survey, when it asked for one (GroundMap.survey_step).
 	if sim.ground != null and sim.ground.surveying():
 		t = Perf.now()
 		sim.ground.survey_step()
