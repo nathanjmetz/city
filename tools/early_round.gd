@@ -34,6 +34,12 @@ func _initialize() -> void:
 		# Aimed at the most skewed town street crossing of the county
 		# railroad once the town is built (_skew_aim).
 		["07_skew_35m", Vector3(-20.0, 0.0, 50.0), 0.0, 55.0, 35.0, "day", FAIR],
+		# From the front (added 2026-10-31, round early3): the first shops on
+		# the street nearest the highway, at street level and 60 m, and the
+		# fronts of a block of homes at 45 m.
+		["08_shops_street", Vector3(40.0, 0.0, 122.0), 180.0, 8.0, 30.0, "day", FAIR],
+		["09_shops_60m", Vector3(40.0, 0.0, 125.0), 160.0, 30.0, 60.0, "day", FAIR],
+		["10_homes_front_45m", Vector3(110.0, 0.0, 258.0), 200.0, 25.0, 45.0, "day", FAIR],
 		["06_dusk_100m", Vector3(40.0, 0.0, 210.0), 35.0, 22.0, 100.0, "dusk", FAIR],
 	]
 	super._initialize()
@@ -60,7 +66,7 @@ func _town(sim: CitySim) -> void:
 				zone = ZoneMap.Zone.INDUSTRIAL
 			elif p.z < GRID[0].y + 30.0:
 				zone = ZoneMap.Zone.COMMERCIAL
-			sim.apply({"type": "zone_frontage", "seg": id, "side": side, "zone": zone, "hold": true})
+			sim.apply({"type": "zone_frontage", "seg": id, "side": side, "zone": zone, "hold": true, "single": true})
 	sim.apply({"type": "zone_done"})
 	for spot in [[Services.Kind.POWER_FEED, Vector3(-60.0, 0.0, 380.0)], [Services.Kind.WELL, Vector3(110.0, 0.0, 380.0)]]:
 		var site := Services.site_near(sim.network, spot[0], spot[1])
