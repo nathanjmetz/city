@@ -319,6 +319,7 @@ func _street_crowns() -> void:
 	for l in StreetLights.place(sim.network):
 		corners.append([Vector2(l[1].x, l[1].z), BuildingView.LAMP_CROWN])
 	var over := []
+	var unmarked := []
 	var checked := 0
 	var near := 0
 	for key in view._planted:
@@ -328,7 +329,15 @@ func _street_crowns() -> void:
 		for t in view._trees._trees.get(key, []):
 			var o: Vector3 = (t[0] as Transform3D).origin
 			var q := Vector2(o.x, o.z)
-			if Geometry2D.is_point_in_polygon(q, lot) or not t[3].has("start"):
+			if Geometry2D.is_point_in_polygon(q, lot):
+				continue
+			# Every parkway tree is filed as a street tree (its crown kept
+			# clear of the street: TreeGrower.AgeCut), at a size its clearance
+			# allows for.
+			var sz := (t[0] as Transform3D).basis.get_scale().y
+			if not t[3].get("street", false) or sz < TreeKinds.STREET_MIN_SCALE - 0.001 or sz > TreeKinds.STREET_YOUNG_MAX_SCALE + 0.001:
+				unmarked.append("%s %.2f" % [key, sz])
+			if not t[3].has("start"):
 				continue
 			var age := maxf(float(t[3].start), TreeKinds.nursery_age(t[1]))
 			var reach: float = TreeField.SPREAD[t[1]] * (t[0] as Transform3D).basis.get_scale().y * TreeKinds.size_at(t[1], age)
@@ -339,6 +348,7 @@ func _street_crowns() -> void:
 					near += 1
 				if reach > room + 0.01 and age > TreeKinds.nursery_age(t[1]) + 0.01:
 					over.append("%s %.0f y reaches %.1f m, room %.1f" % [key, age, reach, room])
+	_check(unmarked.is_empty(), "every parkway tree is filed as a street tree, sized 0.8 to 1.1 %s" % [unmarked.slice(0, 3)])
 	_check(checked > 40 and near > 10 and over.is_empty(),
 		"grown street crowns keep off corners' signals and signs and streetlight heads (%d trees, %d near one) %s" % [checked, near, over.slice(0, 3)])
 

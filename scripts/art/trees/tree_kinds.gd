@@ -310,6 +310,46 @@ static func crown_base(sp: int, age: float) -> float:
 	return h * frac
 
 
+## Street trees are pruned up so trucks and buses pass under them (ANSI
+## A300 and the usual Indiana town code): 14 ft (4.3 m) clear over the
+## street, 8 ft (2.4 m) over the sidewalk.
+const STREET_CLEAR := 4.3
+const WALK_CLEAR := 2.4
+## A street tree's grown crown (GrownTrees, TreeGrower.AgeCut) has no leaf
+## lower than this, at the mesh's own size: STREET_CLEAR for the smallest
+## a street tree is drawn at (STREET_MIN_SCALE: its planter's least; its
+## mesh is never older than the tree, GrownTrees._file).
+const STREET_MIN_SCALE := 0.8
+const STREET_LIFT := STREET_CLEAR / STREET_MIN_SCALE
+## Only a tree at least this tall can be pruned up that far and keep a
+## crown (half its height); a younger street tree is kept narrow instead
+## (street_young_reach), and starts as nursery stock (TreeField.street_age).
+const STREET_RAISE_FROM := STREET_LIFT * 2.0
+
+
+## True when a street tree of kind `sp` at `age` wears its crown raised
+## (STREET_LIFT): when it is tall enough to keep a crown above it.
+static func street_raised(sp: int, age: float) -> bool:
+	return height(sp, age) >= STREET_RAISE_FROM
+
+
+## From the middle of the parkway to the sidewalk's edge (the curb's is
+## farther): a young street tree's leaves stay within it.
+const STREET_PARKWAY_HALF := 0.9
+## The most a young street tree is drawn at over its mesh's size (its
+## planter's most; its mesh is never younger than the tree, GrownTrees._file).
+const STREET_YOUNG_MAX_SCALE := 1.1
+
+
+## How far from its trunk a young street tree this tall keeps its twigs
+## (m, at its mesh's size), so its leaves stay over the parkway: a town trims back a
+## young tree's low limbs off the walk and the street, and the trees it
+## plants are narrow while young. At least a little crown.
+static func street_young_reach(tree_height: float) -> float:
+	var card := TreeMesher.card_size(0, tree_height) * 0.5
+	return maxf(STREET_PARKWAY_HALF / STREET_YOUNG_MAX_SCALE - card, 0.2)
+
+
 ## The look of a kind through the year: the Seasons look at a date shifted
 ## by the kind's own timing (walnuts drop their leaves weeks ahead of the
 ## oaks). Returns Vector3(autumn, bare, spring).

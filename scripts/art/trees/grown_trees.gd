@@ -359,7 +359,18 @@ func _scan_some(ms: float) -> void:
 func _file(rec: Array, xf: Transform3D, d: float, lod: int, shadow := false) -> void:
 	var sp: int = rec[1]
 	var b := bucket(rec[3])
-	var key := mesh_key(sp, posmod(int(rec[4]), TreeGrower.VARIANTS), b, lod)
+	# A street tree is kept clear for traffic and people on foot, a mesh of
+	# its own (TreeGrower.AgeCut's street trees): a tall one's crown raised,
+	# its mesh never older than the tree, so drawn at its size the crown is
+	# never lower; a young one's kept narrow, its mesh never younger, so
+	# drawn at its size never wider.
+	var street := rec.size() > 6 and bool(rec[6])
+	if street:
+		var age := float(rec[3])
+		var lo := b - 1 if b > 0 and float(BUCKETS[b]) > age + 0.001 else b
+		var hi := b + 1 if b < BUCKETS.size() - 1 and float(BUCKETS[b]) < age - 0.001 else b
+		b = lo if TreeKinds.street_raised(sp, BUCKETS[lo]) else hi
+	var key := mesh_key(sp, posmod(int(rec[4]), TreeGrower.VARIANTS), b, lod, street)
 	var size := xf.basis.get_scale().y
 	var yaw := atan2(xf.basis.x.z, xf.basis.x.x)
 	var group := key
@@ -516,9 +527,19 @@ static func bucket_size(sp: int, b: int) -> float:
 	return _bucket_sizes[sp * BUCKETS.size() + b]
 
 
-## A mesh's key: kind, variant, age bucket and level packed in one number.
-static func mesh_key(sp: int, variant: int, b: int, lod: int) -> int:
-	return (sp << 7) | (variant << 5) | (b << 1) | lod
+## A mesh's key: kind, variant, age bucket, level and whether it is a
+## street tree's (STREET_BIT) packed in one number.
+static func mesh_key(sp: int, variant: int, b: int, lod: int, street := false) -> int:
+	return (sp << 7) | (variant << 5) | (b << 1) | lod | (STREET_BIT if street else 0)
+
+
+## Keys of street trees' meshes (below SHADOW_BIT; kinds fit in the four
+## bits under it).
+const STREET_BIT := 1 << 11
+
+
+static func key_street(key: int) -> bool:
+	return (key & STREET_BIT) != 0
 
 
 ## The group of card trees standing in for one kind at one level (below 0,
@@ -528,7 +549,7 @@ static func card_group(sp: int, lod: int) -> int:
 
 
 static func _key_sp(key: int) -> int:
-	return key >> 7
+	return (key >> 7) & 15
 
 
 static func _key_variant(key: int) -> int:
@@ -636,7 +657,7 @@ func _build_threaded(ms: float) -> void:
 			var age: float = BUCKETS[_key_bucket(key)]
 			var lod := _key_lod(key)
 			job.id = WorkerThreadPool.add_task(func():
-				job.parts = TreeMesher.build(sp, grower.at_age(age), lod, variant), false, "tree mesh")
+				job.parts = TreeMesher.build(sp, grower.at_age(age, key_street(key)), lod, variant), false, "tree mesh")
 			_mesh_tasks[key] = job
 	if made:
 		_trim()
@@ -675,7 +696,7 @@ func _step_job(key: int, budget_us: int) -> bool:
 		g.step(budget_us)
 		return false
 	if _cut == null:
-		_cut = TreeGrower.AgeCut.new(g, BUCKETS[_key_bucket(key)])
+		_cut = TreeGrower.AgeCut.new(g, BUCKETS[_key_bucket(key)], key_street(key))
 		return false
 	if _mesher == null:
 		if _cut.step(budget_us):

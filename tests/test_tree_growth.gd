@@ -291,6 +291,7 @@ func _facts() -> void:
 	TreeField.now_tick = 0
 	_grown_yards()
 	_grown_streets()
+	_raised_street_crowns()
 
 
 ## A yard that comes in grown (Nathan, 2026-10-29: "A. Yes, back-yard trees
@@ -354,7 +355,7 @@ func _grown_streets() -> void:
 	var old := ages.filter(func(a): return a > 40.0).size()
 	var off_step := ages.filter(func(a): return a >= 12.0 and not GrownTrees.BUCKETS.has(a))
 	_check(same and off_step.is_empty(), "the same seed gives the same street tree, at a grown mesh's own age %s" % [off_step.slice(0, 3)])
-	_check(young > 150 and young < 350 and mature > 2300 and old > 550 and old < 900,
+	_check(young > 150 and young < 1000 and mature > 1900 and old > 550 and old < 900,
 		"street trees start mostly 18 years or older, a quarter big old ones, a few young replacements (%d young, %d 18+, %d old of 3000)" % [young, mature, old])
 	# Under the wires, and off a corner: the oldest of the mix that fits.
 	var fits := true
@@ -372,6 +373,77 @@ func _grown_streets() -> void:
 			fits = fits and under <= free and corner <= free and under >= young_sp and corner >= young_sp
 			capped += 1 if under < free else 0
 	_check(fits and capped > 300, "a street tree under wires or by a corner starts young enough to fit, never smaller than nursery stock (%d kept younger)" % capped)
+
+
+## Street trees are kept clear so trucks, buses and people on foot pass
+## (2026-10-31): a tall street tree's crown is raised, no leaf lower than
+## TreeKinds.STREET_LIFT out past its trunk, which drawn at the smallest a
+## street tree is drawn at is 14 ft (4.3 m) over the street and so more
+## than 8 ft over the walk; a young one is kept narrow, its leaves over the
+## parkway; and every street tree starts tall enough to be raised or as
+## nursery stock.
+func _raised_street_crowns() -> void:
+	var kinds := [TreeField.Species.MAPLE, TreeField.Species.SILVER_MAPLE, TreeField.Species.LOCUST,
+		TreeField.Species.RED_OAK, TreeField.Species.OAK]
+	var low := []
+	var lowest_all := INF
+	var checked := 0
+	var wide := []
+	var widest := 0.0
+	for sp in kinds:
+		for variant in [0, 2]:
+			var g := TreeGrower.grown(sp, variant)
+			for b in GrownTrees.BUCKETS.size():
+				var age: float = GrownTrees.BUCKETS[b]
+				if age > 60.0:
+					continue
+				var t := g.at_age(age, true)
+				var plain := g.at_age(age)
+				var pos: PackedVector3Array = t.pos
+				var trunk := {}
+				for i in t.trunk:
+					trunk[i] = true
+				var lowest := INF
+				var reach := 0.0
+				var kept := 0
+				var plain_kept := 0
+				for i in pos.size():
+					plain_kept += 1 if plain.keep[i] == 1 else 0
+					if t.keep[i] == 0:
+						continue
+					var out := Vector2(pos[i].x - pos[0].x, pos[i].z - pos[0].z).length()
+					reach = maxf(reach, out)
+					if trunk.has(i):
+						continue
+					kept += 1
+					if out > TreeGrower.AgeCut.RAISE_TRUNK:
+						lowest = minf(lowest, pos[i].y - TreeMesher.card_size(0, float(t.height)) * 0.5)
+				if TreeKinds.street_raised(sp, age):
+					checked += 1
+					lowest_all = minf(lowest_all, lowest)
+					if lowest < TreeKinds.STREET_LIFT - 0.01 or kept < plain_kept * 0.6:
+						low.append("%s %.0f y: lowest leaf %.2f m, %d of %d twigs" % [TreeField.Species.keys()[sp], age, lowest, kept, plain_kept])
+				elif age <= 9.0 and age >= TreeKinds.nursery_age(sp) - 0.001:
+					# The mesh a nursery-stock street tree is drawn with.
+					var edge := (reach + TreeMesher.card_size(0, float(t.height)) * 0.5) * TreeKinds.STREET_YOUNG_MAX_SCALE
+					widest = maxf(widest, edge)
+					if edge > TreeKinds.STREET_PARKWAY_HALF + 0.01 or kept == 0:
+						wide.append("%s %.0f y: leaves %.2f m out" % [TreeField.Species.keys()[sp], age, edge])
+	_check(checked >= 20 and low.is_empty(),
+		"a tall street tree's raised crown keeps every leaf %.2f m up or more out past the trunk, and most of its crown (%d crowns, lowest %.2f m) %s" % [TreeKinds.STREET_LIFT, checked, lowest_all, low.slice(0, 3)])
+	_check(wide.is_empty() and widest > 0.3, "a young street tree's leaves stay over the parkway (%.2f m out at most) %s" % [widest, wide.slice(0, 3)])
+	_check(TreeKinds.STREET_LIFT * TreeKinds.STREET_MIN_SCALE >= TreeKinds.STREET_CLEAR - 0.001
+		and TreeKinds.STREET_CLEAR >= TreeKinds.WALK_CLEAR,
+		"drawn at the smallest a street tree is (%.2f), that is 14 ft over the street" % TreeKinds.STREET_MIN_SCALE)
+	# Every street tree starts tall enough to be raised, or as nursery stock.
+	var bad := []
+	for i in 2000:
+		var sp: int = kinds[i % kinds.size()]
+		var size := 0.8 + 0.3 * float(i % 11) / 10.0
+		var a := TreeField.street_age(sp, hash([4242, i]), size)
+		if absf(a - TreeKinds.nursery_age(sp)) > 0.001 and not TreeKinds.street_raised(sp, a):
+			bad.append("%s %.0f" % [TreeField.Species.keys()[sp], a])
+	_check(bad.is_empty(), "every street tree starts tall enough to be raised, or as nursery stock %s" % [bad.slice(0, 3)])
 
 
 ## Two copies of a town agree on every tree after a save and load: yard

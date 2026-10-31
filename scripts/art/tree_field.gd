@@ -91,6 +91,8 @@ var _shown_at := Vector4(INF, INF, INF, INF)  # the camera (local) and reaches t
 ##     at TreeKinds.REF_AGE, and it keeps growing after);
 ##   {"planted": tick, "start": years}: the same, but already this old on
 ##     that day (a grown yard tree, yard_age), growing on from there;
+##   either with "street": true: a street tree, its crown pruned up for
+##     headroom once it is tall enough (TreeKinds.street_raised);
 ##   {"age": years}: this old, drawn at the size in its transform;
 ##   {"shrub": true}: brush, never grown up close.
 ## Without facts the age comes from the size.
@@ -174,7 +176,7 @@ func _rebuild() -> void:
 
 
 ## How a tree stands now: [transform scaled to its size today, species,
-## tint, age in years, seed, grows up close]. The same for every player:
+## tint, age in years, seed, grows up close, a street tree]. The same for every player:
 ## from the tree's facts, where it stands in the region and the game's
 ## clock only. `world` is the field's own transform (a neighbor's city is
 ## drawn moved over to its place), for the seed.
@@ -193,7 +195,7 @@ static func resolve(t: Array, world := Transform3D.IDENTITY) -> Array:
 		age = float(facts.age)
 	else:
 		age = TreeKinds.age_for_size(sp, size)
-	return [xf, sp, t[2], age, seed_of(world * xf.origin), not facts.has("shrub")]
+	return [xf, sp, t[2], age, seed_of(world * xf.origin), not facts.has("shrub"), facts.has("street")]
 
 
 ## Yard trees in a new neighbourhood start already grown (Nathan,
@@ -259,7 +261,8 @@ const STREET_MIX := [[0.08, 0.0], [0.16, 13.0], [0.28, 18.0], [0.48, 25.0], [0.7
 ## that would reach more than `reach` metres from the trunk (a corner's
 ## signals and signs, a streetlight's head) or stand taller than `top`
 ## metres (the wires of a pole line overhead) starts at the oldest of the
-## mix's ages that keeps under them, or as nursery stock. Whole-number
+## mix's ages that keeps under them, or as nursery stock; so does one too
+## young to be pruned up clear of the street. Whole-number
 ## maths for the pick, so every computer agrees.
 static func street_age(sp: int, seed: int, size := 1.0, reach := INF, top := INF) -> float:
 	var u := float(posmod(seed, 1000003)) / 1000003.0
@@ -267,9 +270,12 @@ static func street_age(sp: int, seed: int, size := 1.0, reach := INF, top := INF
 	var k := 0
 	while k < STREET_MIX.size() - 1 and u >= float(STREET_MIX[k][0]):
 		k += 1
-	# Stepped down through the mix until it fits.
+	# Stepped down through the mix until it fits, and is tall enough to be
+	# pruned up over the street (TreeKinds.street_raised): a younger one is
+	# nursery stock.
 	while k > 0 and (SPREAD[sp] * size * TreeKinds.size_at(sp, float(STREET_MIX[k][1])) > reach
-			or size * TreeKinds.height(sp, float(STREET_MIX[k][1])) > top):
+			or size * TreeKinds.height(sp, float(STREET_MIX[k][1])) > top
+			or not TreeKinds.street_raised(sp, float(STREET_MIX[k][1]))):
 		k -= 1
 	return maxf(float(STREET_MIX[k][1]), young)
 

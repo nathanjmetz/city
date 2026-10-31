@@ -671,8 +671,15 @@ func _set_trees(key: String, always := true) -> int:
 			if not _parkway_free(q) or q.distance_to(mailbox) < MAILBOX_CLEAR:
 				continue
 			street += 1
+			# Never drawn smaller or bigger than its crown is kept clear of
+			# the street for (TreeGrower.AgeCut's street trees).
+			var sz := at.basis.get_scale().y
+			var keep_sz := clampf(sz, TreeKinds.STREET_MIN_SCALE, TreeKinds.STREET_YOUNG_MAX_SCALE)
+			if not is_equal_approx(sz, keep_sz):
+				at.basis = at.basis.scaled(Vector3.ONE * (keep_sz / sz))
+			facts = {"planted": when.planted, "street": true}
 			if grown:
-				facts = _street_facts(when, q, front, t[1], t[3], hash([lot_seed, i, "street"]))
+				facts = _street_facts(when, q, front, t[1], keep_sz, hash([lot_seed, i, "street"]))
 				# Its age counts as part of which trees stand: a new
 				# streetlight or corner near it starts it again younger.
 				kept.append(-int(facts.start))
@@ -690,7 +697,7 @@ func _set_trees(key: String, always := true) -> int:
 		if not _parkway_free(q):
 			continue
 		kept.append(1000 + i)
-		var facts := when
+		var facts := {"planted": when.planted, "street": true}
 		if grown:
 			facts = _street_facts(when, q, int(side[i][4]), side[i][1], side[i][3], hash([lot_seed, 1000 + i, "street"]))
 			kept.append(-int(facts.start))
@@ -965,7 +972,7 @@ func _street_facts(when: Dictionary, q: Vector2, seg: int, sp: int, size: float,
 	var top := INF
 	if sim.network.segments.has(seg) and int(sim.network.segments[seg].type) in RoadView.URBAN_TYPES:
 		top = PoleLine.TOP - 1.0 - PoleLine.NEUTRAL_DROP - WIRE_CLEAR
-	return {"planted": when.planted, "start": TreeField.street_age(sp, seed, size, reach, top)}
+	return {"planted": when.planted, "start": TreeField.street_age(sp, seed, size, reach, top), "street": true}
 
 
 ## True when a street tree may stand at `q` (this view's frame): clear of
