@@ -134,9 +134,11 @@ const DETAIL_FLOOR := [
 ##   drive_cars: household cars the simulation keeps in the garage drawn
 ##     out on the drive (TrafficView._out_front; desktop only, never in the
 ##     browser, so its car count and cap are as before).
-##   lot_cars: shop, office and plant lots filled by the hour with cars the
-##     simulation doesn't drive (TrafficView._update_lot_cars; desktop only,
-##     never in the browser; off on Low, and in headless runs and tests).
+##   lot_cars: the most cars drawn standing in shop, office and plant lots
+##     by the hour that the simulation doesn't drive (TrafficView.
+##     _update_lot_cars), nearest lots first; their own count, never part
+##     of `cars`. Desktop only: 0 in the browser, on Low, and in headless
+##     runs and tests.
 ##   cars / people: the most cars or walkers drawn at once. Past that the
 ##     view pulls its reach in until the count fits (fit_reach()), so the
 ##     nearest stay drawn. people_m: how far walkers are drawn.
@@ -149,19 +151,19 @@ const DETAIL_FLOOR := [
 ## full-strength desktop (High and up) is never drawn with less than that.
 const BUDGETS := [
 	{"grow_ms": 3.0, "woods": 0.6, "far_woods": 2000.0, "far_from": 0.6, "photo": false, "understory": false, "crops": false, "crop_m": 51.0, "crop_shadows": false, "tree_shadow_m": 0.0,
-		"cars_m": 1400.0, "car_near_m": 160.0, "car_detail": false, "drive_cars": false, "lot_cars": false, "cars": 600,
+		"cars_m": 1400.0, "car_near_m": 160.0, "car_detail": false, "drive_cars": false, "lot_cars": 0, "cars": 600,
 		"people_m": 180.0, "people": 400, "doors_m": 0.0, "doors": 0},
 	{"grow_ms": 3.0, "woods": 0.7, "far_woods": 2600.0, "far_from": 0.7, "photo": false, "understory": false, "crops": false, "crop_m": 51.0, "crop_shadows": false, "tree_shadow_m": 45.0,
-		"cars_m": 1900.0, "car_near_m": 200.0, "car_detail": false, "drive_cars": true, "lot_cars": true, "cars": 1200,
+		"cars_m": 1900.0, "car_near_m": 200.0, "car_detail": false, "drive_cars": true, "lot_cars": 1500, "cars": 1200,
 		"people_m": 250.0, "people": 1000, "doors_m": 0.0, "doors": 0},
 	{"grow_ms": 4.0, "woods": 1.0, "far_woods": 3500.0, "far_from": 1.2, "photo": true, "understory": true, "crops": true, "crop_m": 60.0, "crop_shadows": false, "tree_shadow_m": 2000.0,
-		"cars_m": 2600.0, "car_near_m": 240.0, "car_detail": false, "drive_cars": true, "lot_cars": true, "cars": 4000,
+		"cars_m": 2600.0, "car_near_m": 240.0, "car_detail": false, "drive_cars": true, "lot_cars": 3000, "cars": 4000,
 		"people_m": 320.0, "people": 4000, "doors_m": 150.0, "doors": 32},
 	{"grow_ms": 4.0, "woods": 1.0, "far_woods": 4000.0, "far_from": 1.2, "photo": true, "understory": true, "crops": true, "crop_m": 77.0, "crop_shadows": false, "tree_shadow_m": 2000.0,
-		"cars_m": 2600.0, "car_near_m": 240.0, "car_detail": true, "drive_cars": true, "lot_cars": true, "cars": 8000,
+		"cars_m": 2600.0, "car_near_m": 240.0, "car_detail": true, "drive_cars": true, "lot_cars": 6000, "cars": 8000,
 		"people_m": 320.0, "people": 8000, "doors_m": 200.0, "doors": 48},
 	{"grow_ms": 4.0, "woods": 1.0, "far_woods": 4500.0, "far_from": 1.2, "photo": true, "understory": true, "crops": true, "crop_m": 81.0, "crop_shadows": true, "tree_shadow_m": 2000.0,
-		"cars_m": 2600.0, "car_near_m": 240.0, "car_detail": true, "drive_cars": true, "lot_cars": true, "cars": 16000,
+		"cars_m": 2600.0, "car_near_m": 240.0, "car_detail": true, "drive_cars": true, "lot_cars": 6000, "cars": 16000,
 		"people_m": 320.0, "people": 16000, "doors_m": 250.0, "doors": 64},
 ]
 ## Headless runs and tests (no Quality autoload, or not active): the views
@@ -171,7 +173,7 @@ const BUDGETS := [
 const NO_CAP := 1 << 30
 const INACTIVE := {"detail": 1.0, "shadow_m": 2000.0, "tree_shadows": true, "grow_ms": 4.0, "woods": 1.0, "far_woods": 3500.0,
 	"far_from": 1.0, "photo": false, "understory": false, "crops": false, "crop_m": 51.0, "crop_shadows": false, "tree_shadow_m": 0.0, "cars_m": 2600.0,
-	"car_near_m": 240.0, "car_detail": false, "drive_cars": true, "lot_cars": false, "cars": NO_CAP, "people_m": 320.0, "people": NO_CAP,
+	"car_near_m": 240.0, "car_detail": false, "drive_cars": true, "lot_cars": 0, "cars": NO_CAP, "people_m": 320.0, "people": NO_CAP,
 	"doors_m": 0.0, "doors": 0}
 ## The browser caps how long a frame may spend growing detail (its one
 ## thread also runs the town).
@@ -762,7 +764,7 @@ static func budget_for(t: int, on_browser := false) -> Dictionary:
 		b["crop_shadows"] = false
 		b["car_detail"] = false
 		b["drive_cars"] = false
-		b["lot_cars"] = false
+		b["lot_cars"] = 0
 		b["doors_m"] = 0.0
 		b["doors"] = 0
 		b["tree_shadow_m"] = 0.0  # no full trees there (TreeLook.radii)
