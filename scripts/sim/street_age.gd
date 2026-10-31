@@ -102,6 +102,17 @@ func _note(id: int, now: int, old: bool) -> void:
 			paved[k] = now - (absi(hash([k.x, k.y])) % _life_ticks() if old else 0)
 
 
+## A street resurfaced now, outside the monthly round (a street side's
+## treatment paid for as a resurfacing: RoadTreatments.set_lock).
+func repaved(sim, id: int) -> void:
+	if not sim.network.segments.has(id):
+		return
+	if not _cells.has(id):
+		_measure(sim, id)
+	for k in _cells[id]:
+		paved[k] = int(sim.tick_count)
+
+
 ## Resurfacing paid over the last year.
 func paid_this_year() -> int:
 	var n := 0
