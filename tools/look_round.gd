@@ -400,6 +400,11 @@ func _set_shot(s: Array) -> void:
 	_weather.rain = 0.0 if s[6][3] > 0.5 else s[6][1]
 	_weather.snow = s[6][1] if s[6][3] > 0.5 else 0.0
 	_weather.fog = s[6][2]
+	# The streets soaked, as after an hour of steady rain. The clock is
+	# pinned, so they would never soak on their own (Weather._wet soaks them
+	# only as sky hours go by), and the rain shot showed dry streets until
+	# round 4 (critic round 3, 2026-10-30).
+	_weather.wet = 1.0 if _weather.rain > 0.5 else 0.0
 
 
 ## The light pinned to that day and hour (as tools/daylight_shot.gd does),
