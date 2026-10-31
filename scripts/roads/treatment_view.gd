@@ -9,6 +9,10 @@ extends Node3D
 ##     and a litter bin now and then. (Trees in grates wait: 700 of them down
 ##     the test town's main streets cost 400,000 triangles, past the spec's
 ##     budget; they come with the state layer's near ring.)
+##   - Every built-up street, once the town has a water source (a well, a
+##     water tower or a utility): a red fire hydrant now and then in the
+##     grass beside the curb, one a block, alternating sides (NFPA 24 and
+##     most towns: a hydrant within a few hundred feet of every house).
 ##   - Factory: NO PARKING signs (MUTCD R7-1: red on white, 12 x 18 in, on a
 ##     7 ft post) along the curb every 150 ft. The wooden poles with their
 ##     cobra heads stay, as StreetLights draws them.
@@ -35,6 +39,10 @@ const BENCH_HALF := 0.9
 const BIN_HALF := 0.3
 const SIGN_HALF := 0.2
 const SLIDE := 4.0
+## A hydrant a block: one for about this many metres of street (a street
+## side, alternating), and its half footprint.
+const HYDRANT_GAP := 110.0
+const HYDRANT_HALF := 0.25
 ## How often (s) the view asks whether the curb's claims changed.
 const CLAIMS_EVERY := 1.0
 
@@ -64,6 +72,7 @@ var _dirty := true
 var _near_on := false
 var _claims_seen := -1
 var _claims_wait := 0.0
+var _water := false
 
 
 func setup(s: CitySim, street_lights: StreetLights) -> void:
@@ -104,6 +113,10 @@ func _process(delta: float) -> void:
 	_claims_wait -= delta
 	if _claims_wait <= 0.0 and sim != null:
 		_claims_wait = CLAIMS_EVERY
+		var water := has_water(sim)
+		if water != _water:
+			_water = water  # hydrants come with the first well, and go with the last
+			_dirty = true
 		var claims := CurbClaims.of(sim)
 		var now := claims.stamp()
 		if now != _claims_seen:
@@ -151,12 +164,13 @@ static func plan(s: CitySim, cache := {}) -> Dictionary:
 	var ids := segs.keys()
 	ids.sort()
 	var kept := {}
+	var water := has_water(s)
 	for id in ids:
 		if not s.network.segments.has(id):
 			continue
-		var key := [s.network.segments[id].type, t.kind(id, -1), t.kind(id, 1), s.network.curve_of(id)]
+		var key := [s.network.segments[id].type, t.kind(id, -1), t.kind(id, 1), s.network.curve_of(id), water]
 		var had: Array = cache.get(id, [])
-		var part: Dictionary = had[1] if not had.is_empty() and had[0] == key else _road_part(s, id)
+		var part: Dictionary = had[1] if not had.is_empty() and had[0] == key else _road_part(s, id, water)
 		kept[id] = [key, part]
 		for k in ["lanterns", "cobras", "pools", "lamps"]:
 			out[k].append_array(part[k])
@@ -170,14 +184,16 @@ static func plan(s: CitySim, cache := {}) -> Dictionary:
 
 
 ## One road piece's lanterns, poles and props.
-static func _road_part(s: CitySim, id: int) -> Dictionary:
+static func _road_part(s: CitySim, id: int, water := false) -> Dictionary:
 	var out := {"lanterns": [], "cobras": [], "pools": [], "lamps": [], "props": [], "skip": false}
 	var t: RoadTreatments = s.treatments
 	var type: int = s.network.segments[id].type
 	var spec: Dictionary = RoadStyle.TYPES[type]
 	if spec.get("rural", false) or RoadStyle.is_freeway(type):
 		return out
-	if not (t.kind(id, -1) in RoadTreatments.DRAWN or t.kind(id, 1) in RoadTreatments.DRAWN):
+	var drawn: bool = t.kind(id, -1) in RoadTreatments.DRAWN or t.kind(id, 1) in RoadTreatments.DRAWN
+	var built: bool = t.kind(id, -1) != "" or t.kind(id, 1) != ""
+	if not drawn and not (water and built):
 		return out
 	var pts := s.network.sample_segment(id)
 	if absf(pts[pts.size() / 2].y) > 1.0:
@@ -228,7 +244,32 @@ static func _road_part(s: CitySim, id: int) -> Dictionary:
 				out.cobras.append(at[0])
 				out.pools.append(_pool(at[0], at[1], 3.3, 2.0))
 				out.lamps.append(_lamp(at, 1.8, 9.0))
+	if water and length > 2.0 * (hw + 8.0):
+		# A hydrant a block, on the side that has buildings (alternating
+		# where both do), in the grass strip (on a main street's paved walk,
+		# a little farther out than the lanterns).
+		var n := maxi(roundi(length / HYDRANT_GAP), 1)
+		for i in n:
+			var side := 1 if (id + i) % 2 == 0 else -1
+			if t.kind(id, side) == "":
+				side = -side
+			if t.kind(id, side) == "":
+				continue
+			var off := back + (1.2 if t.kind(id, side) == RoadTreatments.MAIN else 0.9)
+			var at := _free(claims, pts, (i + 0.5) * length / n, side, off, HYDRANT_HALF, SLIDE)
+			if not at.is_empty():
+				out.props.append(["hydrant", at[0]])
 	return out
+
+
+## True when the town has something to pump water: a well, a water tower
+## or a water utility (no hydrants on a street with nothing behind them).
+static func has_water(s: CitySim) -> bool:
+	for id in s.services.buildings:
+		var kind: int = s.services.buildings[id].kind
+		if kind in Services.UTILITIES.water or kind == Services.Kind.WATER_UTILITY:
+			return true
+	return false
 
 
 ## [where a thing stands, facing the road], `d` metres along, `off` metres
@@ -331,6 +372,8 @@ const STEEL := Color(0.55, 0.56, 0.55)
 const SIGN_WHITE := Color(0.92, 0.92, 0.9)
 const SIGN_RED := Color(0.72, 0.08, 0.08)
 const SLAT := Color(0.24, 0.27, 0.22)
+const HYDRANT_RED := Color(0.62, 0.07, 0.06)
+const HYDRANT_CAP := Color(0.78, 0.74, 0.62)  # the bonnet and nozzle caps, aluminium paint
 
 
 ## An acorn lantern: a fluted base, a slim post and a glass acorn globe
@@ -368,6 +411,17 @@ static func _add_prop(st: SurfaceTool, kind: String, at: Transform3D) -> void:
 			_box(st, at, Vector3(0, 0.75, -0.2), Vector3(1.6, 0.4, 0.04), SLAT)
 		"bin":
 			_box(st, at, Vector3(0, 0.45, 0), Vector3(0.5, 0.9, 0.5), Color(0.08, 0.1, 0.09))
+		"hydrant":
+			# A dry barrel hydrant: a flared foot, a barrel, a bonnet and its
+			# nut, a side nozzle each way and the big pumper nozzle toward
+			# the street (the +z side). About 30 in tall.
+			_post(st, Vector3(0, 0.0, 0), Vector3(0, 0.12, 0), 0.17, 0.13, HYDRANT_RED, at)
+			_post(st, Vector3(0, 0.12, 0), Vector3(0, 0.55, 0), 0.12, 0.11, HYDRANT_RED, at)
+			_post(st, Vector3(0, 0.55, 0), Vector3(0, 0.68, 0), 0.14, 0.07, HYDRANT_CAP, at)
+			_post(st, Vector3(0, 0.68, 0), Vector3(0, 0.74, 0), 0.04, 0.03, HYDRANT_CAP, at)
+			for x in [-0.15, 0.15]:
+				_box(st, at, Vector3(x, 0.42, 0), Vector3(0.1, 0.09, 0.09), HYDRANT_CAP)
+			_box(st, at, Vector3(0, 0.36, 0.14), Vector3(0.14, 0.14, 0.1), HYDRANT_CAP)
 
 
 static func _box(st: SurfaceTool, at: Transform3D, c: Vector3, size: Vector3, col: Color) -> void:
@@ -382,7 +436,8 @@ static func _box(st: SurfaceTool, at: Transform3D, c: Vector3, size: Vector3, co
 
 
 ## A six-sided post from a to b, radius r0 to r1, in one colour.
-static func _post(st: SurfaceTool, a: Vector3, b: Vector3, r0: float, r1: float, col: Color) -> void:
+static func _post(st: SurfaceTool, a: Vector3, b: Vector3, r0: float, r1: float, col: Color,
+		at := Transform3D.IDENTITY) -> void:
 	for k in 6:
 		var a0 := TAU * k / 6.0
 		var a1 := TAU * (k + 1) / 6.0
@@ -390,4 +445,4 @@ static func _post(st: SurfaceTool, a: Vector3, b: Vector3, r0: float, r1: float,
 		var o1 := Vector3(cos(a1), 0.0, sin(a1))
 		for p in [a + o0 * r0, b + o1 * r1, b + o0 * r1, a + o0 * r0, a + o1 * r0, b + o1 * r1]:
 			st.set_color(col)
-			st.add_vertex(p)
+			st.add_vertex(at * p)
