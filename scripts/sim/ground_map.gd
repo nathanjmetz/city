@@ -187,7 +187,8 @@ var _by_owner := {}
 ## Street side -> PackedInt32Array of curb claims, by where they start.
 var _ledger := {}
 var _ledger_longest := {}  # street side -> its longest stretch (m)
-## seg -> [PackedVector2Array centre line, PackedFloat32Array metres along, half width].
+## seg -> [PackedVector2Array centre line, PackedFloat32Array metres along,
+## half width, where its curb starts, where it ends (metres along)].
 var _streets := {}
 var _crossings := PackedVector2Array()
 var _stale := false
@@ -288,21 +289,38 @@ func _streets_of(sim: CitySim) -> void:
 		if absf(pts[pts.size() / 2].y) > 1.0:
 			continue  # a bridge or tunnel
 		var line := PackedVector2Array()
-		var along := PackedFloat32Array()
-		var s := 0.0
-		for i in pts.size():
-			var p := Vector2(pts[i].x, pts[i].z)
-			if i > 0:
-				s += p.distance_to(line[line.size() - 1])
-			line.append(p)
-			along.append(s)
-		_streets[int(id)] = [line, along, RoadStyle.half_width(sim.network.segments[id].type)]
+		for q in pts:
+			line.append(Vector2(q.x, q.z))
+		var sg: Dictionary = sim.network.segments[id]
+		var ends := []
+		for node in [sg.a, sg.b]:
+			# The curb stops where the cross street's pavement begins.
+			var cross := 0.0
+			for other in sim.network.segments_at(node):
+				if other != id:
+					cross = maxf(cross, RoadStyle.half_width(sim.network.segments[other].type))
+			ends.append(cross)
+		set_street(int(id), line, RoadStyle.half_width(sg.type), ends[0], ends[1])
+
+
+## Files a street the curb ledger measures along: its centre line (town
+## x/z, from its first node to its last), its pavement's half width, and
+## how far in from each end its curb starts (the cross streets' half
+## widths at its ends; 0 at a dead end).
+func set_street(seg: int, line: PackedVector2Array, half_width: float, from_end := 0.0, to_end := 0.0) -> void:
+	var along := PackedFloat32Array()
+	var s := 0.0
+	for i in line.size():
+		if i > 0:
+			s += line[i].distance_to(line[i - 1])
+		along.append(s)
+	_streets[seg] = [line, along, half_width, from_end, maxf(s - to_end, from_end)]
 
 
 ## Files GroundFootprints.collect's shapes as claims: a WHOLE kind as one
 ## claim per owner, anything else one claim each, numbered by where it
-## stands (west to east, then north to south) so the names never hang on
-## the order the shapes came in.
+## stands (_poly_before) so the names never hang on the order the shapes
+## came in.
 func file_shapes(shapes: Array) -> void:
 	var groups := {}  # [kind, owner] -> [shapes]
 	for s in shapes:
@@ -326,8 +344,7 @@ func file_shapes(shapes: Array) -> void:
 			_add(owner, part, kind, list.map(func(s): return s.poly), cells)
 			continue
 		if list.size() > 1:
-			list.sort_custom(func(a, b): return a.box.position.x < b.box.position.x \
-				or (a.box.position.x == b.box.position.x and a.box.position.y < b.box.position.y))
+			list.sort_custom(func(a, b): return _poly_before(a.poly, b.poly))
 		for i in list.size():
 			_add(owner, part if list.size() == 1 else "%s:%d" % [part, i], kind, [list[i].poly], cells)
 	for c in cells:
@@ -389,6 +406,9 @@ func _add(owner: String, part: String, kind: String, polys: Array, cells) -> int
 	var pieces := polys.filter(func(p): return (p as PackedVector2Array).size() >= 3)
 	if pieces.is_empty():
 		return -1
+	# Its pieces in a fixed order, so a claim filed again matches one filed
+	# with the rest of the town.
+	pieces.sort_custom(_poly_before)
 	if not _kind_id.has(kind):
 		_kind_id[kind] = _kinds.size()
 		_kinds.append(kind)
@@ -642,18 +662,20 @@ func curb_at(seg: int, side: int, from: float, to: float, kinds := []) -> Array:
 
 
 ## Where `length` metres of free curb start on street `seg`'s `side`,
-## nearest `at` metres along it (its middle as close to `at` as it can be),
-## free of every curb claim of `kinds` (all when empty); -1.0 when the side
+## nearest `at` metres along it (its middle as close to `at` as it can be;
+## the first on a tie), free of every curb claim of `kinds` (all when
+## empty) and clear of the cross streets at its ends; -1.0 when the side
 ## has no stretch that long.
 func curb_gap(seg: int, side: int, at: float, length: float, kinds := []) -> float:
 	if not _streets.has(seg):
 		return -1.0
-	var along: PackedFloat32Array = _streets[seg][1]
-	var end := along[along.size() - 1]
+	# The curb runs between the cross streets at its ends, not through them.
+	var start: float = _streets[seg][3]
+	var end: float = _streets[seg][4]
 	var free := []  # [from, to]
-	var edge := 0.0
-	for id in curb_at(seg, side, 0.0, end, kinds):
-		var s0 := _curb_s[id * 2]
+	var edge := start
+	for id in curb_at(seg, side, start, end, kinds):
+		var s0 := minf(_curb_s[id * 2], end)
 		if s0 > edge:
 			free.append([edge, s0])
 		edge = maxf(edge, _curb_s[id * 2 + 1])
@@ -753,6 +775,27 @@ func _curb_before(a: int, b: int) -> bool:
 	if _curb_s[a * 2] != _curb_s[b * 2]:
 		return _curb_s[a * 2] < _curb_s[b * 2]
 	return _claim_before(a, b)
+
+
+## A fixed order for outlines: west to east by their boxes, then north to
+## south, then point by point.
+static func _poly_before(a: PackedVector2Array, b: PackedVector2Array) -> bool:
+	var la := a[0]
+	var lb := b[0]
+	for v in a:
+		la = la.min(v)
+	for v in b:
+		lb = lb.min(v)
+	if la.x != lb.x:
+		return la.x < lb.x
+	if la.y != lb.y:
+		return la.y < lb.y
+	for i in mini(a.size(), b.size()):
+		if a[i].x != b[i].x:
+			return a[i].x < b[i].x
+		if a[i].y != b[i].y:
+			return a[i].y < b[i].y
+	return a.size() < b.size()
 
 
 static func _before_names(ra: int, ka: String, oa: String, pa: String, rb: int, kb: String, ob: String, pb: String) -> bool:

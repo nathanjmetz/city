@@ -35,11 +35,13 @@ func _initialize() -> void:
 			var map := GroundMap.new()
 			map.fill_from(sim, shapes)
 			_check_same(sim, map)
+			_check_shuffled(sim, shapes, map.signature())
 			_check_ask(map)
 			_check_curb(map)
 			_time_asks(map)
 		else:
 			_check_rail(GroundMap.build(sim))
+	_check_fixed_street()
 	quit(1 if _failed else 0)
 
 
@@ -134,6 +136,55 @@ func _check_same(sim: CitySim, map: GroundMap) -> void:
 	# town changes.
 	var kept := GroundMap.of(sim)
 	_check(kept.signature() == sig and GroundMap.of(sim) == kept, "GroundMap.of keeps the town's map on the sim")
+
+
+## The shapes read in any order give the same map (a claim's pieces too).
+func _check_shuffled(sim: CitySim, shapes: Array, sig: int) -> void:
+	var same := 0
+	for i in 3:
+		var mixed := shapes.duplicate()
+		seed(1000 + i)
+		mixed.shuffle()
+		var map := GroundMap.new()
+		map.fill_from(sim, mixed)
+		if map.signature() == sig:
+			same += 1
+	_check(same == 3, "the town's shapes read in 3 shuffled orders give the same map (%d of 3)" % same)
+
+
+## A street laid out by hand, with the answers written out: 100 m west to
+## east along z = -50, from x = -100 to x = 0, 5 m to the pavement's edge,
+## 4 m at each end taken by the cross streets.
+func _check_fixed_street() -> void:
+	var map := GroundMap.new()
+	map.set_street(7, PackedVector2Array([Vector2(-100.0, -50.0), Vector2(0.0, -50.0)]), 5.0, 4.0, 4.0)
+	map.register("seg:7", "road", "road", [PackedVector2Array([Vector2(-100.0, -55.0), Vector2(0.0, -55.0),
+		Vector2(0.0, -45.0), Vector2(-100.0, -45.0)])])
+	# A post at x = -40, 7 m south of the centre line: 60 m along, on the
+	# right going east (south), 2 m past the pavement's edge.
+	var post := map.register("lot:a", "mailbox", "post:mailbox", [GroundFootprints._sq(Vector2(-40.0, -43.0), 0.25)])
+	var spot := map.curb_spot(Vector2(-40.0, -43.0))
+	_check(spot.size() == 4 and spot[0] == 7 and spot[1] == 1 and is_equal_approx(spot[2], 60.0) and is_equal_approx(spot[3], 2.0),
+		"fixed street: a spot 7 m south is street 7, right side, 60 m along, 2 m out (%s)" % str(spot))
+	spot = map.curb_spot(Vector2(-75.0, -57.5))
+	_check(spot.size() == 4 and spot[0] == 7 and spot[1] == -1 and is_equal_approx(spot[2], 25.0) and is_equal_approx(spot[3], 2.5),
+		"fixed street: a spot 7.5 m north is the left side, 25 m along, 2.5 m out (%s)" % str(spot))
+	_check(map.curb_spot(Vector2(-40.0, -30.0)).is_empty(), "fixed street: 20 m away is past the curb's reach")
+	var c := map.claim(post)
+	_check(c.curb.size() == 1 and c.curb[0][0] == 15 and is_equal_approx(c.curb[0][1], 59.75) and is_equal_approx(c.curb[0][2], 60.25),
+		"fixed street: the post is filed on side key 15 from 59.75 to 60.25 m (%s)" % str(c.curb))
+	_check(map.curb_at(7, 1, 59.0, 61.0) == [post] and map.curb_at(7, -1, 59.0, 61.0).is_empty()
+		and map.curb_at(7, 1, 60.25, 70.0).is_empty(), "fixed street: curb_at finds it on its side and stretch only")
+	# Free curb runs 4 to 59.75 and 60.25 to 96 m.
+	var cases := [[60.0, 30.0, 29.75], [0.0, 30.0, 4.0], [100.0, 30.0, 66.0], [80.0, 35.75, 60.25], [50.0, 55.75, 4.0],
+		[50.0, 56.0, -1.0]]
+	for k in cases:
+		var got := map.curb_gap(7, 1, k[0], k[1])
+		_check(is_equal_approx(got, k[2]), "fixed street: %.2f m of free curb nearest %.0f m starts at %.2f (got %.2f)" % [k[1], k[0], k[2], got])
+	_check(is_equal_approx(map.curb_gap(7, -1, 50.0, 92.0), 4.0) and map.curb_gap(7, -1, 50.0, 92.5) < 0.0,
+		"fixed street: the empty side has 92 m between the cross streets, not 100")
+	map.release("lot:a")
+	_check(is_equal_approx(map.curb_gap(7, 1, 60.0, 30.0), 45.0), "fixed street: with the post gone, 30 m centred at 60 m (45)")
 
 
 ## The first few claims two maps differ on (to see why when they do).
