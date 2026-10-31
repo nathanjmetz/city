@@ -43,6 +43,9 @@ func _initialize() -> void:
 		# The shop street's curb between the 4-way and the T, close (its
 		# painted stalls; early-fix-5).
 		["11_main_curb_20m", Vector3(20.0, 0.0, 104.0), 180.0, 50.0, 20.0, "day", FAIR],
+		# A fire hydrant in a home street's grass strip, close (added
+		# 2026-10-31, early-fix-9; aimed at the one nearest shot 01).
+		["12_hydrant_6m", Vector3(-30.0, 0.0, 310.0), 180.0, 12.0, 5.0, "day", FAIR],
 		["06_dusk_100m", Vector3(40.0, 0.0, 210.0), 35.0, 22.0, 100.0, "dusk", FAIR],
 	]
 	super._initialize()
@@ -78,6 +81,7 @@ func _town(sim: CitySim) -> void:
 	for i in GROW_DAYS * Seasons.TICKS_PER_DAY:
 		sim.tick()
 	_skew_aim(sim)
+	_hydrant_aim(sim)
 	print("early_round: young town after %d days: %d buildings, %d people, $%d" % [GROW_DAYS,
 		sim.buildings.size(), sim.stats.population, sim.economy.money])
 
@@ -121,3 +125,26 @@ func _skew_aim(sim: CitySim) -> void:
 					s[1] = Vector3(pos.x, 0.0, pos.z)
 					s[2] = rad_to_deg(atan2(-road.x, -road.y)) + 40.0
 	print("early_round: shot 07 at the crossing %.0f degrees off square" % rad_to_deg(asin(clampf(best, 0.0, 1.0))))
+
+
+## Shot 12: the hydrant nearest shot 01, seen from the street, beside the
+## curb (also says how many the town has).
+func _hydrant_aim(sim: CitySim) -> void:
+	var count := 0
+	var best := INF
+	var spot := Vector3.ZERO
+	var plan := TreatmentView.plan(sim)
+	for sq in plan.props:
+		for e in plan.props[sq]:
+			if e[0] != "hydrant":
+				continue
+			count += 1
+			var p: Vector3 = e[1].origin
+			var d := Vector2(p.x, p.z).distance_to(Vector2(-30.0, 310.0))
+			if d < best:
+				best = d
+				spot = p
+	for s in SHOTS:
+		if s[0] == "12_hydrant_6m" and count > 0:
+			s[1] = Vector3(spot.x, 0.0, spot.z)
+	print("early_round: %d hydrants in the young town" % count)

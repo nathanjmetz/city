@@ -149,7 +149,8 @@ func _curb_furniture(sim: CitySim) -> void:
 		n += 1
 		if not claims.is_free(Vector2(xf.origin.x, xf.origin.z), TreatmentView.LANTERN_HALF):
 			bad.append(["lantern", xf.origin])
-	var halves := {"bench": TreatmentView.BENCH_HALF, "bin": TreatmentView.BIN_HALF, "no_parking": TreatmentView.SIGN_HALF}
+	var halves := {"bench": TreatmentView.BENCH_HALF, "bin": TreatmentView.BIN_HALF, "no_parking": TreatmentView.SIGN_HALF,
+		"hydrant": TreatmentView.HYDRANT_HALF}
 	for sq in p.props:
 		for e in p.props[sq]:
 			n += 1
@@ -157,6 +158,46 @@ func _curb_furniture(sim: CitySim) -> void:
 			if not claims.is_free(Vector2(o.x, o.z), halves[e[0]]):
 				bad.append([e[0], o])
 	_check(n > 0 and bad.is_empty(), "curb furniture stands only on free curb (%d placed, in the way: %s)" % [n, bad.slice(0, 4)])
+	_hydrants(sim, bad)
+
+
+## Fire hydrants: none until the town has something to pump water (a well,
+## a water tower or a utility), then one a block on the built-up streets,
+## on free curb, some on home streets (not only the treated ones).
+func _hydrants(sim: CitySim, bad: Array) -> void:
+	var before := 0
+	var p := TreatmentView.plan(sim)
+	for sq in p.props:
+		for e in p.props[sq]:
+			before += 1 if e[0] == "hydrant" else 0
+	var had_water := TreatmentView.has_water(sim)
+	var fake := 987654
+	sim.services.buildings[fake] = {"kind": Services.Kind.WELL}
+	var cache := {}
+	p = TreatmentView.plan(sim, cache)
+	var n := 0
+	var homes := 0
+	for sq in p.props:
+		for e in p.props[sq]:
+			if e[0] != "hydrant":
+				continue
+			n += 1
+			var o: Vector3 = e[1].origin
+			if not CurbClaims.of(sim).is_free(Vector2(o.x, o.z), TreatmentView.HYDRANT_HALF):
+				bad.append(["hydrant", o])
+	for id in sim.network.segments.keys():
+		if sim.treatments.kind(id, -1) == RoadTreatments.HOMES or sim.treatments.kind(id, 1) == RoadTreatments.HOMES:
+			homes += 1
+	sim.services.buildings.erase(fake)
+	var gone := 0
+	p = TreatmentView.plan(sim, cache)
+	for sq in p.props:
+		for e in p.props[sq]:
+			gone += 1 if e[0] == "hydrant" else 0
+	if not had_water:
+		_check(before == 0 and gone == 0, "no hydrants before the town has water (%d, then %d)" % [before, gone])
+	_check(n > 0 and homes > 0, "hydrants stand on a town with water and home streets (%d hydrants, %d home sides)" % [n, homes])
+	_check(bad.is_empty(), "hydrants stand on free curb (in the way: %s)" % [bad.slice(0, 4)])
 
 
 func _rules(sim: CitySim, seg: int) -> void:
