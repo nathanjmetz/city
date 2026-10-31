@@ -134,6 +134,7 @@ class Reader:
 	func step(usec := 0) -> bool:
 		var t0 := Time.get_ticks_usec()
 		var keep := GroundFootprints._builder_state()
+		DoorLog.drawn = null  # no view's door collection takes in what's read here
 		_waiting = false
 		while not done():
 			_work()
@@ -328,7 +329,7 @@ class Reader:
 static func _builder_state() -> Array:
 	return [HouseBuilder.last_masses, HouseBuilder.last_info, HouseBuilder.cuts_drawn, HouseBuilder.dry_all,
 		HouseBuilder.keep_arrays, HouseBuilder.owner_care, HouseBuilder.restored, HouseBuilder.flat_weeds,
-		HouseBuilder.grown, HouseBuilder.drawn, HouseBuilder.unseated]
+		HouseBuilder.grown, HouseBuilder.drawn, HouseBuilder.unseated, DoorLog.drawn]
 
 
 static func _restore_builder_state(k: Array) -> void:
@@ -343,6 +344,7 @@ static func _restore_builder_state(k: Array) -> void:
 	HouseBuilder.grown = k[8]
 	HouseBuilder.drawn = k[9]
 	HouseBuilder.unseated = k[10]
+	DoorLog.drawn = k[11]
 
 
 static func _add(out: Array, cat: String, what: String, key: String, poly: PackedVector2Array) -> void:
