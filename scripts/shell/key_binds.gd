@@ -31,7 +31,7 @@ const ACTIONS := [
 	["dezone", "Dezone", KEY_NONE], ["brush", "Zoning tool: street, brush or smart", KEY_TAB],
 	["move_it", "Move It", KEY_M], ["turn_left", "Turn left (Move It)", KEY_COMMA],
 	["turn_right", "Turn right (Move It)", KEY_PERIOD],
-	["traffic", "Traffic view", KEY_J], ["views", "Views", KEY_V], ["search", "Find a tool", KEY_SLASH],
+	["traffic", "Traffic view", KEY_J], ["ground_view", "Taken ground view", KEY_O], ["views", "Views", KEY_V], ["search", "Find a tool", KEY_SLASH],
 	["help", "Controls list", KEY_F1], ["pause", "Pause", KEY_SPACE], ["flag_sound", "Flag a bad sound", KEY_N],
 ]
 

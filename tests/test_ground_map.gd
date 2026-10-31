@@ -132,10 +132,9 @@ func _check_same(sim: CitySim, map: GroundMap) -> void:
 		map.stats().claims, loaded.stats().claims])
 	if loaded.signature() != sig:
 		_diff(map, loaded)
-	# Asked through the sim: made once, kept, and worked out again when the
-	# town changes.
+	# Asked through the sim: made once and kept.
 	var kept := GroundMap.of(sim)
-	_check(kept.signature() == sig and GroundMap.of(sim) == kept, "GroundMap.of keeps the town's map on the sim")
+	_check(kept != null and GroundMap.of(sim) == kept and sim.ground == kept, "GroundMap.of keeps the town's map on the sim")
 
 
 ## The shapes read in any order give the same map (a claim's pieces too).

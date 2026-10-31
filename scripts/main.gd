@@ -445,6 +445,14 @@ func _ready() -> void:
 	hud.service_view = service_view
 	hud.bus_view = bus_view
 	hud.rail_view = rail_view
+	# The Ground view (Views > Taken ground): what claims each patch of ground.
+	var ground_view := GroundView.new()
+	ground_view.sim = sim
+	add_child(ground_view)
+	hud.ground_view = ground_view
+	# Its survey reads the plans and keep-clear spots these views already hold.
+	GroundMap.of(sim).road_view = weakref(roads)
+	sim.ground.building_view = weakref(buildings)
 	hud.select_tool = select_tool
 	hud.lot_alerts = lot_alerts
 	add_child(hud)
@@ -597,6 +605,11 @@ func _process(delta: float) -> void:
 		guard += 1
 		sim.tick()
 	Perf.add("frame.sim", t)
+	# The Ground view's survey, when it asked for one (GroundMap.survey_step).
+	if sim.ground != null and sim.ground.surveying():
+		t = Perf.now()
+		sim.ground.survey_step()
+		Perf.add("frame.ground_survey", t)
 	_tick_time = minf(_tick_time, step)
 	_save_wait -= delta
 	if Session.online():
