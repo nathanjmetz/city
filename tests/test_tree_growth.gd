@@ -290,6 +290,7 @@ func _facts() -> void:
 	_check(not TreeField.resolve([xf, sp, Color.GREEN, {"shrub": true}])[5], "brush never grows up close")
 	TreeField.now_tick = 0
 	_grown_yards()
+	_grown_streets()
 
 
 ## A yard that comes in grown (Nathan, 2026-10-29: "A. Yes, back-yard trees
@@ -334,6 +335,43 @@ func _grown_yards() -> void:
 	_check(absf(float(at[0][3]) - 25.0) < 0.01 and absf(float(at[3][3]) - 35.0) < 0.01
 		and absf(h[0] - 0.9 * TreeKinds.size_at(sp, 25.0)) < 0.001 and h[1] - h[0] < 0.01 and h[1] >= h[0] and h[3] > h[2] and h[2] > h[0],
 		"a grown yard tree starts at its age and grows on from it (%.2f, %.2f, %.2f, %.2f of its size)" % h)
+
+
+## Street trees come in grown too (2026-10-31): a parkway's mix of ages
+## from the lot's seed, kept under a pole line's wires and off corners and
+## streetlights (BuildingView._street_facts).
+func _grown_streets() -> void:
+	var ages := []
+	var same := true
+	for i in 3000:
+		var sp: int = [TreeField.Species.MAPLE, TreeField.Species.LOCUST, TreeField.Species.RED_OAK][i % 3]
+		var s := hash([54321, i])
+		var a := TreeField.street_age(sp, s)
+		same = same and a == TreeField.street_age(sp, s)
+		ages.append(a)
+	var young := ages.filter(func(a): return a < 12.0).size()
+	var mature := ages.filter(func(a): return a >= 18.0).size()
+	var old := ages.filter(func(a): return a > 40.0).size()
+	var off_step := ages.filter(func(a): return a >= 12.0 and not GrownTrees.BUCKETS.has(a))
+	_check(same and off_step.is_empty(), "the same seed gives the same street tree, at a grown mesh's own age %s" % [off_step.slice(0, 3)])
+	_check(young > 150 and young < 350 and mature > 2200 and old > 80 and old < 300,
+		"street trees start mostly 18 to 33 years old, a few young replacements and big old ones (%d young, %d 18+, %d old of 3000)" % [young, mature, old])
+	# Under the wires, and off a corner: the oldest of the mix that fits.
+	var fits := true
+	var capped := 0
+	for i in 300:
+		for sp in [TreeField.Species.MAPLE, TreeField.Species.SILVER_MAPLE, TreeField.Species.LOCUST, TreeField.Species.RED_OAK, TreeField.Species.OAK]:
+			var s := hash([99, i])
+			var size := 0.8 + 0.3 * float(i % 7) / 6.0
+			var under := TreeField.street_age(sp, s, size, INF, 7.1)
+			var corner := TreeField.street_age(sp, s, size, 4.0)
+			var free := TreeField.street_age(sp, s, size)
+			var young_sp := TreeKinds.nursery_age(sp)
+			fits = fits and (size * TreeKinds.height(sp, under) <= 7.1 + 0.001 or absf(under - young_sp) < 0.001)
+			fits = fits and (TreeField.SPREAD[sp] * size * TreeKinds.size_at(sp, corner) <= 4.0 + 0.001 or absf(corner - young_sp) < 0.001)
+			fits = fits and under <= free and corner <= free and under >= young_sp and corner >= young_sp
+			capped += 1 if under < free else 0
+	_check(fits and capped > 300, "a street tree under wires or by a corner starts young enough to fit, never smaller than nursery stock (%d kept younger)" % capped)
 
 
 ## Two copies of a town agree on every tree after a save and load: yard

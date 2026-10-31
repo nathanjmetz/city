@@ -200,8 +200,8 @@ static func resolve(t: Array, world := Transform3D.IDENTITY) -> Array:
 ## 2026-10-29: "A. Yes, back-yard trees start grown; street trees still
 ## start small and grow"), at the mixed ages of an established Indiana
 ## street: about one in seven a young tree (13 years), most 18, 25 or 33
-## years, and about one in eight a big old one (56). Street trees are the
-## town's and go in as nursery stock. The ages are grown trees' own mesh
+## years, and about one in eight a big old one (56). Street trees have
+## their own mix (street_age, since 2026-10-31). The ages are grown trees' own mesh
 ## ages (GrownTrees.BUCKETS), so a new street's yard trees share a few
 ## meshes (fewer draw calls) instead of each being its own.
 const YARD_YOUNG := 0.14
@@ -238,6 +238,38 @@ static func yard_age(sp: int, seed: int, room := 1.0) -> float:
 			if s <= fits:
 				age = s
 	return maxf(age, young)
+
+
+## Street trees on a new street come in grown too (2026-10-31; Nathan, on
+## tree ages: "Make smart choices"), the parkway of an established Indiana
+## street the town planted decades back and has replanted one tree at a
+## time since: about one in twelve a young replacement (nursery stock, for
+## one lost to a storm or the emerald ash borer), one in ten 13 years, most
+## 18, 25 or 33, and a few big old ones (56). The yards' own mesh ages
+## (YARD_PICKS), so a street adds no meshes the yards haven't. Each entry:
+## [share of trees up to here, age] (0: nursery stock).
+const STREET_MIX := [[0.08, 0.0], [0.18, 13.0], [0.38, 18.0], [0.68, 25.0], [0.94, 33.0], [1.0, 56.0]]
+
+
+## How old a street tree of kind `sp` is the day its lot's home is
+## finished, from `seed` (from the lot's own seed: the same street always
+## gets the same trees). `size`: the size its planter gave it. A crown
+## that would reach more than `reach` metres from the trunk (a corner's
+## signals and signs, a streetlight's head) or stand taller than `top`
+## metres (the wires of a pole line overhead) starts at the oldest of the
+## mix's ages that keeps under them, or as nursery stock. Whole-number
+## maths for the pick, so every computer agrees.
+static func street_age(sp: int, seed: int, size := 1.0, reach := INF, top := INF) -> float:
+	var u := float(posmod(seed, 1000003)) / 1000003.0
+	var young := TreeKinds.nursery_age(sp)
+	var k := 0
+	while k < STREET_MIX.size() - 1 and u >= float(STREET_MIX[k][0]):
+		k += 1
+	# Stepped down through the mix until it fits.
+	while k > 0 and (SPREAD[sp] * size * TreeKinds.size_at(sp, float(STREET_MIX[k][1])) > reach
+			or size * TreeKinds.height(sp, float(STREET_MIX[k][1])) > top):
+		k -= 1
+	return maxf(float(STREET_MIX[k][1]), young)
 
 
 ## A tree's seed: from where it stands in the region (a view position plus
