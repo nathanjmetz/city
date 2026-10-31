@@ -163,6 +163,7 @@ jobs:
           run_test tests/test_vehicles.gd
           run_test tests/test_doors.gd
           run_test tests/test_docks.gd
+          run_test tests/test_road_treatments.gd
           run_test tests/test_seasons.gd
           run_test tests/test_month_words.gd
           run_test tests/test_words.gd

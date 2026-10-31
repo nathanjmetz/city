@@ -222,6 +222,8 @@ var redevelopment := Redevelopment.new()
 var subdivisions := Subdivisions.new()
 ## Streets wear out and come due for resurfacing (StreetAge).
 var street_age := StreetAge.new()
+## Each side of a street dresses for what's built along it (RoadTreatments).
+var treatments := RoadTreatments.new()
 ## The city engineer: counts rush-hour traffic and proposes fixes (CityEngineer).
 var engineer := CityEngineer.new()
 ## The ordinances the town council has passed (TownLaws).
@@ -387,6 +389,12 @@ func _init() -> void:
 	# 2026-10-26).
 	network.split.connect(_carry_closure)
 	network.changed.connect(_drop_stale_closures)
+	# Road treatments follow their road the same way, and look again at
+	# whatever is built along the roads when it changes.
+	network.split.connect(func(seg: int, first: int, second: int): treatments.split(seg, first, second, self))
+	network.changed.connect(func(): treatments.roads_changed(self))
+	for sig in [buildings_changed, lots_changed, big_factories_changed, warehouses_changed]:
+		sig.connect(treatments.touch)
 	network.changed.connect(func():
 		_lots_light = true
 		_roads_moved = true
@@ -600,6 +608,22 @@ func _apply_cmd(cmd: Dictionary) -> bool:
 			ok = _build_roundabout(mid, r, ring)
 			if ok:
 				economy.money -= shapes_cost(arcs, ring)
+		"road_treatment":
+			# Lock a street side's treatment, or let it go back to Auto: free
+			# to keep what's there, a resurfacing to change it (Nathan,
+			# 2026-10-29, "A").
+			var seg := int(cmd.get("seg", -1))
+			var cost := treatments.lock_cost(self, seg, int(cmd.get("side", 1)), str(cmd.get("kind", "auto")))
+			if cost < 0 or cost > economy.money:
+				return false
+			cost = treatments.set_lock(self, seg, int(cmd.get("side", 1)), str(cmd.get("kind", "auto")))
+			ok = cost >= 0
+			if ok:
+				economy.money -= cost
+				# On a road piece the newest road build made, an undo of
+				# that build refunds this too.
+				if cost > 0:
+					undo.note_paid(self, seg, cost)
 		"upgrade_road":
 			var cost := upgrade_cost(int(cmd.seg), _road(cmd))
 			if network.segments.has(int(cmd.seg)) and (RoadStyle.is_ring(network.segments[int(cmd.seg)].type)
@@ -1123,6 +1147,8 @@ func _apply_cmd(cmd: Dictionary) -> bool:
 			redevelopment.from_dict({})
 			subdivisions.from_dict({})
 			street_age.from_dict({})
+			treatments.from_dict({})
+			traffic.clear_treatments()
 			engineer.from_dict({})
 			laws.from_dict({})
 			laws.sync(self)
@@ -1416,6 +1442,8 @@ func tick() -> void:
 			if key != "":
 				banks.financed(self, key)
 	Perf.add("sim.growth", t)
+	# Street sides that changed what's built along them take their look.
+	treatments.tick(self)
 	t = Perf.now()
 	if tick_count % Balance.DEVELOP_EVERY == 0 and _replan_at == 0:
 		_develop_one()
@@ -5282,6 +5310,7 @@ func save_steps(postcard := false) -> Array:
 		["redevelopment", func(): return redevelopment.to_dict()],
 		["subdivisions", func(): return subdivisions.to_dict()],
 		["street_age", func(): return street_age.to_dict()],
+		["road_treatments", func(): return treatments.to_dict()],
 		["engineer", func(): return engineer.to_dict()],
 		["laws", func(): return laws.to_dict()],
 		["worn", func(): return worn.to_dict()],
@@ -5399,6 +5428,11 @@ func from_dict(d: Dictionary) -> void:
 	redevelopment.from_dict(d.get("redevelopment", {}))
 	subdivisions.from_dict(d.get("subdivisions", {}))
 	street_age.from_dict(d.get("street_age", {}))
+	# Each side's kind as saved (none in a town saved before treatments:
+	# worked out on the first look), and its rules handed to the traffic
+	# before its roads are laid out again.
+	treatments.from_dict(d.get("road_treatments", {}))
+	treatments.push_all(self)
 	engineer.from_dict(d.get("engineer", {}))
 	laws.from_dict(d.get("laws", {}))
 	laws.sync(self)
@@ -5543,6 +5577,10 @@ func from_dict(d: Dictionary) -> void:
 			var want := Policies.growth_for(str(permits.guided[key].stance), now)
 			if want != now:
 				policies.set_step(key, "growth", want)
+	# What's built along each road, added up behind the loading screen (a
+	# neighbor's postcard is drawn, never judged).
+	if not postcard:
+		treatments.warm(self)
 	buildings_changed.emit()
 
 

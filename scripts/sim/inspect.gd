@@ -985,18 +985,20 @@ static func _road(sim: CitySim, seg: int) -> Dictionary:
 	var rows := [
 		["Length", "%d m (%.2f mi)" % [roundi(m), m / 1609.0]],
 		["Lanes", "%d%s" % [spec.lanes, ", one way" if s.oneway else ""]],
-		["Speed limit", "%d mph" % spec.mph],
+		["Speed limit", "%d mph" % (sim.treatments.mph(seg, s.type) if sim.treatments.mph(seg, s.type) > 0 else spec.mph)],
 		["Cars on it now", str(cars)],
 		["Traffic flow", "%d%%" % roundi(flow * 100.0)],
 		["Upkeep", "$%s / day" % CitySim.money_text(roundi(Economy.road_upkeep(c, s.type)))],
 	]
+	# Each side's treatment and why, and the rules it brings.
+	rows.append_array(sim.treatments.rows(sim, seg))
 	var problems := []
 	if flow < 0.5:
 		problems.append("Congested: cars manage under half the speed limit.")
 	var street := sim.streets.name_of(seg)
 	return {"title": street if street != "" else spec.name, "kind": spec.name if street != "" else "Road", "icon": "road", "ok": problems.is_empty(),
 		"status": "Flowing freely" if flow >= 0.8 else ("Busy" if flow >= 0.5 else "Jammed"),
-		"rows": rows, "problems": problems}
+		"rows": rows, "problems": problems, "actions": sim.treatments.actions(sim, seg)}
 
 
 ## Plain words for where a place ref is: its name, or what it is.

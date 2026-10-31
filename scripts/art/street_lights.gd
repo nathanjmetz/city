@@ -98,6 +98,18 @@ func set_country(segs: Dictionary) -> void:
 	_dirty = true
 
 
+## Main streets light themselves with their own lanterns (TreatmentView):
+## the roads it lights, and its lamps for the light map (as place gives).
+var treated := {}
+var extra := []
+
+
+func set_treated(segs: Dictionary, lamps := []) -> void:
+	treated = segs
+	extra = lamps
+	_dirty = true
+
+
 func setup(net: RoadNetwork) -> void:
 	network = net
 	network.changed.connect(func(): _dirty = true)
@@ -312,7 +324,7 @@ func _rebuild(all := true) -> void:
 		lists[k] = []
 	_claims_seen = claims.stamp() if claims != null else -1
 	if all or _meant.is_empty():
-		_meant = place(network, country)
+		_meant = place(network, country.merged(treated))
 		_pieces_now = _pieces(network)
 		_redo.clear()
 		for i in _meant.size():
@@ -336,7 +348,7 @@ func _rebuild(all := true) -> void:
 			var under: Vector3 = l[1] + dir * (float(l[3]) + 1.5)
 			lists.pool.append(Transform3D(Basis.IDENTITY, Terrain.lift(Vector3(under.x, l[1].y + RoadStyle.Y_JUNCTION + 0.03, under.z))))
 	if _map != null:
-		_map.draw(lamps)
+		_map.draw(lamps + extra)
 	for k in lists:
 		var mm: MultiMesh = _multis[k].multimesh
 		mm.instance_count = lists[k].size()
