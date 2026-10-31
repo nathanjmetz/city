@@ -181,7 +181,7 @@ static func _town(pts: PackedVector3Array, type: int, mats: Dictionary, cuts := 
 			# 2026-10-31 a street's half width more each end, which left a
 			# short block between two junctions with no stalls at all).
 			for side in [-1.0, 1.0]:
-				if treat.get("right" if side > 0.0 else "left", "") != RoadTreatments.MAIN:
+				if treat.get("right" if side > 0.0 else "left", "") != RoadTreatments.MAIN or length < RoadStyle.CURB_RUN:
 					continue
 				var at := RoadStyle.CURB_CLEAR
 				while at <= length - RoadStyle.CURB_CLEAR + 0.01:

@@ -169,6 +169,9 @@ const GUTTER_WIDTH := 0.6
 ## mouth of the junction (RoadMesh), and the curb spaces the traffic parks
 ## in (TrafficSim._curb_at), from its stop bar.
 const CURB_CLEAR := 6.1
+## A kerb shorter than this between its junctions has no curb parking (no
+## room to pull in and away), painted or parked in.
+const CURB_RUN := 24.0
 const SIDEWALK_WIDTH := 1.5
 
 ## Height of each layer above the ground, to keep them from flickering.

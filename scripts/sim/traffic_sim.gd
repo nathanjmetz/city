@@ -3443,7 +3443,7 @@ func _curb_line(stop: Dictionary) -> Array:
 	if not ways.has(wid):
 		return []
 	var w: Dictionary = ways[wid]
-	if w.s1 - w.s0 < CURB_END * 2.0:
+	if w.s1 - w.s0 < RoadStyle.CURB_RUN:
 		return []  # too short a piece of road to park along
 	var mid: float = _frac(stop) * w.len if w.fwd else w.len - _frac(stop) * w.len
 	var face := 1.0 if (stop.side > 0) == w.fwd else -1.0
@@ -3485,7 +3485,7 @@ func _new_curb(pl: Dictionary, stop: Dictionary, vid := -1, vlen := 4.8, held = 
 	if line.is_empty():
 		return -1
 	var w: Dictionary = line[0]
-	var tries := mini(int((w.s1 - w.s0 - CURB_END * 2.0) / (CURB_STALL * 0.5)) * 2 + 1, CURB_TRIES)
+	var tries := mini(int((w.s1 - w.s0 - RoadStyle.CURB_RUN) / (CURB_STALL * 0.5)) * 2 + 1, CURB_TRIES)
 	# Only the spaces near enough to be in the way (the tries reach about
 	# tries / 4 stalls each way; a semi's gap is under 30 m).
 	var mid_pos: Vector3 = _curb_at(line, float(line[1])).pos
