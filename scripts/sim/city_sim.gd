@@ -97,6 +97,8 @@ var grown_yards_from := 0
 var curb_drives_from := 0
 ## What stands on the curb, for every curbside placer (CurbClaims.of; not saved).
 var curb: CurbClaims = null
+## What ground is taken (GroundMap.of; not saved: worked out from the town).
+var ground: GroundMap = null
 
 var network := RoadNetwork.new()
 ## The last builds, for Ctrl+Z (not saved).
@@ -5464,6 +5466,8 @@ func from_dict(d: Dictionary) -> void:
 	curb_drives_from = int(d.get("curb_drives_from", tick_count + 1))
 	if curb != null:
 		curb.reset()  # another town loaded into this sim: its curb worked out afresh
+	if ground != null:
+		ground._changed()  # and its ground map, when next asked
 	city_seed = int(d.get("seed", 1))
 	var postcard := bool(d.get("postcard", false))
 	# Parcels: the lots buildings stand on. (A neighbor's postcard has no
