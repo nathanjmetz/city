@@ -22,6 +22,8 @@ extends Node3D
 ## inside a bay or a home's garage are out of sight, except that on the
 ## desktop two household cars in three that the simulation has in its
 ## garage are drawn out on the drive (see _out_front).
+## On the desktop, shop, office and plant lots also fill by the hour with
+## cars the simulation doesn't drive (see _update_lot_cars).
 ## One drawn out on the drive stays there while it is really backing out
 ## of the garage behind it, and one coming home stops there, so it never
 ## drives through the shut garage door (DoorEvents opens the door only for
@@ -56,6 +58,48 @@ const DRIVE_MIN_Z := 2.6
 ## Metres over which a car drawn out on the drive eases from its path onto
 ## the place it stands parked, coming home or backing out.
 const DRIVE_EASE := 4.0
+## Lot cars (desktop, the tier's lot_cars): the simulation drives a few
+## hundred cars at once (TrafficSim.MAX_CARS), so its shop lots stand about
+## a tenth full at mid-morning, where a Marion strip lot is 30 to 60% full
+## late in the morning and fuller at noon (look critic, round 3,
+## 2026-10-30). The view parks stand-ins in the free stalls by the hour:
+## the staff at the far end of the lot from the door, there from before
+## opening to after closing, and customers from the door outward as the
+## day's trade comes and goes. Drawing only: the simulation, saves and the
+## copies never see them, and a stall the simulation takes (or a car is
+## heading for) is left to it. Every stall decides from its own hash and
+## the hour, so every run and every computer shows the same cars.
+## Share of a lot's stalls its staff take (the farthest from the door),
+## and the hours they're there, by building type; customers' share of the
+## other stalls through the day, as [hour, share] points eased between.
+const LOT_STAFF := {"shop": 0.15, "office": 0.5, "hotel": 0.12, "factory": 0.75}
+const LOT_STAFF_HOURS := {"shop": [8.0, 18.5], "office": [7.5, 17.5], "hotel": [0.0, 24.0], "factory": [6.0, 18.0]}
+## Overnight, a plant's night shift keeps this share of its staff stalls.
+const LOT_NIGHT_SHIFT := 0.3
+const LOT_CUSTOMERS := {
+	"shop": [[8.5, 0.0], [9.5, 0.25], [11.0, 0.45], [12.5, 0.6], [14.0, 0.45], [16.5, 0.45], [17.5, 0.55], [18.0, 0.5], [18.75, 0.0]],
+	"shop_late": [[8.5, 0.0], [9.5, 0.25], [11.0, 0.45], [12.5, 0.6], [14.0, 0.45], [16.5, 0.45], [17.5, 0.6], [20.0, 0.45], [21.0, 0.3], [21.75, 0.0]],
+	"evening": [[10.5, 0.0], [11.5, 0.35], [12.5, 0.55], [14.0, 0.25], [17.0, 0.35], [18.5, 0.65], [20.0, 0.55], [21.5, 0.2], [22.5, 0.0]],
+	"office": [[8.5, 0.0], [9.5, 0.15], [16.0, 0.15], [17.0, 0.0]],
+	"hotel": [[0.0, 0.6], [8.0, 0.55], [11.0, 0.25], [16.0, 0.25], [19.0, 0.5], [24.0, 0.6]],
+	"factory": [[0.0, 0.0]],
+}
+## Building types by their lot's pattern above (a shop let to an office
+## trade, Names.is_office, keeps office hours).
+const LOT_KIND := {"shop": "shop", "mixed_use": "shop", "commercial_block": "shop", "shopping_center": "shop",
+	"office": "office", "office_park": "office", "hotel": "hotel", "factory": "factory"}
+## Within this many metres of the camera a lot changes one car at a time,
+## LOT_TRICKLE real seconds apart (one pulling in or leaving), so nothing
+## pops in or out in front of you; further out it is set as it should be.
+const LOT_NEAR_M := 300.0
+const LOT_TRICKLE := 6.0
+## The lots are looked at in turn, nearest the camera first, for at most
+## LOT_BUDGET_MS a frame (a big town has a thousand of them, and working
+## out a lot's stalls the first time takes a fraction of a millisecond),
+## each at most every LOT_EVERY real seconds. The list of lots is made
+## again, a slice a frame too, when the town's buildings or roads change.
+const LOT_EVERY := 1.0
+const LOT_BUDGET_MS := 0.5
 const _STAYS := [0.0, 0.0, Vector3.ZERO]
 ## Metres the camera moves, or the reach changes, before the parked
 ## vehicles' batches are filled again, and the fewest frames between
@@ -117,6 +161,30 @@ var _pfill := [Vector3.INF, 0.0, 0.0, 0.0]
 var _pfill_due := true
 var _pfill_age := 0
 var _parked_drawn := 0
+## Lot cars (see LOT_STAFF): each lot's stalls worked out once ({lot key:
+## [signature, [[stall index, items, staff, threshold, jitter]]]}); what
+## each lot shows now ({lot key: [stall indices, real time of its last
+## change, what it draws, the stalls drawn, its stall list]}), which
+## _fill_parked draws; the lots in the order they are looked at (see
+## _lot_index) and where each lot is, and what that list was made for; the
+## next one to look at, when this pass began and the hour then; and
+## whether the batches must be filled again at the end of the pass.
+var _lot_stalls := {}
+var _lot_shown := {}
+var _lot_list := []
+var _lot_at := {}
+var _lot_list_for := []
+## The list being made: the buildings' keys, how far through, what it has
+## so far, and what it is for.
+var _lot_scan := []
+var _lot_scan_at := 0
+var _lot_scan_list := []
+var _lot_scan_for := []
+var _lot_next := 0
+var _lot_pass_t := -INF
+var _lot_hour := -100.0
+var _lot_jumped := false
+var _lot_dirty := false
 ## How far vehicles are drawn now, and inside it the full model: the
 ## graphics tier's cars_m and car_near_m, pulled in on a crowded road to
 ## stay under its most-at-once (cars; GraphicsQuality.fit_reach).
@@ -280,6 +348,7 @@ func _draw_cars(_delta: float) -> void:
 	if rebuilt:
 		_parked_version = traffic.parked_version
 		_rebuild_parked()
+	_update_lot_cars(eye, _delta)
 	_fill_parked(eye, ultra2, rebuilt)
 	_drawn = _parked_drawn
 	var far2 := _reach_far * _reach_far
@@ -730,6 +799,247 @@ static func _drive_cars() -> bool:
 	return not OS.has_feature("web") and bool(GraphicsQuality.knob("drive_cars", true))
 
 
+## Lot cars on the desktop where the tier's budget allows (lot_cars),
+## never in the browser.
+static func _lot_cars_on() -> bool:
+	return not OS.has_feature("web") and bool(GraphicsQuality.knob("lot_cars", false))
+
+
+## Fills the free stalls of the town's shop, office, hotel and plant lots
+## by the hour (see LOT_STAFF): a slice of the lots each frame.
+func _update_lot_cars(eye: Vector3, _delta: float) -> void:
+	if town == null or not _lot_cars_on():
+		if not _lot_shown.is_empty() or not _lot_list.is_empty():
+			_lot_shown.clear()
+			_lot_list = []
+			_lot_list_for = []
+			_lot_scan = []
+			_pfill_due = true
+		return
+	var t0 := Time.get_ticks_usec()
+	var now := t0 / 1000000.0
+	var budget := int(LOT_BUDGET_MS * 1000.0)
+	var built := [town.buildings.size(), traffic.version]
+	if built != _lot_list_for and built != _lot_scan_for:
+		_lot_scan = town.buildings.keys()
+		_lot_scan_at = 0
+		_lot_scan_list = []
+		_lot_scan_for = built
+		if _lot_list_for.is_empty() or built[1] != _lot_list_for[1]:
+			_lot_at.clear()  # the roads were rebuilt, and the lots may have moved
+	if not _lot_scan.is_empty():
+		_lot_index(eye, t0 + budget)
+	if _lot_next >= _lot_list.size():
+		if now - _lot_pass_t < LOT_EVERY:
+			return
+		# A new pass. The clock jumped (a load, the time set, a new day):
+		# every lot is set as it should be at once, near or not.
+		_lot_next = 0
+		_lot_pass_t = now
+		var hour := town.sky_hour()
+		_lot_jumped = absf(hour - _lot_hour) > 1.0 and absf(hour - _lot_hour) < 23.0
+		_lot_hour = hour
+	var near2 := LOT_NEAR_M * LOT_NEAR_M
+	while _lot_next < _lot_list.size() and Time.get_ticks_usec() - t0 < budget:
+		var entry: Array = _lot_list[_lot_next]
+		_lot_next += 1
+		if _lot_look(entry[1], entry[2], eye, near2, now):
+			_lot_dirty = true
+	if _lot_dirty and _lot_next >= _lot_list.size():
+		_lot_dirty = false
+		_pfill_due = true
+
+
+## Makes the list of lots that fill (LOT_KIND), a slice until `until`
+## (microseconds) each frame; once done, nearest `eye` first, so a town
+## just loaded fills round the camera first: [[distance, key, where]].
+## Where each lot is, is kept between lists.
+func _lot_index(eye: Vector3, until: int) -> void:
+	while _lot_scan_at < _lot_scan.size() and Time.get_ticks_usec() < until:
+		var key: String = _lot_scan[_lot_scan_at]
+		_lot_scan_at += 1
+		if not town.buildings.has(key) or not town.lots.has(key) or _lot_kind(key) == "":
+			continue
+		var at: Vector3 = _lot_at.get(key, Vector3.INF)
+		if at == Vector3.INF:
+			at = SiteLayout.world(town.lots[key], Vector2.ZERO)
+			_lot_at[key] = at
+		_lot_scan_list.append([Vector2(at.x - eye.x, at.z - eye.z).length_squared(), key, at])
+	if _lot_scan_at < _lot_scan.size():
+		return
+	var list := _lot_scan_list
+	list.sort()
+	_lot_list = list
+	_lot_list_for = _lot_scan_for
+	_lot_scan = []
+	_lot_scan_list = []
+	_lot_scan_for = []
+	_lot_next = mini(_lot_next, list.size())
+	var keep := {}
+	for e in list:
+		if _lot_shown.has(e[1]):
+			keep[e[1]] = _lot_shown[e[1]]
+	if keep.size() != _lot_shown.size():
+		_lot_dirty = true
+	_lot_shown = keep
+
+
+## Looks at one lot: which stalls should have a car now, near the camera
+## one change at a time, less any the simulation has. True if what it
+## draws changed.
+func _lot_look(key: String, at: Vector3, eye: Vector3, near2: float, now: float) -> bool:
+	var had: Array = _lot_shown.get(key, _NONE)
+	var kind := "" if not town.buildings.has(key) or not town.lots.has(key) else _lot_kind(key)
+	if kind == "" or town.care.tier_of(key) <= -2:
+		# Boarded up (a lease sign), gone, or not one that fills now.
+		_lot_shown.erase(key)
+		return not had.is_empty()
+	var stalls := _lot_stall_list(key)
+	var ref: String = "lot:" + key
+	var want := _lot_want(kind, ref, stalls, _lot_hour)
+	var shown: Array = want
+	var since := now
+	if not had.is_empty() and is_same(had[4], stalls):
+		shown = had[0]
+		since = had[1]
+		if _lot_jumped or Vector2(at.x - eye.x, at.z - eye.z).length_squared() >= near2:
+			shown = want
+		elif shown != want and now - since >= LOT_TRICKLE:
+			# Near: one car in or out at a time.
+			shown = _lot_step(shown, want, hash([key, int(now / LOT_TRICKLE)]))
+			since = now
+	# The stalls the simulation has (parked, or a car on its way) are its.
+	var taken: Array = traffic.cached_place(ref).get("taken", _NONE)
+	var drawn := []
+	var ids := []
+	for k in shown:
+		var st: Array = stalls[k]
+		if int(st[0]) < taken.size() and int(taken[st[0]]) != -1:
+			continue
+		drawn.append_array(st[1])
+		ids.append(k)
+	var changed: bool = had.is_empty() or had[3] != ids
+	_lot_shown[key] = [shown, since, drawn, ids, stalls]
+	return changed
+
+
+## The stalls lot `key` would fill (all but the accessible ones), farthest
+## from the door first: [[stall index, items drawn there, staff stall,
+## customer threshold 0-1, jitter 0-1]], worked out once for what stands
+## there.
+func _lot_stall_list(key: String) -> Array:
+	var b: Dictionary = town.buildings[key]
+	var kind := _lot_kind(key)
+	var sig := [int(b.get("seed", 0)), kind, int(b.get("level", 0)), traffic.version]
+	var had: Array = _lot_stalls.get(key, _NONE)
+	if not had.is_empty() and had[0] == sig:
+		return had[1]
+	var lot: Dictionary = town.lots[key]
+	var lay := SiteLayout.for_lot(town, key)
+	var door: Vector2 = lay.get("door", Vector2.ZERO)
+	var found := []
+	for i in lay.spots.size():
+		var s: Dictionary = lay.spots[i]
+		if s.kind == "stall" and not s.get("ada", false):
+			found.append([i, -(s.pos as Vector2).distance_to(door)])
+	found.sort_custom(func(a, c): return a[1] < c[1])
+	var staff := roundi(found.size() * float(LOT_STAFF[kind]))
+	if staff == 0 and found.size() >= 4:
+		staff = 1
+	var list := []
+	var n := found.size()
+	for k in n:
+		var i: int = found[k][0]
+		var s: Dictionary = lay.spots[i]
+		var id := absi(hash([key, i, "lot car"])) % 1000000000 + 1000000000
+		var car := {"id": id, "kind": "car"}
+		var face := SiteLayout.world_dir(lot, s.face)
+		var len := float(VehicleTypes.spec(_kind(car)).get("len", 4.5))
+		var front := SiteLayout.world(lot, s.pos) + face * len * 0.5
+		# Customers fill from the door outward, give or take a few stalls.
+		var rank := 1.0 - float(k - staff) / maxf(float(n - staff), 1.0)
+		var jitter := float(absi(hash([key, i, "lot when"])) % 1000) / 1000.0
+		list.append([i, _parked_items(car, front, face), k < staff, rank * 0.65 + jitter * 0.35, jitter])
+	_lot_stalls[key] = [sig, list]
+	return list
+
+
+## Lot `key`'s pattern (LOT_KIND), "" for a lot that fills none.
+func _lot_kind(key: String) -> String:
+	var kind: String = LOT_KIND.get(BuildingTypes.type_of(town.buildings[key]), "")
+	if kind == "shop" and _office_trades().has(str(town.families.owned.get("lot:" + key, {}).get("what", ""))):
+		return "office"
+	return kind
+
+
+## The trades an office building can house (Names.is_office), as a set.
+static var _offices := {}
+static func _office_trades() -> Dictionary:
+	if _offices.is_empty():
+		for t in Names.TRADES:
+			if t.get("office", false):
+				_offices[t.trade] = true
+	return _offices
+
+
+## Which of a lot's stalls (indices into its list) have a car at `hour`.
+func _lot_want(kind: String, ref: String, stalls: Array, hour: float) -> Array:
+	var pattern := kind
+	if kind == "shop":
+		var b: Dictionary = town.families.owned.get(ref, {})
+		if str(b.get("what", "")) in Balance.SHOP_EVENING_TRADES:
+			pattern = "evening"
+		elif bool(b.get("late", false)):
+			pattern = "shop_late"
+	var share := _eased(LOT_CUSTOMERS[pattern], hour)
+	var span: Array = LOT_STAFF_HOURS[kind]
+	var close := float(span[1]) + (3.0 if pattern != "shop" and kind == "shop" else 0.0)
+	var out := []
+	for k in stalls.size():
+		var st: Array = stalls[k]
+		var on := false
+		if st[2]:
+			# Staff come in over the hour before opening, leave over the
+			# three quarters of an hour after closing.
+			var j := float(st[4])
+			on = hour >= float(span[0]) + j - 1.0 and hour < close + j * 0.75
+			if kind == "factory" and not on:
+				on = j < LOT_NIGHT_SHIFT
+		else:
+			on = float(st[3]) < share
+		if on:
+			out.append(k)
+	return out
+
+
+## Eased between [hour, share] points (flat before the first, after the last).
+static func _eased(points: Array, hour: float) -> float:
+	if hour <= float(points[0][0]):
+		return float(points[0][1])
+	for i in range(1, points.size()):
+		if hour < float(points[i][0]):
+			var a: Array = points[i - 1]
+			var b: Array = points[i]
+			return lerpf(float(a[1]), float(b[1]), smoothstep(float(a[0]), float(b[0]), hour))
+	return float(points[-1][1])
+
+
+## One step from `shown` toward `want` (both sorted stall lists): one car
+## that should go leaves, or else one that should come pulls in, picked by
+## `pick`.
+static func _lot_step(shown: Array, want: Array, pick: int) -> Array:
+	var gone := shown.filter(func(k): return not want.has(k))
+	if not gone.is_empty():
+		var out := shown.duplicate()
+		out.erase(gone[absi(pick) % gone.size()])
+		return out
+	var come := want.filter(func(k): return not shown.has(k))
+	var out := shown.duplicate()
+	out.append(come[absi(pick) % come.size()])
+	out.sort()
+	return out
+
+
 ## What a parked vehicle draws, standing with its front bumper at `pos`
 ## facing `face`: [[front, mesh key, transform, custom, far mesh key], ...].
 func _parked_items(car: Dictionary, pos: Vector3, face: Vector3) -> Array:
@@ -879,21 +1189,26 @@ func _fill_parked(eye: Vector3, ultra2: float, rebuilt: bool) -> void:
 	_pfill_age = 0
 	var by := [{}, {}, {}]  # lod -> mesh key -> [[transforms], [customs]]
 	_parked_drawn = 0
-	for item in _parked:
-		var dist: float = item[0].distance_to(eye)
-		if dist > _reach_far:
-			continue
-		_parked_drawn += 1
-		var lod := 1
-		var key: String = item[4]
-		if dist < _reach_near:
-			lod = 2 if dist * dist < ultra2 else 0
-			key = item[1]
-		var lists: Dictionary = by[lod]
-		if not lists.has(key):
-			lists[key] = [[], []]
-		lists[key][0].append(item[2])
-		lists[key][1].append(item[3])
+	# The simulation's parked vehicles, then the lot cars (_update_lot_cars).
+	var sources := [_parked]
+	for lk in _lot_shown:
+		sources.append(_lot_shown[lk][2])
+	for source in sources:
+		for item in source:
+			var dist: float = item[0].distance_to(eye)
+			if dist > _reach_far:
+				continue
+			_parked_drawn += 1
+			var lod := 1
+			var key: String = item[4]
+			if dist < _reach_near:
+				lod = 2 if dist * dist < ultra2 else 0
+				key = item[1]
+			var lists: Dictionary = by[lod]
+			if not lists.has(key):
+				lists[key] = [[], []]
+			lists[key][0].append(item[2])
+			lists[key][1].append(item[3])
 	for key in _pmm:
 		for lod in 3:
 			var mi = _pmm[key][lod]

@@ -161,6 +161,7 @@ jobs:
           run_test tests/test_catch_up.gd
           run_test tests/test_postcard.gd
           run_test tests/test_vehicles.gd
+          run_test tests/test_lot_cars.gd
           run_test tests/test_doors.gd
           run_test tests/test_docks.gd
           run_test tests/test_work_doors.gd
