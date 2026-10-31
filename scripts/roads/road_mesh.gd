@@ -19,8 +19,10 @@ const RAMP_EASE := 0.3
 
 
 ## Adds a ribbon running alongside pts, from offset `from` to offset `to`
-## (negative = left side, positive = right side).
-static func add_strip(st: SurfaceTool, pts: PackedVector3Array, from: float, to: float, y: float) -> void:
+## (negative = left side, positive = right side). UV.y * 4 is the distance
+## along it, counted from `start`.
+static func add_strip(st: SurfaceTool, pts: PackedVector3Array, from: float, to: float, y: float,
+		start := 0.0) -> void:
 	if pts.size() < 2:
 		return
 	var lefts := PackedVector3Array()
@@ -30,7 +32,7 @@ static func add_strip(st: SurfaceTool, pts: PackedVector3Array, from: float, to:
 		var p := Vector3(pts[i].x, pts[i].y + y, pts[i].z)
 		lefts.append(p + side * from)
 		rights.append(p + side * to)
-	var dist := 0.0
+	var dist := start
 	for i in range(pts.size() - 1):
 		var d := pts[i].distance_to(pts[i + 1])
 		_quad(st, lefts[i], rights[i], lefts[i + 1], rights[i + 1], dist, dist + d)
@@ -615,14 +617,26 @@ static func _build_layers(pts: PackedVector3Array, layers: Array, inner: PackedV
 		var along := pts
 		if not marks.is_empty() and layer[0] in ["yellow", "white", "bus"]:
 			along = marks
-		for span in layer[1]:
+		for k in layer[1].size():
+			var span: Array = layer[1][k]
 			match layer[3]:
 				"dashed": add_dashed_strip(st, along, span[0], span[1], layer[2])
 				"median": add_strip(st, inner, span[0], span[1], layer[2])
-				_: add_strip(st, along, span[0], span[1], layer[2])
+				_: add_strip(st, along, span[0], span[1], layer[2], slab_start(pts, k) if layer[0] == "walk" else 0.0)
 		st.commit(mesh)
 		mesh.surface_set_material(mesh.get_surface_count() - 1, mats[layer[0]])
 	return mesh
+
+
+## Where a walk's slabs start counting: a whole number of slabs, so the
+## joints stay where they are, but its own for each side of each street, so
+## the newer and patched slabs (Surfaces.CONCRETE) don't face each other
+## across the street or repeat from block to block. The same every run.
+static func slab_start(pts: PackedVector3Array, side: int) -> float:
+	if pts.is_empty():
+		return 0.0
+	var h := hash([snappedf(pts[0].x, 0.1), snappedf(pts[0].z, 0.1), side])
+	return float(h % 500) * Surfaces.SLAB
 
 
 ## A box standing on its centre, turned `yaw` radians about the vertical.
