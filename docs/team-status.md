@@ -2,26 +2,30 @@
 
 Updated 2026-10-26 (night) by the month-is-a-day session. This file is the state, not a diary: rewrite it at each stop.
 
-## Look loop (2026-10-29 to 10-30, desktop first)
+## Look loop (2026-10-29 to 10-31, desktop first)
 
-Nathan: "send out a critic to play the game, find a problem and report it. then we should have agents working to fix those problems. we should primarily only build the desktop download, not the browser. lets make this game look totally real. better than CS2." Also: "every intersection is exactly the same shape. every lawn is the same color", a "state layer" ("a car on cinder blocks in the front yard... an overflowing dumpster"), "working doors and garage doors... one way we could visualize trade", road treatments ("If you build a road and then put factories on it then the factory treatment might get applied to the road"), and on 2026-10-29: "railroad tracks... run right underneath the buildings. I also noticed street signs in the middle of driveways... bus stops and items that will need to immediately make changes to the immediate environment like adjustments to the curb... should be very smooth and simple in our game."
+Nathan: "lets make this game look totally real. better than CS2." On 2026-10-30: "keep running the critic through the game to find them least realistic thing and fix it and keep looping." On 2026-10-31: "Stop asking about trees growing... Make smart choices."
 
-**How it runs:** `tools/look_round.gd` (#920) shoots the same 10 spots at cinematic and medium. A critic scores 1-10 against real Indiana towns and CS2; fixers take the biggest gaps. Each fix: all web-preview tests pass locally (CI only runs on main), a second reviewer who gets the diff, before/after shots, ms cost, and game-day before/after for any sim change. Round 0: 3.55. Round 1: 3.62 (from 40 m up the town still looks brand new).
+**How it runs:** `tools/look_round.gd` shoots the same 10 spots at Cinematic and Medium. A critic scores 1-10 against real Indiana towns and CS2; builders take the worst gap. Each fix: all web-preview tests pass locally, a second reviewer reads the diff, before/after shots, ms cost, and game-day numbers for any sim change. Scores: round 0 3.55, round 1 3.62, **round 3 4.02** (2026-10-30, on feaacfad). Vehicles and people are still the weakest (2.0).
 
 **Rules learned:**
-- No windowed Godot while Nathan uses the Mac ("i need you to pause using the full screen godot thing. i have to be able to use my computer"). Headless only; shots in one batch when he says he's away.
-- Every saved town is test data (Nathan: "The only stuff that exist in the game right now is test stuff"). Old towns moved, not erased, to `Neighbors-old-towns-2026-10-29/`. Loads must not crash; no rescue code for old layouts.
-- Nathan allowed this loop to merge reviewed PRs ("You can also do any emerging that you need to").
+- Godot windows are OK during the loop (Nathan, 2026-10-30: "A"), one at a time.
+- Every saved town is test data; old towns moved to `Neighbors-old-towns-2026-10-29/`. Loads must not crash; no rescue code.
+- Decide look choices (tree ages, colours, timings) without asking; ask only the stop-list items.
 
-**Merged:** #920 shot tool; #917 #918 #919 #924 road options; #925 tree greens; #926 dusk and night; #923 cars on drives; #927 garage doors; #936 sky-lit shade; #935 yard trees grown (Nathan: A); #929 lawns; #930 wet roads, streetlight pools; #931 junctions vary; #932 tree shadows; #938 state layer step 1; #937 dock doors, 30 s (Nathan: A); #939 All roads screen (Nathan: A); #940 overlap auditor; #944 curb claims (no signs in drives); #943 rail first (lots, buildings and streets keep off the track); #942 road treatments step 1 (factory and main street sides; main streets 25 mph, Nathan: A, 2026-10-30). Clashes the auditor counts: 2898 -> 420 in the look town, 647 -> 30 in the county.
+**Merged 2026-10-29 to 10-31:** #920 shot tool; #917 #918 #919 #924 road options; #925 tree greens; #926 dusk and night; #923 cars on drives; #927 garage doors; #936 sky-lit shade; #935 yard trees grown; #929 lawns; #930 wet roads, streetlight pools; #931 junctions vary; #932 tree shadows; #938 state layer step 1; #937 dock doors; #939 All roads screen; #940 overlap auditor; #944 curb claims; #943 rail first; #942 road treatments step 1 (main streets 25 mph, Nathan: A); #945 #947 #951 ground map steps 1-3 (Ground view: press O; lot-on-lot 31 -> 3); #946 doors step 3 (factory, shop, police, bus and barn doors; factory trucks wait 8 s, Nathan: A); #948 weathered sidewalks and wet rain shot; #949 drive concrete matches the walk; #950 street trees grown (canopy at 300 m 4.0% -> 5.9%); #952 shop lots fill by the hour.
 
+**Specs (docs only, drafts):** #921 state layer, #922 working doors, #934 road treatments, #941 ground map.
 
-**Specs (docs only, drafts):** #921 state layer, #922 working doors, #934 road treatments (Nathan's six answers recorded), #941 the ground map (one shared map of what owns each patch of ground; fixes the root cause of rail under buildings and signs in drives).
-
-**Next, most useful first:** ground map steps 1-6 (then bus stops can claim curb); state layer step 2 (street condition); doors step 3 (factory bays, shop roll-ups); shop lots empty; snow blotches; pavement all one age; derelict brush draws as teal octagons; look_round needs a wetness line for rain shots; grown trees add about 12% draw calls. 11 of 912 stop signs in the big town still stand in shop drives where no clear spot exists (allowed, with a reason). Farm fields belong to the countryside session; building detail in `scripts/art/` belongs to the other session.
+**Next, most useful first:**
+- Ground map step 4 (who gives way: move, shrink, remove through one path with undo) and step 5 (bus stops claim the curb). 46 factory buildings in the big town still stand partly on a neighbour's lot (audit pair "building vs lot").
+- The 400-car traffic cap keeps people from work (887 vs 1,220 at work when raised to 1,600, but sim cost doubles). Needs a cheaper traffic model before the cap can rise.
+- Critic round 4 to score the last five merges; the rain shot now shows wet roads, so 08 will jump.
+- Canopy is still about 6% at 300 m (a real town is 25-33%): shop streets plant no trees, and there is no small street-tree kind for under wires.
+- Teal juniper mounds in run-down yards (`HouseBuilder._back_yard`, owned by the art session).
+- State layer step 2 (street condition); snow blotches; pavement all one age.
 
 **Still open, Nathan said later:** #915 test PIN for playtests.
-
 ## Standing orders from Nathan (2026-10-25)
 
 - "i want you to begin the work and continue without asking me anything. i wont be here to approve so i dont want you to stop."
