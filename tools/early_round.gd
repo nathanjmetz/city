@@ -40,6 +40,9 @@ func _initialize() -> void:
 		["08_shops_street", Vector3(40.0, 0.0, 122.0), 180.0, 8.0, 30.0, "day", FAIR],
 		["09_shops_60m", Vector3(40.0, 0.0, 125.0), 160.0, 30.0, 60.0, "day", FAIR],
 		["10_homes_front_45m", Vector3(110.0, 0.0, 258.0), 200.0, 25.0, 45.0, "day", FAIR],
+		# The shop street's curb between the 4-way and the T, close (its
+		# painted stalls; early-fix-5).
+		["11_main_curb_20m", Vector3(20.0, 0.0, 104.0), 180.0, 50.0, 20.0, "day", FAIR],
 		["06_dusk_100m", Vector3(40.0, 0.0, 210.0), 35.0, 22.0, 100.0, "dusk", FAIR],
 	]
 	super._initialize()
