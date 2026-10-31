@@ -367,11 +367,13 @@ func _independent(sim: CitySim) -> void:
 	# Saved and loaded: the same spots.
 	var d: Dictionary = JSON.parse_string(JSON.stringify(sim.to_dict()))
 	var copy := CitySim.new()
+	copy.county_rail = true  # as the game sets it on every copy (main.gd): posts keep off its beds
 	copy.from_dict(d)
 	var after := _snapshot(copy)
 	_check(after == before, "a saved and loaded town stands its posts, lamps and mailboxes in the same spots %s" % _first_diff(before, after))
 	# Loaded into a sim that already had another town's curb worked out.
 	var used := CitySim.new()
+	used.county_rail = true
 	PerfTown.build(used, "small")
 	for key in used.buildings.keys().slice(0, 40):
 		used.buildings.erase(key)

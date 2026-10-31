@@ -170,43 +170,50 @@ static func place(net: RoadNetwork, skip := {}, claims: CurbClaims = null) -> Ar
 	var ids := net.segments.keys()
 	ids.sort()
 	for id in ids:
-		var seg: Dictionary = net.segments[id]
-		var type: int = seg.type
-		# Variants light like their menu's road; country roads and alleys go unlit.
-		var kind := RoadStyle.group(type) if not RoadStyle.is_ring(type) else type
-		if not KINDS.has(kind) or RoadStyle.TYPES[type].get("rural", false) or skip.has(id):
-			continue
-		var spec: Array = KINDS[kind]
-		var pts := net.sample_segment(id)
-		if pts[pts.size() / 2].y < -1.0:
-			continue  # tunnel
-		var length := RoadNetwork.polyline_length(pts)
-		var out_by := RoadStyle.half_width(type) + (1.2 if RoadStyle.is_freeway(type) else RoadStyle.CURB_WIDTH + 0.6)
-		# Start half a gap in, so corners get a lamp from one road or the
-		# other but never one standing in the crossing street.
-		var n := maxi(int(floorf(length / spec[0])), 1)
-		for i in n:
-			var along := (i + 0.5) * length / n
-			var p := _at(pts, along)
-			var side := 1.0
-			if spec[4] and i % 2 == 1:
-				side = -1.0
-			var fwd: Vector3 = p[1]
-			var right := Vector3(-fwd.z, 0.0, fwd.x)
-			var base: Vector3 = p[0] + right * side * out_by
-			if _near(taken, base) or _on_other_road(pieces, base, id):
-				continue
-			var cell := Vector2i(floori(base.x / MIN_GAP), floori(base.z / MIN_GAP))
-			if not taken.has(cell):
-				taken[cell] = []
-			taken[cell].append(base)
-			var lamp := [mesh_key(kind), base, -right * side, spec[3], spec[2], fwd, id]
-			if claims != null:
-				lamp = slid(lamp, claims, pieces)
-				if lamp.is_empty():
-					continue
-			out.append(lamp)
+		_place_one(out, taken, pieces, net, id, skip, claims)
 	return out
+
+
+## The lamps of road `id` (place's own steps, one road at a time: `taken`
+## and `pieces` carried from road to road).
+static func _place_one(out: Array, taken: Dictionary, pieces: Dictionary, net: RoadNetwork, id: int, skip: Dictionary,
+		claims: CurbClaims) -> void:
+	var seg: Dictionary = net.segments[id]
+	var type: int = seg.type
+	# Variants light like their menu's road; country roads and alleys go unlit.
+	var kind := RoadStyle.group(type) if not RoadStyle.is_ring(type) else type
+	if not KINDS.has(kind) or RoadStyle.TYPES[type].get("rural", false) or skip.has(id):
+		return
+	var spec: Array = KINDS[kind]
+	var pts := net.sample_segment(id)
+	if pts[pts.size() / 2].y < -1.0:
+		return  # tunnel
+	var length := RoadNetwork.polyline_length(pts)
+	var out_by := RoadStyle.half_width(type) + (1.2 if RoadStyle.is_freeway(type) else RoadStyle.CURB_WIDTH + 0.6)
+	# Start half a gap in, so corners get a lamp from one road or the
+	# other but never one standing in the crossing street.
+	var n := maxi(int(floorf(length / spec[0])), 1)
+	for i in n:
+		var along := (i + 0.5) * length / n
+		var p := _at(pts, along)
+		var side := 1.0
+		if spec[4] and i % 2 == 1:
+			side = -1.0
+		var fwd: Vector3 = p[1]
+		var right := Vector3(-fwd.z, 0.0, fwd.x)
+		var base: Vector3 = p[0] + right * side * out_by
+		if _near(taken, base) or _on_other_road(pieces, base, id):
+			continue
+		var cell := Vector2i(floori(base.x / MIN_GAP), floori(base.z / MIN_GAP))
+		if not taken.has(cell):
+			taken[cell] = []
+		taken[cell].append(base)
+		var lamp := [mesh_key(kind), base, -right * side, spec[3], spec[2], fwd, id]
+		if claims != null:
+			lamp = slid(lamp, claims, pieces)
+			if lamp.is_empty():
+				continue
+		out.append(lamp)
 
 
 ## A lamp (as place gives it, where it was meant to stand) slid along its
@@ -264,20 +271,25 @@ const PIECE_CELL := 32.0
 static func _pieces(net: RoadNetwork) -> Dictionary:
 	var grid := {}
 	for id in net.segments:
-		var hw := RoadStyle.half_width(net.segments[id].type)
-		var pts := net.sample_segment(id)
-		for i in range(1, pts.size()):
-			var a := Vector2(pts[i - 1].x, pts[i - 1].z)
-			var b := Vector2(pts[i].x, pts[i].z)
-			var lo := Vector2i(floori((minf(a.x, b.x) - hw) / PIECE_CELL), floori((minf(a.y, b.y) - hw) / PIECE_CELL))
-			var hi := Vector2i(floori((maxf(a.x, b.x) + hw) / PIECE_CELL), floori((maxf(a.y, b.y) + hw) / PIECE_CELL))
-			for x in range(lo.x, hi.x + 1):
-				for z in range(lo.y, hi.y + 1):
-					var c := Vector2i(x, z)
-					if not grid.has(c):
-						grid[c] = []
-					grid[c].append([a, b, id, hw])
+		_pieces_of(grid, net, id)
 	return grid
+
+
+## Road `id`'s pieces filed in `grid` (_pieces, one road at a time).
+static func _pieces_of(grid: Dictionary, net: RoadNetwork, id: int) -> void:
+	var hw := RoadStyle.half_width(net.segments[id].type)
+	var pts := net.sample_segment(id)
+	for i in range(1, pts.size()):
+		var a := Vector2(pts[i - 1].x, pts[i - 1].z)
+		var b := Vector2(pts[i].x, pts[i].z)
+		var lo := Vector2i(floori((minf(a.x, b.x) - hw) / PIECE_CELL), floori((minf(a.y, b.y) - hw) / PIECE_CELL))
+		var hi := Vector2i(floori((maxf(a.x, b.x) + hw) / PIECE_CELL), floori((maxf(a.y, b.y) + hw) / PIECE_CELL))
+		for x in range(lo.x, hi.x + 1):
+			for z in range(lo.y, hi.y + 1):
+				var c := Vector2i(x, z)
+				if not grid.has(c):
+					grid[c] = []
+				grid[c].append([a, b, id, hw])
 
 
 ## True when a pole would stand on another road's pavement or curb.

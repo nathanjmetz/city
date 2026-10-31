@@ -3405,11 +3405,9 @@ const RAIL_LOT_SLACK := 1.0
 func _rail_under(poly: PackedVector2Array, half := CountyRail.ROW_HALF - RAIL_LOT_SLACK) -> bool:
 	if not county_rail or poly.size() < 3:
 		return false
-	var o := terrain_offset
-	var reg := PackedVector2Array()
-	for q in poly:
-		reg.append(q + o)
-	return CountyRail.poly_distance(reg, half) < half
+	# The right of way is a claim in the town's ground map (GroundMap,
+	# CountyRail.poly_distance's own answer).
+	return GroundMap.of(self).rail_row_distance(poly, half) < half
 
 
 ## The county railroads' right of way near the town's roads, as outlines the
