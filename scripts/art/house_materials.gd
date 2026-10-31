@@ -899,6 +899,10 @@ static func _yard() -> ShaderMaterial:
 	var turn := "vec2 turn(vec2 p, float a) {\n\treturn vec2(p.x * cos(a) - p.y * sin(a), p.x * sin(a) + p.y * cos(a));\n}\n"
 	LampLight.ensure_globals()
 	var mat := _shader(turn + Surfaces.photo_code("lotph") + Surfaces.photo_code("walkph") + LampLight.GLSL + YARD)
+	# Drives, walks and the aprons that cross the public sidewalk are the
+	# same aged concrete as the sidewalk (RoadStyle): at 0.67 they read as
+	# pale patches on the walk (look loop, 2026-10-31).
+	mat.set_shader_parameter("concrete", RoadStyle.SIDEWALK_COLOR)
 	Surfaces.with_photo(mat, "asphalt", "lotph")
 	return Surfaces.with_photo(mat, "concrete", "walkph")
 
