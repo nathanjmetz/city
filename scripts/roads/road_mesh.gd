@@ -175,12 +175,16 @@ static func _town(pts: PackedVector3Array, type: int, mats: Dictionary, cuts := 
 		if not spec.get("angle", false) and not (spec.get("parking", 0) > 0 and spec.oneway):
 			# A main street side's stalls: a 23 ft parallel stall between
 			# ticks out from the gutter (MUTCD 3B.19), laid with the gutter
-			# pan so they cost no draw of their own.
+			# pan so they cost no draw of their own. Where they run is the
+			# traffic's (TrafficSim.stall_span, handed in by RoadView along
+			# `pts` as drawn), so the cars park in the painted stalls.
 			for side in [-1.0, 1.0]:
-				if treat.get("right" if side > 0.0 else "left", "") != RoadTreatments.MAIN:
+				var key := "right" if side > 0.0 else "left"
+				var span: Vector2 = treat.get("stalls_" + key, Vector2.ZERO)
+				if treat.get(key, "") != RoadTreatments.MAIN or span.y - span.x < 6.99:
 					continue
-				var at := hw + 6.0
-				while at < length - hw - 6.0:
+				var at := span.x
+				while at <= span.y + 0.01:
 					_slant(pan, pts, at, side * (hw - 2.2), at, side * (hw - g), RoadStyle.Y_ASPHALT + 0.006)
 					at += 7.0
 		pan.commit(mesh)

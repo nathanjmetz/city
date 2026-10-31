@@ -580,6 +580,15 @@ func _rebuild_all(gen: int) -> void:
 			if urban:
 				rural = false
 			var treat := _treat(id, rural)
+			if not treat.is_empty() and sim != null:
+				# The curb stalls where the traffic parks (TrafficSim.stall_span),
+				# measured along `pts` as cut at the junction.
+				treat = treat.duplicate()
+				for side in [-1, 1]:
+					var key := "right" if side > 0 else "left"
+					if treat.get(key, "") == RoadTreatments.MAIN:
+						var span: Vector2 = sim.traffic.stall_span(id, side)
+						treat["stalls_" + key] = span - Vector2(ja, ja) if span.y > span.x else Vector2.ZERO
 			var key := [pts, type, rural, seg_gaps, Terrain.shift, line_cuts, breaks, urban, dips, treat]
 			var cached: Array = _street_cache.get(id, [])
 			if cached.is_empty() or cached[0] != key:
