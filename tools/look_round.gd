@@ -37,6 +37,10 @@ extends SceneTree
 ## no graphics-chip timer, so this stands in for it), render_cpu_ms, draw
 ## calls, triangles and video memory. The times move a few ms between runs
 ## when other programs share the Mac; draw calls and triangles don't.
+## "sim" is the town's state as the picture is taken (money, tick, cars
+## driving and parked, people out, and a hash of where every parked car
+## stands): the same in two runs, so a change meant to be drawing only can
+## be shown to leave the simulation alone.
 ## --dry does the warm-ups with no drawing and prints, per shot, the cars
 ## parked at shops, factories and homes (run it with --headless: it opens no
 ## window). --legacy-warm does the old warm-up (150 ticks, then the clock
@@ -793,6 +797,14 @@ func _save_shot() -> void:
 	_row.triangles = roundi(_row.triangles)
 	var cam := _cam.camera.global_position
 	_row.camera = [snappedf(cam.x, 0.1), snappedf(cam.y, 0.1), snappedf(cam.z, 0.1)]
+	var sim: CitySim = _main.sim
+	var where := []
+	for car in sim.traffic.parked:
+		where.append([car.id, car.get("at_place", ""), car.get("spot", -1)])
+	where.sort()
+	_row.sim = {"money": snappedf(float(sim.economy.money), 0.01), "tick": sim.tick_count,
+		"driving": sim.traffic.cars.size(), "parked": sim.traffic.parked.size(),
+		"walking": sim.traffic.walkers.size(), "parked_hash": hash(where)}
 	for c in _main.get_children():
 		if c is StateView and c.is_processing():
 			_row.state_props = c.counts()
