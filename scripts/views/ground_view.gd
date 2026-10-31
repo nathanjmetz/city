@@ -52,7 +52,11 @@ var on := false
 var _fill := MeshInstance3D.new()
 var _lines := MeshInstance3D.new()
 var _layer := CanvasLayer.new()
-var _key := RichTextLabel.new()
+var _title := Button.new()  # "Taken ground (O) · 434 clashes": folds and unfolds the key
+var _status := Label.new()
+var _rows := VBoxContainer.new()
+var _fold = null  # the player's choice (true folded); null: by the screen's width
+var _width := -1.0  # the width the key was last laid out for (-1: the window's)
 var _drawn := []  # what the drawing was made from (_stamp)
 var _drawn_at := -100000
 var _maps := []  # the maps being drawn: the live layer, the last survey
@@ -70,7 +74,7 @@ var outlines_drawn := 0
 var max_step_ms := 0.0
 
 
-func _ready() -> void:
+func _init() -> void:
 	visible = false
 	for m in [_fill, _lines]:
 		add_child(m)
@@ -96,17 +100,70 @@ func _ready() -> void:
 	var panel := PanelContainer.new()
 	panel.add_theme_stylebox_override("panel", UiStyle.dock(false))
 	panel.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
-	panel.position = Vector2(-292, 64)
-	panel.custom_minimum_size = Vector2(280, 0)
-	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	panel.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	panel.offset_right = -12.0
+	panel.offset_top = 64.0
 	_layer.add_child(panel)
-	_key.bbcode_enabled = true
-	_key.fit_content = true
-	_key.scroll_active = false
-	_key.custom_minimum_size = Vector2(264, 0)
-	_key.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_key.add_theme_font_size_override("normal_font_size", 13)
-	panel.add_child(_key)
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override("separation", 3)
+	panel.add_child(col)
+	_title.flat = true
+	_title.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	_title.add_theme_font_size_override("font_size", 14)
+	_title.tooltip_text = "Show or hide the key"
+	_title.pressed.connect(func(): _fold = not folded(_width))
+	col.add_child(_title)
+	_status.add_theme_font_size_override("font_size", 12)
+	col.add_child(_status)
+	_rows.add_theme_constant_override("separation", 3)
+	col.add_child(_rows)
+	for k in COLORS:
+		var spec: Array = COLORS[k]
+		if spec[1] != "":
+			var c: Color = spec[0]
+			c.a = 1.0
+			_rows.add_child(_row(c, false, spec[1]))
+	_rows.add_child(_row(CLASH, true, "Clash: two things on ground only one may have"))
+
+
+## A key row: a SWATCH px square of `colour` (an outline only for a clash)
+## and its name.
+const SWATCH := 13
+func _row(colour: Color, outline: bool, name: String) -> HBoxContainer:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 8)
+	var sw := Panel.new()
+	sw.custom_minimum_size = Vector2(SWATCH, SWATCH)
+	sw.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	var box := StyleBoxFlat.new()
+	box.bg_color = Color(0, 0, 0, 0) if outline else colour
+	box.border_color = colour if outline else colour.darkened(0.3)
+	box.set_border_width_all(2 if outline else 1)
+	sw.add_theme_stylebox_override("panel", box)
+	row.add_child(sw)
+	var label := Label.new()
+	label.text = name
+	label.add_theme_font_size_override("font_size", 13)
+	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	label.custom_minimum_size = Vector2(220, 0)
+	row.add_child(label)
+	return row
+
+
+## Below this width the key starts folded to its title line (it covers half
+## a phone's screen open); a click on the title folds or unfolds it.
+const NARROW := 600.0
+
+
+## True when the key shows its title line alone, on a screen `width` px
+## wide (the window's when not given).
+func folded(width := -1.0) -> bool:
+	if _fold != null:
+		return _fold
+	if width < 0.0:
+		var vp := get_viewport()
+		width = vp.get_visible_rect().size.x if vp != null else NARROW
+	return width < NARROW
 
 
 ## Turns the view on or off. On, a town changed since its last survey is
@@ -267,21 +324,23 @@ func _commit() -> void:
 	_maps = []
 
 
-func _key_text(g: GroundMap) -> void:
-	var t := "[b]Taken ground[/b]  (%s)\n" % KeyBinds.text("ground_view")
+func _key_text(g: GroundMap, width := -1.0) -> void:
+	_width = width
+	var fold := folded(width)
+	var t := "%s Taken ground (%s)" % ["▸" if fold else "▾", KeyBinds.text("ground_view")]
+	var status := ""
 	if g.survey != null:
-		t += "%d clashes outlined in red\n" % g.survey.clash_pairs
+		t += " · %d clashes" % g.survey.clash_pairs
 	if g.surveying():
-		t += ("Surveying the town again... %d%%\n" if g.survey != null else "Surveying the town... %d%%\n") \
+		status = ("Surveying the town again... %d%%" if g.survey != null else "Surveying the town... %d%%") \
 			% roundi(g.survey_share() * 100.0)
+		if g.survey == null:
+			t += " · surveying"
 	elif _building:
-		t += "Drawing...\n"
-	for k in COLORS:
-		var spec: Array = COLORS[k]
-		if spec[1] != "":
-			var c: Color = spec[0]
-			c.a = 1.0
-			t += "[color=#%s]■[/color] %s\n" % [c.to_html(false), spec[1]]
-	t += "[color=#%s]□[/color] Clash: two things on ground only one may have" % CLASH.to_html(false)
-	if _key.text != t:
-		_key.text = t
+		status = "Drawing..."
+	if _title.text != t:
+		_title.text = t
+	if _status.text != status:
+		_status.text = status
+	_status.visible = not fold and status != ""
+	_rows.visible = not fold

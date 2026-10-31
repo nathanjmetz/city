@@ -184,6 +184,21 @@ func _check_survey(sim: CitySim) -> void:
 	_check(view.pieces_drawn == pieces and view.outlines_drawn == g.survey.clash_pieces.size() + g.survey.live_clashes.size()
 		and view._fill.mesh.get_surface_count() >= 1, "the Ground view draws %d pieces and outlines %d in red" % [
 		view.pieces_drawn, view.outlines_drawn])
+	# Its key: a swatch of each kind's colour big enough to read, folded to
+	# its title line on a narrow screen until clicked, open on a wide one.
+	var sw: Control = view._rows.get_child(0).get_child(0)
+	_check(view._rows.get_child_count() >= 10 and sw.custom_minimum_size.x >= 12.0,
+		"the key's colour swatches are %.0f px squares (%d rows)" % [sw.custom_minimum_size.x, view._rows.get_child_count()])
+	view._key_text(g, 390.0)
+	var narrow := view.folded(390.0) and not view._rows.visible and view._title.text.contains("clashes")
+	var title := view._title.text
+	view._title.pressed.emit()
+	view._key_text(g, 390.0)
+	var opened := not view.folded(390.0) and view._rows.visible
+	view._fold = null
+	view._key_text(g, 1920.0)
+	_check(narrow and opened and not view.folded(1920.0) and view._rows.visible,
+		"at 390 px the key starts folded to \"%s\", a click opens it, and at 1920 px it's open" % title)
 	view.set_on(false)
 	_check(not view.visible, "and off, it hides")
 	view.queue_free()
