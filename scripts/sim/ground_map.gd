@@ -223,7 +223,8 @@ var _quick_seen := []  # the town's change counters at the last sync
 var last_sync_ms := 0.0
 var _bed_by := {}  # [kind, owner] -> [hash of its outlines, its claim]: the railroad beds
 var _row_at := {}  # Vector2i(route, point) -> its right-of-way claim
-var _site_by := {}  # LotGround item key -> [its hash, its claim]
+var _site_by := {}  # LotGround item key -> [its hash, its claim in _sites]
+var _sites: GroundMap  # what keeps lots off the ground (file_sites)
 var _row_box := Rect2()  # town box the county's right of way is filed for
 var _row_offset := Vector2.INF
 var _row_seg := {}  # claim -> Vector2i(route, point) of a right-of-way piece
@@ -505,10 +506,15 @@ func _sync_rail(sim: CitySim) -> void:
 ## null]) filed as "site" claims, a claim an item, its boxes its pieces;
 ## only items that came, went or changed are filed again. Items too spread
 ## out to box (null) aren't claims: CitySim._lot_blocked asks them itself.
+##
+## They're kept in a little map of their own, not the live layer: they are
+## filed for a lot check and stand as they were until the next one.
 func file_sites(items: Dictionary) -> void:
+	if _sites == null:
+		_sites = GroundMap.new(64.0)
 	for key in _site_by.keys():
 		if not items.has(key) or items[key][0] != _site_by[key][0]:
-			release_ids(PackedInt32Array([_site_by[key][1]]))
+			_sites.release_ids(PackedInt32Array([_site_by[key][1]]))
 			_site_by.erase(key)
 	var keys := items.keys()
 	keys.sort()
@@ -518,16 +524,19 @@ func file_sites(items: Dictionary) -> void:
 		var polys := []
 		for b: Rect2 in items[key][1]:
 			polys.append(PackedVector2Array([b.position, Vector2(b.end.x, b.position.y), b.end, Vector2(b.position.x, b.end.y)]))
-		_site_by[key] = [items[key][0], register("site:" + str(key), "ground", "site", polys)]
+		_site_by[key] = [items[key][0], _sites.register("site:" + str(key), "ground", "site", polys)]
+	var remap := _sites._compact()
+	if not remap.is_empty():
+		for key in _site_by:
+			_site_by[key][1] = remap[_site_by[key][1]]
 
 
-## True when a "site" claim's box meets `box` (borders count).
+## True when a site's box (file_sites) meets `box` (borders count).
 func sites_near(box: Rect2) -> bool:
-	if not _kind_id.has("site"):
+	if _sites == null:
 		return false
-	var want: int = _kind_id["site"]
-	for p in _pieces_in(box):
-		if _kind[_p_claim[p]] == want and _piece_box(p).intersects(box, true):
+	for p in _sites._pieces_in(box):
+		if _sites._piece_box(p).intersects(box, true):
 			return true
 	return false
 
@@ -884,13 +893,13 @@ func _clash_step(of: GroundMap, t0: int, budget: int) -> bool:
 ## The map's claims packed together again, the taken-back ones dropped,
 ## when they are more than half of it (streets and lots filed again and
 ## again over a long game). Claim ids change: `compacted` says from what
-## to what.
-func _compact() -> void:
+## to what (and so does what's returned: empty when nothing was packed).
+func _compact() -> PackedInt32Array:
 	var dead := 0
 	for a in _alive:
 		dead += 1 - a
 	if dead < 1000 or dead * 2 < _alive.size():
-		return
+		return PackedInt32Array()
 	var remap := PackedInt32Array()
 	remap.resize(_owner.size())
 	var o := PackedStringArray()
@@ -964,9 +973,6 @@ func _compact() -> void:
 		mine.append(id)
 		_by_owner[_owner[id]] = mine
 	_ledger_ok = false
-	for site in _site_by:
-		var was_site: int = _site_by[site][1]
-		_site_by[site][1] = remap[was_site] if was_site >= 0 and was_site < remap.size() else -1
 	for bed in _bed_by:
 		var was: int = _bed_by[bed][1]
 		_bed_by[bed][1] = remap[was] if was >= 0 and was < remap.size() else -1
@@ -979,6 +985,7 @@ func _compact() -> void:
 	_row_seg = rows
 	version += 1
 	compacted.emit(remap)
+	return remap
 
 
 # ------------------------------------------------------------------ claims

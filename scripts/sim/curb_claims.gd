@@ -420,9 +420,6 @@ func slide(p: Vector2, along: Vector2, half: float, back: float, ahead := 0.0, k
 ## JunctionView sets `back` so a stop sign stays within 50 ft of the road
 ## it meets.
 const POST_BACK := 9.0
-## How much further back a post may go when a drive takes every spot
-## within `back` (about one commercial apron's width).
-const POST_PAST := 8.0
 const POST_AHEAD := 0.5
 const CROSSWALK_GAP := 1.22
 func post_spot(base: Vector3, back_dir: Vector3, half: float, back := POST_BACK, ahead := POST_AHEAD) -> Vector3:
@@ -442,15 +439,6 @@ func post_spot(base: Vector3, back_dir: Vector3, half: float, back := POST_BACK,
 				if is_free(q, half + 0.1, others) and is_free(q, half + gap, ["crosswalk"]):
 					return Vector3(q.x, base.y, q.y)
 			k += 1
-	# A drive, ramp or track takes the whole stretch allowed: just past it,
-	# up to POST_PAST further back (a sign beyond a corner shop's apron
-	# beats one standing in it).
-	var k := int(ceilf(back / 0.5))
-	while back > 0.0 and k * 0.5 <= back + POST_PAST + 0.001:
-		var q: Vector2 = p + along * (k * 0.5)
-		if is_free(q, half + 0.1, others) and is_free(q, half + 0.1, ["crosswalk"]):
-			return Vector3(q.x, base.y, q.y)
-		k += 1
 	return base
 
 

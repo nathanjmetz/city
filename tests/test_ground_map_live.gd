@@ -171,10 +171,12 @@ func _check_survey(sim: CitySim) -> void:
 		_check(not kinds.has(k), "the survey leaves %s to the live layer" % k)
 	_check(g.signature() == live and g.stats().curb_claims == ledger,
 		"the live layer and its curb ledger are the same after the survey (%d on the curb)" % ledger)
-	var lot_clash := false
+	# (A shop or plant standing on a public site beside it is one the test
+	# town still has: tests/test_overlaps.gd KNOWN.)
+	var site_clash := false
 	for p in s.clash_pieces:
-		lot_clash = lot_clash or s.kind_of(s._p_claim[p]) == "lot"
-	_check(s.clash_pairs > 0 and lot_clash, "the survey finds the clashes, two lots on one patch among them (%d)" % s.clash_pairs)
+		site_clash = site_clash or s.kind_of(s._p_claim[p]) == "building"
+	_check(s.clash_pairs > 0 and site_clash, "the survey finds the clashes, a building on a public site among them (%d)" % s.clash_pairs)
 	# Surveyed again: the same map, and the last one shown until it's done.
 	var sig := s.signature()
 	g.survey_start()
