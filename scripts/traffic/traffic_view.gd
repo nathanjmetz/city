@@ -100,6 +100,8 @@ const LOT_HOLD := 15.0
 const LOT_MARGIN := 100.0
 ## Metres the camera goes before the lots are listed nearest first again.
 const LOT_RESORT_M := 400.0
+## Half the width of the lot cars' batches' bounds, metres (a region).
+const LOT_BOUNDS := 20000.0
 ## The lots are looked at in turn, nearest the camera first, for at most
 ## LOT_BUDGET_MS a frame (a big town has a thousand of them, and working
 ## out a lot's stalls the first time takes a fraction of a millisecond),
@@ -838,6 +840,9 @@ func _update_lot_cars(eye: Vector3, ultra2: float) -> void:
 		if not _lot_shown.is_empty() or not _lot_list.is_empty() or not _lot_stalls.is_empty():
 			_lot_clear()
 		return
+	if _lfill.get("done", false):
+		_lot_commit()  # a frame of its own
+		return
 	var t0 := Time.get_ticks_usec()
 	var until := t0 + int(LOT_BUDGET_MS * 1000.0)
 	var now := t0 / 1000000.0
@@ -1092,7 +1097,7 @@ static func _lot_floats(xf: Transform3D, custom: Color) -> PackedFloat32Array:
 ## simulation's cars: the tier's lot_cars caps them, nearest lots first),
 ## a slice a frame until `until`, when a lot's cars changed, the snow came
 ## or went, the camera moved REFILL_M or the reach changed; the batches
-## change all at once when it's done.
+## change all at once when it's done (_lot_commit, a frame of its own).
 func _fill_lots(eye: Vector3, ultra2: float, cap: int, until: int) -> void:
 	var snowy := _snow > 0.4
 	if _lfill.is_empty():
@@ -1128,13 +1133,25 @@ func _fill_lots(eye: Vector3, ultra2: float, cap: int, until: int) -> void:
 		for k in shown[0]:
 			for part in stalls[k][1]:
 				var key: String = part[winter + (1 if lod == 1 else 0)]
+				# Grown in place: taken out of its holder first, since a packed
+				# array still shared is copied, not grown, when appended to.
 				if not lists.has(key):
-					lists[key] = PackedFloat32Array()
-				(lists[key] as PackedFloat32Array).append_array(part[4])
+					lists[key] = [PackedFloat32Array()]
+				var holder: Array = lists[key]
+				var buf: PackedFloat32Array = holder[0]
+				holder[0] = null
+				buf.append_array(part[4])
+				holder[0] = buf
 				job.n += 1
 	if job.at < keys.size() and job.n < cap:
 		return
-	# Done: every batch at once.
+	job.done = true  # swapped in at the start of the next frame
+
+
+## Puts a finished fill's cars in the lot batches, every batch at once.
+func _lot_commit() -> void:
+	var job := _lfill
+	var by: Array = job.by
 	for key in _lmm:
 		for lod in 3:
 			var mi = _lmm[key][lod]
@@ -1144,7 +1161,7 @@ func _fill_lots(eye: Vector3, ultra2: float, cap: int, until: int) -> void:
 		for key in by[lod]:
 			if not _batches.has(key):
 				continue
-			var buf: PackedFloat32Array = by[lod][key]
+			var buf: PackedFloat32Array = by[lod][key][0]
 			var mm: MultiMesh = _lot_batch(key, lod).multimesh
 			mm.instance_count = buf.size() / 20
 			mm.buffer = buf
@@ -1172,6 +1189,10 @@ func _lot_batch(key: String, lod: int) -> MultiMeshInstance3D:
 	mi.multimesh = mm
 	mi.material_override = src.material_override
 	mi.cast_shadow = src.cast_shadow
+	# Filled through its buffer, which leaves the batch's bounds unset (it
+	# would be culled as empty): bounds as wide as the lots can be, as a
+	# whole town's batch is anyway.
+	mi.custom_aabb = AABB(Vector3(-LOT_BOUNDS, -LOT_BOUNDS, -LOT_BOUNDS), Vector3.ONE * LOT_BOUNDS * 2.0)
 	add_child(mi)
 	_lmm[key][lod] = mi
 	return mi
