@@ -11,9 +11,13 @@ extends Node3D
 ## browser draws a lighter look (CountyRail.light): the ballast, rails and
 ## bridges in one plain mesh a square, no ties, out to LIGHT_DRAW_TO.
 ##
-## A town street crossing the track is drawn over it (_town_has); a square
-## is drawn again whenever the town builds or clears ground in it, so the
-## track always matches the town's streets as they are now.
+## Where a town street crosses the track (_town_has) the rails run on
+## through its pavement in rubber crossing panels, the bed easing down to
+## the street over CountyRail.RAMP either way, as at the county's own road
+## crossings (before 2026-10-31 the track simply stopped short of each
+## street, a few metres of grass either side). A square is drawn again
+## whenever the town builds or clears ground in it, so the track always
+## matches the town's streets as they are now.
 
 ## How far out the track is drawn, metres.
 const DRAW_TO := 4500.0
@@ -28,6 +32,10 @@ const BUDGET_MS := 2.0
 ## The camera moves this far before the squares to build are chosen again.
 const RESCAN_M := 256.0
 const RUBBER := Color("#3c3d3e")
+## Rail top above the ground at a town street's crossing (m): the panels
+## (2 cm under it) just over the street's asphalt (RoadStyle.Y_ASPHALT),
+## which would hide them at the county crossings' height.
+const TOWN_RAIL := RoadStyle.Y_ASPHALT + 0.03
 
 ## The ballast: its painted grey (sRGB vertex colours) times the county
 ## gravel photo at 2.5 times its size, since mainline ballast is 1 to 2.5
@@ -79,10 +87,15 @@ const REDRAW_S := 1.0
 ## The browser's lighter look (CountyRail.light), and how far it reaches.
 var _light := false
 var _reach := DRAW_TO
+## The bed eased down to the town streets it crosses (_eased), for the
+## through freights to ride on (bed_at): route -> {sample: bed}, the
+## samples of the squares drawn so far.
+static var _sunk := {}
 
 
 func setup(s: CitySim) -> void:
 	sim = s
+	_sunk.clear()
 	if not sim.vegetation.changed.is_connected(_on_ground):
 		sim.vegetation.changed.connect(_on_ground)
 
@@ -212,6 +225,36 @@ func _town_has(p: Vector3) -> bool:
 	return float(hit.dist) <= RoadStyle.half_width(sim.network.segments[hit.seg].type) + 0.5
 
 
+## The bed at metres `s` along a route, eased down where it crosses a town
+## street (_sunk): what the county's trains ride on.
+static func bed_at(route: int, s: float) -> float:
+	var sunk: Dictionary = _sunk.get(route, {})
+	if sunk.is_empty():
+		return CountyRail.bed_at(route, s)
+	var f := maxf(s / CountyRail.STEP, 0.0)
+	var i := floori(f)
+	var a: float = sunk.get(i, CountyRail.bed_at(route, i * CountyRail.STEP))
+	var b: float = sunk.get(i + 1, CountyRail.bed_at(route, (i + 1) * CountyRail.STEP))
+	return lerpf(a, b, f - i)
+
+
+## The bed at sample i, eased down to each town street within
+## CountyRail.RAMP (`paved`: the samples under a street's pavement) so the
+## rail tops sit flush in it (TOWN_RAIL), the same curve CountyRail.profile
+## gives the county's own road crossings.
+static func _eased(i: int, at: PackedVector2Array, bed: PackedFloat32Array, paved: Dictionary) -> float:
+	var y := bed[i]
+	var ramp := int(CountyRail.RAMP / CountyRail.STEP)
+	for j in range(i - ramp, i + ramp + 1):
+		if not paved.has(j):
+			continue
+		var flush := Terrain.base(at[j].x, at[j].y) - CountyRail.RAIL_TOP + TOWN_RAIL
+		var t := clampf((absf(j - i) - 1.0) * CountyRail.STEP / (CountyRail.RAMP - CountyRail.STEP), 0.0, 1.0)
+		t = t * t * (3.0 - 2.0 * t)
+		y = minf(y, lerpf(flush, maxf(y, flush), t))
+	return y
+
+
 ## The track in one square: every route's samples that fall in it, and
 ## the step on to the next sample, so squares meet.
 func _build(b: Vector2i) -> Array:
@@ -236,21 +279,53 @@ func _build(b: Vector2i) -> Array:
 		var at: PackedVector2Array = prof.at
 		var bed: PackedFloat32Array = prof.bed
 		var kind: PackedByteArray = prof.kind
-		for i in at.size() - 1:
+		# The samples under a town street's pavement, from RAMP before the
+		# square to RAMP past it (the ease reaches that far).
+		var paved := {}
+		var first := -1
+		var last := -1
+		for i in at.size():
+			if box.has_point(at[i]):
+				if first < 0:
+					first = i
+				last = i
+		if first < 0:
+			continue
+		var ramp := int(CountyRail.RAMP / CountyRail.STEP)
+		for j in range(maxi(first - ramp, 0), mini(last + ramp + 2, at.size())):
+			if kind[j] != 2 and kind[j] != 3 and _town_has(Vector3(at[j].x - o.x, bed[j], at[j].y - o.y)):
+				paved[j] = true
+		var sunk: Dictionary = _sunk.get(route, {})
+		for i in range(first, last + 1):
+			if not box.has_point(at[i]):
+				continue
+			var y := _eased(i, at, bed, paved) if not paved.is_empty() else bed[i]
+			if y < bed[i] - 0.001:
+				sunk[i] = y
+			else:
+				sunk.erase(i)
+		if sunk.is_empty():
+			_sunk.erase(route)
+		else:
+			_sunk[route] = sunk
+		for i in range(first, mini(last + 1, at.size() - 1)):
 			if not box.has_point(at[i]):
 				continue
 			if kind[i] == 3 or kind[i + 1] == 3:
 				continue
-			var c0 := Vector3(at[i].x - o.x, bed[i], at[i].y - o.y)
-			var c1 := Vector3(at[i + 1].x - o.x, bed[i + 1], at[i + 1].y - o.y)
-			if _town_has(c0) or _town_has(c1):
+			var c0 := Vector3(at[i].x - o.x, sunk.get(i, bed[i]), at[i].y - o.y)
+			var c1 := Vector3(at[i + 1].x - o.x, _eased(i + 1, at, bed, paved) if not paved.is_empty() else bed[i + 1], at[i + 1].y - o.y)
+			var bridge := kind[i] == 2 or kind[i + 1] == 2
+			if bridge and (_town_has(c0) or _town_has(c1)):
 				continue
+			# A grade crossing: a county road's (kind 1) or a town street's.
+			var xing := (kind[i] == 1 and kind[i + 1] == 1) or paved.has(i) or paved.has(i + 1)
 			var n0 := _left(at, i)
 			var n1 := _left(at, i + 1)
 			any = true
-			if kind[i] == 2 or kind[i + 1] == 2:
+			if bridge:
 				RailView._bridge_span(st, c0, c1, n0, n1, i)
-			elif kind[i] == 1 and kind[i + 1] == 1:
+			elif xing:
 				# A grade crossing: rubber panels across the track's width,
 				# level with the rail tops, as the road runs over it.
 				var y := Vector3(0, CountyRail.RAIL_TOP - 0.02, 0)
@@ -269,7 +344,7 @@ func _build(b: Vector2i) -> Array:
 				RailView._rail(rails, c0 + n0 * side * RailModels.GAUGE * 0.5, c1 + n1 * side * RailModels.GAUGE * 0.5, n0, n1)
 			if _light:
 				continue  # no ties
-			if kind[i] == 1 and kind[i + 1] == 1:
+			if xing:
 				continue
 			var seg := c1 - c0
 			var len := Vector2(seg.x, seg.z).length()

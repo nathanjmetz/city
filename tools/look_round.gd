@@ -315,7 +315,7 @@ func _pin_quality() -> void:
 func _build() -> void:
 	var sim: CitySim = _main.sim
 	sim.apply({"type": "clear"})
-	PerfTown.build(sim, "big")
+	_town(sim)
 	sim.require_utilities = false
 	for i in WARM_TICKS:
 		sim.tick()
@@ -360,6 +360,11 @@ func _build() -> void:
 		GraphicsQuality.current.describe() if GraphicsQuality.current else "?", _dusk_hour])
 	_prepare(SHOTS[0])
 	_set_shot(SHOTS[0])
+
+
+## The town the pictures are of (tools/early_round.gd builds a young one).
+func _town(sim: CitySim) -> void:
+	PerfTown.build(sim, "big")
 
 
 ## Every view the loading screen waits on has drawn what the camera sees,
