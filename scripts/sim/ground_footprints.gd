@@ -106,7 +106,7 @@ class Reader:
 		push_junctions = push
 
 	func done() -> bool:
-		return _stage >= 12
+		return _stage >= 14
 
 	## Reads on for about `usec` microseconds (at least one piece; all of it
 	## when 0). True once everything is read.
@@ -122,7 +122,7 @@ class Reader:
 
 	## What's left to read, about (0 to 1).
 	func share() -> float:
-		var per := float(_keys.size()) * 3.0 + 12.0
+		var per := float(_keys.size()) * 3.0 + 14.0
 		var at := float(_stage)
 		if _stage in [6, 7, 8]:
 			at += float(_stage - 6) * _keys.size() + _i
@@ -192,17 +192,21 @@ class Reader:
 				_next_key(9)
 			9:
 				GroundFootprints._signs(out, sim, _rv, _plans)
-				GroundFootprints._name_posts(out, sim)
 				_stage = 10
 			10:
+				GroundFootprints._name_posts(out, sim)
+				_stage = 11
+			11:
 				for l in StreetLights.place(sim.network, _rv._rural, CurbClaims.of(sim)):
 					var p: Vector3 = l[1]
 					GroundFootprints._add(out, "post", "streetlight", "seg:%d" % int(l[6]), GroundFootprints._sq(Vector2(p.x, p.z), GroundFootprints.POST.streetlight))
+				_stage = 12
+			12:
 				GroundFootprints._poles(out, sim, _rv)
 				_rv.free()
 				_rv = null
-				_stage = 11
-			11:
+				_stage = 13
+			13:
 				for id in sim.buses.stops:
 					var st: Dictionary = sim.buses.stops[id]
 					var pos: Vector3 = st.pos
@@ -212,7 +216,7 @@ class Reader:
 					GroundFootprints._add(out, "post", "bus_stop", "stop:%s" % id, GroundFootprints._sq(Vector2(at.x, at.z), GroundFootprints.POST.bus_stop))
 				for i in out.size():
 					out[i].id = i
-				_stage = 12
+				_stage = 14
 
 	func _next_key(then: int) -> void:
 		_i += 1

@@ -227,7 +227,7 @@ signal rail_changed(box: Rect2)
 
 ## The survey (survey_start, survey_step).
 var _reader: GroundFootprints.Reader
-var _survey_stage := 0  # 0 idle, 1 reading, 2 clearing, 3 filing, 4 clashes
+var _survey_stage := 0  # 0 idle, 1 reading, 2 clearing, 5 sorting out, 3 filing, 4 clashes
 var _survey_ids := PackedInt32Array()  # claims the survey filed
 var _survey_groups := []
 var _survey_i := 0
@@ -652,7 +652,9 @@ func survey_share() -> float:
 	match _survey_stage:
 		1:
 			return 0.85 * _reader.share()
-		2, 3:
+		2, 5:
+			return 0.85
+		3:
 			return 0.85 + 0.05 * float(_survey_i) / maxf(_survey_groups.size(), 1.0)
 		4:
 			return 0.9 + 0.1 * float(_survey_i) / maxf(_survey_list.size(), 1.0)
@@ -673,24 +675,53 @@ func survey_step(ms := SURVEY_MS) -> bool:
 		match _survey_stage:
 			1:
 				if _reader.step(maxi(budget - (Time.get_ticks_usec() - t0), 1)):
+					_survey_list = Array(_survey_ids)
+					_survey_ids = PackedInt32Array()
+					_survey_i = 0
 					_survey_stage = 2
 			2:
-				# The last survey's claims taken back, this one's sorted.
-				release_ids(_survey_ids)
-				_survey_ids = PackedInt32Array()
-				var g := _groups(_reader.out, LIVE_KINDS + ["crosswalk:shaped"])
-				_reader = null
-				_survey_groups = []
-				for k in g[0]:
-					_survey_groups.append([k[0], k[1], g[1][k]])
-				_survey_i = 0
-				_survey_stage = 3
-			3:
-				var n := mini(_survey_i + 200, _survey_groups.size())
-				for i in range(_survey_i, n):
-					var g: Array = _survey_groups[i]
-					_survey_ids.append_array(_file_group(g[0], g[1], g[2], null))
+				# The last survey's claims taken back, a batch at a time.
+				var n := mini(_survey_i + 2000, _survey_list.size())
+				release_ids(PackedInt32Array(_survey_list.slice(_survey_i, n)))
 				_survey_i = n
+				if _survey_i >= _survey_list.size():
+					_survey_list = []
+					_survey_groups = []
+					_survey_i = 0
+					_survey_stage = 5
+			5:
+				# This one's shapes by kind and owner (the order they're filed
+				# in changes no name, so they aren't sorted).
+				var shapes: Array = _reader.out
+				var skip: Array = LIVE_KINDS
+				var by: Dictionary = {} if _survey_groups.is_empty() else _survey_groups[0]
+				if _survey_groups.is_empty():
+					_survey_groups.append(by)
+				var n := mini(_survey_i + 4000, shapes.size())
+				for i in range(_survey_i, n):
+					var sh: Dictionary = shapes[i]
+					var kind: String = sh.cat + ":" + sh.what if sh.cat in ["post", "rail_bed"] else sh.cat
+					if kind in skip or (sh.cat == "crosswalk" and sh.what == "shaped"):
+						continue
+					var k := [kind, sh.key]
+					if not by.has(k):
+						by[k] = []
+					by[k].append(sh)
+				_survey_i = n
+				if _survey_i >= shapes.size():
+					_reader = null
+					_survey_groups = []
+					for k in by:
+						_survey_groups.append([k[0], k[1], by[k]])
+					_survey_i = 0
+					_survey_stage = 3
+			3:
+				while _survey_i < _survey_groups.size():
+					var g: Array = _survey_groups[_survey_i]
+					_survey_ids.append_array(_file_group(g[0], g[1], g[2], null))
+					_survey_i += 1
+					if Time.get_ticks_usec() - t0 >= budget:
+						break
 				if _survey_i >= _survey_groups.size():
 					_survey_groups = []
 					_ledger_ok = false
@@ -704,10 +735,11 @@ func survey_step(ms := SURVEY_MS) -> bool:
 					_survey_i = 0
 					_survey_stage = 4
 			4:
-				var n := mini(_survey_i + 64, _survey_list.size())
-				for i in range(_survey_i, n):
-					_clashes_of(_survey_list[i])
-				_survey_i = n
+				while _survey_i < _survey_list.size():
+					_clashes_of(_survey_list[_survey_i])
+					_survey_i += 1
+					if Time.get_ticks_usec() - t0 >= budget:
+						break
 				if _survey_i >= _survey_list.size():
 					_survey_list = []
 					_survey_stage = 0
