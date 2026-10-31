@@ -126,4 +126,4 @@ static func _rail_y(p: Vector2) -> float:
 		return Terrain.base(p.x, p.y) + CountyRail.RAIL_TOP
 	if CountyRail.kind_at(n.route, n.along) == 3:
 		return NAN
-	return CountyRail.bed_at(n.route, n.along) + CountyRail.RAIL_TOP
+	return CountyRailView.bed_at(n.route, n.along) + CountyRail.RAIL_TOP
