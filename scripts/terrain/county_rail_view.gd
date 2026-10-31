@@ -47,8 +47,12 @@ const SHOULDER := 1.5
 ## bed it falls (m).
 const SUBGRADE_HALF := 3.3
 const SUBGRADE_DROP := 0.08
-const STONE := Color("#77746d")
-const STONE_SIDE := Color("#64615b")
+## Mid-to-dark grey crushed granite and trap rock (the photo adds its
+## stones), darker than the concrete walks it meets, and between the rails
+## the rust-brown stain of brake dust and wheel wear.
+const STONE := Color("#5e5b56")
+const STONE_SIDE := Color("#4f4c48")
+const RUST := Color("#4f443a")
 
 ## Rail top above the street's own level at a town crossing (m): the
 ## panels (2 cm under it) 3 cm over the asphalt (RoadStyle.Y_ASPHALT),
@@ -77,7 +81,8 @@ void fragment() {
 	if (pk > 0.0) {
 		vec2 p = world_pos.xz / 2.5;
 		float l = dot(ph_gravel(p), vec3(0.3333));
-		col *= mix(1.0, l, pk);
+		// The stones' light and shade, deepened: rough rock, not a smooth wash.
+		col *= mix(1.0, max(1.0 + (l - 1.0) * 1.8, 0.2), pk);
 		n = ph_lean(n, ph_gravel_s(p), pk * 0.8);
 	}
 	ALBEDO = col;
@@ -301,11 +306,27 @@ static func _eased(i: int, bed: PackedFloat32Array, paved: Dictionary) -> float:
 ## The crown's height over the bed at `c` (a track centre, view
 ## coordinates): CROWN_Y, or where the bed eases down to a street under
 ## the ground beside it (its approach), up to the ground, as a crossing's
-## approach is filled to the tie tops (a few cm over them at most, the
-## last metres before the panels, where the lawn would cover them anyway).
+## approach is filled, but always a little under the tie tops, so the ties
+## show right up to the panels as on real track.
 static func _crown(c: Vector3) -> float:
-	var g := Terrain.ground_y(c.x, c.z) + 0.04 - c.y
-	return clampf(g, CROWN_Y, RailView.TIE_Y + 0.04)
+	var g := Terrain.ground_y(c.x, c.z) + 0.02 - c.y
+	return clampf(g, CROWN_Y, RailView.TIE_Y - 0.03)
+
+
+## The bed as drawn and ridden at sample i: eased to the town streets
+## (_eased), but off the pavement never so low that the ground beside the
+## track would bury the ties (their tops TIE_SHOW over it), so they show
+## right up to the panels; the rails rise those few cm over the metres
+## from the pavement's edge.
+const TIE_SHOW := 0.05
+func _approach(i: int, at: PackedVector2Array, bed: PackedFloat32Array, paved: Dictionary) -> float:
+	if paved.is_empty():
+		return bed[i]
+	var y := _eased(i, bed, paved)
+	if paved.has(i) or y >= bed[i]:
+		return y
+	var g := Terrain.ground_y(at[i].x - _origin.x, at[i].y - _origin.y)
+	return minf(maxf(y, g + TIE_SHOW - RailView.TIE_Y), bed[i])
 
 
 ## The ballast between samples c0 and c1 (their track centres at the bed,
@@ -316,6 +337,9 @@ static func _ballast(st: SurfaceTool, c0: Vector3, c1: Vector3, n0: Vector3, n1:
 	var y1 := Vector3(0, _crown(c1), 0)
 	RailView._quad(st, c0 - n0 * CROWN_HALF + y0, c0 + n0 * CROWN_HALF + y0, c1 + n1 * CROWN_HALF + y1,
 		c1 - n1 * CROWN_HALF + y1, STONE)
+	var r := Vector3(0, 0.004, 0)
+	var g := RailModels.GAUGE * 0.5 + 0.05
+	RailView._quad(st, c0 - n0 * g + y0 + r, c0 + n0 * g + y0 + r, c1 + n1 * g + y1 + r, c1 - n1 * g + y1 + r, RUST)
 	var toe := CROWN_HALF + CROWN_Y * SHOULDER
 	var down := Vector3(0, -SUBGRADE_DROP, 0)
 	for side: float in [-1.0, 1.0]:
@@ -404,7 +428,7 @@ func _build(b: Vector2i) -> Array:
 		for i in range(first, last + 1):
 			if not box.has_point(at[i]):
 				continue
-			var y := _eased(i, bed, paved) if not paved.is_empty() else bed[i]
+			var y := _approach(i, at, bed, paved)
 			if y < bed[i] - 0.001:
 				sunk[i] = y
 			else:
@@ -419,7 +443,7 @@ func _build(b: Vector2i) -> Array:
 			if kind[i] == 3 or kind[i + 1] == 3:
 				continue
 			var c0 := Vector3(at[i].x - o.x, sunk.get(i, bed[i]), at[i].y - o.y)
-			var c1 := Vector3(at[i + 1].x - o.x, _eased(i + 1, bed, paved) if not paved.is_empty() else bed[i + 1], at[i + 1].y - o.y)
+			var c1 := Vector3(at[i + 1].x - o.x, _approach(i + 1, at, bed, paved), at[i + 1].y - o.y)
 			var bridge := kind[i] == 2 or kind[i + 1] == 2
 			if bridge and (_town_has(c0) or _town_has(c1)):
 				continue
