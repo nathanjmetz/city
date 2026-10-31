@@ -31,6 +31,9 @@ func _initialize() -> void:
 		["03_80m", Vector3(40.0, 0.0, 210.0), 35.0, 30.0, 80.0, "day", FAIR],
 		["04_150m", Vector3(40.0, 0.0, 220.0), 35.0, 40.0, 150.0, "day", FAIR],
 		["05_exit_60m", Vector3(-20.0, 0.0, 50.0), 200.0, 25.0, 60.0, "day", FAIR],
+		# Aimed at the most skewed town street crossing of the county
+		# railroad once the town is built (_skew_aim).
+		["07_skew_35m", Vector3(-20.0, 0.0, 50.0), 0.0, 55.0, 35.0, "day", FAIR],
 		["06_dusk_100m", Vector3(40.0, 0.0, 210.0), 35.0, 22.0, 100.0, "dusk", FAIR],
 	]
 	super._initialize()
@@ -65,6 +68,7 @@ func _town(sim: CitySim) -> void:
 			sim.apply({"type": "place_service", "kind": spot[0], "pos": [site[0].x, site[0].z], "dir": [site[1].x, site[1].z]})
 	for i in GROW_DAYS * Seasons.TICKS_PER_DAY:
 		sim.tick()
+	_skew_aim(sim)
 	print("early_round: young town after %d days: %d buildings, %d people, $%d" % [GROW_DAYS,
 		sim.buildings.size(), sim.stats.population, sim.economy.money])
 
@@ -80,3 +84,31 @@ func _set_moment(month: int, day: int, hour: float) -> void:
 ## No tiers set by hand: a young town's lots are as the sim left them.
 func _mixed_town(_sim: CitySim) -> void:
 	pass
+
+
+## Shot 07: the town street crossing the county track at the sharpest
+## angle, looked at from beside the street.
+func _skew_aim(sim: CitySim) -> void:
+	var best := -1.0
+	for c in sim.county_trains.crossings:
+		var pos: Vector3 = c.pos
+		var q := Vector2(pos.x, pos.z) + sim.terrain_offset
+		var n := CountyRail.near(q.x, q.y, 8.0)
+		if n.is_empty() or not sim.network.segments.has(c.seg):
+			continue
+		var t := (CountyRail.point(n.route, n.along + 2.0) - CountyRail.point(n.route, n.along - 2.0)).normalized()
+		var pts := sim.network.sample_segment(c.seg)
+		var k := 0
+		for i in pts.size():
+			if pts[i].distance_to(pos) < pts[k].distance_to(pos):
+				k = i
+		var r := pts[mini(k + 1, pts.size() - 1)] - pts[maxi(k - 1, 0)]
+		var road := Vector2(r.x, r.z).normalized()
+		var skew := absf(road.dot(t))  # 0 square, toward 1 sharp
+		if skew > best:
+			best = skew
+			for s in SHOTS:
+				if s[0] == "07_skew_35m":
+					s[1] = Vector3(pos.x, 0.0, pos.z)
+					s[2] = rad_to_deg(atan2(-road.x, -road.y)) + 40.0
+	print("early_round: shot 07 at the crossing %.0f degrees off square" % rad_to_deg(asin(clampf(best, 0.0, 1.0))))

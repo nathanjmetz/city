@@ -66,6 +66,31 @@ func _init() -> void:
 			close += 1
 	_check(close == 0, "no farmstead stands on the railroad (%d too close)" % close)
 
+	# Where a town street crosses the track (CountyRailView, 2026-10-31):
+	# the bed eases down so the rail tops sit flush in the street, and is
+	# back at full height RAMP past the pavement; the trains ride the same.
+	var x_prof0 := CountyRail.profile(0)
+	var x_bed0: PackedFloat32Array = x_prof0.bed
+	var x_mid := x_bed0.size() / 2
+	var x_street: float = x_bed0[x_mid] - 0.5
+	var x_paved := {x_mid: x_street, x_mid + 1: x_street}
+	var x_level := x_street - CountyRail.RAIL_TOP + CountyRailView.TOWN_RAIL
+	var x_off := int(CountyRail.RAMP / CountyRail.STEP)
+	_check(absf(CountyRailView._eased(x_mid, x_bed0, x_paved) - x_level) < 0.001 and absf(CountyRailView._eased(x_mid + 1, x_bed0, x_paved) - x_level) < 0.001,
+		"the track is flush with a town street under its pavement")
+	_check(absf(CountyRailView._eased(x_mid + 1 + x_off, x_bed0, x_paved) - x_bed0[x_mid + 1 + x_off]) < 0.001
+		and absf(CountyRailView._eased(x_mid - x_off, x_bed0, x_paved) - x_bed0[x_mid - x_off]) < 0.001,
+		"the track is back at full height %d m past the street" % roundi(CountyRail.RAMP))
+	var x_mids := CountyRailView._eased(x_mid + 3, x_bed0, x_paved)
+	_check(x_mids <= x_bed0[x_mid + 3] + 0.001 and x_mids >= minf(x_level, x_bed0[x_mid + 3]) - 0.001, "the track eases between the two")
+	CountyRailView._sunk.clear()
+	var x_same := true
+	for s in [0.0, 3.0, x_mid * CountyRail.STEP + 1.7, CountyRail.length(0) - 2.0]:
+		x_same = x_same and absf(CountyRailView.bed_at(0, s) - CountyRail.bed_at(0, s)) < 0.0001
+	_check(x_same, "with no town crossing drawn the trains ride the county's own bed")
+	CountyRailView._sunk[0] = {x_mid: x_level, x_mid + 1: x_level}
+	_check(absf(CountyRailView.bed_at(0, (x_mid + 0.5) * CountyRail.STEP) - x_level) < 0.001, "the trains ride the eased bed at a town crossing")
+	CountyRailView._sunk.clear()
 
 	print("FAILED" if _failed else "ALL PASSED")
 	quit(1 if _failed else 0)
