@@ -299,10 +299,10 @@ func _streets_of(sim: CitySim) -> void:
 		_streets[int(id)] = [line, along, RoadStyle.half_width(sim.network.segments[id].type)]
 
 
-## Files GroundFootprints shapes (collect's) as claims: a WHOLE kind as one claim per
-## owner, anything else one claim each, numbered by where it stands (west
-## to east, then north to south) so the names never hang on the order the
-## shapes came in.
+## Files GroundFootprints.collect's shapes as claims: a WHOLE kind as one
+## claim per owner, anything else one claim each, numbered by where it
+## stands (west to east, then north to south) so the names never hang on
+## the order the shapes came in.
 func file_shapes(shapes: Array) -> void:
 	var groups := {}  # [kind, owner] -> [shapes]
 	for s in shapes:
