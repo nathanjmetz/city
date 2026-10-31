@@ -2640,6 +2640,7 @@ func _cancel(car: Dictionary) -> void:
 	_release(car.get("to_place", ""), car.get("to_spot", -1), car.id)
 	_report(car, failed)
 	car.erase("pending")
+	car.erase("bay_t")  # (no wait left over for its next trip)
 	_shut_door(car)
 	_pend.erase(car.id)
 	for k in ["route", "leg", "d", "end_d", "goal", "dest", "park", "home", "to_place", "to_spot", "lane",
