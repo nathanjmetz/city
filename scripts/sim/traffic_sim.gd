@@ -71,6 +71,10 @@ const CROSSWALK_AHEAD := 3.0
 ## centre; how many places along the kerb to try.
 const CURB_STALL := 7.0
 const CURB_APRON := 5.0
+## A curb space's middle keeps this far from the stop bar at either end of
+## the kerb: 20 ft clear of the crosswalk (RoadStyle.CURB_CLEAR), then half
+## a stall, as the painted stalls start (RoadMesh). 12 m until 2026-10-31.
+const CURB_END := RoadStyle.CURB_CLEAR + CURB_STALL * 0.5
 const CURB_TRIES := 25
 const PARK_WALK := 250.0  # how far a driver walks from a stall to a full destination
 const CURB_SPACE := 6.7   # a parallel parking space at the curb, 22 ft (MUTCD 3B.19)
@@ -3439,7 +3443,7 @@ func _curb_line(stop: Dictionary) -> Array:
 	if not ways.has(wid):
 		return []
 	var w: Dictionary = ways[wid]
-	if w.s1 - w.s0 < 24.0:
+	if w.s1 - w.s0 < CURB_END * 2.0:
 		return []  # too short a piece of road to park along
 	var mid: float = _frac(stop) * w.len if w.fwd else w.len - _frac(stop) * w.len
 	var face := 1.0 if (stop.side > 0) == w.fwd else -1.0
@@ -3449,7 +3453,7 @@ func _curb_line(stop: Dictionary) -> Array:
 func _curb_at(line: Array, d: float) -> Dictionary:
 	var w: Dictionary = line[0]
 	# Clear of the junctions at both ends, with room to pull away.
-	d = clampf(d, w.s0 + 12.0, w.s1 - 12.0)
+	d = clampf(d, w.s0 + CURB_END, w.s1 - CURB_END)
 	var dir := _way_dir(w, d) * float(line[2])
 	var right := Vector3(-dir.z, 0.0, dir.x)
 	var p := _poly_point(w.pts, w.cum, d) + right * float(line[3])
@@ -3481,7 +3485,7 @@ func _new_curb(pl: Dictionary, stop: Dictionary, vid := -1, vlen := 4.8, held = 
 	if line.is_empty():
 		return -1
 	var w: Dictionary = line[0]
-	var tries := mini(int((w.s1 - w.s0 - 24.0) / (CURB_STALL * 0.5)) * 2 + 1, CURB_TRIES)
+	var tries := mini(int((w.s1 - w.s0 - CURB_END * 2.0) / (CURB_STALL * 0.5)) * 2 + 1, CURB_TRIES)
 	# Only the spaces near enough to be in the way (the tries reach about
 	# tries / 4 stalls each way; a semi's gap is under 30 m).
 	var mid_pos: Vector3 = _curb_at(line, float(line[1])).pos

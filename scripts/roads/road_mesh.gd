@@ -175,12 +175,16 @@ static func _town(pts: PackedVector3Array, type: int, mats: Dictionary, cuts := 
 		if not spec.get("angle", false) and not (spec.get("parking", 0) > 0 and spec.oneway):
 			# A main street side's stalls: a 23 ft parallel stall between
 			# ticks out from the gutter (MUTCD 3B.19), laid with the gutter
-			# pan so they cost no draw of their own.
+			# pan so they cost no draw of their own. `pts` already stops at
+			# the junctions' mouths, so the stalls run from 20 ft past them
+			# (RoadStyle.CURB_CLEAR) to 20 ft short of the next (until
+			# 2026-10-31 a street's half width more each end, which left a
+			# short block between two junctions with no stalls at all).
 			for side in [-1.0, 1.0]:
 				if treat.get("right" if side > 0.0 else "left", "") != RoadTreatments.MAIN:
 					continue
-				var at := hw + 6.0
-				while at < length - hw - 6.0:
+				var at := RoadStyle.CURB_CLEAR
+				while at <= length - RoadStyle.CURB_CLEAR + 0.01:
 					_slant(pan, pts, at, side * (hw - 2.2), at, side * (hw - g), RoadStyle.Y_ASPHALT + 0.006)
 					at += 7.0
 		pan.commit(mesh)

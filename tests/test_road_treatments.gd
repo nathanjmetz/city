@@ -40,6 +40,7 @@ func _init() -> void:
 	_undo_keeps_locks()
 	_save_mid_change()
 	_rebuilt_shop()
+	_bridged()
 	print("ALL TESTS PASSED" if not _failed else "TESTS FAILED")
 	quit(1 if _failed else 0)
 
@@ -531,4 +532,56 @@ func _rebuilt_shop() -> void:
 	sim.tick_count = fade + RoadTreatments.HOLD
 	t._decide_all(sim, [seg * 2 + 1])
 	_check(t.kind(seg, 1) != RoadTreatments.MAIN, "after the hold it lets go (%s)" % t.kind(seg, 1))
+
+
+## A short bare piece of street between two main street pieces it runs
+## straight on from is main street too (RoadTreatments.BRIDGE_M,
+## 2026-10-31): the young town's shop street lost its stalls, lanterns and
+## paved walk on the 40 m between a 4-way and a T.
+func _bridged() -> void:
+	var M := RoadTreatments.MAIN
+	_check(_bridge_case(60.0, true, true) == M, "a bare 60 m piece with main street at both ends is main street")
+	_check(_bridge_case(61.0, true, true) == "", "a bare 61 m piece isn't")
+	_check(_bridge_case(40.0, true, false) == "", "a bare piece with main street at one end only isn't")
+	_check(_bridge_case(40.0, false, true) == "", "a bare piece that turns a corner from a main street isn't")
+	# Held by its neighbours: it drops back at once when one stops being main.
+	var made := _bridge_town(40.0, true)
+	var sim: CitySim = made[0]
+	var t := sim.treatments
+	var kc := RoadTreatments.key_of(made[3], 1)
+	t.sides.erase(kc)
+	t._decide_all(sim, [kc])
+	_check(t.kind(made[2], 1) == "", "and it drops back once a neighbour is no longer main")
+
+
+## Three pieces of street: A, then B (`len` m, straight on from A, or
+## turning north off A's end when not `straight`), then C straight on from
+## B. A's right-hand side is main street, and C's too when `both`. B's
+## right side's kind after a look.
+func _bridge_case(len: float, straight: bool, both: bool) -> String:
+	var made := _bridge_town(len, straight, both)
+	var sim: CitySim = made[0]
+	return sim.treatments.kind(made[2], 1)
+
+
+## [sim, A, B, C] (see _bridge_case).
+func _bridge_town(len: float, straight: bool, both := true) -> Array:
+	var sim := CitySim.new()
+	sim.economy.money = 50_000_000
+	var b1 := Vector2(len, 0.0) if straight else Vector2(0.0, len)
+	var dir := Vector2(1, 0) if straight else Vector2(0, 1)
+	var c1 := b1 + dir * 200.0
+	sim.apply({"type": "build_road", "start": [-200.0, 0.0], "ctrl": [-100.0, 0.0], "end": [0.0, 0.0]})
+	sim.apply({"type": "build_road", "start": [0.0, 0.0], "ctrl": [b1.x * 0.5, b1.y * 0.5], "end": [b1.x, b1.y]})
+	sim.apply({"type": "build_road", "start": [b1.x, b1.y], "ctrl": [(b1.x + c1.x) * 0.5, (b1.y + c1.y) * 0.5], "end": [c1.x, c1.y]})
+	var ids := sim.network.segments.keys()
+	ids.sort()
+	var t := sim.treatments
+	var keys := [RoadTreatments.key_of(ids[0], 1)]
+	t.sides[keys[0]] = {"kind": RoadTreatments.MAIN, "at": 0, "fade": -1}
+	if both:
+		keys.append(RoadTreatments.key_of(ids[2], 1))
+		t.sides[keys[1]] = {"kind": RoadTreatments.MAIN, "at": 0, "fade": -1}
+	t._decide_all(sim, keys)
+	return [sim, ids[0], ids[1], ids[2]]
 
