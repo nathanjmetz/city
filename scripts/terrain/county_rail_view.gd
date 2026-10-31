@@ -298,18 +298,29 @@ static func _eased(i: int, bed: PackedFloat32Array, paved: Dictionary) -> float:
 	return y
 
 
+## The crown's height over the bed at `c` (a track centre, view
+## coordinates): CROWN_Y, or where the bed eases down to a street under
+## the ground beside it (its approach), up to the ground, as a crossing's
+## approach is filled to the tie tops (a few cm over them at most, the
+## last metres before the panels, where the lawn would cover them anyway).
+static func _crown(c: Vector3) -> float:
+	var g := Terrain.ground_y(c.x, c.z) + 0.04 - c.y
+	return clampf(g, CROWN_Y, RailView.TIE_Y + 0.04)
+
+
 ## The ballast between samples c0 and c1 (their track centres at the bed,
 ## n0 and n1 their lefts): the crown, the shoulders, the cinder strip, and
 ## fill slopes down to the ground wherever the bed rides above it.
 static func _ballast(st: SurfaceTool, c0: Vector3, c1: Vector3, n0: Vector3, n1: Vector3) -> void:
-	var y := Vector3(0, CROWN_Y, 0)
-	RailView._quad(st, c0 - n0 * CROWN_HALF + y, c0 + n0 * CROWN_HALF + y, c1 + n1 * CROWN_HALF + y,
-		c1 - n1 * CROWN_HALF + y, STONE)
+	var y0 := Vector3(0, _crown(c0), 0)
+	var y1 := Vector3(0, _crown(c1), 0)
+	RailView._quad(st, c0 - n0 * CROWN_HALF + y0, c0 + n0 * CROWN_HALF + y0, c1 + n1 * CROWN_HALF + y1,
+		c1 - n1 * CROWN_HALF + y1, STONE)
 	var toe := CROWN_HALF + CROWN_Y * SHOULDER
 	var down := Vector3(0, -SUBGRADE_DROP, 0)
 	for side: float in [-1.0, 1.0]:
-		var a0 := c0 + n0 * side * CROWN_HALF + y
-		var a1 := c1 + n1 * side * CROWN_HALF + y
+		var a0 := c0 + n0 * side * CROWN_HALF + y0
+		var a1 := c1 + n1 * side * CROWN_HALF + y1
 		var b0 := c0 + n0 * side * toe
 		var b1 := c1 + n1 * side * toe
 		RailView._quad(st, a0, b0, b1, a1, STONE_SIDE)
