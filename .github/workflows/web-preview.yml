@@ -260,6 +260,7 @@ jobs:
           run_test tests/test_curb_claims.gd
           run_test tests/test_ground_map.gd
           run_test tests/test_ground_map_live.gd
+          run_test tests/test_ground_map_lots.gd
 
       - name: Stamp the build
         run: |
