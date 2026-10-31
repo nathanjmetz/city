@@ -41,6 +41,7 @@ func _init() -> void:
 	_save_mid_change()
 	_rebuilt_shop()
 	_bridged()
+	_stalls()
 	print("ALL TESTS PASSED" if not _failed else "TESTS FAILED")
 	quit(1 if _failed else 0)
 
@@ -307,7 +308,8 @@ func _mesh() -> void:
 	RoadMesh.raised_curbs = true
 	var plain_hi := RoadMesh.street(pts, RoadStyle.Type.STREET, mats)
 	var treat_hi := RoadMesh.street(pts, RoadStyle.Type.STREET, mats, {}, false, Vector2.ZERO, [], false, Vector2.ONE,
-		{"left": RoadTreatments.FACTORY, "right": RoadTreatments.MAIN, "mid": RoadTreatments.FACTORY})
+		{"left": RoadTreatments.FACTORY, "right": RoadTreatments.MAIN, "mid": RoadTreatments.FACTORY,
+			"stalls_right": Vector2(12.0, 12.0 + 4.0 * TrafficSim.CURB_STALL)})
 	RoadMesh.raised_curbs = false
 	_check(treat_hi.get_surface_count() == plain_hi.get_surface_count()
 		and _count(treat_hi, mats.drain) > _count(plain_hi, mats.drain) and _count(treat_hi, mats.curb) > _count(plain_hi, mats.curb),
@@ -544,6 +546,30 @@ func _bridged() -> void:
 	_check(_bridge_case(61.0, true, true) == "", "a bare 61 m piece isn't")
 	_check(_bridge_case(40.0, true, false) == "", "a bare piece with main street at one end only isn't")
 	_check(_bridge_case(40.0, false, true) == "", "a bare piece that turns a corner from a main street isn't")
+	# A piece drawn the other way: its matching side is its left.
+	var rev := _bridge_town(40.0, true, true, true)
+	var rsim: CitySim = rev[0]
+	_check(rsim.treatments.kind(rev[2], -1) == M and rsim.treatments.kind(rev[2], 1) == "",
+		"a bare piece drawn the other way takes main street on its matching side")
+	# A player's lock wins.
+	var lk := _bridge_town(40.0, true, true, false, true)
+	var lsim: CitySim = lk[0]
+	_check(lsim.treatments.kind(lk[2], 1) == "", "a side the player locked plain stays plain")
+	# Saved and loaded: the new file keeps it held by its neighbours; an old
+	# file (no flag) loads it as a main street side all the same.
+	var sv := _bridge_town(40.0, true)
+	var ssim: CitySim = sv[0]
+	var d: Dictionary = ssim.treatments.to_dict()
+	var again := RoadTreatments.new()
+	again.from_dict(JSON.parse_string(JSON.stringify(d)))
+	var kb := RoadTreatments.key_of(sv[2], 1)
+	_check(again.kind(sv[2], 1) == M and again.sides[kb].get("bridged", false), "a save keeps the bridged side and its flag")
+	var old: Dictionary = JSON.parse_string(JSON.stringify(d))
+	for row in old.sides:
+		row.resize(4)
+	var was := RoadTreatments.new()
+	was.from_dict(old)
+	_check(was.kind(sv[2], 1) == M and not was.sides[kb].get("bridged", false), "an old save (no flag) loads it as main street")
 	# Held by its neighbours: it drops back at once when one stops being main.
 	var made := _bridge_town(40.0, true)
 	var sim: CitySim = made[0]
@@ -552,6 +578,65 @@ func _bridged() -> void:
 	t.sides.erase(kc)
 	t._decide_all(sim, [kc])
 	_check(t.kind(made[2], 1) == "", "and it drops back once a neighbour is no longer main")
+
+
+## The painted stalls and the curb spaces come from one rule
+## (TrafficSim.stall_span, 2026-10-31): in the small test town every curb
+## space the traffic hands out is the middle of a painted stall, and no
+## stall comes within 20 ft of a crosswalk or 30 ft before a stop.
+func _stalls() -> void:
+	var sim := CitySim.new()
+	PerfTown.build(sim, "small")
+	sim.require_utilities = false
+	for i in 3 * RoadTreatments.EVERY:
+		sim.tick()
+	var tr: TrafficSim = sim.traffic
+	var sides := 0
+	var spots := 0
+	var off := 0
+	var near := 0
+	for seg in sim.network.segments:
+		for side in [-1, 1]:
+			var span := tr.stall_span(seg, side)
+			if span.y - span.x < TrafficSim.CURB_STALL:
+				continue
+			sides += 1
+			# The paint measures along the drawn street (network.sample_segment,
+			# RoadView), the traffic along its way: the same metres.
+			var wl: float = tr.ways.get(seg * 2 + 1, tr.ways.get(seg * 2, {})).len
+			if absf(RoadNetwork.polyline_length(sim.network.sample_segment(seg)) - wl) > 0.05:
+				off += 1
+			var s: Dictionary = sim.network.segments[seg]
+			for end in [[int(s.a), side < 0, span.x], [int(s.b), side > 0, tr.ways.get(seg * 2 + 1, tr.ways.get(seg * 2, {})).len - span.y]]:
+				var n: int = end[0]
+				if sim.network.segments_at(n).size() >= 3:
+					var walk: float = tr._walk_arm.get([n, seg], tr._walk_back.get(n, 0.0))
+					if float(end[2]) < walk + TrafficSim.CROSSWALK_W * 0.5 + RoadStyle.CURB_CLEAR - 0.01:
+						near += 1
+				var j: Dictionary = tr.junctions.get(n, {})
+				for k in [seg * 2, seg * 2 + 1]:
+					if end[1] and tr.ways.has(k) and int(tr.ways[k].to) == n and not j.is_empty():
+						var c: int = int(j.control)
+						if c == TrafficSim.Rule.SIGNAL or c == TrafficSim.Rule.ALL_STOP or (c == TrafficSim.Rule.PRIORITY and not j.major.has(k)):
+							if float(end[2]) < float(tr.ways[k].len) - float(tr.ways[k].s1) + TrafficSim.STOP_CLEAR - 0.01:
+								near += 1
+			# Every curb space along the side, scanned end to end.
+			var line := tr._curb_line({"seg": seg, "side": side, "at_frac": 0.5})
+			if line.is_empty():
+				continue
+			var w: Dictionary = line[0]
+			var d := 0.0
+			while d <= float(w.len):
+				var q := TrafficSim._stall_d(line, d)
+				var sa: float = q if w.fwd else float(w.len) - q
+				var k := (sa - span.x) / TrafficSim.CURB_STALL - 0.5
+				if absf(k - roundf(k)) > 0.02 or sa < span.x or sa > span.y:
+					off += 1
+				spots += 1
+				d += 2.0
+	_check(sides > 4, "the small town has main street stall runs (%d sides)" % sides)
+	_check(off == 0, "every curb space is the middle of a painted stall (%d of %d off)" % [off, spots])
+	_check(near == 0, "no stall within 20 ft of a crosswalk or 30 ft before a stop (%d)" % near)
 
 
 ## Three pieces of street: A, then B (`len` m, straight on from A, or
@@ -564,15 +649,19 @@ func _bridge_case(len: float, straight: bool, both: bool) -> String:
 	return sim.treatments.kind(made[2], 1)
 
 
-## [sim, A, B, C] (see _bridge_case).
-func _bridge_town(len: float, straight: bool, both := true) -> Array:
+## [sim, A, B, C] (see _bridge_case). `reversed`: B drawn from its far end
+## back; `locked`: B's right side locked plain by the player.
+func _bridge_town(len: float, straight: bool, both := true, reversed := false, locked := false) -> Array:
 	var sim := CitySim.new()
 	sim.economy.money = 50_000_000
 	var b1 := Vector2(len, 0.0) if straight else Vector2(0.0, len)
 	var dir := Vector2(1, 0) if straight else Vector2(0, 1)
 	var c1 := b1 + dir * 200.0
 	sim.apply({"type": "build_road", "start": [-200.0, 0.0], "ctrl": [-100.0, 0.0], "end": [0.0, 0.0]})
-	sim.apply({"type": "build_road", "start": [0.0, 0.0], "ctrl": [b1.x * 0.5, b1.y * 0.5], "end": [b1.x, b1.y]})
+	if reversed:
+		sim.apply({"type": "build_road", "start": [b1.x, b1.y], "ctrl": [b1.x * 0.5, b1.y * 0.5], "end": [0.0, 0.0]})
+	else:
+		sim.apply({"type": "build_road", "start": [0.0, 0.0], "ctrl": [b1.x * 0.5, b1.y * 0.5], "end": [b1.x, b1.y]})
 	sim.apply({"type": "build_road", "start": [b1.x, b1.y], "ctrl": [(b1.x + c1.x) * 0.5, (b1.y + c1.y) * 0.5], "end": [c1.x, c1.y]})
 	var ids := sim.network.segments.keys()
 	ids.sort()
@@ -582,6 +671,8 @@ func _bridge_town(len: float, straight: bool, both := true) -> Array:
 	if both:
 		keys.append(RoadTreatments.key_of(ids[2], 1))
 		t.sides[keys[1]] = {"kind": RoadTreatments.MAIN, "at": 0, "fade": -1}
+	if locked:
+		t.locks[RoadTreatments.key_of(ids[1], 1)] = ""
 	t._decide_all(sim, keys)
 	return [sim, ids[0], ids[1], ids[2]]
 

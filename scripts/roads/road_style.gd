@@ -165,13 +165,9 @@ const PARKWAY_WIDTH := 1.8
 ## The concrete gutter pan inside the curb (2 ft), part of the pavement width.
 const GUTTER_WIDTH := 0.6
 ## No parking within 20 ft of a crosswalk at a junction (IC 9-21-16-5,
-## UVC 11-1003): where the painted stalls of a main street start, from the
-## mouth of the junction (RoadMesh), and the curb spaces the traffic parks
-## in (TrafficSim._curb_at), from its stop bar.
+## UVC 11-1003): TrafficSim.stall_span, for the painted stalls and the
+## curb spaces alike.
 const CURB_CLEAR := 6.1
-## A kerb shorter than this between its junctions has no curb parking (no
-## room to pull in and away), painted or parked in.
-const CURB_RUN := 24.0
 const SIDEWALK_WIDTH := 1.5
 
 ## Height of each layer above the ground, to keep them from flickering.

@@ -71,10 +71,13 @@ const CROSSWALK_AHEAD := 3.0
 ## centre; how many places along the kerb to try.
 const CURB_STALL := 7.0
 const CURB_APRON := 5.0
-## A curb space's middle keeps this far from the stop bar at either end of
-## the kerb: 20 ft clear of the crosswalk (RoadStyle.CURB_CLEAR), then half
-## a stall, as the painted stalls start (RoadMesh). 12 m until 2026-10-31.
-const CURB_END := RoadStyle.CURB_CLEAR + CURB_STALL * 0.5
+## A crosswalk's width (10 ft), and the kerb kept clear before a stop sign
+## or signal on the approach (30 ft, UVC 11-1003, IC 9-21-16-5) (stall_span).
+const CROSSWALK_W := 3.0
+const STOP_CLEAR := 9.1
+## A kerb with room for fewer stalls than this has none (a stub too short to
+## pull in and away along), painted or parked in.
+const CURB_MIN_STALLS := 3
 const CURB_TRIES := 25
 const PARK_WALK := 250.0  # how far a driver walks from a stall to a full destination
 const CURB_SPACE := 6.7   # a parallel parking space at the curb, 22 ft (MUTCD 3B.19)
@@ -3443,17 +3446,76 @@ func _curb_line(stop: Dictionary) -> Array:
 	if not ways.has(wid):
 		return []
 	var w: Dictionary = ways[wid]
-	if w.s1 - w.s0 < RoadStyle.CURB_RUN:
+	var side := 1 if int(stop.get("side", 1)) > 0 else -1
+	var span := stall_span(int(stop.seg), side)
+	if span.y - span.x < CURB_STALL:
 		return []  # too short a piece of road to park along
 	var mid: float = _frac(stop) * w.len if w.fwd else w.len - _frac(stop) * w.len
 	var face := 1.0 if (stop.side > 0) == w.fwd else -1.0
-	return [w, mid, face, RoadStyle.half_width(w.type) - 1.1]
+	return [w, mid, face, RoadStyle.half_width(w.type) - 1.1, span]
+
+
+## Where the curb stalls run along one side of road piece `seg` (side as a
+## lot's: +1 on the right going from its first node to its second), in
+## metres along the piece from its first node: Vector2(from, to), the
+## stalls 7 m each from `from` (CURB_STALL); no room for one, a zero span.
+## The one rule for both the painted stalls (RoadView, RoadMesh) and the
+## curb spaces cars park in (_curb_at), so they line up.
+func stall_span(seg: int, side: int) -> Vector2:
+	if not network.segments.has(seg):
+		return Vector2.ZERO
+	var w: Dictionary = ways.get(seg * 2 + 1, ways.get(seg * 2, {}))
+	if w.is_empty():
+		return Vector2.ZERO
+	var s: Dictionary = network.segments[seg]
+	var from := _stall_end(int(s.a), seg, side < 0)
+	var to := float(w.len) - _stall_end(int(s.b), seg, side > 0)
+	if to - from < CURB_STALL * CURB_MIN_STALLS:
+		return Vector2.ZERO
+	return Vector2(from, to)
+
+
+## How far from node `n` along road piece `seg` its curb stalls stop: past
+## the junction's mouth (Junction.trim), 20 ft past the outer edge of its
+## crosswalk where it has one (RoadStyle.CURB_CLEAR), and, on the side
+## traffic arrives on (`approach`), 30 ft before a stop sign or signal.
+func _stall_end(n: int, seg: int, approach: bool) -> float:
+	var segs := network.segments_at(n)
+	if segs.size() < 2:
+		return 0.0  # a dead end: the kerb runs to its end
+	var d := Junction.trim(Junction.plan_node(network, n), n, seg)
+	if segs.size() >= 3:
+		var walk: float = _walk_arm.get([n, seg], _walk_back.get(n, 0.0))
+		d = maxf(d, walk + CROSSWALK_W * 0.5) + RoadStyle.CURB_CLEAR
+	if approach:
+		var wid := -1
+		for k in [seg * 2, seg * 2 + 1]:
+			if ways.has(k) and int(ways[k].to) == n:
+				wid = k
+		var j: Dictionary = junctions.get(n, {})
+		if wid >= 0 and not j.is_empty():
+			var control: int = int(j.get("control", Rule.NONE))
+			if control == Rule.SIGNAL or control == Rule.ALL_STOP \
+					or (control == Rule.PRIORITY and not j.get("major", {}).has(wid)):
+				d = maxf(d, float(ways[wid].len) - float(ways[wid].s1) + STOP_CLEAR)
+	return d
+
+
+## The middle of the painted stall (stall_span) nearest metres `d` along
+## the way of kerb `line` (_curb_line), in the same metres.
+static func _stall_d(line: Array, d: float) -> float:
+	var w: Dictionary = line[0]
+	var span: Vector2 = line[4]
+	var s: float = d if w.fwd else float(w.len) - d
+	var n := floorf((span.y - span.x) / CURB_STALL)
+	s = span.x + CURB_STALL * (clampf(roundf((s - span.x) / CURB_STALL - 0.5), 0.0, n - 1.0) + 0.5)
+	return s if w.fwd else float(w.len) - s
 
 
 func _curb_at(line: Array, d: float) -> Dictionary:
 	var w: Dictionary = line[0]
-	# Clear of the junctions at both ends, with room to pull away.
-	d = clampf(d, w.s0 + CURB_END, w.s1 - CURB_END)
+	# A stall's middle on the painted stalls, clear of the junctions.
+	d = _stall_d(line, d)
 	var dir := _way_dir(w, d) * float(line[2])
 	var right := Vector3(-dir.z, 0.0, dir.x)
 	var p := _poly_point(w.pts, w.cum, d) + right * float(line[3])
@@ -3485,7 +3547,8 @@ func _new_curb(pl: Dictionary, stop: Dictionary, vid := -1, vlen := 4.8, held = 
 	if line.is_empty():
 		return -1
 	var w: Dictionary = line[0]
-	var tries := mini(int((w.s1 - w.s0 - RoadStyle.CURB_RUN) / (CURB_STALL * 0.5)) * 2 + 1, CURB_TRIES)
+	var span: Vector2 = line[4]
+	var tries := mini(int((span.y - span.x) / (CURB_STALL * 0.5)) * 2 + 1, CURB_TRIES)
 	# Only the spaces near enough to be in the way (the tries reach about
 	# tries / 4 stalls each way; a semi's gap is under 30 m).
 	var mid_pos: Vector3 = _curb_at(line, float(line[1])).pos
