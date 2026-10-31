@@ -94,12 +94,24 @@ func _check_survey(sim: CitySim) -> void:
 	for p in g.clash_pieces:
 		lot_clash = lot_clash or g.kind_of(g._p_claim[p]) == "lot"
 	_check(g.clash_pairs > 0 and lot_clash, "the survey finds the clashes, two lots on one patch among them (%d)" % g.clash_pairs)
-	# Surveyed again, the same claims (the last survey's taken back first).
+	# Surveyed again, the same claims (the last survey's taken back first,
+	# the map packed together again), and the curb asked as before.
 	var sig := g.signature()
+	var claims := CurbClaims.of(sim)
+	var spots := []
+	for id in g.all_claims():
+		if g.kind_of(id) in ["post:mailbox", "post:stop_sign", "tree_trunk"]:
+			spots.append((g.claim(id).box as Rect2).get_center())
+	var free_before := spots.map(func(q): return claims.is_free(q, 0.3))
+	var size_before := g._owner.size()
 	g.survey_start()
 	while not g.survey_step(50.0):
 		pass
 	_check(g.signature() == sig, "a second survey of the same town gives the same map")
+	_check(g._owner.size() <= size_before, "and leaves no pile of taken-back claims (%d slots, %d before)" % [
+		g._owner.size(), size_before])
+	_check(spots.map(func(q): return claims.is_free(q, 0.3)) == free_before and spots.size() > 100,
+		"the curb answers the same after the map packs itself (%d spots)" % spots.size())
 	# The Ground view draws every claim, and outlines each clashing piece.
 	var view := GroundView.new()
 	view.sim = sim

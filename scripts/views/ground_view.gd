@@ -1,6 +1,6 @@
 class_name GroundView
 extends Node3D
-## The Ground view (Views > Taken ground, or K): every claim in the town's
+## The Ground view (Views > Taken ground, or O): every claim in the town's
 ## ground map (GroundMap) tinted by what it is, and every piece in a clash
 ## outlined red (Nathan, 2026-10-29: "railroad tracks running right through
 ## the city like they're just a part of the ground ... I also noticed street

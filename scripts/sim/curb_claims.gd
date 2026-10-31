@@ -94,6 +94,7 @@ static func of(sim: CitySim) -> CurbClaims:
 		sim.lots_changed.connect(c._lots_changed)
 		sim.curb = c
 		GroundMap.of(sim).rail_changed.connect(c._rail_changed)
+		sim.ground.compacted.connect(c._compacted)
 	return sim.curb
 
 
@@ -112,6 +113,23 @@ func _rail_changed(box: Rect2) -> void:
 	_rail.clear()
 	junction_version += 1
 	_note(box)
+
+
+## The map packed its claims together again: the ids kept here follow.
+func _compacted(remap: PackedInt32Array) -> void:
+	var re := func(id: int) -> int: return remap[id] if id >= 0 and id < remap.size() else -1
+	var shapes := {}
+	for id in _shape_of:
+		if re.call(id) >= 0:
+			shapes[re.call(id)] = _shape_of[id]
+	_shape_of = shapes
+	for h in _junction:
+		_junction[h][1] = re.call(_junction[h][1])
+	for key in _cuts:
+		_cuts[key][5] = _cuts[key][5].map(re)
+	for o in _other:
+		_other[o] = _other[o].map(re)
+	_rail.clear()
 
 
 ## The town's ground map, where the claims are filed.

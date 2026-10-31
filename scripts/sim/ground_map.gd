@@ -224,6 +224,9 @@ var _row_box := Rect2()  # town box the county's right of way is filed for
 var _row_seg := {}  # claim -> Vector2i(route, point) of a right-of-way piece
 ## Rails (town and county beds) changed in this box: for CurbClaims.
 signal rail_changed(box: Rect2)
+## The claims were packed together again (_compact): remap[old id] is the
+## new id, or -1 for one taken back.
+signal compacted(remap: PackedInt32Array)
 
 ## The survey (survey_start, survey_step).
 var _reader: GroundFootprints.Reader
@@ -689,6 +692,7 @@ func survey_step(ms := SURVEY_MS) -> bool:
 					_survey_groups = []
 					_survey_i = 0
 					_survey_stage = 5
+					_compact()
 			5:
 				# This one's shapes by kind and owner (the order they're filed
 				# in changes no name, so they aren't sorted).
@@ -749,6 +753,108 @@ func survey_step(ms := SURVEY_MS) -> bool:
 	survey_frames += 1
 	survey_max_ms = maxf(survey_max_ms, (Time.get_ticks_usec() - t0) / 1000.0)
 	return _survey_stage == 0
+
+
+## The map's claims packed together again, the taken-back ones dropped,
+## when they are more than half of it (a survey taken back leaves tens of
+## thousands). Claim ids change: `compacted` says from what to what.
+func _compact() -> void:
+	var dead := 0
+	for a in _alive:
+		dead += 1 - a
+	if dead < 1000 or dead * 2 < _alive.size():
+		return
+	var remap := PackedInt32Array()
+	remap.resize(_owner.size())
+	var o := PackedStringArray()
+	var pt := PackedStringArray()
+	var k := PackedByteArray()
+	var r := PackedByteArray()
+	var bx := PackedFloat32Array()
+	var fi := PackedInt32Array()
+	var np := PackedInt32Array()
+	var al := PackedByteArray()
+	var cb := PackedInt32Array()
+	var cs := PackedFloat32Array()
+	var pc := PackedInt32Array()
+	var pb := PackedFloat32Array()
+	var pf := PackedInt32Array()
+	var pn := PackedInt32Array()
+	var pts := PackedVector2Array()
+	for id in _owner.size():
+		if _alive[id] == 0:
+			remap[id] = -1
+			continue
+		var nid := o.size()
+		remap[id] = nid
+		o.append(_owner[id])
+		pt.append(_part[id])
+		k.append(_kind[id])
+		r.append(_rank[id])
+		for i in 4:
+			bx.append(_box[id * 4 + i])
+		fi.append(pc.size())
+		np.append(_pieces[id])
+		al.append(1)
+		cb.append(-1)
+		cb.append(-1)
+		cs.append(0.0)
+		cs.append(0.0)
+		for p in range(_first[id], _first[id] + _pieces[id]):
+			pc.append(nid)
+			for i in 4:
+				pb.append(_p_box[p * 4 + i])
+			pf.append(pts.size())
+			pn.append(_p_n[p])
+			pts.append_array(_pts.slice(_p_from[p], _p_from[p] + _p_n[p]))
+	_owner = o
+	_part = pt
+	_kind = k
+	_rank = r
+	_box = bx
+	_first = fi
+	_pieces = np
+	_alive = al
+	_curb = cb
+	_curb_s = cs
+	_p_claim = pc
+	_p_box = pb
+	_p_from = pf
+	_p_n = pn
+	_pts = pts
+	_mark = PackedInt32Array()
+	_mark.resize(_p_claim.size())
+	_query = 0
+	_grid.clear()
+	for p in _p_claim.size():
+		for c in _cells(_piece_box(p)):
+			var list: PackedInt32Array = _grid.get(c, PackedInt32Array())
+			list.append(p)
+			_grid[c] = list
+	_by_owner.clear()
+	for id in _owner.size():
+		var mine: PackedInt32Array = _by_owner.get(_owner[id], PackedInt32Array())
+		mine.append(id)
+		_by_owner[_owner[id]] = mine
+	_ledger_ok = false
+	var rails := PackedInt32Array()
+	for id in _rail_ids:
+		if id >= 0 and remap[id] >= 0:
+			rails.append(remap[id])
+	_rail_ids = rails
+	var rows := {}
+	for id in _row_seg:
+		if remap[id] >= 0:
+			rows[remap[id]] = _row_seg[id]
+	_row_seg = rows
+	var kept := PackedInt32Array()
+	for id in _survey_ids:
+		if id >= 0 and remap[id] >= 0:
+			kept.append(remap[id])
+	_survey_ids = kept
+	clash_pieces = {}
+	version += 1
+	compacted.emit(remap)
 
 
 ## Claim `id`'s "never" clashes, each pair once (from its lower piece).
