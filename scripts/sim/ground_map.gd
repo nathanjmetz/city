@@ -106,6 +106,7 @@ const PAIRS := [
 	["rail_bed", "prop", "never", 2, "a yard prop on the ballast"],
 	["rail_bed", "post", "never", 3, "a pole or sign on the ballast"],
 	["building", "building*other", "never", 5, "two buildings in one place"],
+	["building", "lot*other", "never", 5, "a building standing on another lot"],
 	["building", "road", "never", 5, "a building on the street"],
 	["building", "sidewalk_line", "never", 4, "a building across the sidewalk"],
 	["building", "public_site", "never", 4, "a building inside a public site"],
@@ -167,6 +168,7 @@ const ALLOWED := [
 ]
 ## Smallest overlap (m2) that counts, per pair.
 const MIN_AREA := {"lot|lot*other": 1.0, "lot|road": 1.0, "building|building*other": 0.5, "building|road": 0.5,
+	"building|lot*other": 1.0,
 	"rail_bed|lot": 1.0, "lot|public_site": 1.0, "public_site|road": 1.0, "building|sidewalk_line": 0.1}
 
 ## PAIRS by kind group, both ways: group -> {group: [rule, others only, min area]}.
@@ -528,7 +530,9 @@ func file_sites(items: Dictionary) -> void:
 	var remap := _sites._compact()
 	if not remap.is_empty():
 		for key in _site_by:
-			_site_by[key][1] = remap[_site_by[key][1]]
+			var id: int = _site_by[key][1]
+			# (An item with no boxes was filed as no claim, -1: it stays so.)
+			_site_by[key][1] = remap[id] if id >= 0 and id < remap.size() else -1
 
 
 ## True when a site's box (file_sites) meets `box` (borders count).

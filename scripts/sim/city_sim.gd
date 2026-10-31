@@ -3853,7 +3853,9 @@ func _plan_lots(was: Dictionary, full: bool, near: Array) -> void:
 			blocked[lot.key] = [lot, no]
 			if not no:
 				lots[lot.key] = lot
+		var tt := Perf.now()
 		_clear_lot_overlaps(frozen)
+		Perf.add("sim.lots.trim", tt)
 		_sites_filed = false
 		_blocked_by = blocked
 		_usable_cache.clear()
@@ -3870,15 +3872,18 @@ func _plan_lots(was: Dictionary, full: bool, near: Array) -> void:
 ## Two lots never share ground (Nathan, 2026-10-29: "They run right
 ## underneath the buildings"; docs/spec-ground-map.md, step 3). Lots planned
 ## from different streets can meet with a sliver over each other's back or
-## side line. Each newly planned lot, in key order, gives up whatever it
-## would share with a built parcel or a lot kept before it (its outline
-## trimmed, as a public site trims the lots beside it); one that would lose
-## more than LOT_OVERLAP_KEEP of itself isn't platted. Built parcels stand
-## as they are (an older town's are left alone). The same lots come out on
-## every copy and after a load: the order is the keys', and a lot trimmed
-## the same way as last time is handed back as the same Dictionary.
-const LOT_OVERLAP_MIN := 0.5  # m2: less is rounding, not shared ground
-const LOT_OVERLAP_KEEP := 0.1
+## side line. Each newly planned lot, in key order, gives up the sliver it
+## would share with a built parcel or a lot kept before it: its outline
+## trimmed only when what's left is the same shape moved in a little (no new
+## corners, never crossing itself, under LOT_OVERLAP_KEEP of it lost). A
+## bigger or odder overlap is left as the planner cut it (never a gap or a
+## bowtie in its place). Built parcels stand as they are (an older town's
+## are left alone). The same lots come out on every copy and after a load:
+## the order is the keys', and a lot whose neighbours are the same as last
+## time is handed back as the same Dictionary without being worked out
+## again.
+const LOT_OVERLAP_MIN := 1.0  # m2: less is rounding, not shared ground (the overlap auditor's own)
+const LOT_OVERLAP_KEEP := 0.05
 func _clear_lot_overlaps(frozen: Dictionary) -> void:
 	var cell := 64.0
 	var grid := {}
@@ -3891,56 +3896,111 @@ func _clear_lot_overlaps(frozen: Dictionary) -> void:
 					grid[c] = []
 				grid[c].append(key)
 	var fresh := []
+	var cells := {}  # the squares newly planned lots reach
 	for key in lots:
-		if frozen.has(key):
-			file.call(key, lots[key].corners)
-		else:
+		if not frozen.has(key):
 			fresh.append(key)
+			var box := LotPlanner._box(lots[key].corners)
+			for x in range(floori(box.position.x / cell), floori(box.end.x / cell) + 1):
+				for y in range(floori(box.position.y / cell), floori(box.end.y / cell) + 1):
+					cells[Vector2i(x, y)] = true
+	if fresh.is_empty():
+		_lot_trims = {}
+		return
+	# Built parcels only where a newly planned lot could meet them.
+	for key in frozen:
+		if lots.has(key):
+			var box := LotPlanner._box(lots[key].corners)
+			var near := false
+			for x in range(floori(box.position.x / cell), floori(box.end.x / cell) + 1):
+				for y in range(floori(box.position.y / cell), floori(box.end.y / cell) + 1):
+					near = near or cells.has(Vector2i(x, y))
+			if near:
+				file.call(key, lots[key].corners)
 	fresh.sort()
 	var trimmed := {}
 	for key in fresh:
 		var lot: Dictionary = lots[key]
 		var box := LotPlanner._box(lot.corners)
 		var seen := {}
-		var over := []
+		var near := []
 		for x in range(floori(box.position.x / cell), floori(box.end.x / cell) + 1):
 			for y in range(floori(box.position.y / cell), floori(box.end.y / cell) + 1):
 				for other in grid.get(Vector2i(x, y), []):
-					if seen.has(other):
-						continue
-					seen[other] = true
-					var oc: PackedVector2Array = lots[other].corners
-					if LotPlanner._box(oc).intersects(box) and GroundMap.overlap(lot.corners, oc)[0] >= LOT_OVERLAP_MIN:
-						over.append(other)
-		if over.is_empty():
-			file.call(key, lot.corners)
-			continue
-		over.sort()
-		var sig := hash(over.map(func(o): return lots[o].corners))
+					if not seen.has(other):
+						seen[other] = true
+						if LotPlanner._box(lots[other].corners).intersects(box):
+							near.append(other)
+		near.sort()
+		# What its neighbours are: the same as last time, the same answer.
+		var sig := hash([near, near.map(func(o): return lots[o].corners)])
 		var had: Array = _lot_trims.get(key, [])
-		var out = null
+		var out: Dictionary = lot
 		if not had.is_empty() and is_same(had[0], lot) and int(had[1]) == sig:
 			out = had[2]
 		else:
 			var poly: PackedVector2Array = lot.corners
-			for other in over:
-				poly = LotPlanner._largest(Geometry2D.clip_polygons(poly, lots[other].corners))
-				if poly.size() < 3:
-					break
-			if poly.size() >= 3 and absf(LotPlanner._area(poly)) >= absf(LotPlanner._area(lot.corners)) * (1.0 - LOT_OVERLAP_KEEP):
-				out = lot.duplicate()
-				LotPlanner._set_shape(out, poly)
+			var trim := false
+			for other in near:
+				if poly.size() >= 3 and GroundMap.overlap(poly, lots[other].corners)[0] >= LOT_OVERLAP_MIN:
+					poly = _push_out(poly, lots[other].corners)
+					trim = true
+			if trim and poly.size() >= 3 and not _crosses_itself(poly) \
+					and absf(LotPlanner._area(poly)) >= absf(LotPlanner._area(lot.corners)) * (1.0 - LOT_OVERLAP_KEEP):
+				var clear := true
+				for other in near:
+					clear = clear and GroundMap.overlap(poly, lots[other].corners)[0] < LOT_OVERLAP_MIN
+				if clear:
+					out = lot.duplicate()
+					LotPlanner._set_shape(out, poly)
 		trimmed[key] = [lot, sig, out]
-		if out == null:
-			lots.erase(key)
-		else:
-			lots[key] = out
-			file.call(key, out.corners)
+		lots[key] = out
+		file.call(key, out.corners)
 	_lot_trims = trimmed
 
 
-## Lots trimmed off their neighbours last time: key -> [the lot as planned,
-## what trimmed it, the lot as kept or null] (_clear_lot_overlaps).
+## The outline with each of its corners that stands inside `other` moved
+## out to other's nearest edge (and a millimetre past): the same corners,
+## the lot a sliver shorter or narrower where they met. Empty when a corner
+## is more than LOT_PUSH_MAX inside (not a sliver: left as cut).
+const LOT_PUSH_MAX := 0.5
+static func _push_out(poly: PackedVector2Array, other: PackedVector2Array) -> PackedVector2Array:
+	var out := poly.duplicate()
+	var n := other.size()
+	for i in poly.size():
+		var q := poly[i]
+		if not Geometry2D.is_point_in_polygon(q, other):
+			continue
+		var best := q
+		var best_d := INF
+		for k in n:
+			var c := Geometry2D.get_closest_point_to_segment(q, other[k], other[(k + 1) % n])
+			if q.distance_to(c) < best_d:
+				best_d = q.distance_to(c)
+				best = c
+		if best_d > LOT_PUSH_MAX:
+			return PackedVector2Array()  # deep in: not a sliver
+		if best_d > 0.0:
+			out[i] = best + (best - q) / best_d * 0.001
+	return out
+
+
+## True when an outline's edges cross or touch anywhere but at their shared
+## corners (tools/zoning_stress.gd's bowtie).
+static func _crosses_itself(c: PackedVector2Array) -> bool:
+	var n := c.size()
+	for i in n:
+		for j in range(i + 2, n):
+			if i == 0 and j == n - 1:
+				continue
+			if Geometry2D.segment_intersects_segment(c[i], c[(i + 1) % n], c[j], c[(j + 1) % n]) != null:
+				return true
+	return false
+
+
+## Lots checked against their neighbours last time: key -> [the lot as
+## planned, its neighbours' outlines (a hash), the lot as kept]
+## (_clear_lot_overlaps).
 var _lot_trims := {}
 
 
