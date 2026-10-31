@@ -62,8 +62,8 @@ func _initialize() -> void:
 		var sim := Audit.town(name)
 		# A clash planted far out of town: town track under a building.
 		var far := Vector2(9000.0, 9000.0)
-		var planted := [["rail_bed", "town", "planted:rail", Audit._obb(far, Vector2.RIGHT, 20.0, 2.3)],
-			["building", "house", "planted:house", Audit._sq(far, 5.0)]]
+		var planted := [["rail_bed", "town", "planted:rail", GroundFootprints._obb(far, Vector2.RIGHT, 20.0, 2.3)],
+			["building", "house", "planted:house", GroundFootprints._sq(far, 5.0)]]
 		var res := Audit.audit(sim, planted)
 		var got := Audit.never_counts(res)
 		var key := "rail_bed:town vs building"

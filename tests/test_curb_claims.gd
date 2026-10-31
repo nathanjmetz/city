@@ -405,7 +405,7 @@ func _snapshot(sim: CitySim) -> String:
 	out.append(StreetLights.place(sim.network, rv._rural, claims).map(func(l): return l[1]))
 	var shapes := []
 	sim.traffic._rebuild()  # its junctions as a first tick sets them up (a town just loaded has none yet)
-	Audit._signs(shapes, sim, rv, rv.plans)
+	GroundFootprints._signs(shapes, sim, rv, rv.plans)
 	out.append(shapes.map(func(s): return s.poly))
 	rv.free()
 	return str(out)
