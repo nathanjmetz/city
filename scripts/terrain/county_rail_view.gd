@@ -32,6 +32,28 @@ const BUDGET_MS := 2.0
 ## The camera moves this far before the squares to build are chosen again.
 const RESCAN_M := 256.0
 const RUBBER := Color("#3c3d3e")
+## The mainline's ballast section (AREMA ch. 1; a Class I line's standard
+## section): the cribs between the ties filled to CROWN_Y, about 6 cm under
+## the tie tops, a crown CROWN_HALF each side of the centre (3.8 m across,
+## a foot of shoulder past the 8 ft 6 in ties), shoulders falling SHOULDER
+## to one down to the subgrade, then a strip of cinders and weeds. Before
+## 2026-10-31 the county track used the town spur's low prism (RailView:
+## level with the tie bottoms, 3.2 m), and through town the ties seemed to
+## lie on the lawn.
+const CROWN_Y := 0.42
+const CROWN_HALF := 1.9
+const SHOULDER := 1.5
+## The subgrade's edge, past the shoulder's toe, and how far below the
+## bed it falls (m).
+const SUBGRADE_HALF := 3.3
+const SUBGRADE_DROP := 0.08
+## Mid-to-dark grey crushed granite and trap rock (the photo adds its
+## stones), darker than the concrete walks it meets, and between the rails
+## the rust-brown stain of brake dust and wheel wear.
+const STONE := Color("#5e5b56")
+const STONE_SIDE := Color("#4f4c48")
+const RUST := Color("#4f443a")
+
 ## Rail top above the street's own level at a town crossing (m): the
 ## panels (2 cm under it) 3 cm over the asphalt (RoadStyle.Y_ASPHALT),
 ## lifted as the road's own marks are, so they never flicker with it.
@@ -59,7 +81,8 @@ void fragment() {
 	if (pk > 0.0) {
 		vec2 p = world_pos.xz / 2.5;
 		float l = dot(ph_gravel(p), vec3(0.3333));
-		col *= mix(1.0, l, pk);
+		// The stones' light and shade, deepened: rough rock, not a smooth wash.
+		col *= mix(1.0, max(1.0 + (l - 1.0) * 1.8, 0.2), pk);
 		n = ph_lean(n, ph_gravel_s(p), pk * 0.8);
 	}
 	ALBEDO = col;
@@ -280,6 +303,65 @@ static func _eased(i: int, bed: PackedFloat32Array, paved: Dictionary) -> float:
 	return y
 
 
+## The crown's height over the bed at `c` (a track centre, view
+## coordinates): CROWN_Y, or where the bed eases down to a street under
+## the ground beside it (its approach), up to the ground, as a crossing's
+## approach is filled, but always a little under the tie tops, so the ties
+## show right up to the panels as on real track.
+static func _crown(c: Vector3) -> float:
+	var g := Terrain.ground_y(c.x, c.z) + 0.02 - c.y
+	return clampf(g, CROWN_Y, RailView.TIE_Y - 0.03)
+
+
+## The bed as drawn and ridden at sample i: eased to the town streets
+## (_eased), but off the pavement never so low that the ground beside the
+## track would bury the ties (their tops TIE_SHOW over it), so they show
+## right up to the panels; the rails rise those few cm over the metres
+## from the pavement's edge.
+const TIE_SHOW := 0.05
+func _approach(i: int, at: PackedVector2Array, bed: PackedFloat32Array, paved: Dictionary) -> float:
+	if paved.is_empty():
+		return bed[i]
+	var y := _eased(i, bed, paved)
+	if paved.has(i) or y >= bed[i]:
+		return y
+	var g := Terrain.ground_y(at[i].x - _origin.x, at[i].y - _origin.y)
+	return minf(maxf(y, g + TIE_SHOW - RailView.TIE_Y), bed[i])
+
+
+## The ballast between samples c0 and c1 (their track centres at the bed,
+## n0 and n1 their lefts): the crown, the shoulders, the cinder strip, and
+## fill slopes down to the ground wherever the bed rides above it.
+static func _ballast(st: SurfaceTool, c0: Vector3, c1: Vector3, n0: Vector3, n1: Vector3) -> void:
+	var y0 := Vector3(0, _crown(c0), 0)
+	var y1 := Vector3(0, _crown(c1), 0)
+	RailView._quad(st, c0 - n0 * CROWN_HALF + y0, c0 + n0 * CROWN_HALF + y0, c1 + n1 * CROWN_HALF + y1,
+		c1 - n1 * CROWN_HALF + y1, STONE)
+	var r := Vector3(0, 0.004, 0)
+	var g := RailModels.GAUGE * 0.5 + 0.05
+	RailView._quad(st, c0 - n0 * g + y0 + r, c0 + n0 * g + y0 + r, c1 + n1 * g + y1 + r, c1 - n1 * g + y1 + r, RUST)
+	var toe := CROWN_HALF + CROWN_Y * SHOULDER
+	var down := Vector3(0, -SUBGRADE_DROP, 0)
+	for side: float in [-1.0, 1.0]:
+		var a0 := c0 + n0 * side * CROWN_HALF + y0
+		var a1 := c1 + n1 * side * CROWN_HALF + y1
+		var b0 := c0 + n0 * side * toe
+		var b1 := c1 + n1 * side * toe
+		RailView._quad(st, a0, b0, b1, a1, STONE_SIDE)
+		var f0 := c0 + n0 * side * SUBGRADE_HALF + down
+		var f1 := c1 + n1 * side * SUBGRADE_HALF + down
+		RailView._quad(st, b0, f0, f1, b1, RailView.WEEDS)
+		# Fill slopes at 2:1 (AREMA) down to the ground beside the track.
+		var drop0 := minf(f0.y - Terrain.base_y(f0.x, f0.z), RailView.MAX_FILL)
+		var drop1 := minf(f1.y - Terrain.base_y(f1.x, f1.z), RailView.MAX_FILL)
+		if drop0 > 0.15 or drop1 > 0.15:
+			var e0 := f0 + n0 * side * maxf(drop0, 0.0) * 2.0
+			var e1 := f1 + n1 * side * maxf(drop1, 0.0) * 2.0
+			e0.y = minf(f0.y, Terrain.ground_y(e0.x, e0.z)) - 0.3
+			e1.y = minf(f1.y, Terrain.ground_y(e1.x, e1.z)) - 0.3
+			RailView._quad(st, f0, e0, e1, f1, RailView.EARTH)
+
+
 ## Rubber panels from the paved end of c0-c1 (c0's when `from_c0`) to
 ## where the street's pavement ends, found by halving the step.
 func _panel_to_edge(st: SurfaceTool, c0: Vector3, c1: Vector3, n0: Vector3, n1: Vector3, from_c0: bool) -> void:
@@ -346,7 +428,7 @@ func _build(b: Vector2i) -> Array:
 		for i in range(first, last + 1):
 			if not box.has_point(at[i]):
 				continue
-			var y := _eased(i, bed, paved) if not paved.is_empty() else bed[i]
+			var y := _approach(i, at, bed, paved)
 			if y < bed[i] - 0.001:
 				sunk[i] = y
 			else:
@@ -361,7 +443,7 @@ func _build(b: Vector2i) -> Array:
 			if kind[i] == 3 or kind[i + 1] == 3:
 				continue
 			var c0 := Vector3(at[i].x - o.x, sunk.get(i, bed[i]), at[i].y - o.y)
-			var c1 := Vector3(at[i + 1].x - o.x, _eased(i + 1, bed, paved) if not paved.is_empty() else bed[i + 1], at[i + 1].y - o.y)
+			var c1 := Vector3(at[i + 1].x - o.x, _approach(i + 1, at, bed, paved), at[i + 1].y - o.y)
 			var bridge := kind[i] == 2 or kind[i + 1] == 2
 			if bridge and (_town_has(c0) or _town_has(c1)):
 				continue
@@ -382,12 +464,12 @@ func _build(b: Vector2i) -> Array:
 				var y := Vector3(0, CountyRail.RAIL_TOP - 0.02, 0)
 				RailView._quad(st, c0 - n0 * 1.6 + y, c0 + n0 * 1.6 + y, c1 + n1 * 1.6 + y, c1 - n1 * 1.6 + y, RUBBER)
 			else:
-				RailView._ballast(rock, c0, c1, n0, n1)
+				_ballast(rock, c0, c1, n0, n1)
 				# Double track: one crown of ballast across both, not two
 				# prisms with a ditch between.
 				var pair: Dictionary = prof.get("pair", {})
 				if pair.has(i) and pair.has(i + 1):
-					var y := Vector3(0, RailView.BALLAST_Y, 0)
+					var y := Vector3(0, CROWN_Y, 0)
 					var q0: Vector2 = pair[i] - o
 					var q1: Vector2 = pair[i + 1] - o
 					RailView._quad(rock, c0 + y, Vector3(q0.x, c0.y, q0.y) + y, Vector3(q1.x, c1.y, q1.y) + y, c1 + y, RailView.BALLAST)
