@@ -322,7 +322,7 @@ func sync() -> void:
 	if sim == null:
 		return
 	var quick := [sim.network.revision, sim.network.segments.size(), sim.rail.version, sim.rail.pieces.size(),
-		sim.county_rail, sim.terrain_offset, sim.rail.crossings.size(), sim.county_trains.crossings.size()]
+		sim.county_rail, sim.terrain_offset, sim.county_trains.version]
 	if quick == _quick_seen:
 		return
 	_quick_seen = quick

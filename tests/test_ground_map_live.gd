@@ -63,6 +63,18 @@ func _check_updates(sim: CitySim) -> void:
 	_check(g.signature() == GroundMap.fresh_live(sim, plans).signature(), "the live layer of the town as built matches a fresh one")
 	_check(not g._crossings.is_empty() and g._crossings.size() == sim.all_crossings().size(),
 		"the live layer knows the grade crossings, the county's too (%d)" % g._crossings.size())
+	# A crossing moved, the count the same (a road redrawn over the track):
+	# the map follows it.
+	var x: Dictionary = sim.county_trains.crossings[0]
+	var was: Vector3 = x.pos
+	x.pos = was + Vector3(12.0, 0.0, 0.0)
+	sim.county_trains.version += 1
+	g = GroundMap.of(sim)
+	var moved := g._crossings.has(Vector2(was.x + 12.0, was.z)) and not g._crossings.has(Vector2(was.x, was.z))
+	x.pos = was
+	sim.county_trains.version += 1
+	g = GroundMap.of(sim)
+	_check(moved and g._crossings.has(Vector2(was.x, was.z)), "a grade crossing that moves, the count the same, moves in the map too")
 	var roads := sim.network.segments.size()
 	# A street across the middle of town, through lots and over streets.
 	sim.apply({"type": "build_road", "start": [-150.0, 35.0], "ctrl": [0.0, 45.0], "end": [150.0, 35.0]})
