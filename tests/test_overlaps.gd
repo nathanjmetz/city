@@ -24,12 +24,16 @@ const Audit := preload("res://tools/overlap_audit.gd")
 ## back from the corner is the fix still to come.
 ## The county's railroads come first (#943): no lot, building, drive,
 ## parking, public site or street on their right of way, and streets cross
-## only at grade crossings; what's left on the track is a few posts at a
+## only at grade crossings; posts, lamps, mailboxes and street trees keep
+## off the beds (the ground map, step 2), all but two stop signs at a
 ## junction beside a crossing.
 const KNOWN := {
 	"small": {
+		# Posts keep off railroad beds (CurbClaims asks the ground map,
+		# step 2); these two stop signs at one junction beside a crossing
+		# find no clear spot within reach of their stop line and stand
+		# where they were meant to.
 		"rail_bed:county vs post:stop_sign": 2,
-		"rail_bed:county vs post:signal_pole": 1,
 		# Raised from 5 (#943), the one count that went up: builders lay a
 		# building out by its lot's width and depth from the front, while
 		# the lot planner trims only the lot's outline where a public site
@@ -42,7 +46,6 @@ const KNOWN := {
 		"post:stop_sign vs curb_cut": 2,
 	},
 	"county_small": {
-		"rail_bed:county vs post:stop_sign": 1,
 		"building vs public_site": 4,
 		"lot vs lot": 24,
 		"post:stop_sign vs curb_cut": 1,

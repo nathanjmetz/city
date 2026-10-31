@@ -20,8 +20,14 @@ extends RefCounted
 ##     from the lot's own seed). Never from what has been drawn: the answers
 ##     depend on the town alone, never on the camera or the order things
 ##     were drawn in.
+##   - "rail": the town's and the county's railroad beds (the ground map's
+##     own claims): no post, lamp, mailbox or street tree on the ballast.
 ## Bus stops and anything else that will change the curb add their own
 ## kind with claim().
+##
+## Everything claimed is filed in the town's ground map (GroundMap, the
+## live layer), and every question here is asked of its grid: one curb
+## answer for the whole game (docs/spec-ground-map.md, step 2).
 ##
 ## Kept up to date cheaply: when the town's buildings or lots change, each
 ## built lot's inputs are compared with what its cut was worked out from
@@ -30,10 +36,13 @@ extends RefCounted
 ## look again only at what stands near a logged place. warm() works every
 ## lot out at once, for the loading screen.
 
-## Grid cell (m) for the shapes and the lots' frontages.
+## Grid cell (m) for the lots' frontages.
 const CELL := 24.0
 ## Kinds a post must keep off (everything here).
-const ALL := ["ramp", "crosswalk", "cut", "other"]
+const ALL := ["ramp", "crosswalk", "cut", "other", "rail"]
+## The ground map's kinds for each kind here.
+const MAP_KINDS := {"ramp": ["curb_ramp"], "crosswalk": ["crosswalk"], "cut": ["curb_cut"], "other": ["curb_zone"],
+	"rail": ["rail_bed:county", "rail_bed:town"]}
 ## A curbside mailbox: its post stands this far beside the drive's edge (a
 ## USPS curbside box goes just to the side of the driveway, 6 to 8 in back
 ## from the curb, its door to the street; 2 ft from the drive's edge keeps
@@ -59,10 +68,10 @@ var junction_version := 0
 var _serial := 0  # bumps with every logged change
 var _log := []  # [serial, Rect2] of each place whose claims changed
 var _log_floor := 0  # changes before this serial are no longer kept
-var _junction := []  # [kind, owner, poly, box]
-var _jgrid := {}  # Vector2i -> [shape index into _junction]
-var _other := []  # claim()'d shapes
-var _ogrid := {}
+var _junction := {}  # hash of kind and outline -> [[kind, owner, poly, box], its claim in the map]
+var _other := {}  # owner -> [claim()'d shapes' claims in the map]
+var _shape_of := {}  # claim in the map -> [kind, owner, poly, box] filed here
+var _rail := {}  # rail piece in the map -> ["rail", owner, poly, box], as asked
 var _lot_cells := {}  # Vector2i -> [lot keys whose frontage reaches the cell]
 var _dirty := true  # buildings or lots changed since the last sync
 var _cuts := {}  # lot key -> [inputs hash, [shapes], layout, the building and lot it was worked out from]
@@ -84,6 +93,8 @@ static func of(sim: CitySim) -> CurbClaims:
 		sim.buildings_changed.connect(c._changed)
 		sim.lots_changed.connect(c._lots_changed)
 		sim.curb = c
+		GroundMap.of(sim).rail_changed.connect(c._rail_changed)
+		sim.ground.compacted.connect(c._compacted)
 	return sim.curb
 
 
@@ -96,9 +107,83 @@ func _lots_changed() -> void:
 	_lots_moved = true
 
 
+## The railroads were filed again: what stands near them looks again (street
+## trees too).
+func _rail_changed(box: Rect2) -> void:
+	_rail.clear()
+	junction_version += 1
+	_note(box)
+
+
+## The map packed its claims together again: the ids kept here follow.
+func _compacted(remap: PackedInt32Array) -> void:
+	var re := func(id: int) -> int: return remap[id] if id >= 0 and id < remap.size() else -1
+	var shapes := {}
+	for id in _shape_of:
+		if re.call(id) >= 0:
+			shapes[re.call(id)] = _shape_of[id]
+	_shape_of = shapes
+	for h in _junction:
+		_junction[h][1] = re.call(_junction[h][1])
+	for key in _cuts:
+		_cuts[key][5] = _cuts[key][5].map(re)
+	for o in _other:
+		_other[o] = _other[o].map(re)
+	_rail.clear()
+
+
+## The town's ground map, where the claims are filed.
+func _map() -> GroundMap:
+	var sim: CitySim = _sim.get_ref() if _sim != null else null
+	return GroundMap.of(sim) if sim != null else null
+
+
+## Everything claimed here filed in `map` (a fresh one, tests).
+func file_into(map: GroundMap) -> void:
+	_sync()
+	for h in _junction:
+		var sh: Array = _junction[h][0]
+		map.register(sh[1], _part_name(sh), MAP_KINDS[sh[0]][0], [sh[2]])
+	for key in _cuts:
+		for sh in _cuts[key][1]:
+			map.register(sh[1], _part_name(sh), "curb_cut", [sh[2]])
+	for owner in _other:
+		for id in _other[owner]:
+			var sh: Array = _shape_of[id]
+			map.register(sh[1], _part_name(sh), "curb_zone", [sh[2]])
+
+
+## A shape's part name in the map: its kind and where its box's middle is
+## (so it never hangs on the order things were filed in).
+static func _part_name(sh: Array) -> String:
+	var c := (sh[3] as Rect2).get_center()
+	return "curb.%s@%.1f,%.1f" % [sh[0], c.x, c.y]
+
+
+## Files shape `sh` (of the map's `kind`) in the town's map; its claim.
+func _file(sh: Array, kind: String) -> int:
+	var map := _map()
+	if map == null:
+		return -1
+	var id := map.register(sh[1], _part_name(sh), kind, [sh[2]])
+	if id >= 0:
+		_shape_of[id] = sh
+	return id
+
+
+func _unfile(ids: Array) -> void:
+	var map := _map()
+	for id in ids:
+		_shape_of.erase(id)
+	if map != null:
+		map.release_ids(PackedInt32Array(ids))
+
+
 ## Everything thrown away and worked out again from the town (a town loaded
 ## into this sim: CitySim.from_dict).
 func reset() -> void:
+	for key in _cuts:
+		_unfile(_cuts[key][5])
 	_cuts.clear()
 	_mail.clear()
 	_lot_cells.clear()
@@ -155,39 +240,37 @@ func _note(box: Rect2) -> void:
 ## road view's junction plans (Junction.plan). Logs only the ones that came
 ## or went.
 func set_junctions(plans: Dictionary) -> void:
-	var was := {}
-	for s in _junction:
-		was[hash([s[0], s[2]])] = s
-	var now := junction_shapes(plans)
 	var keep := {}
-	for s in now:
+	for s in junction_shapes(plans):
 		var h := hash([s[0], s[2]])
 		keep[h] = true
-		if not was.has(h):
+		if not _junction.has(h):
+			_junction[h] = [s, _file(s, MAP_KINDS[s[0]][0])]
 			_note(s[3])
-	for h in was:
+	for h in _junction.keys():
 		if not keep.has(h):
-			_note(was[h][3])
-	_junction = now
-	_jgrid = _index(_junction)
+			_note(_junction[h][0][3])
+			_unfile([_junction[h][1]])
+			_junction.erase(h)
 	junction_version += 1
 
 
 ## Something new on the curb (a bus stop's pad, a hydrant): its footprint.
 func claim(kind: String, owner: String, poly: PackedVector2Array) -> void:
 	var s := _shape(kind, owner, poly)
-	_other.append(s)
-	_ogrid = _index(_other)
+	if not _other.has(owner):
+		_other[owner] = []
+	_other[owner].append(_file(s, "curb_zone"))
 	_note(s[3])
 
 
 ## Takes back what `owner` claimed.
 func release(owner: String) -> void:
-	for s in _other:
-		if s[1] == owner:
-			_note(s[3])
-	_other = _other.filter(func(s): return s[1] != owner)
-	_ogrid = _index(_other)
+	for id in _other.get(owner, []):
+		if _shape_of.has(id):
+			_note(_shape_of[id][3])
+	_unfile(_other.get(owner, []))
+	_other.erase(owner)
 
 
 ## Curb ramps and crosswalks at shaped town corners, [kind, owner, poly,
@@ -299,11 +382,11 @@ func is_free(p: Vector2, half: float, kinds := ALL, own := "") -> bool:
 	return true
 
 
-## True when nothing at the junction corners (ramps, crosswalks) is under
-## a spot (street trees ask this: they only need re-checking when the
-## roads change).
+## True when nothing at the junction corners (ramps, crosswalks) nor a
+## railroad's bed is under a spot (street trees ask this: they only need
+## re-checking when the roads or railroads change).
 func junction_free(p: Vector2, half: float) -> bool:
-	return is_free(p, half, ["ramp", "crosswalk"])
+	return is_free(p, half, ["ramp", "crosswalk", "rail"])
 
 
 ## The nearest free spot to `p` along `along` (a unit vector down the
@@ -331,8 +414,9 @@ func slide(p: Vector2, along: Vector2, half: float, back: float, ahead := 0.0, k
 ## Where a sign or signal post meant for `base` stands (y kept): there if it
 ## is clear, else slid along its curb to the nearest clear spot, back
 ## (`back_dir`, away from the junction) up to `back` or ahead up to
-## `ahead`; `base` if none is. Clear means off every drive, ramp and pad,
-## and 4 ft (CROSSWALK_GAP) or more behind any crosswalk (MUTCD 2B.10).
+## `ahead`; `base` if none is. Clear means off every drive, ramp, pad and
+## railroad bed, and 4 ft (CROSSWALK_GAP) or more behind any crosswalk
+## (MUTCD 2B.10).
 ## JunctionView sets `back` so a stop sign stays within 50 ft of the road
 ## it meets.
 const POST_BACK := 9.0
@@ -341,7 +425,7 @@ const CROSSWALK_GAP := 1.22
 func post_spot(base: Vector3, back_dir: Vector3, half: float, back := POST_BACK, ahead := POST_AHEAD) -> Vector3:
 	var p := Vector2(base.x, base.z)
 	var along := Vector2(back_dir.x, back_dir.z).normalized()
-	var others := ["ramp", "cut", "other"]
+	var others := ["ramp", "cut", "other", "rail"]
 	# 4 ft behind the crosswalk where the curb has room; where a drive takes
 	# all of it, just off the crosswalk (a sign beside the crosswalk beats one
 	# in a drive).
@@ -358,29 +442,35 @@ func post_spot(base: Vector3, back_dir: Vector3, half: float, back := POST_BACK,
 	return base
 
 
-## Everything claimed in `box` (of `kinds`): [kind, owner, poly, box] each.
+## Everything claimed in `box` (of `kinds`): [kind, owner, poly, box] each,
+## asked of the town's ground map.
 func near(box: Rect2, kinds := ALL) -> Array:
 	var out := []
-	if "ramp" in kinds or "crosswalk" in kinds:
-		for i in _in(_jgrid, box):
-			var s: Array = _junction[i]
-			if s[0] in kinds and (s[3] as Rect2).intersects(box, true):
-				out.append(s)
+	var sim: CitySim = _sim.get_ref() if _sim != null else null
+	if sim == null:
+		return out
 	if "cut" in kinds:
 		_sync()
-		var seen := {}
-		for c in _cells(box):
-			for key in _lot_cells.get(c, []):
-				if seen.has(key):
-					continue
-				seen[key] = true
-				for s in _cuts.get(key, [0, []])[1]:
-					if (s[3] as Rect2).intersects(box, true):
-						out.append(s)
-	for i in _in(_ogrid, box):
-		var s: Array = _other[i]
-		if (s[0] in kinds or "other" in kinds) and (s[3] as Rect2).intersects(box, true):
-			out.append(s)
+	var map := GroundMap.of(sim)  # brought up to date with the town first
+	var want := []
+	for k in kinds:
+		want.append_array(MAP_KINDS.get(k, ["curb_zone"]))
+	var found := map.pieces_of(box, want)
+	for i in range(0, found.size(), 2):
+		var p := found[i]
+		var id := found[i + 1]
+		var sh = _shape_of.get(id)
+		if sh == null:
+			if map.kind_of(id).begins_with("rail_bed"):
+				if not _rail.has(p):
+					_rail[p] = ["rail", map._owner[id], map.piece_poly(p), map.piece_box(p)]
+				sh = _rail[p]
+			else:
+				continue  # filed in the map by someone else
+		elif map.kind_of(id) == "curb_zone" and not (sh[0] in kinds or "other" in kinds):
+			continue
+		if (sh[3] as Rect2).intersects(box, true):
+			out.append(sh)
 	return out
 
 
@@ -497,6 +587,12 @@ func _sync() -> void:
 			continue
 		redone += 1
 		var entry := _work_out(sim, key, b, lot, sig)
+		if not had.is_empty():
+			_unfile(had[5])
+		var ids := []
+		for sh in entry[1]:
+			ids.append(_file(sh, "curb_cut"))
+		entry.append(ids)
 		_cuts[key] = entry
 		if not first:
 			_log_shapes(had[1] if not had.is_empty() else [], entry[1])
@@ -504,6 +600,7 @@ func _sync() -> void:
 		for key in _cuts.keys():
 			if not sim.buildings.has(key) or not sim.lots.has(key):
 				_log_shapes(_cuts[key][1], [])
+				_unfile(_cuts[key][5])
 				_cuts.erase(key)
 				_mail.erase(key)
 	if first and redone > 0:
@@ -610,23 +707,3 @@ static func _cells(box: Rect2) -> Array:
 		for cz in range(floori(box.position.y / CELL), floori(box.end.y / CELL) + 1):
 			out.append(Vector2i(cx, cz))
 	return out
-
-
-static func _index(shapes: Array) -> Dictionary:
-	var g := {}
-	for i in shapes.size():
-		for c in _cells(shapes[i][3]):
-			if not g.has(c):
-				g[c] = []
-			g[c].append(i)
-	return g
-
-
-static func _in(g: Dictionary, box: Rect2) -> Array:
-	var out := {}
-	for c in _cells(box):
-		for i in g.get(c, []):
-			out[i] = true
-	var keys := out.keys()
-	keys.sort()
-	return keys

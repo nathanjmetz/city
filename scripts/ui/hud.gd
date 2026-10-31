@@ -55,6 +55,8 @@ var info_view: InfoView
 var service_view: ServiceView
 var bus_view: BusView
 var rail_view: RailView
+## The Ground view (Views > Taken ground, or its key).
+var ground_view: GroundView
 var select_tool: SelectTool
 var lot_alerts: LotAlerts
 var _info_panel := InfoPanel.new()
@@ -343,6 +345,10 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			return
 		if KeyBinds.matches(k, "views") and not k.shift_pressed:
 			_views_button.button_pressed = not _views_button.button_pressed
+			get_viewport().set_input_as_handled()
+			return
+		if KeyBinds.matches(k, "ground_view") and not k.shift_pressed:
+			_show_view("" if _view == "taken" else "taken")
 			get_viewport().set_input_as_handled()
 			return
 		if KeyBinds.matches(k, "help") or k.keycode == KEY_SLASH and k.shift_pressed:
@@ -871,6 +877,7 @@ const VIEWS := [
 	["smoke", "smoke", "Smoke", "Where smoke drifts and who makes it. Click anywhere to see who pollutes it."],
 	["noise", "noise", "Noise", "How loud it is and what's making the noise. Click anywhere to see the sources."],
 	["ground", "ground", "Dirty ground", "Dirty ground and groundwater, and where it comes from. Click anywhere to trace it."],
+	["taken", "ground", "Taken ground", "What stands on each patch of ground, tinted by kind. Red outlines: two things on ground only one may have."],
 ]
 
 
@@ -933,6 +940,8 @@ func _show_view(key: String) -> void:
 		bus_view.show_routes = key == "bus"
 	if rail_view:
 		rail_view.show_lines = key == "rail"
+	if ground_view:
+		ground_view.set_on(key == "taken")
 	if key == "traffic":
 		traffic_tool.set_mode(TrafficTool.Mode.VIEW)
 	elif traffic_tool.mode == TrafficTool.Mode.VIEW:
