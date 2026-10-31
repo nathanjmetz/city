@@ -107,7 +107,7 @@ const LOT_RESORT_M := 400.0
 ## out a frame. The list of lots is made again, a slice a frame too, when
 ## the town's buildings or roads change or the camera has gone far.
 const LOT_EVERY := 1.0
-const LOT_BUDGET_MS := 0.5
+const LOT_BUDGET_MS := 0.35
 const _STAYS := [0.0, 0.0, Vector3.ZERO]
 ## Metres the camera moves, or the reach changes, before the parked
 ## vehicles' batches are filled again, and the fewest frames between
@@ -197,6 +197,8 @@ var _lot_hour := -100.0
 var _lot_jumped := false
 var _lot_dirty := false
 var _lot_built_now := false
+## A lot's stalls being worked out ({} for none; see _lot_stall_list).
+var _lot_build := {}
 ## The lot cars' own batches (mesh key -> [near, far, Ultra] or null), the
 ## fill under way ({} for none), whether one is due, what the last was for,
 ## and how many it drew.
@@ -864,9 +866,9 @@ func _update_lot_cars(eye: Vector3, ultra2: float) -> void:
 	var may_build := true
 	while _lot_next < _lot_list.size() and Time.get_ticks_usec() < until:
 		var entry: Array = _lot_list[_lot_next]
-		var r := _lot_look(entry[1], entry[2], eye, now, may_build)
+		var r := _lot_look(entry[1], entry[2], eye, now, may_build, until)
 		if r == LOOK_WAIT:
-			break  # its stalls are worked out next frame
+			break  # its stalls are worked out over the next frames
 		_lot_next += 1
 		if r == LOOK_BUILT or r == LOOK_BUILT_CHANGED:
 			may_build = false
@@ -883,6 +885,7 @@ func _lot_clear() -> void:
 	_lot_stalls.clear()
 	_lot_shown.clear()
 	_lot_block.clear()
+	_lot_build = {}
 	_lot_list = []
 	_lot_list_for = []
 	_lot_scan = []
@@ -943,8 +946,9 @@ enum { LOOK_SAME, LOOK_CHANGED, LOOK_BUILT, LOOK_BUILT_CHANGED, LOOK_WAIT }
 ## Looks at one lot: which stalls should have a car at the pass's hour,
 ## near the camera one change at a time, never one the simulation has or
 ## had in the last LOT_HOLD seconds (a car backing out of it, or one on its
-## way in). `may_build`: whether its stalls may be worked out now.
-func _lot_look(key: String, at: Vector3, eye: Vector3, now: float, may_build := true) -> int:
+## way in). `may_build`: whether working out its stalls may begin now;
+## `until`: when this frame's share of the work is up (microseconds).
+func _lot_look(key: String, at: Vector3, eye: Vector3, now: float, may_build := true, until := 1 << 62) -> int:
 	var had: Array = _lot_shown.get(key, _NONE)
 	var gone := LOOK_CHANGED if not had.is_empty() else LOOK_SAME
 	var kind := "" if not town.buildings.has(key) or not town.lots.has(key) else _lot_kind(key)
@@ -959,13 +963,14 @@ func _lot_look(key: String, at: Vector3, eye: Vector3, now: float, may_build := 
 		return gone
 	var ref: String = "lot:" + key
 	var pl := traffic.cached_place(ref)
-	if pl.is_empty() and traffic._places.has(ref):
-		# The simulation's place for it is out of date (the building
-		# changed): its cars' spots may not mean these stalls. None until
-		# the simulation lays it out again.
+	if pl.is_empty():
+		# The simulation hasn't laid it out (no car has come yet), or its
+		# layout is out of date (the building changed) and its cars' spots
+		# may not mean these stalls: none until it lays it out again.
+		# (Laying a lot out here would take up to a millisecond.)
 		_lot_shown.erase(key)
 		return gone
-	var stalls = _lot_stall_list(key, ref, kind, pl, may_build)
+	var stalls = _lot_stall_list(key, ref, kind, pl, may_build, until)
 	if stalls == null:
 		return LOOK_WAIT
 	var built := _lot_built_now
@@ -1011,55 +1016,67 @@ func _lot_look(key: String, at: Vector3, eye: Vector3, now: float, may_build := 
 ## from the door first: [[stall index, parts, staff stall, customer
 ## threshold 0-1, jitter 0-1]], each part [summer mesh key, its far one,
 ## snow mesh key, its far one, the instance's 20 floats (MultiMesh buffer:
-## transform, colour, custom)]. Laid out as the simulation lays it (its
-## place's own layout when it has one), and worked out again when the
-## simulation's would be (its place seed), the roads change or the trade
-## does. null when it isn't worked out yet and `may_build` is false.
-func _lot_stall_list(key: String, ref: String, kind: String, pl: Dictionary, may_build: bool) -> Variant:
+## transform, colour, custom)]. On the simulation's own layout (its place
+## `pl`), worked out again when that would be (its place seed), the roads
+## change or the trade does. Worked out a few stalls at a time until
+## `until` (microseconds), carrying on next frame (null until it's done);
+## a new one is begun only when `may_build`.
+func _lot_stall_list(key: String, ref: String, kind: String, pl: Dictionary, may_build: bool, until: int) -> Variant:
 	var sig := [traffic._place_seed(ref), traffic.version, kind]
 	var had: Array = _lot_stalls.get(key, _NONE)
 	if not had.is_empty() and had[0] == sig:
 		return had[1]
-	if not may_build:
-		return null
+	var job := _lot_build
+	if job.is_empty() or job.key != key or job.sig != sig:
+		if not may_build:
+			return null
+		var lay: Dictionary = pl.lay
+		var door: Vector2 = lay.get("door", Vector2.ZERO)
+		var found := []
+		for i in lay.spots.size():
+			var sp: Dictionary = lay.spots[i]
+			if sp.kind == "stall" and not sp.get("ada", false):
+				found.append([-(sp.pos as Vector2).distance_to(door), i])
+		found.sort()
+		var staff := roundi(found.size() * float(LOT_STAFF[kind]))
+		if staff == 0 and found.size() >= 4:
+			staff = 1
+		job = {"key": key, "sig": sig, "lot": town.lots[key], "spots": lay.spots, "found": found,
+			"staff": staff, "k": 0, "list": []}
+		_lot_build = job
 	_lot_built_now = true
-	var lot: Dictionary = town.lots[key]
-	var lay: Dictionary = pl.lay if not pl.is_empty() else SiteLayout.for_lot(town, key)
-	var door: Vector2 = lay.get("door", Vector2.ZERO)
-	var found := []
-	for i in lay.spots.size():
-		var s: Dictionary = lay.spots[i]
-		if s.kind == "stall" and not s.get("ada", false):
-			found.append([-(s.pos as Vector2).distance_to(door), i])
-	found.sort()
-	var staff := roundi(found.size() * float(LOT_STAFF[kind]))
-	if staff == 0 and found.size() >= 4:
-		staff = 1
-	var list := []
+	var lot: Dictionary = job.lot
+	var found: Array = job.found
 	var n := found.size()
+	var staff: int = job.staff
 	var winter := _snow
-	for k in n:
+	while job.k < n and Time.get_ticks_usec() < until:
+		var k: int = job.k
+		job.k += 1
 		var i: int = found[k][1]
-		var s: Dictionary = lay.spots[i]
+		var sp: Dictionary = job.spots[i]
 		var id := absi(hash([key, i, "lot car"])) % 1000000000 + 1000000000
 		var car := {"id": id, "kind": "car"}
-		var face := SiteLayout.world_dir(lot, s.face)
-		var len := float(VehicleTypes.spec(_kind(car)).get("len", 4.5))
-		var front := SiteLayout.world(lot, s.pos) + face * len * 0.5
-		var parts := []
-		_snow = 0.0
-		var summer := _parked_items(car, front, face)
+		var kind_of := _kind(car)
+		var face := SiteLayout.world_dir(lot, sp.face)
+		var front := SiteLayout.world(lot, sp.pos) + face * float(VehicleTypes.spec(kind_of).get("len", 4.5)) * 0.5
+		# The same car, its body as it is with snow on the ground.
 		_snow = 1.0
-		var snowy := _parked_items(car, front, face)
-		for p in summer.size():
-			parts.append([summer[p][1], summer[p][4], snowy[p][1], snowy[p][4], _lot_floats(summer[p][2], summer[p][3])])
+		var snowy := _model(kind_of, id)
+		_snow = 0.0
+		var parts := []
+		for p in _parked_items(car, front, face):
+			parts.append([p[1], p[4], snowy, _far(kind_of, snowy), _lot_floats(p[2], p[3])])
 		# Customers fill from the door outward, give or take a few stalls.
 		var rank := 1.0 - float(k - staff) / maxf(float(n - staff), 1.0)
 		var jitter := float(absi(hash([key, i, "lot when"])) % 1000) / 1000.0
-		list.append([i, parts, k < staff, rank * 0.65 + jitter * 0.35, jitter])
+		job.list.append([i, parts, k < staff, rank * 0.65 + jitter * 0.35, jitter])
 	_snow = winter
-	_lot_stalls[key] = [sig, list]
-	return list
+	if job.k < n:
+		return null
+	_lot_build = {}
+	_lot_stalls[key] = [sig, job.list]
+	return job.list
 
 
 ## One instance's MultiMesh buffer floats: the transform's three rows, a

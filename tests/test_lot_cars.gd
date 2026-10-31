@@ -76,13 +76,18 @@ func _stalls() -> void:
 		return
 	var at := SiteLayout.world(sim.lots[key], Vector2.ZERO)
 	var eye := at + Vector3(1000.0, 0.0, 0.0)
+	view._lot_look(key, at, eye, 99.0)
+	_check(not view._lot_shown.has(key), "a lot the simulation hasn't laid out yet shows none")
+	# A car comes (the simulation lays the lot out): stand-ins on its layout.
+	var pl := sim.traffic.place("lot:" + key)
 	view._lot_look(key, at, eye, 100.0)
 	var spots := _drawn(view, key)
 	_check(spots.size() >= 2, "at 12:30 it has lot cars (%d)" % spots.size())
 	if spots.is_empty():
 		return
+	_check(spots.all(func(s): return pl.spots[s].kind == "stall" and not pl.spots[s].get("ada", false)),
+		"every one in a stall of the simulation's own layout, none in an accessible one")
 	# The simulation takes one of those stalls.
-	var pl := sim.traffic.place("lot:" + key)
 	var i: int = spots[0]
 	pl.taken[i] = 987654
 	view._lot_look(key, at, eye, 101.0)
