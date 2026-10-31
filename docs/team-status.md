@@ -13,9 +13,8 @@ Nathan: "send out a critic to play the game, find a problem and report it. then 
 - Every saved town is test data (Nathan: "The only stuff that exist in the game right now is test stuff"). Old towns moved, not erased, to `Neighbors-old-towns-2026-10-29/`. Loads must not crash; no rescue code for old layouts.
 - Nathan allowed this loop to merge reviewed PRs ("You can also do any emerging that you need to").
 
-**Merged:** #920 shot tool; #917 #918 #919 #924 road options; #925 tree greens; #926 dusk and night; #923 cars on drives; #927 garage doors; #936 sky-lit shade; #935 yard trees grown (Nathan: A); #929 lawns; #930 wet roads, streetlight pools; #931 junctions vary; #932 tree shadows; #938 state layer step 1; #937 dock doors, 30 s (Nathan: A); #939 All roads screen (Nathan: A); #940 overlap auditor; #944 curb claims (no signs in drives); #943 rail first (lots, buildings and streets keep off the track). Clashes the auditor counts: 2898 -> 420 in the look town, 647 -> 30 in the county.
+**Merged:** #920 shot tool; #917 #918 #919 #924 road options; #925 tree greens; #926 dusk and night; #923 cars on drives; #927 garage doors; #936 sky-lit shade; #935 yard trees grown (Nathan: A); #929 lawns; #930 wet roads, streetlight pools; #931 junctions vary; #932 tree shadows; #938 state layer step 1; #937 dock doors, 30 s (Nathan: A); #939 All roads screen (Nathan: A); #940 overlap auditor; #944 curb claims (no signs in drives); #943 rail first (lots, buildings and streets keep off the track); #942 road treatments step 1 (factory and main street sides; main streets 25 mph, Nathan: A, 2026-10-30). Clashes the auditor counts: 2898 -> 420 in the look town, 647 -> 30 in the county.
 
-**About to merge:** #942 road treatments step 1 (factory and main street sides), main streets 25 mph (Nathan: A, 2026-10-30).
 
 **Specs (docs only, drafts):** #921 state layer, #922 working doors, #934 road treatments (Nathan's six answers recorded), #941 the ground map (one shared map of what owns each patch of ground; fixes the root cause of rail under buildings and signs in drives).
 
