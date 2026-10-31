@@ -243,12 +243,14 @@ static func yard_age(sp: int, seed: int, room := 1.0) -> float:
 ## Street trees on a new street come in grown too (2026-10-31; Nathan, on
 ## tree ages: "Make smart choices"), the parkway of an established Indiana
 ## street the town planted decades back and has replanted one tree at a
-## time since: about one in twelve a young replacement (nursery stock, for
-## one lost to a storm or the emerald ash borer), one in ten 13 years, most
-## 18, 25 or 33, and a few big old ones (56). The yards' own mesh ages
-## (YARD_PICKS), so a street adds no meshes the yards haven't. Each entry:
-## [share of trees up to here, age] (0: nursery stock).
-const STREET_MIX := [[0.08, 0.0], [0.18, 13.0], [0.38, 18.0], [0.68, 25.0], [0.94, 33.0], [1.0, 56.0]]
+## time since: the maples and honey locusts planted when the elms died, now
+## 25 to 56 years old, and about one in six a young replacement for an ash
+## the emerald ash borer took or one lost to a storm (nursery stock or 13
+## years). In all: about one in twelve nursery stock, one in twelve 13
+## years, half 18 to 33, and a quarter big old ones (56). The yards' own
+## mesh ages (YARD_PICKS), so a street adds no meshes the yards haven't.
+## Each entry: [share of trees up to here, age] (0: nursery stock).
+const STREET_MIX := [[0.08, 0.0], [0.16, 13.0], [0.28, 18.0], [0.48, 25.0], [0.76, 33.0], [1.0, 56.0]]
 
 
 ## How old a street tree of kind `sp` is the day its lot's home is

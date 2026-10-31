@@ -354,8 +354,8 @@ func _grown_streets() -> void:
 	var old := ages.filter(func(a): return a > 40.0).size()
 	var off_step := ages.filter(func(a): return a >= 12.0 and not GrownTrees.BUCKETS.has(a))
 	_check(same and off_step.is_empty(), "the same seed gives the same street tree, at a grown mesh's own age %s" % [off_step.slice(0, 3)])
-	_check(young > 150 and young < 350 and mature > 2200 and old > 80 and old < 300,
-		"street trees start mostly 18 to 33 years old, a few young replacements and big old ones (%d young, %d 18+, %d old of 3000)" % [young, mature, old])
+	_check(young > 150 and young < 350 and mature > 2300 and old > 550 and old < 900,
+		"street trees start mostly 18 years or older, a quarter big old ones, a few young replacements (%d young, %d 18+, %d old of 3000)" % [young, mature, old])
 	# Under the wires, and off a corner: the oldest of the mix that fits.
 	var fits := true
 	var capped := 0
