@@ -57,7 +57,7 @@ const RANK := {
 	"water": 0, "steep": 1,
 	"rail_bed:county": 10, "rail_bed:town": 10, "rail_row:county": 11,
 	"road": 20, "sidewalk_line": 21, "curb_ramp": 22, "crosswalk": 23, "curb_zone": 24,
-	"public_site": 30,
+	"public_site": 30, "site": 31,
 	"lot": 40,
 	"building": 50,
 	"drive": 60, "curb_cut": 61, "front_walk": 62, "parking_stall": 63, "garage_apron": 64, "dock": 65,
@@ -106,6 +106,7 @@ const PAIRS := [
 	["rail_bed", "prop", "never", 2, "a yard prop on the ballast"],
 	["rail_bed", "post", "never", 3, "a pole or sign on the ballast"],
 	["building", "building*other", "never", 5, "two buildings in one place"],
+	["building", "lot*other", "never", 5, "a building standing on another lot"],
 	["building", "road", "never", 5, "a building on the street"],
 	["building", "sidewalk_line", "never", 4, "a building across the sidewalk"],
 	["building", "public_site", "never", 4, "a building inside a public site"],
@@ -167,6 +168,7 @@ const ALLOWED := [
 ]
 ## Smallest overlap (m2) that counts, per pair.
 const MIN_AREA := {"lot|lot*other": 1.0, "lot|road": 1.0, "building|building*other": 0.5, "building|road": 0.5,
+	"building|lot*other": 1.0,
 	"rail_bed|lot": 1.0, "lot|public_site": 1.0, "public_site|road": 1.0, "building|sidewalk_line": 0.1}
 
 ## PAIRS by kind group, both ways: group -> {group: [rule, others only, min area]}.
@@ -223,6 +225,8 @@ var _quick_seen := []  # the town's change counters at the last sync
 var last_sync_ms := 0.0
 var _bed_by := {}  # [kind, owner] -> [hash of its outlines, its claim]: the railroad beds
 var _row_at := {}  # Vector2i(route, point) -> its right-of-way claim
+var _site_by := {}  # LotGround item key -> [its hash, its claim in _sites]
+var _sites: GroundMap  # what keeps lots off the ground (file_sites)
 var _row_box := Rect2()  # town box the county's right of way is filed for
 var _row_offset := Vector2.INF
 var _row_seg := {}  # claim -> Vector2i(route, point) of a right-of-way piece
@@ -498,6 +502,47 @@ func _sync_rail(sim: CitySim) -> void:
 		if id >= 0:
 			_row_at[at] = id
 			_row_seg[id] = at
+
+
+## LotGround's items (what keeps lots off the ground: key -> [hash, boxes or
+## null]) filed as "site" claims, a claim an item, its boxes its pieces;
+## only items that came, went or changed are filed again. Items too spread
+## out to box (null) aren't claims: CitySim._lot_blocked asks them itself.
+##
+## They're kept in a little map of their own, not the live layer: they are
+## filed for a lot check and stand as they were until the next one.
+func file_sites(items: Dictionary) -> void:
+	if _sites == null:
+		_sites = GroundMap.new(64.0)
+	for key in _site_by.keys():
+		if not items.has(key) or items[key][0] != _site_by[key][0]:
+			_sites.release_ids(PackedInt32Array([_site_by[key][1]]))
+			_site_by.erase(key)
+	var keys := items.keys()
+	keys.sort()
+	for key in keys:
+		if _site_by.has(key) or items[key][1] == null:
+			continue
+		var polys := []
+		for b: Rect2 in items[key][1]:
+			polys.append(PackedVector2Array([b.position, Vector2(b.end.x, b.position.y), b.end, Vector2(b.position.x, b.end.y)]))
+		_site_by[key] = [items[key][0], _sites.register("site:" + str(key), "ground", "site", polys)]
+	var remap := _sites._compact()
+	if not remap.is_empty():
+		for key in _site_by:
+			var id: int = _site_by[key][1]
+			# (An item with no boxes was filed as no claim, -1: it stays so.)
+			_site_by[key][1] = remap[id] if id >= 0 and id < remap.size() else -1
+
+
+## True when a site's box (file_sites) meets `box` (borders count).
+func sites_near(box: Rect2) -> bool:
+	if _sites == null:
+		return false
+	for p in _sites._pieces_in(box):
+		if _sites._piece_box(p).intersects(box, true):
+			return true
+	return false
 
 
 ## How near the county's railroad track comes to outline `poly` (town x/z),
@@ -852,13 +897,13 @@ func _clash_step(of: GroundMap, t0: int, budget: int) -> bool:
 ## The map's claims packed together again, the taken-back ones dropped,
 ## when they are more than half of it (streets and lots filed again and
 ## again over a long game). Claim ids change: `compacted` says from what
-## to what.
-func _compact() -> void:
+## to what (and so does what's returned: empty when nothing was packed).
+func _compact() -> PackedInt32Array:
 	var dead := 0
 	for a in _alive:
 		dead += 1 - a
 	if dead < 1000 or dead * 2 < _alive.size():
-		return
+		return PackedInt32Array()
 	var remap := PackedInt32Array()
 	remap.resize(_owner.size())
 	var o := PackedStringArray()
@@ -944,6 +989,7 @@ func _compact() -> void:
 	_row_seg = rows
 	version += 1
 	compacted.emit(remap)
+	return remap
 
 
 # ------------------------------------------------------------------ claims
