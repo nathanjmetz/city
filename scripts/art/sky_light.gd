@@ -46,8 +46,13 @@ var cloud_shadows: MeshInstance3D
 var _sky: Sky
 var _moving := false
 var _sun_dir := Vector3.UP  # the sun as the desktop sky last heard (_twilight_sun)
-## 0 in full daylight, 1 at full night. DayNight reads it.
+## 0 in full daylight, 1 at full night (Daylight.dark_at): the land's
+## light. DayNight reads it.
 var darkness := 0.0
+## How far on the lights are, 0 by day to 1 (Daylight's lights_on): from
+## about sunset, ahead of the land's darkness. DayNight hands it to the
+## shaders as `night`.
+var lights_on := 0.0
 var _day := {}  # the fixed late-morning look, to go back to
 ## How thick the haze is for the time of year (Daylight.at().haze).
 var haze_scale := 1.0
@@ -259,6 +264,7 @@ func _apply_quality() -> void:
 ## Back to the fixed late-morning look (day/night cycle off).
 func set_fixed() -> void:
 	darkness = 0.0
+	lights_on = 0.0
 	_sky_colors(_day.top, _day.horizon, 0.0)
 	env.fog_light_color = _day.horizon
 	if not _gl:
@@ -308,6 +314,7 @@ func set_time(hour: float, months: float) -> void:
 	_fixed = false
 	_twilight_sun(SunPath.toward(pos))
 	darkness = l.darkness
+	lights_on = l.lights_on
 	_sky_colors(l.zenith, l.horizon, l.stars)
 	env.fog_light_color = l.fog_color
 	if not _gl:

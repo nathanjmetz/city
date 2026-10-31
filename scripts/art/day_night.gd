@@ -79,7 +79,9 @@ func _process(_delta: float) -> void:
 	if cycle_on:
 		var hour: float = hour_override if hour_override >= 0.0 else sim.sky_hour(frac)
 		sky.set_time(hour, months if seasons_on else 6.5)
-		night = sky.darkness
+		# The shaders' `night` switches the lights on (streetlights, windows,
+		# signs, headlamps): from sunset, ahead of the land's darkness.
+		night = sky.lights_on
 		lit = window_share(hour)
 	elif _was_cycle:
 		sky.set_fixed()
