@@ -367,11 +367,58 @@ func _look(id: int) -> String:
 
 ## The steps of its owner's development tree a depot or cab company has built.
 func _dev(id: int) -> Array:
+	return dev_of(sim, id)
+
+
+static func dev_of(sim: CitySim, id: int) -> Array:
 	if sim.buses.depots.has(id):
 		return sim.buses.depots[id].get("built", [])
 	if sim.taxis.companies.has(id):
 		return sim.taxis.companies[id].get("built", [])
 	return sim.stations.built_of(id)
+
+
+## Service `id` (its building `b`) as its builder draws it: [walls and
+## roofs, flat work, trees, labels], in its own frame (-Z to the road).
+static func build_of(sim: CitySim, id: int, b: Dictionary) -> Array:
+	var size: Vector2 = Services.size_of(b)
+	var to_curb := Services.SETBACK + RoadStyle.CURB_WIDTH + RoadStyle.PARKWAY_WIDTH + RoadStyle.SIDEWALK_WIDTH
+	# Seeded from the front door, which stays put as a hospital grows.
+	var door: Vector3 = sim.healthcare.hubs[id].front if sim.healthcare.hubs.has(id) else b.pos + b.dir * size.y * 0.5
+	var seed := int(door.x * 73.0) ^ int(door.z * 151.0) ^ (int(b.kind) << 20)
+	if int(b.kind) in Services.PARKING:
+		return ParkingBuilder.build_lot(b, seed, to_curb)
+	if int(b.kind) in Services.CARE:
+		return HealthBuilder.build_care(int(b.kind), seed, size, to_curb, sim.healthcare.hubs.get(id, {}), dev_of(sim, id))
+	return CivicBuilder.build_service(int(b.kind), seed, size, to_curb, dev_of(sim, id))
+
+
+## The overhead doors service `id`'s builder draws (DoorLog: the ER's
+## ambulance bays, a police sally port, a bus garage's doors; its own
+## frame), from a dry run of the very builder: what doors_of keeps from
+## the drawing itself. For tests and tools.
+static func doors_drawn(sim: CitySim, id: int) -> Array:
+	if not sim.services.buildings.has(id):
+		return []
+	HouseBuilder.dry_all = true
+	var out := DoorLog.collect(func(): build_of(sim, id, sim.services.buildings[id]))
+	HouseBuilder.dry_all = false
+	return out
+
+
+## The doors service `id` was drawn with (DoorLog), or [] while it isn't.
+func doors_of(id: int) -> Array:
+	var node: Node3D = _nodes.get(id)
+	return node.get_meta("doors", []) if node != null else []
+
+
+## Where service `id` is drawn, or null while it isn't (yet, or still going
+## up): DoorView puts its bay doors there.
+func xf_of(id: int) -> Variant:
+	var node: Node3D = _nodes.get(id)
+	if node == null or not is_instance_valid(node) or not sim.construction.is_done("svc:%d" % id, sim.tick_count):
+		return null
+	return Transform3D(node.basis, node.position)
 
 
 func _spawn(id: int, b: Dictionary) -> Node3D:
@@ -383,17 +430,9 @@ func _spawn(id: int, b: Dictionary) -> Node3D:
 	root.set_meta("at", root.transform)
 	var size: Vector2 = Services.size_of(b)
 	root.set_meta("size", size)
-	var to_curb := Services.SETBACK + RoadStyle.CURB_WIDTH + RoadStyle.PARKWAY_WIDTH + RoadStyle.SIDEWALK_WIDTH
-	# Seeded from the front door, which stays put as a hospital grows.
-	var door: Vector3 = sim.healthcare.hubs[id].front if sim.healthcare.hubs.has(id) else b.pos + b.dir * size.y * 0.5
-	var seed := int(door.x * 73.0) ^ int(door.z * 151.0) ^ (int(b.kind) << 20)
-	var built: Array
-	if int(b.kind) in Services.PARKING:
-		built = ParkingBuilder.build_lot(b, seed, to_curb)
-	elif int(b.kind) in Services.CARE:
-		built = HealthBuilder.build_care(int(b.kind), seed, size, to_curb, sim.healthcare.hubs.get(id, {}), _dev(id))
-	else:
-		built = CivicBuilder.build_service(int(b.kind), seed, size, to_curb, _dev(id))
+	var box := []  # (a lambda can't set the caller's variable)
+	root.set_meta("doors", DoorLog.collect(func(): box.append(build_of(sim, id, b))))
+	var built: Array = box[0]
 	built[1] = Terrain.drape_local(built[1], Transform3D(root.basis, root.position))
 	# A surface lot's light poles stand on their own concrete bases.
 	var surface: bool = int(b.kind) in Services.PARKING and int(b.kind) != Services.Kind.PARKING_GARAGE

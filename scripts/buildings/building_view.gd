@@ -297,7 +297,8 @@ func _look(b: Dictionary, key: String) -> Array:
 
 
 ## The building on lot `key` as its builder draws it, as plain arrays
-## (HouseBuilder.keep_arrays): [walls and roofs, flat work, trees, labels].
+## (HouseBuilder.keep_arrays): [walls and roofs, flat work, trees, labels,
+## the doors it logged (DoorLog)].
 func _draw(key: String, lot: Dictionary, b: Dictionary, fit: Dictionary, s: int) -> Array:
 	var spec := sim.families.sign_of(sim, "lot:" + key)
 	var storeys := BuildingTypes.storeys(b)
@@ -308,7 +309,10 @@ func _draw(key: String, lot: Dictionary, b: Dictionary, fit: Dictionary, s: int)
 		fit.added_from = int(b.added_from)  # floors added on top of a block this tall
 	HouseBuilder.keep_arrays = true
 	HouseBuilder.flat_weeds = not LawnMap.paints(sim)
-	var built := build_for(BuildingTypes.type_of(b), storeys, s, lot.to_curb, fit, spec, int(b.get("units", 2)), b.get("chain", "general"), int(b.get("level", 0)))
+	var box := []  # (a lambda can't set the caller's variable)
+	var doors := DoorLog.collect(func(): box.append(build_for(BuildingTypes.type_of(b), storeys, s, lot.to_curb, fit, spec,
+		int(b.get("units", 2)), b.get("chain", "general"), int(b.get("level", 0)))))
+	var built: Array = box[0]
 	HouseBuilder.keep_arrays = false
 	HouseBuilder.flat_weeds = true
 	HouseBuilder.owner_care = 0
@@ -316,7 +320,45 @@ func _draw(key: String, lot: Dictionary, b: Dictionary, fit: Dictionary, s: int)
 	if built.size() < 2:
 		return []
 	return [built[0].get_meta("parts", []), built[1].get_meta("parts", []), built[2] if built.size() > 2 else [],
-		built[3] if built.size() > 3 else []]
+		built[3] if built.size() > 3 else [], doors]
+
+
+## The doors the builder of the shop or plant on lot `key` draws (DoorLog:
+## factory bays, stockroom roll-ups; in the lot's frame), from a dry run of
+## the very builder this view draws it with, as _draw hands it the lot: what
+## doors_of keeps from the drawing itself. For tests and tools.
+static func doors_drawn(sim: CitySim, key: String) -> Array:
+	if not sim.lots.has(key) or not sim.buildings.has(key):
+		return []
+	var lot: Dictionary = sim.lots[key]
+	var b: Dictionary = sim.buildings[key]
+	var xf := Transform3D(Basis.looking_at(-lot.normal, Vector3.UP), Vector3(lot.front.x, 0.0, lot.front.z))
+	var rng := RandomNumberGenerator.new()
+	rng.seed = b.seed
+	var fit := fit_for(sim, key, xf)
+	if b.has("added_from"):
+		fit.added_from = int(b.added_from)
+	var keep := [HouseBuilder.last_masses, HouseBuilder.last_info, HouseBuilder.keep_arrays, HouseBuilder.owner_care,
+		HouseBuilder.restored]
+	HouseBuilder.owner_care = sim.care.tier_of(key)
+	HouseBuilder.restored = sim.heritage.protected(key)
+	HouseBuilder.dry_all = true
+	var spec := sim.families.sign_of(sim, "lot:" + key)
+	var out := DoorLog.collect(func(): build_for(BuildingTypes.type_of(b), BuildingTypes.storeys(b), rng.randi(), lot.to_curb,
+		fit, spec, int(b.get("units", 2)), b.get("chain", "general"), int(b.get("level", 0))))
+	HouseBuilder.dry_all = false
+	HouseBuilder.last_masses = keep[0]
+	HouseBuilder.last_info = keep[1]
+	HouseBuilder.keep_arrays = keep[2]
+	HouseBuilder.owner_care = keep[3]
+	HouseBuilder.restored = keep[4]
+	return out
+
+
+## The doors the building on lot `key` was drawn with (_draw; a shop's or a
+## plant's, never a home's, whose garages its plan carries), or [].
+func doors_of(key: String) -> Array:
+	return _recs.get(key, {}).get("doors", [])
 
 
 ## What a type's builder draws for a stage of `storeys` on lot `fit` (the
@@ -464,6 +506,7 @@ func _spawn(key: String, refill := false) -> void:
 		if not masses.is_empty():
 			had.masses = masses.duplicate()
 		had.plan = plan
+		had.doors = drawn[4] if int(b.zone) != ZoneMap.Zone.RESIDENTIAL else []
 		if _batches.has(had.sq):
 			_batches[had.sq].set_building(key, had.xf, solid, draped, footing, labels)
 			_merge_soon(had.sq)
@@ -493,6 +536,7 @@ func _spawn(key: String, refill := false) -> void:
 		bulk = [Rect2(box.position.x, box.position.z, box.size.x, box.size.z)]
 	rec.masses = bulk.duplicate()  # its footprints, for the yard props (StateView)
 	rec.plan = plan
+	rec.doors = drawn[4] if int(b.zone) != ZoneMap.Zone.RESIDENTIAL else []
 	var pitched: bool = BuildingTypes.type_of(b) in ["house", "duplex", "row_home"]
 	var far := far_arrays(_far_surfaces(solid), bulk, int(b.zone) == ZoneMap.Zone.INDUSTRIAL,
 		_wall_colour(int(b.zone), rng), _roof_colour(pitched, rng), flat[0][1] if not flat.is_empty() else [])
