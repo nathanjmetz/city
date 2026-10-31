@@ -322,7 +322,7 @@ func sync() -> void:
 	if sim == null:
 		return
 	var quick := [sim.network.revision, sim.network.segments.size(), sim.rail.version, sim.rail.pieces.size(),
-		sim.county_rail, sim.terrain_offset]
+		sim.county_rail, sim.terrain_offset, sim.rail.crossings.size(), sim.county_trains.crossings.size()]
 	if quick == _quick_seen:
 		return
 	_quick_seen = quick
@@ -330,6 +330,11 @@ func sync() -> void:
 	if sim.network.revision != _net_seen:
 		_net_seen = sim.network.revision
 		_sync_roads(sim)
+	# The grade crossings, where a railroad shares ground with the road
+	# (the county's are worked out on its trains' first tick).
+	_crossings = PackedVector2Array()
+	for x in sim.all_crossings():
+		_crossings.append(Vector2(x.pos.x, x.pos.z))
 	var rail_key := [sim.rail.version, sim.rail.pieces.size(), sim.county_rail, sim.terrain_offset, _town_box(sim, 300.0)]
 	if rail_key != _rail_seen:
 		_rail_seen = rail_key
@@ -376,9 +381,6 @@ func _sync_roads(sim: CitySim) -> void:
 			release("seg:%d" % id, "road")
 			_streets.erase(int(id))
 	_road_sig = now
-	_crossings = PackedVector2Array()
-	for x in sim.all_crossings():
-		_crossings.append(Vector2(x.pos.x, x.pos.z))
 	_ledger_ok = false
 
 
