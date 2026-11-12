@@ -157,6 +157,8 @@ func _test_insights() -> void:
 				"clicks": 6, "travel": 3.0, "end": "used"},
 			{"k": "hunt", "target": "Roads", "path": ["Roads"], "s": 1.0, "clicks": 1, "travel": 0.2, "end": "used"},
 			{"k": "load", "what": "Opening your town", "s": 25.0},
+			{"k": "load", "what": "Connecting to the region", "s": 8.0, "steps": {"Connecting to the region": 6.0, "Drawing your town": 2.0},
+				"net": {"connected": 3.0, "welcome": 5.0, "unpack": 0.5, "tries": 2}},
 			{"k": "perf", "fps": 22.0, "worst_ms": 300, "hitches": 3, "scene": "main", "pop": 900,
 				"tick_ms": 40.0, "tick_max_ms": 90.0, "top_sim": {"sim.traffic": 14.0, "sim.lots": 6.0}},
 			{"k": "boot", "page_ms": 70000, "download_ms": 65000, "start_ms": 3000, "bytes": 49 * 1048576},
@@ -183,6 +185,9 @@ func _test_insights() -> void:
 	_check(titles.has("Hard to find: Water tower") and not titles.has("Hard to find: Roads"),
 		"slow finds become fixes, quick ones don't")
 	_check(titles.any(func(x): return x.begins_with("Slow loading screen")), "slow loads become fixes")
+	var join: Array = r.fixes.filter(func(f): return f.title.begins_with("Slow loading screen \"Connecting"))
+	_check(not join.is_empty() and "link open 3.0 s" in join[0].detail and "3 of them needed a retry" in join[0].detail \
+		and "Connecting to the region 6.0 s" in join[0].detail, "slow joins split into link, welcome, unpack and drawing (%s)" % (join[0].detail if join else "none"))
 	_check(titles.any(func(x): return x.begins_with("Low frame rate")), "low frame rate becomes a fix")
 	_check(titles.has("Machine nearly out of memory: 180 MB free"), "low free memory becomes a fix")
 	var crash: Array = r.fixes.filter(func(f): return f.title.begins_with("Crashes: 1"))
