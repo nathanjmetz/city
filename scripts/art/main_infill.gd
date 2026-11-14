@@ -107,6 +107,21 @@ static func _mi_midcentury(b: DenseBuilder, r: RandomNumberGenerator, to_curb: f
 		b._box("paint", Vector3(w - 1.2, 0.85, 0.06), Vector3(0, y0 + 0.43, zf - 0.04), enamel)
 		b._glass(Vector3(0, y0 + 1.65, zf - 0.03), Vector3(-1, 0, 0), w - 1.6, 1.5, r.randf_range(0.0, 0.5))
 		var n := maxi(3, roundi((w - 1.6) / 1.4))
+		if DenseBuilder.fine:
+			# Desktop: the spandrel is a row of separate enamelled steel
+			# panels, one per window bay, held in aluminium battens with a
+			# cap along the top (1950s storefront remodelling catalogues).
+			for i in n + 1:
+				b._box("metal", Vector3(0.05, 0.85, 0.08), Vector3(lerpf(-w * 0.5 + 0.8, w * 0.5 - 0.8, float(i) / n), y0 + 0.43, zf - 0.07),
+					ALUMINIUM)
+			for i in n:
+				# Each panel faded a little differently by sixty summers.
+				var fade := float(posmod(hash([r.seed, f, i, 77]), 100)) / 100.0
+				var x0 := lerpf(-w * 0.5 + 0.8, w * 0.5 - 0.8, float(i) / n)
+				var x1 := lerpf(-w * 0.5 + 0.8, w * 0.5 - 0.8, float(i + 1) / n)
+				b._box("paint", Vector3(x1 - x0 - 0.04, 0.8, 0.02), Vector3((x0 + x1) * 0.5, y0 + 0.43, zf - 0.075),
+					enamel.lightened(0.03 + fade * 0.07))
+			b._box("metal", Vector3(w - 1.2, 0.05, 0.09), Vector3(0, y0 + 0.02, zf - 0.07), ALUMINIUM)
 		for i in n + 1:
 			b._box("metal", Vector3(0.05, 1.5, 0.08), Vector3(lerpf(-w * 0.5 + 0.8, w * 0.5 - 0.8, float(i) / n), y0 + 1.65, zf - 0.05),
 				Color("#3a3d3e"))
