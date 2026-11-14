@@ -427,6 +427,82 @@ func _lot(v: PackedVector3Array, nrm: PackedVector3Array, col: PackedColorArray,
 	for c in q:
 		p.append(Vector3(c.x - o.x, Terrain.height(c.x, c.y) + 0.15, c.y - o.y))
 	_quad(v, nrm, col, p[0], p[1], p[2], p[3], LOT_ASPHALT)
+	if _trees > 0.0 and m > 12.0:
+		_parked(v, nrm, col, centre, u, w, m, o)
+
+
+## Cars parked in a store's lot (desktop): 90-degree stalls 2.75 m wide
+## and 5.5 m deep in double-loaded bays with 7.3 m aisles (ITE / ULI
+## parking design norms), starting past a 7 m sidewalk and fire lane.
+## Daytime lots run about half full, fullest near the doors, the back lot
+## mostly staff. Colours in the real US mix (white, black, grey and silver
+## about three in four cars; then blue, red, the odd brown or green).
+func _parked(v: PackedVector3Array, nrm: PackedVector3Array, col: PackedColorArray,
+		centre: Vector2, u: Vector2, w: Vector2, m: float, o: Vector2) -> void:
+	var a := u
+	var b := w
+	if a.length() < b.length():
+		a = w
+		b = u
+	var la := a.length()
+	var lb := b.length()
+	var ea := a / la
+	var eb := b / lb
+	var seed := absi(hash(Vector2i(int(centre.x), int(centre.y))))
+	for side in [-1.0, 1.0]:
+		var fill := 0.6 if side < 0.0 else 0.25
+		var rows := []
+		var d := 7.0
+		while d + 5.5 <= m - 1.0:
+			rows.append(d)
+			if rows.size() % 2 == 1:
+				d += 5.5 + 7.3
+			else:
+				d += 5.5
+		for ri in rows.size():
+			var near: float = 1.0 - 0.6 * float(ri) / maxf(rows.size(), 1.0)
+			var x := -la + 2.0
+			var k := 0
+			while x <= la - 2.0:
+				k += 1
+				var h := absi(hash(Vector3i(seed, ri * 2 + int(side > 0.0), k)))
+				if float(h % 1000) / 1000.0 < fill * near:
+					var c: Vector2 = centre + ea * x + eb * side * (lb + rows[ri] + 2.75)
+					_car(v, nrm, col, c, ea, eb, h, o)
+				x += 2.75
+
+
+const CAR_COLOURS := [Color(0.82, 0.82, 0.80), Color(0.82, 0.82, 0.80), Color(0.06, 0.06, 0.07),
+	Color(0.06, 0.06, 0.07), Color(0.36, 0.37, 0.38), Color(0.36, 0.37, 0.38), Color(0.62, 0.63, 0.64),
+	Color(0.14, 0.22, 0.40), Color(0.50, 0.08, 0.07), Color(0.30, 0.24, 0.18), Color(0.16, 0.24, 0.17),
+	Color(0.82, 0.82, 0.80)]
+
+
+## One parked car or pickup as a low box nose to the aisle, 4.7 x 1.85 m
+## and 1.5 m tall (a pickup 5.8 m and 1.9 m).
+func _car(v: PackedVector3Array, nrm: PackedVector3Array, col: PackedColorArray,
+		c: Vector2, along: Vector2, across: Vector2, h: int, o: Vector2) -> void:
+	var truck := h % 5 == 0
+	var half_l := (2.9 if truck else 2.35)
+	var half_w := 0.93
+	var top := Terrain.height(c.x, c.y) + (1.9 if truck else 1.5)
+	var body: Color = CAR_COLOURS[(h / 7) % CAR_COLOURS.size()]
+	var side := body.darkened(0.25)
+	var q := [c - across * half_l - along * half_w, c + across * half_l - along * half_w,
+		c + across * half_l + along * half_w, c - across * half_l + along * half_w]
+	var lo := top - (1.9 if truck else 1.5) + 0.15
+	var pts := []
+	for p in q:
+		pts.append(Vector2(p.x - o.x, p.y - o.y))
+	var mid := Vector2(c.x - o.x, c.y - o.y)
+	_quad(v, nrm, col, Vector3(pts[0].x, top, pts[0].y), Vector3(pts[1].x, top, pts[1].y),
+		Vector3(pts[2].x, top, pts[2].y), Vector3(pts[3].x, top, pts[3].y), body)
+	for s in 4:
+		var p0: Vector2 = pts[s]
+		var p1: Vector2 = pts[(s + 1) % 4]
+		var away := (p0 + p1) * 0.5 - mid
+		_quad(v, nrm, col, Vector3(p0.x, lo, p0.y), Vector3(p1.x, lo, p1.y),
+			Vector3(p1.x, top, p1.y), Vector3(p0.x, top, p0.y), side, Vector3(away.x, 0.0, away.y))
 
 
 ## Two triangles, a b c d round the face's edge; the face looks toward `out`.
