@@ -813,9 +813,24 @@ func _shop_door(x: float, bw: float, zf: float, mull: Color) -> void:
 		_box("paint", Vector3(side, 0.6, 0.16), Vector3(sx, 0.4, zf - 0.08), mull)
 	var col := Color(_pick(["#3a2a1e", "#1c1d1f", "#5a3a22"])) if fine else mull
 	_box("paint", Vector3(dw + 0.12, 2.62, 0.08), Vector3(x, 1.31, zf - 0.02), col)  # frame, kick panel and head
-	_glass(Vector3(x, 1.5, zf - 0.07), Vector3(-1, 0, 0), dw - 0.24, 1.5, 0.0)
 	if fine:
-		_box("metal", Vector3(0.03, 0.3, 0.05), Vector3(x + dw * 0.36, 1.1, zf - 0.11), Color("#8a8478"))  # pull
+		# Desktop: a stile-and-rail storefront door as restored on Indiana
+		# Main Streets: a big lite between narrow stiles over a raised
+		# bottom panel, a brass push bar across the glass, a brass kick
+		# plate and mail slot, and a transom bar over the leaf.
+		var brass := Color("#b08d4a")
+		_glass(Vector3(x, 1.62, zf - 0.07), Vector3(-1, 0, 0), dw - 0.26, 1.6, 0.0)
+		_box("paint", Vector3(dw - 0.38, 0.32, 0.03), Vector3(x, 0.55, zf - 0.075), col.lightened(0.08))
+		_box("paint", Vector3(dw - 0.3, 0.03, 0.04), Vector3(x, 0.74, zf - 0.08), col.darkened(0.2))
+		_box("metal", Vector3(dw - 0.14, 0.18, 0.02), Vector3(x, 0.12, zf - 0.075), brass)
+		_box("metal", Vector3(0.28, 0.05, 0.02), Vector3(x, 0.84, zf - 0.08), brass)
+		_box("metal", Vector3(dw - 0.3, 0.04, 0.04), Vector3(x, 1.25, zf - 0.13), brass)
+		for e in [-1.0, 1.0]:
+			_box("metal", Vector3(0.04, 0.04, 0.06), Vector3(x + e * (dw * 0.5 - 0.17), 1.25, zf - 0.1), brass)
+		_box("metal", Vector3(0.05, 0.12, 0.05), Vector3(x + dw * 0.38, 1.05, zf - 0.08), brass)  # lock
+		_box("paint", Vector3(dw + 0.12, 0.08, 0.1), Vector3(x, 2.48, zf - 0.06), col.darkened(0.15))
+	else:
+		_glass(Vector3(x, 1.5, zf - 0.07), Vector3(-1, 0, 0), dw - 0.24, 1.5, 0.0)
 	_box("paint", Vector3(dw + 0.5, 0.15, 0.4), Vector3(x, 0.075, zf - 0.2), FOUNDATION)  # step
 
 
