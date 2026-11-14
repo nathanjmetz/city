@@ -318,6 +318,100 @@ func _sedan_camry() -> void:
 			_wheel(Vector3(sx * 0.79, 0.0, az), 0.335, 0.225, RIM)
 
 
+## Ultra: a Ford Mustang coupe (S650, 2024-) lofted from its blueprints the
+## way the Camry is: 4811 mm long, 1916 wide, 1397 high, 2720 wheelbase.
+## A long hood off a blunt shark nose, the fastback roof running down to a
+## short ducktail deck, wide rear haunches (the Coke-bottle waist), the
+## big trapezoid grille, tri-bar lamps front and back, quad exhausts.
+const MUSTANG_TOP := [[0.0, 0.6], [0.04, 0.7], [0.14, 0.76], [0.6, 0.8], [1.2, 0.86], [1.7, 0.91],
+	[1.85, 0.97], [2.2, 1.2], [2.55, 1.37], [2.85, 1.397], [3.15, 1.36], [3.6, 1.17], [4.0, 1.03],
+	[4.3, 0.99], [4.72, 0.985], [4.811, 0.93]]
+const MUSTANG_BELT := [[0.0, 0.58], [0.04, 0.66], [0.14, 0.72], [1.0, 0.82], [1.8, 0.9], [2.6, 0.94],
+	[3.3, 0.97], [3.8, 0.99], [4.3, 0.99], [4.72, 0.975], [4.811, 0.92]]
+const MUSTANG_ROCKER := [[0.0, 0.22], [0.3, 0.17], [0.7, 0.14], [4.3, 0.15], [4.811, 0.28]]
+const MUSTANG_WIDTH := [[0.0, 0.7], [0.08, 0.8], [0.3, 0.88], [0.9, 0.925], [2.1, 0.9], [3.3, 0.952],
+	[3.9, 0.958], [4.5, 0.925], [4.811, 0.85]]
+const MUSTANG_ROOF_W := [[1.75, 0.8], [2.5, 0.62], [3.0, 0.6], [3.6, 0.66], [4.15, 0.8]]
+
+
+func _mustang() -> void:
+	var L := 4.811
+	var axles := [0.93, 3.65]
+	var P := {"top": MUSTANG_TOP, "belt": MUSTANG_BELT, "rocker": MUSTANG_ROCKER,
+		"width": MUSTANG_WIDTH, "roof_w": MUSTANG_ROOF_W, "tyre": 0.34, "floor": 0.13}
+	var zs := []
+	var z := 0.0
+	while z < L:
+		zs.append(z)
+		z += 0.05
+	zs.append(L)
+	var rings := []
+	for zz in zs:
+		rings.append(_camry_ring(zz, axles, P))
+	var m: int = rings[0].size()
+	var codes := []
+	for i in zs.size() - 1:
+		codes.append(_mustang_codes(0.5 * (zs[i] + zs[i + 1]), m))
+	_skin(rings, codes)
+	_cap(rings[0], PAINT, Vector3(0, 0, 1))
+	_cap(rings[rings.size() - 1], PAINT, Vector3(0, 0, -1))
+	var dark := Color(0.03, 0.03, 0.03, 0.3)
+	# Nose: the trapezoid grille, lamps at its top corners with the tri-bar
+	# running lights below them, the pony badge, the splitter.
+	var zf := -0.006
+	for i in 5:
+		var y := 0.27 + i * 0.06
+		_box(Vector3(0, y, zf), Vector3(0.82 + i * 0.05, 0.062, 0.012), dark)
+	_box(Vector3(0, 0.42, zf - 0.008), Vector3(0.14, 0.05, 0.012), CHROME)
+	for sx in [-1.0, 1.0]:
+		_box(Vector3(sx * 0.5, 0.53, zf), Vector3(0.26, 0.08, 0.012), TRIM)
+		_box(Vector3(sx * 0.52, 0.535, zf - 0.008), Vector3(0.19, 0.05, 0.012), HEAD)
+		for k in 3:
+			_box(Vector3(sx * (0.48 + k * 0.05), 0.44, zf), Vector3(0.018, 0.07, 0.012), HEAD)
+		_box(Vector3(sx * 0.72, 0.28, zf), Vector3(0.14, 0.1, 0.012), dark)
+	_box(Vector3(0, 0.17, 0.02), Vector3(1.5, 0.03, 0.06), dark)
+	# Door mirrors on the door skin, below the A-pillar.
+	for sx in [-1.0, 1.0]:
+		_box(Vector3(sx * 0.9, 0.95, 2.02), Vector3(0.16, 0.09, 0.2), PAINT)
+	# Tail: tri-bar lamps in a dark panel, badge, plate, diffuser, exhausts.
+	var zr := L + 0.006
+	_box(Vector3(0, 0.79, zr), Vector3(1.5, 0.16, 0.012), dark)
+	for sx in [-1.0, 1.0]:
+		for k in 3:
+			_box(Vector3(sx * (0.48 + k * 0.1), 0.79, zr + 0.008), Vector3(0.05, 0.13, 0.012), TAIL)
+	_box(Vector3(0, 0.8, zr + 0.008), Vector3(0.14, 0.05, 0.012), CHROME)
+	_box(Vector3(0, 0.95, L - 0.06), Vector3(1.3, 0.025, 0.14), PAINT)  # ducktail lip
+	_box(Vector3(0, 0.52, zr), Vector3(0.36, 0.2, 0.012), dark)
+	_box(Vector3(0, 0.52, zr + 0.008), Vector3(0.3, 0.15, 0.012), WHITE)
+	_box(Vector3(0, 0.27, zr), Vector3(1.3, 0.14, 0.012), dark)
+	for sx in [-1.0, 1.0]:
+		for k in 2:
+			var x: float = sx * (0.42 + k * 0.13)
+			_cyl(Vector3(x, 0.27, L - 0.04), Vector3(x, 0.27, L + 0.05), 0.045, CHROME, 10)
+	for az in axles:
+		for sx in [-1.0, 1.0]:
+			_wheel(Vector3(sx * 0.83, 0.0, az), 0.34, 0.255, RIM)
+
+
+## The Mustang's finish strips: frameless door and quarter glass in one
+## run (no B pillar), raked windshield, the fastback's long rear window,
+## lamps wrapping the corners.
+static func _mustang_codes(z: float, m: int) -> Array:
+	var side := [TRIM, TRIM, PAINT, PAINT, PAINT, PAINT, PAINT, PAINT]
+	if z < 0.3:
+		side[3] = HEAD
+	elif z > 4.74:
+		side[3] = TAIL
+	if z > 2.0 and z < 3.55:
+		side[5] = GLASS
+	if z > 1.88 and z < 2.5 or z > 3.2 and z < 4.0:
+		side[7] = GLASS
+	var out := []
+	for e in m:
+		out.append(side[e] if e < 8 else side[m - 1 - e])
+	return out
+
+
 ## Ultra: the Camry's swept headlamps, which lie on the nose's slope
 ## running back toward the fenders: a dark housing with the lens and an
 ## LED running-light edge inside it, and the badge on the upper grille.
@@ -361,20 +455,22 @@ func _camry_rear(L: float) -> void:
 
 ## One cross-section: right side from the floor's middle up to the roof's
 ## middle, then the left side back down (x mirrored).
-static func _camry_ring(z: float, axles: Array) -> Array:
-	var top := _curve(CAMRY_TOP, z)
-	var belt := minf(_curve(CAMRY_BELT, z), top)
-	var w := _curve(CAMRY_WIDTH, z)
-	var yb := _curve(CAMRY_ROCKER, z)
+static func _camry_ring(z: float, axles: Array, P: Dictionary = {}) -> Array:
+	var top := _curve(P.get("top", CAMRY_TOP), z)
+	var belt := minf(_curve(P.get("belt", CAMRY_BELT), z), top)
+	var w := _curve(P.get("width", CAMRY_WIDTH), z)
+	var yb := _curve(P.get("rocker", CAMRY_ROCKER), z)
+	var tr: float = P.get("tyre", 0.335)
 	for az in axles:
 		var dz: float = z - az
 		if absf(dz) < 0.4:
-			yb = maxf(yb, 0.335 + sqrt(0.16 - dz * dz))  # arch round the tyre
+			yb = maxf(yb, tr + sqrt(0.16 - dz * dz))  # arch round the tyre
 	yb = minf(yb, belt - 0.12)
-	var floor_y := minf(0.16, yb)
+	var floor_y := minf(P.get("floor", 0.16), yb)
 	# Greenhouse, blended in as the roof rises off the hood and trunk.
 	var g := clampf((top - belt - 0.03) / 0.15, 0.0, 1.0)
-	var wr := minf(_curve(CAMRY_ROOF_W, clampf(z, 1.55, 4.2)), w - 0.06)
+	var rw: Array = P.get("roof_w", CAMRY_ROOF_W)
+	var wr := minf(_curve(rw, clampf(z, rw[0][0], rw[rw.size() - 1][0])), w - 0.06)
 	var hood := [Vector2(w - 0.08, belt + 0.01), Vector2(w * 0.72, lerpf(belt, top, 0.65)),
 		Vector2(w * 0.38, top - 0.004)]
 	var glass := [Vector2(w - 0.07, belt + 0.02), Vector2(wr + 0.05, top - 0.07), Vector2(wr - 0.1, top - 0.006)]
@@ -516,6 +612,9 @@ func _minivan() -> void:  # Honda Odyssey
 
 
 func _sports() -> void:  # Ford Mustang
+	if _hi:
+		_mustang()
+		return
 	_car({"L": 4.81, "W": 1.92, "H": 1.38, "clear": 0.13, "hood": 0.8, "belt": 0.95, "a": 1.85,
 		"b": 2.55, "c": 3.2, "e": 4.25, "tail": 0.98, "wr": 0.35, "axles": [1.0, 3.75]})
 	if not _lo:
