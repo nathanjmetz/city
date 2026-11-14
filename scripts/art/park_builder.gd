@@ -1040,7 +1040,25 @@ func _football(size: Vector2, to_curb: float, built := [], on := false) -> void:
 		for i in 3:
 			_box("paint", Vector3(50.0, 0.5, 0.5), Vector3(0, 1.2 + i * 1.1, fz + 6.0 + i * 1.5), Color("#6e1f2a").lerp(WHITE, 0.3 * i))
 	_box("siding", Vector3(14.0, 3.0, 3.6), Vector3(0, 6.6, fz + 5.0 + 10 * 0.75 + 1.4), Color("#d8d2c2"))
-	_flat_roofed_at("siding", 0.0, 14.0, 3.6, fz + 5.0 + 10 * 0.75 + 1.4, 8.1, 8.4, Color("#d8d2c2"))
+	# The press box sits up on steel columns over the top rows, the stands
+	# running on underneath; a steel stair up its end, a flat roof with a
+	# railed deck where the team's film crew stands.
+	var pz := fz + 5.0 + 10 * 0.75 + 1.4
+	_box("paint", Vector3(14.6, 0.25, 4.2), Vector3(0, 8.2, pz), Color("#c9c3b3"))
+	_box("paint", Vector3(14.2, 0.2, 3.8), Vector3(0, 5.0, pz), Color("#8a8f94"))  # floor deck
+	for e in [-6.8, -2.3, 2.3, 6.8]:
+		_box("paint", Vector3(0.2, 5.0, 0.2), Vector3(e, 2.5, pz + 1.7), Color("#8a8f94"))
+	var st := Vector3(7.6, 0, pz + 1.0)
+	_strut(st + Vector3(0.5, 0.0, 3.5), st + Vector3(0.5, 5.0, -0.5), 0.9, Color("#8a8f94"))  # stair stringer
+	for e in [0.0, 1.0]:
+		_strut(st + Vector3(e, 1.0, 3.5), st + Vector3(e, 6.0, -0.5), 0.04, Color("#5a5e60"))  # handrails
+	for e in [-1.0, 1.0]:
+		for y in [8.75, 9.3]:  # pipe guardrail, top and mid rails
+			_box("paint", Vector3(0.05, 0.05, 4.0), Vector3(e * 7.2, y, pz), GALV)
+			_box("paint", Vector3(14.4, 0.05, 0.05), Vector3(0, y, pz + e * 2.0), GALV)
+		for k in 5:
+			_box("paint", Vector3(0.05, 1.0, 0.05), Vector3(-7.2 + k * 3.6, 8.8, pz + e * 2.0), GALV)
+	_box("paint", Vector3(0.9, 1.2, 0.6), Vector3(-3.0, 8.9, pz - 1.4), Color("#3b3f42"))  # camera on its tripod case
 	_glass(Vector3(0, 7.0, fz + 5.0 + 10 * 0.75 - 0.42), Vector3(-1, 0, 0), 12.0, 1.4, 0.0)
 	# Four light towers and a scoreboard past the end zone.
 	for sx in [-1.0, 1.0]:
