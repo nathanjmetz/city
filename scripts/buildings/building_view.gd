@@ -86,6 +86,7 @@ var _recs := {}  # lot key -> {sq, xf, centre, front, look, sign, chain, site}
 var _by_sq := {}  # Vector2i -> {lot key: true}, the buildings in each 128 m square
 var _far_sq := FarSquares.new()
 var _near := NearDetail.new()
+var _props := PropField.new()  # scanned props the builders stood on lots (PropLog)
 ## A finished building was filed (drawn and in place), or one was let go
 ## (torn down, or about to be drawn again): for the views that follow
 ## buildings one at a time (StateView).
@@ -119,6 +120,7 @@ func setup(s: CitySim) -> void:
 	add_child(_trees)
 	add_child(_far_sq)
 	add_child(_near)
+	add_child(_props)
 	_near.parts_of = _near_parts
 	_near.set_reach(GraphicsQuality.detail, _msaa())
 	if RenderingServer.get_current_rendering_method() == "gl_compatibility":
@@ -298,7 +300,7 @@ func _look(b: Dictionary, key: String) -> Array:
 
 ## The building on lot `key` as its builder draws it, as plain arrays
 ## (HouseBuilder.keep_arrays): [walls and roofs, flat work, trees, labels,
-## the doors it logged (DoorLog)].
+## the doors it logged (DoorLog), the scanned props it stood (PropLog)].
 func _draw(key: String, lot: Dictionary, b: Dictionary, fit: Dictionary, s: int) -> Array:
 	var spec := sim.families.sign_of(sim, "lot:" + key)
 	var storeys := BuildingTypes.storeys(b)
@@ -310,8 +312,9 @@ func _draw(key: String, lot: Dictionary, b: Dictionary, fit: Dictionary, s: int)
 	HouseBuilder.keep_arrays = true
 	HouseBuilder.flat_weeds = not LawnMap.paints(sim)
 	var box := []  # (a lambda can't set the caller's variable)
-	var doors := DoorLog.collect(func(): box.append(build_for(BuildingTypes.type_of(b), storeys, s, lot.to_curb, fit, spec,
-		int(b.get("units", 2)), b.get("chain", "general"), int(b.get("level", 0)))))
+	var doors := []
+	var props := PropLog.collect(func(): doors.append_array(DoorLog.collect(func(): box.append(build_for(BuildingTypes.type_of(b), storeys, s, lot.to_curb, fit, spec,
+		int(b.get("units", 2)), b.get("chain", "general"), int(b.get("level", 0)))))))
 	var built: Array = box[0]
 	HouseBuilder.keep_arrays = false
 	HouseBuilder.flat_weeds = true
@@ -320,7 +323,7 @@ func _draw(key: String, lot: Dictionary, b: Dictionary, fit: Dictionary, s: int)
 	if built.size() < 2:
 		return []
 	return [built[0].get_meta("parts", []), built[1].get_meta("parts", []), built[2] if built.size() > 2 else [],
-		built[3] if built.size() > 3 else [], doors]
+		built[3] if built.size() > 3 else [], doors, props]
 
 
 ## The doors the builder of the shop or plant on lot `key` draws (DoorLog:
@@ -509,6 +512,9 @@ func _spawn(key: String, refill := false) -> void:
 		had.erase("doors")
 		if not drawn[4].is_empty() and int(b.zone) != ZoneMap.Zone.RESIDENTIAL:
 			had.doors = drawn[4]
+		had.props = drawn[5]
+		if had.site == null:
+			_props.put(key, had.xf, had.props)
 		if _batches.has(had.sq):
 			_batches[had.sq].set_building(key, had.xf, solid, draped, footing, labels)
 			_merge_soon(had.sq)
@@ -521,7 +527,7 @@ func _spawn(key: String, refill := false) -> void:
 	if not masses.is_empty():
 		mid /= masses.size()
 	var rec := {"sq": sq, "xf": xf, "centre": xf * mid, "front": lot.front, "look": _look(b, key),
-		"sign": sim.families.sign_key(sim, "lot:" + key), "chain": b.get("chain", ""), "site": null}
+		"sign": sim.families.sign_key(sim, "lot:" + key), "chain": b.get("chain", ""), "site": null, "props": drawn[5]}
 	_recs[key] = rec
 	if not _by_sq.has(sq):
 		_by_sq[sq] = {}
@@ -589,6 +595,7 @@ func _place(key: String, parts: Array) -> void:
 	var rec: Dictionary = _recs[key]
 	_far_sq.put(key, rec.sq, rec.xf, parts[3])
 	_plant(key, rec.xf, parts[4])
+	_props.put(key, rec.xf, rec.get("props", []))
 	if _batches.has(rec.sq):
 		_batches[rec.sq].set_building(key, rec.xf, parts[0], parts[1], parts[2], parts[5])
 		_merge_soon(rec.sq)
@@ -607,6 +614,7 @@ func _unspawn(key: String) -> void:
 	if rec.site != null:
 		rec.site.queue_free()
 	_far_sq.drop(key)
+	_props.drop(key)
 	if _batches.has(rec.sq):
 		_batches[rec.sq].remove_building(key)
 		# Torn down, or going up again behind scaffolding: it leaves at once

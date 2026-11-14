@@ -71,6 +71,7 @@ func _init() -> void:
 			"grown": 22.0, "grownold": 22.0, "carriage": 24.0, "poptop": 22.0, "cornergrown": [18.0, 18.0, 20.0, 20.0, 18.0][i % 5], "rows": 22.0, "garden": 40.0, "walkups": 32.0, "plexes": 22.0, "infill": [16.0, 20.0, 24.0, 18.0, 26.0][i % 5], "duplex": [16.0, 20.0, 24.0, 24.0, 22.0][i % 5],
 			"corner": [14.0, 13.0, 12.0, 22.0, 20.0][i % 5], "cottage": [16.0, 20.0, 22.0, 18.0, 24.0][i % 5], "cornerflats": [14.0, 18.0, 12.0, 16.0, 16.0][i % 5]}.get(k, 20.0)
 		var sd := seed * 100 + i
+		PropLog.drawn = []  # the scans each lot stands (shown below, as the game does)
 		match k:
 			"shop": meshes = CommercialBuilder.build_shop(sd, 3.9)
 			"factory": meshes = CommercialBuilder.build_factory(sd, 3.9)
@@ -220,6 +221,8 @@ func _init() -> void:
 				CommercialBuilder.force_shop = ""
 			_: meshes = HouseBuilder.build(sd, 3.9)
 		HouseBuilder.owner_care = 0
+		var props: Array = PropLog.drawn
+		PropLog.drawn = null
 		if far:
 			var fm := BuildingView.far_version(meshes[0], HouseBuilder.last_masses, k == "factory", Color.WHITE, Color("#9c9a95"), meshes[1])
 			fm.surface_set_material(0, HouseMaterials.get_mat("far"))
@@ -231,6 +234,12 @@ func _init() -> void:
 			mi.mesh = m
 			mi.position = at
 			world.add_child(mi)
+		if not far:
+			for p in props:
+				var pi := MeshInstance3D.new()
+				pi.mesh = PropLog.mesh_of(p[0])
+				pi.transform = Transform3D(Basis(), at) * (p[1] as Transform3D)
+				world.add_child(pi)
 		var planted := []
 		for t in meshes[2]:
 			var xf := Transform3D(Basis.IDENTITY.scaled(Vector3.ONE * t[3]), at + t[0])
@@ -245,7 +254,7 @@ func _init() -> void:
 	var dist := float(args[5]) if args.size() > 5 else 70.0
 	var target := Vector3(0, 3, 8)
 	if args.size() > 7:
-		target = Vector3(float(args[6]), float(args[7]), 8)
+		target = Vector3(float(args[6]), float(args[7]), float(args[8]) if args.size() > 8 and args[8].is_valid_float() else 8.0)
 	cam.position = target + Vector3(sin(yaw) * cos(pitch), sin(pitch), -cos(yaw) * cos(pitch)) * dist
 	cam.basis = Basis.looking_at(target - cam.position)
 	cam.current = true
