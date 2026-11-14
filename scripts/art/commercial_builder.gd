@@ -966,6 +966,15 @@ func _strip_center(to_curb: float, anchor := false) -> void:
 		_box("eifs" if style == "towers" else "paint", Vector3(w + 0.4, 0.5, 2.6), Vector3(0, 3.65, zf - 1.3), wall.lightened(0.1))
 		_quad("paint", Vector3(-w * 0.5 - 0.2, 3.39, zf - 2.6), Vector3(w * 0.5 + 0.2, 3.39, zf - 2.6),
 			Vector3(w * 0.5 + 0.2, 3.39, zf), Vector3(-w * 0.5 - 0.2, 3.39, zf), SOFFIT, [], Vector3.DOWN)
+		if fine_parts:
+			# Desktop: a recessed can light in the soffit over the middle of
+			# each bay, lit dusk to dawn, and the walk bright under them, as
+			# every strip centre's lease requires for its tenants.
+			var lx := -w * 0.5 + bay * 0.5
+			while lx < w * 0.5:
+				_box("sign", Vector3(0.3, 0.02, 0.3), Vector3(lx, 3.375, zf - 1.3), Color(0.98, 0.95, 0.88, 1.0))
+				_light_pool(Vector3(lx, 0.12, zf - 1.3), bay * 1.15, 4.6, Color(1.0, 0.95, 0.86))
+				lx += bay
 	var pier := Color(["#9c8f7a", "#b3a58c", "#8a7f70"][sr.randi() % 3])
 	var x := -w * 0.5
 	while x <= x1 + 0.01:
