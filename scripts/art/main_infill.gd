@@ -71,6 +71,8 @@ static func _mi_midcentury(b: DenseBuilder, r: RandomNumberGenerator, to_curb: f
 	for k in fronts:
 		var fx := -w * 0.5 + (k + 0.5) * fw
 		var sw := fw - 0.8
+		if DenseBuilder.fine:
+			b._light_pool(Vector3(fx, 0.1, zf - 0.2), sw * 1.4, 4.4, Color(0.78, 0.7, 0.58))  # the windows' spill after dark
 		# Polished stone bulkhead, then glass to the canopy in tall lights.
 		b._box("paint", Vector3(sw, 0.5, 0.12), Vector3(fx, 0.25, zf - 0.06), stone)
 		var lights := maxi(3, roundi(sw / 1.6))
@@ -191,6 +193,8 @@ static func _mi_newbuild(b: DenseBuilder, r: RandomNumberGenerator, to_curb: flo
 		var lights := maxi(2, roundi(sw / 1.8))
 		var lw := sw / lights
 		var eats := DenseBuilder.fine and b.sign_spec.is_empty() and int(b._word_slot(bx) * 0.5) - 1 in CommercialBuilder.EATERIES
+		if DenseBuilder.fine:
+			b._light_pool(Vector3(bx, 0.1, zf - 0.2), sw * 1.4, 4.4, Color(0.78, 0.7, 0.58))  # the windows' spill after dark
 		b._box("paint", Vector3(sw, 0.45, 0.1), Vector3(bx, 0.22, zf - 0.05), stone)
 		for i in lights:
 			var x := bx - sw * 0.5 + (i + 0.5) * lw
