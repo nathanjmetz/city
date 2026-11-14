@@ -384,6 +384,9 @@ func _tank_coil(p: Vector3) -> void:
 func _door(x: float, z: float, w := 3.7, h := 4.3) -> void:
 	_box("siding", Vector3(w, h, 0.08), Vector3(x, 0.3 + h * 0.5, z - 0.03), Color(TRIM, 0.0))
 	DoorLog.add(self, "bay", Vector3(x, 0.3 + h * 0.5, z - 0.07), Vector3(0, 0, -1), w, h, TRIM)
+	# A dusk-to-dawn wall pack over the door, as on every Midwest plant.
+	if not _wall_light(Vector3(x, 0.3 + h + 0.9, z), Vector3(0, 0, -1)):
+		_dr_wallpack(Vector3(x, 0.3 + h + 0.7, z - 0.18), Vector3(0, 0, -1))
 
 
 ## A cone roof (bins, piles) from a base circle up to a point.
@@ -540,22 +543,30 @@ func _sawmill(to_curb: float) -> void:
 	_metal_roof(sx, sz, 7.0, sw, 13.0, roof)
 	_box("metal", Vector3(sw * 0.3, 5.0, 12.0), Vector3(sx + sw * 0.32, 2.8, sz), Color(_pick(METAL_WALL)))  # the saw house
 	# Log deck behind: logs lying in long stacks.
+	# Hardwood sawlogs: 10-12 ft, 14-24 in across, round, pyramid-stacked.
+	var lg := RandomNumberGenerator.new()
+	lg.seed = hash([rng.seed, "log_deck_logs"])
 	for row in 3:
 		var z: float = sz + 12.0 + row * 4.0
 		if z > back:
 			break
 		for layer in 3 - row % 2:
-			for k in 6 - layer:
-				var lx := sx - sw * 0.5 + 2.0 + k * 1.2 + layer * 0.6
-				_box("paint", Vector3(0.9, 0.9, 7.5), Vector3(lx, 0.45 + layer * 0.8, z), BARK)
-				_box("paint", Vector3(0.75, 0.75, 0.05), Vector3(lx, 0.45 + layer * 0.8, z - 3.81), LOG_END)
+			for k in 9 - layer:
+				var lr := lg.randf_range(0.18, 0.3)
+				var ll := lg.randf_range(3.0, 3.7)
+				var lx := sx - sw * 0.5 + 1.5 + k * 0.62 + layer * 0.31
+				for half_z in [-1.0, 1.0]:  # two log lengths end to end
+					var c := Vector3(lx, 0.27 + layer * 0.46, z + half_z * 1.9 + lg.randf_range(-0.15, 0.15))
+					UpgradeKits._drum(self, c, lr, ll, BARK.lightened(lg.randf_range(-0.05, 0.1)), false, 9)
+					for e in [-1.0, 1.0]:
+						UpgradeKits._drum(self, c + Vector3(0, 0, e * (ll * 0.5 + 0.01)), lr * 0.88, 0.02, LOG_END, false, 9)
 	# Stickered lumber stacks on the other side, a dry kiln and the sawdust pile.
+	var g := RandomNumberGenerator.new()  # its own, so the builder's draws don't move
+	g.seed = hash([rng.seed, "air_dry_stacks"])
 	for k in 4:
 		var c := Vector3(sx - sw * 0.5 + 4.0 + k * 3.6, 0, sz - 12.0)
 		if _in_lot(c, 2.5):
-			for layer in 4:
-				_box("paint", Vector3(2.4, 0.42, 4.8), c + Vector3(0, 0.25 + layer * 0.5, 0), LUMBER)
-				_box("paint", Vector3(2.5, 0.08, 4.9), c + Vector3(0, 0.5 + layer * 0.5, 0), LUMBER.darkened(0.35))
+			_air_dry_stack(c, g)
 	var kx := sx + sw * 0.5 - 6.0
 	var kz := minf(sz + 18.0, back - 6.0)
 	_hall(kx, kz, 10.0, 12.0, 6.5, Color("#c9cbc8"))
@@ -563,6 +574,35 @@ func _sawmill(to_curb: float) -> void:
 	_door(kx + 2.2, kz - 6.0, 4.0, 4.6)
 	_mill_flow(sx, sw, sz, back)
 	_log_yard(sx - sw * 0.5 - 4.0, zf + 4.0, back)
+
+
+## A hardwood air-drying stack, as Indiana mills stack green 4/4 lumber:
+## 16 ft boards in a 4 ft wide stack on timber bunks, each course on 3/4
+## in stickers every 2 ft so air runs through, and on top a corrugated
+## roof sheet weighted down with concrete blocks against the wind.
+func _air_dry_stack(c: Vector3, g: RandomNumberGenerator) -> void:
+	var w := 1.25
+	var l := 4.9
+	var sticker := LUMBER.darkened(0.3)
+	for e in [-1.0, 0.0, 1.0]:  # bunks across the stack
+		_box("paint", Vector3(w + 0.3, 0.2, 0.2), c + Vector3(0, 0.1, e * (l * 0.5 - 0.4)), Color("#6b5a44"))
+	var courses := g.randi_range(10, 16)
+	var y := 0.2
+	for i in courses:
+		var col := LUMBER.darkened(g.randf_range(0.0, 0.12))
+		_box("paint", Vector3(w, 0.07, l), c + Vector3(0, y + 0.035, 0), col)
+		y += 0.07
+		if i == courses - 1:
+			break
+		for j in 9:  # stickers, a gap of air between them
+			_box("paint", Vector3(w + 0.04, 0.03, 0.04), c + Vector3(0, y + 0.015, -l * 0.5 + 0.05 + j * (l - 0.1) / 8.0), sticker)
+		y += 0.03
+	if g.randf() < 0.75:
+		var roof := Color("#8e9396").darkened(g.randf_range(0.0, 0.25))
+		_box("paint", Vector3(w + 0.4, 0.04, l + 0.4), c + Vector3(0, y + 0.06, 0), roof,
+			Basis(Vector3.RIGHT, g.randf_range(-0.04, 0.04)))
+		for e in [-1.0, 1.0]:
+			_box("paint", Vector3(0.4, 0.2, 0.2), c + Vector3(g.randf_range(-0.2, 0.2), y + 0.18, e * l * 0.3), Color("#a8a59c"))
 
 
 ## How the wood moves through a real hardwood mill, from Indiana mill
@@ -587,7 +627,7 @@ func _mill_flow(sx: float, sw: float, sz: float, back: float) -> void:
 		var y := 1.3 - (z - sz - 6.0) / 7.0 * 1.15 + 0.5
 		UpgradeKits._drum(self, Vector3(lx, y, z), 0.42, 7.0, BARK, true, 10)
 		for e in [-1.0, 1.0]:
-			_box("paint", Vector3(0.05, 0.7, 0.7), Vector3(lx + e * 3.52, y, z), LOG_END)
+			UpgradeKits._drum(self, Vector3(lx + e * 3.51, y, z), 0.37, 0.02, LOG_END, true, 10)
 	# Debarker housing at the top of the deck.
 	_box("metal", Vector3(3.0, 2.2, 2.4), Vector3(lx + 1.0, 1.6, sz + 4.6), Color("#8c7a52"))
 	_box("paint", Vector3(0.6, 0.6, 0.6), Vector3(lx + 2.8, 1.0, sz + 4.6), Color("#3d5a7a"))  # motor
@@ -850,6 +890,10 @@ func _metal_works(to_curb: float) -> void:
 	var yz := hz + hd * 0.5 + 9.0
 	if yz + 6.0 < depth:
 		_gantry(Vector3(hx, 0, yz), 24.0, 9.6)
+		# Wall floods high on the back wall light the crane yard for the night shift.
+		for e in [-1.0, 1.0]:
+			PropLog.place(self, "flood_lights", Transform3D(Basis().scaled(Vector3.ONE * 2.4),
+				Vector3(hx + e * 7.0, 7.5, hz + hd * 0.5 + 0.02)), ["*wall_*"])
 		for i in 8:
 			for j in 2:
 				_cylinder("metal", Vector3(hx - 9.0 + i * 2.5, 0, yz - 2.0 + j * 4.0), 0.9, 1.5, COIL, 12)

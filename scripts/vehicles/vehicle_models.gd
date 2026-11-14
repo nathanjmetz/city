@@ -318,6 +318,191 @@ func _sedan_camry() -> void:
 			_wheel(Vector3(sx * 0.79, 0.0, az), 0.335, 0.225, RIM)
 
 
+## Ultra: a Ford Mustang coupe (S650, 2024-) lofted from its blueprints the
+## way the Camry is: 4811 mm long, 1916 wide, 1397 high, 2720 wheelbase.
+## A long hood off a blunt shark nose, the fastback roof running down to a
+## short ducktail deck, wide rear haunches (the Coke-bottle waist), the
+## big trapezoid grille, tri-bar lamps front and back, quad exhausts.
+const MUSTANG_TOP := [[0.0, 0.6], [0.04, 0.7], [0.14, 0.76], [0.6, 0.8], [1.2, 0.86], [1.7, 0.91],
+	[1.85, 0.97], [2.2, 1.2], [2.55, 1.37], [2.85, 1.397], [3.15, 1.36], [3.6, 1.17], [4.0, 1.03],
+	[4.3, 0.99], [4.72, 0.985], [4.811, 0.93]]
+const MUSTANG_BELT := [[0.0, 0.58], [0.04, 0.66], [0.14, 0.72], [1.0, 0.82], [1.8, 0.9], [2.6, 0.94],
+	[3.3, 0.97], [3.8, 0.99], [4.3, 0.99], [4.72, 0.975], [4.811, 0.92]]
+const MUSTANG_ROCKER := [[0.0, 0.22], [0.3, 0.17], [0.7, 0.14], [4.3, 0.15], [4.811, 0.28]]
+const MUSTANG_WIDTH := [[0.0, 0.7], [0.08, 0.8], [0.3, 0.88], [0.9, 0.925], [2.1, 0.9], [3.3, 0.952],
+	[3.9, 0.958], [4.5, 0.925], [4.811, 0.85]]
+const MUSTANG_ROOF_W := [[1.75, 0.8], [2.5, 0.62], [3.0, 0.6], [3.6, 0.66], [4.15, 0.8]]
+
+
+func _mustang() -> void:
+	var L := 4.811
+	var axles := [0.93, 3.65]
+	var P := {"top": MUSTANG_TOP, "belt": MUSTANG_BELT, "rocker": MUSTANG_ROCKER,
+		"width": MUSTANG_WIDTH, "roof_w": MUSTANG_ROOF_W, "tyre": 0.34, "floor": 0.13}
+	var zs := []
+	var z := 0.0
+	while z < L:
+		zs.append(z)
+		z += 0.05
+	zs.append(L)
+	var rings := []
+	for zz in zs:
+		rings.append(_camry_ring(zz, axles, P))
+	var m: int = rings[0].size()
+	var codes := []
+	for i in zs.size() - 1:
+		codes.append(_mustang_codes(0.5 * (zs[i] + zs[i + 1]), m))
+	_skin(rings, codes)
+	_cap(rings[0], PAINT, Vector3(0, 0, 1))
+	_cap(rings[rings.size() - 1], PAINT, Vector3(0, 0, -1))
+	var dark := Color(0.03, 0.03, 0.03, 0.3)
+	# Nose: the trapezoid grille, lamps at its top corners with the tri-bar
+	# running lights below them, the pony badge, the splitter.
+	var zf := -0.006
+	for i in 5:
+		var y := 0.27 + i * 0.06
+		_box(Vector3(0, y, zf), Vector3(0.82 + i * 0.05, 0.062, 0.012), dark)
+	_box(Vector3(0, 0.42, zf - 0.008), Vector3(0.14, 0.05, 0.012), CHROME)
+	for sx in [-1.0, 1.0]:
+		_box(Vector3(sx * 0.5, 0.53, zf), Vector3(0.26, 0.08, 0.012), TRIM)
+		_box(Vector3(sx * 0.52, 0.535, zf - 0.008), Vector3(0.19, 0.05, 0.012), HEAD)
+		for k in 3:
+			_box(Vector3(sx * (0.48 + k * 0.05), 0.44, zf), Vector3(0.018, 0.07, 0.012), HEAD)
+		_box(Vector3(sx * 0.72, 0.28, zf), Vector3(0.14, 0.1, 0.012), dark)
+	_box(Vector3(0, 0.17, 0.02), Vector3(1.5, 0.03, 0.06), dark)
+	# Door mirrors on the door skin, below the A-pillar.
+	for sx in [-1.0, 1.0]:
+		_box(Vector3(sx * 0.9, 0.95, 2.02), Vector3(0.16, 0.09, 0.2), PAINT)
+	# Tail: tri-bar lamps in a dark panel, badge, plate, diffuser, exhausts.
+	var zr := L + 0.006
+	_box(Vector3(0, 0.79, zr), Vector3(1.5, 0.16, 0.012), dark)
+	for sx in [-1.0, 1.0]:
+		for k in 3:
+			_box(Vector3(sx * (0.48 + k * 0.1), 0.79, zr + 0.008), Vector3(0.05, 0.13, 0.012), TAIL)
+	_box(Vector3(0, 0.8, zr + 0.008), Vector3(0.14, 0.05, 0.012), CHROME)
+	_box(Vector3(0, 0.95, L - 0.06), Vector3(1.3, 0.025, 0.14), PAINT)  # ducktail lip
+	_box(Vector3(0, 0.52, zr), Vector3(0.36, 0.2, 0.012), dark)
+	_box(Vector3(0, 0.52, zr + 0.008), Vector3(0.3, 0.15, 0.012), WHITE)
+	_box(Vector3(0, 0.27, zr), Vector3(1.3, 0.14, 0.012), dark)
+	for sx in [-1.0, 1.0]:
+		for k in 2:
+			var x: float = sx * (0.42 + k * 0.13)
+			_cyl(Vector3(x, 0.27, L - 0.04), Vector3(x, 0.27, L + 0.05), 0.045, CHROME, 10)
+	for az in axles:
+		for sx in [-1.0, 1.0]:
+			_wheel(Vector3(sx * 0.83, 0.0, az), 0.34, 0.255, RIM)
+
+
+## The Mustang's finish strips: frameless door and quarter glass in one
+## run (no B pillar), raked windshield, the fastback's long rear window,
+## lamps wrapping the corners.
+static func _mustang_codes(z: float, m: int) -> Array:
+	var side := [TRIM, TRIM, PAINT, PAINT, PAINT, PAINT, PAINT, PAINT]
+	if z < 0.3:
+		side[3] = HEAD
+	elif z > 4.74:
+		side[3] = TAIL
+	if z > 2.0 and z < 3.55:
+		side[5] = GLASS
+	if z > 1.88 and z < 2.5 or z > 3.2 and z < 4.0:
+		side[7] = GLASS
+	var out := []
+	for e in m:
+		out.append(side[e] if e < 8 else side[m - 1 - e])
+	return out
+
+
+## Ultra: a Toyota RAV4 (XA50, 2019-25), America's best-selling vehicle,
+## lofted from its blueprints like the Camry: 4595 mm long, 1855 wide,
+## 1700 high, 2690 wheelbase. An upright blunt nose, a high belt, the
+## roof running nearly flat to a spoiler over a steep hatch glass, a
+## near-vertical tailgate, dark cladding low round the body, roof rails.
+const RAV4_TOP := [[0.0, 0.86], [0.06, 0.95], [0.2, 0.99], [0.6, 1.03], [1.1, 1.08], [1.45, 1.12],
+	[1.6, 1.17], [2.0, 1.5], [2.3, 1.66], [2.8, 1.7], [3.6, 1.69], [4.3, 1.65], [4.48, 1.22],
+	[4.56, 1.12], [4.595, 1.06]]
+const RAV4_BELT := [[0.0, 0.84], [0.06, 0.92], [0.2, 0.96], [1.0, 1.04], [1.6, 1.1], [3.0, 1.13],
+	[4.0, 1.17], [4.45, 1.17], [4.56, 1.1], [4.595, 1.05]]
+const RAV4_ROCKER := [[0.0, 0.34], [0.3, 0.3], [0.7, 0.26], [3.9, 0.26], [4.595, 0.4]]
+const RAV4_WIDTH := [[0.0, 0.74], [0.1, 0.83], [0.35, 0.9], [0.9, 0.925], [2.5, 0.927], [4.0, 0.92],
+	[4.45, 0.89], [4.595, 0.84]]
+const RAV4_ROOF_W := [[1.6, 0.82], [2.3, 0.72], [3.0, 0.7], [4.0, 0.72], [4.35, 0.8]]
+
+
+func _rav4() -> void:
+	var L := 4.595
+	var axles := [0.93, 3.62]
+	var P := {"top": RAV4_TOP, "belt": RAV4_BELT, "rocker": RAV4_ROCKER,
+		"width": RAV4_WIDTH, "roof_w": RAV4_ROOF_W, "tyre": 0.36, "floor": 0.21}
+	var zs := []
+	var z := 0.0
+	while z < L:
+		zs.append(z)
+		z += 0.05
+	zs.append(L)
+	var rings := []
+	for zz in zs:
+		rings.append(_camry_ring(zz, axles, P))
+	var m: int = rings[0].size()
+	var codes := []
+	for i in zs.size() - 1:
+		codes.append(_rav4_codes(0.5 * (zs[i] + zs[i + 1]), m))
+	_skin(rings, codes)
+	_cap(rings[0], PAINT, Vector3(0, 0, 1))
+	_cap(rings[rings.size() - 1], PAINT, Vector3(0, 0, -1))
+	var dark := Color(0.03, 0.03, 0.03, 0.3)
+	# Face: slim lamps under the hood edge with the upper grille between,
+	# the big trapezoid lower grille, fog recesses, silver skid plate.
+	var zf := -0.006
+	for sx in [-1.0, 1.0]:
+		_box(Vector3(sx * 0.5, 0.75, zf), Vector3(0.34, 0.1, 0.012), TRIM)
+		_box(Vector3(sx * 0.52, 0.76, zf - 0.008), Vector3(0.26, 0.05, 0.012), HEAD)
+		_box(Vector3(sx * 0.48, 0.72, zf - 0.008), Vector3(0.28, 0.012, 0.012), HEAD)
+		_box(Vector3(sx * 0.6, 0.44, zf), Vector3(0.18, 0.12, 0.012), dark)
+	_box(Vector3(0, 0.75, zf), Vector3(0.62, 0.07, 0.012), dark)
+	_box(Vector3(0, 0.76, zf - 0.008), Vector3(0.1, 0.06, 0.012), CHROME)
+	for i in 4:
+		_box(Vector3(0, 0.4 + i * 0.065, zf), Vector3(0.72 + i * 0.07, 0.067, 0.012), dark)
+	_box(Vector3(0, 0.3, zf), Vector3(0.7, 0.06, 0.012), ALUM)
+	# Mirrors, roof rails, the spoiler over the hatch glass.
+	for sx in [-1.0, 1.0]:
+		_box(Vector3(sx * 0.95, 1.18, 1.78), Vector3(0.16, 0.12, 0.22), PAINT)
+		_box(Vector3(sx * 0.6, 1.69, 3.35), Vector3(0.05, 0.04, 1.7), TRIM)
+	_box(Vector3(0, 1.665, 4.3), Vector3(1.3, 0.04, 0.16), PAINT)
+	# Tailgate: lamps wrapping in from the corners, the dark garnish bar,
+	# badge, plate, dark bumper with reflectors.
+	var zr := L + 0.006
+	for sx in [-1.0, 1.0]:
+		_box(Vector3(sx * 0.66, 0.97, zr), Vector3(0.26, 0.11, 0.012), TAIL)
+		_box(Vector3(sx * 0.6, 0.38, zr), Vector3(0.1, 0.03, 0.012), Color(0.7, 0.05, 0.03, 0.4))
+	_box(Vector3(0, 0.97, zr), Vector3(1.06, 0.05, 0.012), dark)
+	_box(Vector3(0, 0.88, zr + 0.008), Vector3(0.12, 0.06, 0.012), CHROME)
+	_box(Vector3(0, 0.66, zr), Vector3(0.36, 0.2, 0.012), dark)
+	_box(Vector3(0, 0.66, zr + 0.008), Vector3(0.3, 0.15, 0.012), WHITE)
+	_box(Vector3(0, 0.36, zr), Vector3(1.5, 0.16, 0.012), dark)
+	for az in axles:
+		for sx in [-1.0, 1.0]:
+			_wheel(Vector3(sx * 0.815, 0.0, az), 0.36, 0.225, RIM)
+
+
+## The RAV4's finish strips: dark cladding along the rocker and round the
+## arches, windshield, side glass with B and C pillars and the rear
+## quarter window, the hatch glass, lamps wrapping the corners.
+static func _rav4_codes(z: float, m: int) -> Array:
+	var side := [TRIM, TRIM, TRIM, PAINT, PAINT, PAINT, PAINT, PAINT]
+	if z < 0.25:
+		side[3] = HEAD
+	elif z > 4.54:
+		side[3] = TAIL
+	if z > 1.65 and z < 4.32 and not (z > 2.72 and z < 2.84) and not (z > 3.74 and z < 3.86):
+		side[5] = GLASS
+	if z > 1.62 and z < 2.28 or z > 4.3 and z < 4.5:
+		side[7] = GLASS
+	var out := []
+	for e in m:
+		out.append(side[e] if e < 8 else side[m - 1 - e])
+	return out
+
+
 ## Ultra: the Camry's swept headlamps, which lie on the nose's slope
 ## running back toward the fenders: a dark housing with the lens and an
 ## LED running-light edge inside it, and the badge on the upper grille.
@@ -361,20 +546,22 @@ func _camry_rear(L: float) -> void:
 
 ## One cross-section: right side from the floor's middle up to the roof's
 ## middle, then the left side back down (x mirrored).
-static func _camry_ring(z: float, axles: Array) -> Array:
-	var top := _curve(CAMRY_TOP, z)
-	var belt := minf(_curve(CAMRY_BELT, z), top)
-	var w := _curve(CAMRY_WIDTH, z)
-	var yb := _curve(CAMRY_ROCKER, z)
+static func _camry_ring(z: float, axles: Array, P: Dictionary = {}) -> Array:
+	var top := _curve(P.get("top", CAMRY_TOP), z)
+	var belt := minf(_curve(P.get("belt", CAMRY_BELT), z), top)
+	var w := _curve(P.get("width", CAMRY_WIDTH), z)
+	var yb := _curve(P.get("rocker", CAMRY_ROCKER), z)
+	var tr: float = P.get("tyre", 0.335)
 	for az in axles:
 		var dz: float = z - az
 		if absf(dz) < 0.4:
-			yb = maxf(yb, 0.335 + sqrt(0.16 - dz * dz))  # arch round the tyre
+			yb = maxf(yb, tr + sqrt(0.16 - dz * dz))  # arch round the tyre
 	yb = minf(yb, belt - 0.12)
-	var floor_y := minf(0.16, yb)
+	var floor_y := minf(P.get("floor", 0.16), yb)
 	# Greenhouse, blended in as the roof rises off the hood and trunk.
 	var g := clampf((top - belt - 0.03) / 0.15, 0.0, 1.0)
-	var wr := minf(_curve(CAMRY_ROOF_W, clampf(z, 1.55, 4.2)), w - 0.06)
+	var rw: Array = P.get("roof_w", CAMRY_ROOF_W)
+	var wr := minf(_curve(rw, clampf(z, rw[0][0], rw[rw.size() - 1][0])), w - 0.06)
 	var hood := [Vector2(w - 0.08, belt + 0.01), Vector2(w * 0.72, lerpf(belt, top, 0.65)),
 		Vector2(w * 0.38, top - 0.004)]
 	var glass := [Vector2(w - 0.07, belt + 0.02), Vector2(wr + 0.05, top - 0.07), Vector2(wr - 0.1, top - 0.006)]
@@ -498,6 +685,9 @@ func _hatchback() -> void:  # Honda Civic hatch
 
 
 func _crossover() -> void:  # Toyota RAV4
+	if _hi:
+		_rav4()
+		return
 	_car({"L": 4.6, "W": 1.86, "H": 1.7, "clear": 0.22, "hood": 1.0, "belt": 1.12, "a": 1.15,
 		"b": 1.9, "c": 3.85, "e": 4.42, "tail": 1.14, "wr": 0.37, "axles": [0.95, 3.6], "c_pillar": false, "clad": true})
 
@@ -516,6 +706,9 @@ func _minivan() -> void:  # Honda Odyssey
 
 
 func _sports() -> void:  # Ford Mustang
+	if _hi:
+		_mustang()
+		return
 	_car({"L": 4.81, "W": 1.92, "H": 1.38, "clear": 0.13, "hood": 0.8, "belt": 0.95, "a": 1.85,
 		"b": 2.55, "c": 3.2, "e": 4.25, "tail": 0.98, "wr": 0.35, "axles": [1.0, 3.75]})
 	if not _lo:
@@ -1337,6 +1530,9 @@ func _flat(c: Vector3, along: Vector3, n: Vector3, length: float, width: float, 
 func _delivery_van() -> void:  # step van (Freightliner MT45 / Ford P1000)
 	var L := 7.0
 	var hw := 1.2
+	if _hi:
+		_step_van(L, hw)
+		return
 	_loft([
 		[0.0, 0.42, 0.95, 1.05, hw - 0.14, hw - 0.1, hw - 0.2],
 		[0.5, 0.38, 1.1, 1.2, hw - 0.03, hw, hw - 0.04],
@@ -1352,6 +1548,85 @@ func _delivery_van() -> void:  # step van (Freightliner MT45 / Ford P1000)
 	_box(Vector3(hw - 0.08, 1.0, L + 0.01), Vector3(0.12, 0.3, 0.04), TAIL, true)
 	if not _lo:
 		_box(Vector3(0, 1.6, L + 0.01), Vector3(1.6, 2.2, 0.02), DARK)
+
+
+## Ultra: a walk-in step van as parcel fleets run them (Freightliner MT45
+## chassis, Utilimaster/Morgan Olson body): a short sloped hood with round
+## lamps, a flat two-pane windshield under the box overhang, sliding cab
+## doors, West Coast mirrors, a ribbed aluminium box with a rub rail, DOT
+## clearance and ID lamps, and a roll-up rear door over a step bumper.
+func _step_van(L: float, hw: float) -> void:
+	var f := 0.68
+	_loft([
+		[0.0, 0.42, 0.92, 1.06, hw - 0.22, hw - 0.18, hw - 0.32],
+		[0.35, 0.4, 1.06, 1.2, hw - 0.1, hw - 0.08, hw - 0.18],
+		[f, 0.4, 1.18, 1.3, hw - 0.06, hw - 0.04, hw - 0.12],
+	], [_edges(PAINT, TRIM)], PAINT, PAINT)
+	_loft([
+		[f + 0.02, 0.38, 2.95, 3.1, hw - 0.03, hw, hw - 0.04],
+		[L, 0.38, 2.95, 3.1, hw - 0.02, hw, hw - 0.02],
+	], [_edges(PAINT, TRIM)], PAINT, PAINT)
+	var zf := f + 0.02
+	# Windshield: black surround, two flat panes, centre post, wipers.
+	_box(Vector3(0, 1.82, zf - 0.008), Vector3(2.24, 1.06, 0.004), TRIM)
+	for s in [-1.0, 1.0]:
+		_box(Vector3(s * 0.55, 1.83, zf - 0.016), Vector3(1.0, 0.94, 0.004), GLASS)
+		_beam(Vector3(s * 0.15, 1.38, zf - 0.03), Vector3(s * 0.75, 1.7, zf - 0.03), 0.02, TRIM)
+	# Box front above the cab: clearance and ID lamps.
+	for x in [-hw + 0.08, -0.2, 0.0, 0.2, hw - 0.08]:
+		_box(Vector3(x, 3.0, zf - 0.012), Vector3(0.07, 0.05, 0.02), BEACON_AMBER)
+	# Hood nose: grille, round headlamps, amber parking lamps, bumper.
+	_box(Vector3(0, 0.76, -0.008), Vector3(0.86, 0.34, 0.016), CHROME)
+	for i in 4:
+		_box(Vector3(0, 0.64 + i * 0.08, -0.02), Vector3(0.78, 0.035, 0.012), DARK)
+	for s in [-1.0, 1.0]:
+		_cyl(Vector3(s * 0.7, 0.76, 0.01), Vector3(s * 0.7, 0.76, -0.03), 0.105, CHROME, 12)
+		_cyl(Vector3(s * 0.7, 0.76, -0.02), Vector3(s * 0.7, 0.76, -0.036), 0.085, HEAD, 12)
+		_box(Vector3(s * 0.93, 0.76, 0.06), Vector3(0.1, 0.07, 0.03), BEACON_AMBER)
+	_box(Vector3(0, 0.47, -0.1), Vector3(2.3, 0.2, 0.16), DARK)
+	for s in [-1.0, 1.0]:
+		var sx: float = s
+		var x := sx * (hw + 0.008)
+		# Sliding cab door: lower panel seams and the door glass.
+		_box(Vector3(x, 1.85, 1.95), Vector3(0.006, 0.8, 0.75), GLASS)
+		_box(Vector3(x, 1.3, 1.57), Vector3(0.006, 1.9, 0.03), TRIM)
+		_box(Vector3(x, 1.3, 2.33), Vector3(0.006, 1.9, 0.03), TRIM)
+		_box(Vector3(x, 1.2, 2.22), Vector3(0.006, 0.08, 0.14), STEEL)
+		# Cab step under the door.
+		_box(Vector3(sx * (hw - 0.15), 0.36, 1.95), Vector3(0.32, 0.04, 0.75), STEEL)
+		# Body: rub rail, roof drip, rivet posts, side clearance lamps.
+		_box(Vector3(x, 0.55, (2.5 + L) * 0.5), Vector3(0.012, 0.08, L - 2.6), TRIM)
+		_box(Vector3(x, 2.94, (zf + L) * 0.5), Vector3(0.012, 0.03, L - zf), TRIM)
+		var z := 2.6
+		while z < L - 0.3:
+			_box(Vector3(x, 1.75, z), Vector3(0.006, 2.3, 0.025), ALUM)
+			z += 1.1
+		_box(Vector3(x + sx * 0.006, 2.85, zf + 0.15), Vector3(0.012, 0.05, 0.08), BEACON_AMBER)
+		_box(Vector3(x + sx * 0.006, 2.85, L - 0.12), Vector3(0.012, 0.05, 0.08), TAIL)
+		# West Coast mirror on two arms.
+		var root := Vector3(sx * hw, 2.0, zf + 0.15)
+		var head := Vector3(sx * (hw + 0.28), 1.95, zf + 0.02)
+		_beam(root, head, 0.025, STEEL)
+		_beam(root + Vector3(0, -0.4, 0), head + Vector3(0, -0.3, 0), 0.025, STEEL)
+		_box(head + Vector3(0, -0.12, 0), Vector3(0.07, 0.42, 0.16), TRIM)
+	# Rear: roll-up door in its frame, slats, lamps, step bumper, plate.
+	var zr := L + 0.006
+	_box(Vector3(0, 1.62, zr), Vector3(2.08, 2.5, 0.004), TRIM)
+	_box(Vector3(0, 1.6, zr + 0.008), Vector3(1.86, 2.38, 0.008), ALUM)
+	for i in 10:
+		_box(Vector3(0, 0.55 + i * 0.235, zr + 0.016), Vector3(1.86, 0.018, 0.004), STEEL)
+	_box(Vector3(0, 0.5, zr + 0.016), Vector3(0.24, 0.04, 0.006), DARK)
+	for x in [-0.2, 0.0, 0.2]:
+		_box(Vector3(x, 3.0, zr + 0.004), Vector3(0.07, 0.05, 0.008), TAIL)
+	for s in [-1.0, 1.0]:
+		_box(Vector3(s * (hw - 0.05), 1.15, zr + 0.004), Vector3(0.09, 0.32, 0.008), TAIL)
+		_box(Vector3(s * (hw - 0.05), 1.42, zr + 0.004), Vector3(0.09, 0.14, 0.008), BEACON_AMBER)
+		_box(Vector3(s * (hw - 0.05), 0.92, zr + 0.004), Vector3(0.09, 0.1, 0.008), HEAD)
+		_cyl(Vector3(s * (hw - 0.12), 0.9, L + 0.05), Vector3(s * (hw - 0.12), 2.0, L + 0.05), 0.017, STEEL, 6)
+	_box(Vector3(0, 0.4, L + 0.16), Vector3(2.3, 0.18, 0.3), DARK)
+	_box(Vector3(0, 0.495, L + 0.16), Vector3(1.4, 0.012, 0.28), STEEL)
+	_box(Vector3(0.75, 0.4, L + 0.322), Vector3(0.3, 0.15, 0.008), WHITE)
+	_wheels([1.0, 5.3], 0.45, hw, 0.28)
 
 
 ## A conventional medium-duty cab (Freightliner M2): hood, cab and its glass.

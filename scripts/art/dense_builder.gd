@@ -601,6 +601,8 @@ func _mixed(to_curb: float, width: float, storeys: int) -> void:
 	# Most downtown fronts are red brick; some are buff brick, and some were
 	# painted over in the last century.
 	var wall := Color(_pick(FACADE_BRICK + FACADE_BRICK + ["#c9b48a", "#d6c39b", "#e6dfcf", "#6f7f86"]))
+	# Painted over: alpha 0.5 gives the brick shader's painted photo.
+	var coat := Color(wall, 0.5 if wall in [Color("#e6dfcf"), Color("#6f7f86")] else 1.0)
 	var trim := Color(_pick(["#d9d3c3", "#cfc8b6", "#efede6", "#3a3530"]))
 	# 1870s-1900s Italianate fronts carry a deep bracketed metal cornice and
 	# hooded window caps; later commercial-style fronts a plain corbelled top.
@@ -615,7 +617,7 @@ func _mixed(to_curb: float, width: float, storeys: int) -> void:
 	var slipcover := not restored and era == "prewar" and storeys >= 2 and mark < 220
 	if restored:
 		trim = Color(["#3d4a3a", "#5a2626", "#e6dcc0", "#6b5038", "#2f3a4a"][mark % 5])
-	_block("brick", 0.0, w, d, cz, deck, top, wall)
+	_block("brick", 0.0, w, d, cz, deck, top, coat)
 	# One storefront every 7-8 m, each with its own sign and maybe an awning.
 	var fronts := maxi(1, roundi(w / 7.5))
 	var fw := w / fronts
@@ -811,8 +813,13 @@ func _alley_side(w: float, zb: float, fronts: int, fw: float, storeys: int, shop
 		var dx := fx + fw * 0.2 * side
 		_steel_door(Vector3(dx, 1.05, zb), 1.0)
 		var wx := dx - side * 2.0
+		# Some shops keep a steel roll-down shutter down over the back
+		# window instead of bars (a scan from the free library; the bars
+		# where it can't be shown). Picked from the seed: no draws move.
+		var shut := posmod(hash([rng.seed, k, 5113]), 5) < 2 and PropLog.place(self, "rollershutter_window_01",
+			Transform3D(Basis(Vector3.UP, PI).scaled(Vector3(0.5, 0.55, 0.5)), Vector3(wx, 1.8, zb + 0.09)), ["rollershutter_window_01"])
 		_glass(Vector3(wx, 2.3, zb + 0.03), Vector3(1, 0, 0), 0.9, 0.9, 0.0)
-		for b in 3:
+		for b in (0 if shut else 3):
 			_box("metal", Vector3(0.025, 0.9, 0.025), Vector3(wx - 0.3 + b * 0.3, 2.3, zb + 0.08), Color("#2a2b2c"))
 		_box("paint", Vector3(1.0, 0.08, 0.14), Vector3(wx, 1.81, zb + 0.07), FOUNDATION)
 	var n := maxi(2, int(w / 3.6))
@@ -1289,7 +1296,9 @@ func _alley_services(w: float, zb: float, fronts: int, fw: float, storeys: int, 
 		var levels: Array[float] = []
 		for f in range(1, storeys):
 			levels.append(shop_h + (f - 1) * floor_h + 0.6)
-		for li in levels.size():
+		# The free library's scanned stairs stand instead of the drawn steel.
+		var scanned := _scanned_escape(xa, xb, zb, levels, esc_lo == 0)
+		for li in (0 if scanned else levels.size()):
 			var ly: float = levels[li]
 			_box("metal", Vector3(xb - xa, 0.05, dep), Vector3((xa + xb) * 0.5, ly, zc), steel)  # grating
 			_box("metal", Vector3(xb - xa, 0.05, 0.05), Vector3((xa + xb) * 0.5, ly + 1.0, zb + 0.06 + dep), steel)  # top rail
@@ -1314,14 +1323,15 @@ func _alley_services(w: float, zb: float, fronts: int, fw: float, storeys: int, 
 				for s in steps:  # the stringer, as a stepped side plate
 					_box("metal", Vector3(run, rise / steps, 0.03), Vector3(x0 + dir * (s + 0.5) * run, ly + (s + 0.5) * rise / steps, sz + 0.32), steel)
 		# Drop ladder from the bottom landing, hung 2.4 m off the pavement.
-		var lx := xb - 0.5 if esc_lo == 0 else xa + 0.5
-		var lz := zb + 0.06 + dep - 0.2
-		var top: float = levels[0]
-		for s in [-0.22, 0.22]:
-			_box("metal", Vector3(0.04, top - 2.4, 0.04), Vector3(lx + s, (top + 2.4) * 0.5, lz), steel)
-		var rungs := int((top - 2.4) / 0.3)
-		for i in rungs:
-			_box("metal", Vector3(0.44, 0.025, 0.025), Vector3(lx, 2.55 + i * 0.3, lz), steel)
+		if not scanned:
+			var lx := xb - 0.5 if esc_lo == 0 else xa + 0.5
+			var lz := zb + 0.06 + dep - 0.2
+			var top: float = levels[0]
+			for s in [-0.22, 0.22]:
+				_box("metal", Vector3(0.04, top - 2.4, 0.04), Vector3(lx + s, (top + 2.4) * 0.5, lz), steel)
+			var rungs := int((top - 2.4) / 0.3)
+			for i in rungs:
+				_box("metal", Vector3(0.44, 0.025, 0.025), Vector3(lx, 2.55 + i * 0.3, lz), steel)
 	# Window air conditioners in some of the flats upstairs.
 	for f in range(1, storeys):
 		var y := shop_h + (f - 1) * floor_h + 1.6
@@ -1332,6 +1342,31 @@ func _alley_services(w: float, zb: float, fronts: int, fw: float, storeys: int, 
 				var x := lerpf(-w * 0.5 + 1.8, w * 0.5 - 1.8, float(i) / (n - 1))
 				_box("metal", Vector3(0.62, 0.4, 0.5), Vector3(x, y - 0.6, zb + 0.3), Color("#d2cdc2"))
 				_box("metal", Vector3(0.5, 0.26, 0.02), Vector3(x, y - 0.6, zb + 0.56), Color("#8f8b84"))  # back grille
+
+
+## Poly Haven's modular fire escape (AssetLib, CC0) on an alley wall at
+## zb between xa and xb: a grated landing with its railing at each level,
+## a flight up between landings and the drop ladder at the `right` end.
+## False (draw the steel) in the browser or without the art.
+func _scanned_escape(xa: float, xb: float, zb: float, levels: Array[float], right: bool) -> bool:
+	const KIT := "modular_fire_escape"
+	var sx := (xb - xa) / 4.79
+	var zc := zb + 0.06 + 0.68
+	var face := Basis(Vector3.UP, PI)  # its open side to the alley
+	var cx := (xa + xb) * 0.5
+	for li in levels.size():
+		var ly: float = levels[li]
+		var at := Transform3D(face.scaled(Vector3(sx, 1.0, 1.0)), Vector3(cx, ly - 0.77, zc))
+		if not PropLog.place(self, KIT, at, ["*platform_middle"]):
+			return false
+		PropLog.place(self, KIT, Transform3D(face.scaled(Vector3(sx, 1.0, 1.0)), Vector3(cx, ly, zc)), ["*railing_middle"])
+		if li + 1 < levels.size():
+			var rise: float = levels[li + 1] - ly
+			var flip := 1.0 if li % 2 == 0 else -1.0
+			PropLog.place(self, KIT, Transform3D(face.scaled(Vector3(flip, rise / 4.0, 1.0)), Vector3(cx, ly, zc)), ["*stairs"])
+	var lx := xb - 0.5 if right else xa + 0.5
+	PropLog.place(self, KIT, Transform3D(face.scaled(Vector3(1.0, (levels[0] - 2.4) / 6.47, 1.0)), Vector3(lx, 2.4, zc + 0.5)), ["*ladder_bottom"])
+	return true
 
 
 ## A downtown sidewalk: concrete from the shopfronts all the way to the curb
@@ -1350,7 +1385,13 @@ func _downtown_walk(to_curb: float, width: float, zf: float) -> void:
 	if rng.randf() < 0.4:
 		var lx := (width * 0.5 - 0.4) * (-1.0 if rng.randf() < 0.5 else 1.0)
 		var black := Color("#1f2224")
-		if fine:
+		if fine and PropLog.place(self, "street_lamp_01", Transform3D(Basis().scaled(Vector3.ONE * 1.15), Vector3(lx, 0.0, tz))):
+			# Desktop with the free library: Poly Haven's cast-iron lantern
+			# post (as round the courthouse squares in Marion and
+			# Fairmount), a lamp inside its glass that lights after dark.
+			_cylinder("sign", Vector3(lx, 3.15 * 1.15, tz), 0.205, 0.42, Color(1.0, 0.9, 0.72, 1.0), 8)  # inside its glass
+			_light_pool(Vector3(lx, 0.09, tz + 1.2), 7.0, 6.0, Color(1.0, 0.86, 0.62))
+		elif fine:
 			# Desktop: a cast-iron post (fluted base, slim shaft, a collar) and
 			# a ribbed acorn globe that lights after dark, with its pool of
 			# warm light on the walk.

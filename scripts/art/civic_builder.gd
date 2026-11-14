@@ -913,7 +913,7 @@ func _hoop(p: Vector3) -> void:
 	_flat_rect("line", p.x - 2.5, p.x + 2.5, p.z + 5.6, p.z + 5.7, 0.07, LINE)
 
 
-func _diamond(home: Vector3) -> void:
+func _diamond(home: Vector3) -> void:  # on the elementary school's 80 m wide lot
 	# Little League: 60 ft bases, the field opening toward -z.
 	var base := 18.3
 	var dir1 := Vector3(0.7071, 0, -0.7071)
@@ -937,20 +937,35 @@ func _diamond(home: Vector3) -> void:
 	for p in [first, second, third]:
 		_box("paint", Vector3(0.4, 0.08, 0.4), p + Vector3(0, 0.08, 0), WHITE)
 	_box("paint", Vector3(0.45, 0.05, 0.45), home + Vector3(0, 0.06, 0), WHITE)
-	# Backstop: posts and rails curving behind home plate.
-	for i in 5:
-		var t := lerpf(-1.1, 1.1, i / 4.0)
-		var p := home + Vector3(sin(t), 0, cos(t)) * 6.0
-		_box("paint", Vector3(0.1, 4.0, 0.1), p + Vector3(0, 2.0, 0), GALV)
-		if i < 4:
-			var t2 := lerpf(-1.1, 1.1, (i + 1) / 4.0)
-			var q := home + Vector3(sin(t2), 0, cos(t2)) * 6.0
-			for y in [4.0, 2.2, 0.15]:
-				_strut(p + Vector3(0, y, 0), q + Vector3(0, y, 0), 0.05, GALV)
-	# Team benches on the base lines.
+	# Chalked foul lines from home out past the skin, as far as the lot goes.
 	for d in [dir1, dir3]:
-		var b: Vector3 = home + d * 9.0 + Vector3(d.x, 0, 0).normalized() * 4.0
-		_box("paint", Vector3(0.5, 0.45, 4.0), b + Vector3(0, 0.25, 0), GALV, Basis(Vector3.UP, atan2(d.x, d.z)))
+		var n := Vector3(-d.z, 0, d.x) * 0.04
+		var end: Vector3 = home + d * 0.4
+		while end.distance_to(home) < 40.0 and absf((end + d * 2.0).x) < 39.0:  # the 80 m school lot
+			end += d * 2.0
+		_flat_poly([home + d * 0.4 - n, end - n, end + n, home + d * 0.4 + n], 0.062, WHITE)
+	# Backstop: a 14 ft chain-link backstop in five panels on a curve 20 ft
+	# behind home, and 4 ft wing fences running down both lines in front
+	# of the players' benches, as on Indiana school and Little League fields.
+	var pts := []
+	for i in 6:
+		var t := lerpf(-1.1, 1.1, i / 5.0)
+		pts.append(home + Vector3(sin(t), 0, cos(t)) * 6.0)
+	for i in 5:
+		_fence_run(pts[i], pts[i + 1], 4.3)
+	for k in 2:
+		var d: Vector3 = [dir3, dir1][k]
+		var a: Vector3 = pts[0] if k == 0 else pts[5]
+		_fence_run(a, a + d * 14.0, 1.25)
+		# The team bench behind the wing, out of foul balls' way.
+		var o := Vector3(d.z, 0, -d.x) if k == 0 else Vector3(-d.z, 0, d.x)
+		var b: Vector3 = a + d * 7.0 + o * 1.4
+		var yaw := Basis(Vector3.UP, atan2(d.x, d.z))
+		_box("paint", Vector3(0.3, 0.05, 5.5), b + Vector3(0, 0.45, 0), GALV, yaw)  # aluminium seat plank
+		_box("paint", Vector3(0.04, 0.22, 5.5), b + o * 0.17 + Vector3(0, 0.72, 0), GALV, yaw)  # back plank
+		for e in [-2.3, 0.0, 2.3]:  # steel legs
+			_box("paint", Vector3(0.36, 0.43, 0.06), b + d * e + Vector3(0, 0.215, 0), DARK, yaw)
+			_box("paint", Vector3(0.04, 0.5, 0.06), b + d * e + o * 0.17 + Vector3(0, 0.6, 0), DARK, yaw)
 
 
 # ---------------------------------------------------------------- substation
