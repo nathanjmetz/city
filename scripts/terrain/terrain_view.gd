@@ -554,9 +554,15 @@ void fragment() {
 	// The painted grain stands in for the photo's detail where there is none.
 	col *= 1.0 + ((grain - 0.5) * mix(0.4, 0.22, mowed) * fade + (blades - 0.5) * 0.3 * fade * fade) * (1.0 - pk * 0.8);
 	col *= mix(vec3(1.0), pr, pk);
-	// Snow lies thinner under the woods and on steep banks, and drifts in
-	// patches before it covers everything.
+	// Snow lies a little thinner under the woods and thinner on steep banks,
+	// and drifts in patches before it covers everything. Leafless Indiana
+	// hardwoods catch only about a tenth of a snowfall in their branches, so
+	// the woods floor stays white with litter showing through in thin spots.
+#ifdef DESKTOP_DETAIL
+	float under = smoothstep(0.3, 0.65, cover.r) * (1.0 - painted) * 0.15 + smoothstep(0.2, 0.45, steep) * 0.4;
+#else
 	float under = smoothstep(0.3, 0.65, cover.r) * (1.0 - painted) * 0.45 + smoothstep(0.2, 0.45, steep) * 0.4;
+#endif
 	float lies = smoothstep(0.05, 0.45, snow * 1.15 - clump * 0.35 - (1.0 - mid) * 0.15 + 0.1 - under);
 	lies *= 1.0 - smoothstep(0.03, 0.3, cover.g) * 0.5;
 	lies *= 1.0 - hw_paved * 0.85;
