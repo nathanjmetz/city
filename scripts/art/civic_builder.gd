@@ -1399,8 +1399,65 @@ func _taxi_company(size: Vector2, front: float, to_curb: float) -> void:
 	_glass(Vector3(ox - ow * 0.2, 1.6, oz - 0.03), Vector3(-1, 0, 0), ow * 0.45, 2.0, 0.0)
 	_entry(ox + ow * 0.25, oz, trim)
 	_civic_sign(Vector3(ox, 4.3, oz - 0.04), ow * 0.5, 0.7, "TAXI", "#e0b020", "#1a1a1a", "condensed")
+	_taxi_life(w, ox, ow, oz, od, trim)
 	_fence(Vector2(-w * 0.5 + 0.2, lot_z), Vector2(-w * 0.5 + 0.4, back - 0.3), 1.2)
 	_fence(Vector2(-w * 0.5 + 0.2, back - 0.5), Vector2(w * 0.5 - 0.2, back - 0.3), 1.2)
+
+
+## What a real small-town cab office has round its sides and back: windows
+## on both side walls (the dispatcher watches the lot), a steel drivers'
+## door onto the lot under a little canopy with a wall pack, a key drop
+## box, the drivers' break bench with an ash urn, AC condensers and the
+## meters on the side wall, a rooftop unit, and a board-fenced dumpster
+## corral beside the building.
+func _taxi_life(w: float, ox: float, ow: float, oz: float, od: float, trim: Color) -> void:
+	var r := RandomNumberGenerator.new()
+	r.seed = hash([rng.seed, "taxi_life"])
+	var dark := Color("#33363a")
+	var xl := ox - ow * 0.5
+	var xr := ox + ow * 0.5
+	var zb := oz + od
+	# Side windows, two each side, with stone sills.
+	for k in 2:
+		var z := oz + od * (0.3 + k * 0.4)
+		_glass(Vector3(xl - 0.03, 1.7, z), Vector3(0, 0, 1), 1.4, 1.3, 0.4)
+		_glass(Vector3(xr + 0.03, 1.7, z), Vector3(0, 0, -1), 1.4, 1.3, 0.4)
+		_box("paint", Vector3(0.12, 0.1, 1.6), Vector3(xl - 0.06, 1.0, z), trim)
+		_box("paint", Vector3(0.12, 0.1, 1.6), Vector3(xr + 0.06, 1.0, z), trim)
+	# Drivers' door onto the lot, its canopy and wall pack, a key drop box.
+	var dx := ox + ow * r.randf_range(0.1, 0.3)
+	_box("paint", Vector3(1.0, 2.15, 0.06), Vector3(dx, 1.08, zb + 0.03), Color("#6d7377"))
+	_box("paint", Vector3(0.06, 0.25, 0.08), Vector3(dx + 0.35, 1.05, zb + 0.07), dark)
+	_box("metal", Vector3(1.8, 0.12, 1.0), Vector3(dx, 2.6, zb + 0.5), Color("#2b2f33"))
+	_box("paint", Vector3(0.35, 0.25, 0.18), Vector3(dx, 3.1, zb + 0.09), dark)
+	_box("paint", Vector3(0.35, 0.45, 0.2), Vector3(dx - 1.1, 1.3, zb + 0.1), Color("#4a4f52"))
+	# Break bench and ash urn under the eave.
+	var bx := dx + 2.4
+	_box("paint", Vector3(1.6, 0.06, 0.45), Vector3(bx, 0.45, zb + 0.6), Color("#5a4632"))
+	for e in [-1.0, 1.0]:
+		_box("paint", Vector3(0.06, 0.45, 0.45), Vector3(bx + e * 0.7, 0.22, zb + 0.6), dark)
+	_box("paint", Vector3(1.6, 0.4, 0.05), Vector3(bx, 0.75, zb + 0.82), Color("#5a4632"))
+	_cylinder("paint", Vector3(bx + 1.3, 0.0, zb + 0.5), 0.17, 0.75, Color("#5c6266"), 10)
+	# Meters and two condensers on the side wall away from the drive.
+	_box("paint", Vector3(0.18, 0.5, 0.4), Vector3(xl - 0.1, 1.5, zb - 1.0), Color("#9da3a6"))
+	_box("paint", Vector3(0.25, 0.35, 0.3), Vector3(xl - 0.13, 0.75, zb - 2.0), Color("#c8b23a"))
+	for k in 2:
+		var cz := oz + 2.0 + k * 1.4
+		_box("paint", Vector3(1.4, 0.1, 1.2), Vector3(xl - 1.1, 0.05, cz), CONCRETE)
+		_box("metal", Vector3(0.95, 0.85, 0.95), Vector3(xl - 1.1, 0.53, cz), Color("#b9bcbc"))
+		_cyl_y(Vector3(xl - 1.1, 0.98, cz), 0.38, 0.04, dark)
+	# Rooftop unit.
+	_box("metal", Vector3(2.0, 1.1, 1.4), Vector3(ox - ow * 0.2, 4.0 + 0.55, oz + od * 0.6), Color("#b9bcbc"))
+	# Dumpster corral: three board walls round a steel dumpster.
+	var cx := xl - 2.6
+	var cz2 := zb - 1.6
+	var wood := Color(["#8a6a48", "#6e5a44", "#9a8a72"][r.randi() % 3])
+	_box("paint", Vector3(3.0, 0.1, 2.6), Vector3(cx, 0.05, cz2), CONCRETE)
+	_box("paint", Vector3(3.0, 1.9, 0.1), Vector3(cx, 0.95, cz2 - 1.25), wood)
+	_box("paint", Vector3(0.1, 1.9, 2.6), Vector3(cx - 1.45, 0.95, cz2), wood)
+	_box("paint", Vector3(0.1, 1.9, 2.6), Vector3(cx + 1.45, 0.95, cz2), wood)
+	_box("paint", Vector3(1.9, 1.2, 1.4), Vector3(cx, 0.7, cz2 - 0.3), Color(["#2f5a3a", "#24456e", "#3a3c3e"][r.randi() % 3]))
+	_box("paint", Vector3(1.95, 0.08, 1.45), Vector3(cx, 1.34, cz2 - 0.3), Color("#1e1e1e"))
 
 
 ## The home builder's yard (Builders): a steel shop at the street with the
