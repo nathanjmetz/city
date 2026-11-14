@@ -813,8 +813,13 @@ func _alley_side(w: float, zb: float, fronts: int, fw: float, storeys: int, shop
 		var dx := fx + fw * 0.2 * side
 		_steel_door(Vector3(dx, 1.05, zb), 1.0)
 		var wx := dx - side * 2.0
+		# Some shops keep a steel roll-down shutter down over the back
+		# window instead of bars (a scan from the free library; the bars
+		# where it can't be shown). Picked from the seed: no draws move.
+		var shut := posmod(hash([rng.seed, k, 5113]), 5) < 2 and PropLog.place(self, "rollershutter_window_01",
+			Transform3D(Basis(Vector3.UP, PI).scaled(Vector3(0.5, 0.55, 0.5)), Vector3(wx, 1.8, zb + 0.09)), ["rollershutter_window_01"])
 		_glass(Vector3(wx, 2.3, zb + 0.03), Vector3(1, 0, 0), 0.9, 0.9, 0.0)
-		for b in 3:
+		for b in (0 if shut else 3):
 			_box("metal", Vector3(0.025, 0.9, 0.025), Vector3(wx - 0.3 + b * 0.3, 2.3, zb + 0.08), Color("#2a2b2c"))
 		_box("paint", Vector3(1.0, 0.08, 0.14), Vector3(wx, 1.81, zb + 0.07), FOUNDATION)
 	var n := maxi(2, int(w / 3.6))
