@@ -1727,7 +1727,12 @@ func _strip_lot_dress(to_curb: float, back: float, n: int, wall: Color) -> void:
 	var centre: String = ["PLAZA", "COMMONS", "CROSSING", "SQUARE", "CENTER", "VILLAGE", "SHOPPES", "MARKET PLACE"][r.randi() % 8]
 	var cp := minf(0.11, 2.2 / (centre.length() * 4.0 - 1.0))
 	for side in [-1.0, 1.0]:
-		_pixel_text(centre, sx, base + cab_h - 0.5 - cp * 2.5, sz + side * 0.23, cp, 0.02, Color("#f2efe4"), "paint", side)
+		# Desktop: the name is backlit like the tenant panels (white
+		# letters on the cabinet's lit face after dark).
+		if fine_parts:
+			_pixel_text(centre, sx, base + cab_h - 0.5 - cp * 2.5, sz + side * 0.23, cp, 0.02, Color(0.95, 0.94, 0.9, 1.0), "sign", side)
+		else:
+			_pixel_text(centre, sx, base + cab_h - 0.5 - cp * 2.5, sz + side * 0.23, cp, 0.02, Color("#f2efe4"), "paint", side)
 		for t in tenants:
 			var y := base + 0.3 + t * ph
 			var col := Color(AWNING[r.randi() % AWNING.size()]).lightened(r.randf_range(0.0, 0.15))
