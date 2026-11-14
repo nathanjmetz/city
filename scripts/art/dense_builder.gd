@@ -1082,10 +1082,18 @@ func _shop_stoops(w: float, zf: float, fronts: int, fw: float) -> void:
 			var pot := Color(["#9a5a3c", "#3b3f42", "#d8d2c4"][r.randi() % 3])
 			for sx in [-1.0, 1.0]:
 				var px: float = fx + sx * 1.15
-				_box("paint", Vector3(0.5, 0.5, 0.5), Vector3(px, 0.25, zf - 0.45), pot)
+				# The scanned wooden planter box (desktop with the art), a
+				# metre long against the front; a painted pot otherwise.
+				var boxed := PropLog.place(self, "planter_box_02",
+					Transform3D(Basis().scaled(Vector3.ONE * 0.8), Vector3(px + sx * 0.1, 0, zf - 0.32)))
+				if not boxed:
+					_box("paint", Vector3(0.5, 0.5, 0.5), Vector3(px, 0.25, zf - 0.45), pot)
 				var keep := rng
 				rng = r
-				_shrub(Vector3(px, 0.5, zf - 0.45), 0.32)
+				if boxed:
+					_shrub(Vector3(px + sx * 0.1, 0.5, zf - 0.32), 0.34, 2)  # boxwood filling the box (the same draws)
+				else:
+					_shrub(Vector3(px, 0.5, zf - 0.45), 0.32)
 				rng = keep
 		var pick := r.randf()
 		if pick < 0.3:
