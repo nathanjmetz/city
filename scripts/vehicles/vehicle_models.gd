@@ -975,7 +975,26 @@ const GLYPHS := {
 	"C": ["111", "100", "100", "100", "111"], "E": ["111", "100", "110", "100", "111"],
 	"S": ["111", "100", "111", "001", "111"], "H": ["101", "101", "111", "101", "101"],
 	"R": ["110", "101", "110", "101", "101"], "F": ["111", "100", "110", "100", "100"],
+	"B": ["110", "101", "110", "101", "110"], "U": ["101", "101", "101", "101", "111"],
+	"T": ["111", "010", "010", "010", "010"],
 }
+
+
+## Block letters on a front or back face (the z plane), reading left to
+## right for someone facing that face: `facing` +1 for a back face (seen
+## from behind, it reads toward +x), -1 for a front face.
+func _letters_z(text: String, facing: float, x: float, y: float, z: float, px: float, col: Color) -> void:
+	var step := px * 4.0
+	var dir := 1.0 if facing > 0.0 else -1.0
+	var start := x - dir * (text.length() * step - px) * 0.5
+	for i in text.length():
+		var g: Array = GLYPHS.get(text[i], [])
+		for row in g.size():
+			for col_i in 3:
+				if (g[row] as String)[col_i] != "1":
+					continue
+				var xx := start + dir * (i * step + (col_i + 0.5) * px)
+				_box(Vector3(xx, y + (2 - row) * px, z), Vector3(px, px, 0.004), col)
 func _letters(text: String, side: float, x: float, y: float, z: float, px: float, col: Color) -> void:
 	var step := px * 4.0
 	var dir := -1.0 if side > 0.0 else 1.0  # +z on the left side, -z on the right
@@ -2271,8 +2290,51 @@ func _school_bus() -> void:  # Type C conventional (Blue Bird Vision, IC CE)
 		_box(Vector3(hw - 0.42, 1.15, -0.01), Vector3(0.28, 0.16, 0.04), HEAD, true)
 	if not _lo and not _hi:
 		_box(Vector3(0, 1.0, 0.02), Vector3(0.9, 0.5, 0.06), CHROME)
-	if not _lo:
+	if _hi:
+		_school_signs(L, hw)
+	elif not _lo:
 		_box(Vector3(-hw - 0.3, 1.9, 2.2), Vector3(0.45, 0.45, 0.03), Color(0.75, 0.05, 0.05, 0.4))
+
+
+## Ultra: what makes a school bus read as one from any side (FMVSS 131
+## and the National School Transportation Specifications): SCHOOL BUS in
+## black over the windshield and across the back, the octagonal STOP arm
+## folded flat under the driver's window, the rear emergency door with
+## its window between the two rear windows, amber lamps inboard of the
+## red at the back, and the black rear bumper.
+func _school_signs(L: float, hw: float) -> void:
+	var ink := Color(0.03, 0.03, 0.03, 0.3)
+	var red := Color(0.75, 0.05, 0.05, 0.4)
+	_letters_z("SCHOOL BUS", -1.0, 0.0, 2.76, 1.574, 0.028, ink)
+	_letters_z("SCHOOL BUS", 1.0, 0.0, 2.76, L + 0.006, 0.028, ink)
+	# The stop arm: white-rimmed red octagon with STOP, flat on the side.
+	var c := Vector3(-hw - 0.02, 1.75, 2.35)
+	var n := Vector3(-1, 0, 0)
+	for layer in 2:
+		var r := 0.23 if layer == 0 else 0.205
+		var o := c + n * (0.006 * layer)
+		for i in 8:
+			var a1 := TAU * (i + 0.5) / 8.0
+			var a2 := TAU * (i + 1.5) / 8.0
+			var p1 := o + Vector3(0, sin(a1), cos(a1)) * r
+			var p2 := o + Vector3(0, sin(a2), cos(a2)) * r
+			_tri(p1, p2, o, WHITE if layer == 0 else red, o - n)
+	_letters("STOP", -1.0, hw + 0.034, 1.72, 2.35, 0.022, WHITE)
+	_box(Vector3(-hw - 0.012, 1.75, 2.1), Vector3(0.024, 0.08, 0.06), ink)
+	# Back: the emergency door's outline and window, the two rear windows,
+	# amber lamps inboard of the red, the bumper and plate.
+	var z := L + 0.006
+	for x in [-0.42, 0.42]:
+		_box(Vector3(x, 1.62, z), Vector3(0.025, 2.0, 0.006), ink)
+	_box(Vector3(0, 2.61, z), Vector3(0.86, 0.025, 0.006), ink)
+	_box(Vector3(0, 2.15, z), Vector3(0.6, 0.62, 0.008), GLASS)
+	_box(Vector3(0.25, 1.4, z + 0.006), Vector3(0.16, 0.04, 0.006), CHROME)
+	for x in [-0.85, 0.85]:
+		_box(Vector3(x, 2.2, z), Vector3(0.42, 0.55, 0.008), GLASS)
+	for x in [-0.65, 0.65]:
+		_box(Vector3(x, 2.85, L + 0.02), Vector3(0.14, 0.16, 0.06), BEACON_AMBER)
+	_box(Vector3(0, 0.55, L + 0.1), Vector3(hw * 2.0, 0.26, 0.2), ink)
+	_box(Vector3(-0.6, 0.85, z + 0.004), Vector3(0.3, 0.15, 0.008), WHITE)
 
 
 ## Ultra: a Type C school bus face (IC CE, Thomas C2): a chrome-rimmed
