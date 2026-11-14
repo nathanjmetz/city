@@ -2391,6 +2391,9 @@ func _combine_hi(L: float, rim: Color) -> void:
 func _motorcycle() -> void:  # cruiser (Harley-Davidson Street Glide) with rider
 	_wheel(Vector3(0, 0, 0.35), 0.33, 0.13, CHROME, true)
 	_wheel(Vector3(0, 0, 1.85), 0.33, 0.15, CHROME, true)
+	if _hi:
+		_street_glide()
+		return
 	_loft([
 		[0.25, 0.75, 0.95, 1.1, 0.25, 0.4, 0.3],
 		[0.7, 0.45, 0.9, 1.0, 0.18, 0.2, 0.16],
@@ -2401,6 +2404,71 @@ func _motorcycle() -> void:  # cruiser (Harley-Davidson Street Glide) with rider
 	_box(Vector3(0, 1.55, 1.15), Vector3(0.24, 0.26, 0.26), Color(0.06, 0.06, 0.07, 0.2))
 	_box(Vector3(0, 0.95, 0.27), Vector3(0.16, 0.1, 0.06), HEAD, true)
 	_box(Vector3(0, 0.85, 2.15), Vector3(0.14, 0.06, 0.04), TAIL, true)
+
+
+## Ultra: the bagger itself instead of a lump (Street Glide: 1625 mm
+## wheelbase): the batwing fairing and its short windshield on the forks,
+## fenders over both wheels, the teardrop tank, the V-twin with its two
+## jugs and crankcase, the frame's down tube, the stepped seat, hard
+## saddlebags, chrome pipes down both sides, the bars, lamps and turn
+## signals, and the rider astride it in jacket, jeans and helmet.
+func _street_glide() -> void:
+	var dark := Color(0.06, 0.06, 0.07, 0.3)
+	var amber := Color(1.0, 0.55, 0.05, 0.5)
+	for x in [-0.09, 0.09]:
+		_cyl(Vector3(x, 0.33, 0.35), Vector3(x, 0.98, 0.58), 0.024, CHROME, 8)
+	_fender(Vector3(0, 0.33, 0.35), 0.38, 0.15)
+	_loft([
+		[0.32, 0.86, 1.12, 1.26, 0.22, 0.37, 0.2],
+		[0.42, 0.84, 1.14, 1.3, 0.3, 0.4, 0.24],
+		[0.6, 0.86, 1.14, 1.24, 0.3, 0.38, 0.22],
+	], [_edges(PAINT, PAINT)], PAINT, PAINT)
+	_quad(Vector3(-0.22, 1.28, 0.42), Vector3(0.22, 1.28, 0.42), Vector3(0.18, 1.44, 0.52),
+		Vector3(-0.18, 1.44, 0.52), GLASS, Vector3(0, 1.2, 1.0))
+	_box(Vector3(0, 1.04, 0.31), Vector3(0.16, 0.12, 0.03), HEAD)
+	for sx in [-1.0, 1.0]:
+		_box(Vector3(sx * 0.2, 0.92, 0.36), Vector3(0.05, 0.04, 0.05), amber)
+	_beam(Vector3(-0.4, 1.2, 0.68), Vector3(0.4, 1.2, 0.68), 0.03, dark)
+	# Tank, frame, V-twin.
+	_loft([
+		[0.6, 0.88, 1.0, 1.06, 0.12, 0.17, 0.1],
+		[0.85, 0.85, 1.0, 1.1, 0.15, 0.2, 0.13],
+		[1.1, 0.82, 0.92, 0.98, 0.1, 0.14, 0.08],
+	], [_edges(PAINT, PAINT)], PAINT, PAINT)
+	_cyl(Vector3(0, 0.95, 0.6), Vector3(0, 0.3, 0.85), 0.03, dark, 6)
+	_box(Vector3(0, 0.4, 1.02), Vector3(0.24, 0.24, 0.42), dark)
+	for d in [-1.0, 1.0]:
+		var base := Vector3(0, 0.5, 1.02 + d * 0.06)
+		_cyl(base, base + Vector3(0, 0.36, d * 0.16), 0.085, STEEL, 10)
+		_cyl(base + Vector3(0, 0.33, d * 0.15), base + Vector3(0, 0.39, d * 0.17), 0.1, CHROME, 10)
+	_cyl(Vector3(0.16, 0.6, 1.0), Vector3(0.2, 0.6, 1.0), 0.11, CHROME, 12)  # air cleaner
+	# Seat, saddlebags, rear fender, pipes.
+	_loft([
+		[1.1, 0.78, 0.84, 0.88, 0.12, 0.17, 0.14],
+		[1.45, 0.76, 0.82, 0.86, 0.15, 0.2, 0.17],
+		[1.6, 0.8, 0.92, 0.96, 0.12, 0.15, 0.12],
+		[1.85, 0.82, 0.92, 0.95, 0.1, 0.12, 0.1],
+	], [_edges(dark, dark)], dark, dark)
+	_fender(Vector3(0, 0.33, 1.85), 0.38, 0.22)
+	for sx in [-1.0, 1.0]:
+		_box(Vector3(sx * 0.27, 0.68, 1.95), Vector3(0.18, 0.34, 0.6), PAINT)
+		_box(Vector3(sx * 0.27, 0.86, 1.95), Vector3(0.19, 0.02, 0.61), dark)
+		_cyl(Vector3(sx * 0.14, 0.3, 1.15), Vector3(sx * 0.2, 0.32, 1.6), 0.04, CHROME, 8)
+		_cyl(Vector3(sx * 0.2, 0.32, 1.6), Vector3(sx * 0.22, 0.38, 2.32), 0.045, CHROME, 8)
+		_box(Vector3(sx * 0.18, 0.82, 2.27), Vector3(0.05, 0.04, 0.04), amber)
+	_box(Vector3(0, 0.9, 2.2), Vector3(0.14, 0.05, 0.03), TAIL)
+	_box(Vector3(0, 0.78, 2.22), Vector3(0.18, 0.1, 0.01), WHITE)
+	# The rider.
+	var jacket := Color(0.08, 0.07, 0.07, 0.4)
+	var jeans := Color(0.15, 0.2, 0.32, 0.4)
+	_cyl(Vector3(0, 0.92, 1.33), Vector3(0, 1.45, 1.18), 0.17, jacket, 10)
+	_cyl(Vector3(0, 1.5, 1.15), Vector3(0, 1.74, 1.13), 0.125, Color(0.1, 0.1, 0.11, 0.2), 12)
+	_box(Vector3(0, 1.62, 1.03), Vector3(0.2, 0.06, 0.02), Color(0.02, 0.02, 0.02, 0.4))
+	for sx in [-1.0, 1.0]:
+		_cyl(Vector3(sx * 0.17, 1.4, 1.15), Vector3(sx * 0.36, 1.21, 0.7), 0.045, jacket, 8)
+		_cyl(Vector3(sx * 0.12, 0.88, 1.3), Vector3(sx * 0.22, 0.86, 0.92), 0.075, jeans, 8)
+		_cyl(Vector3(sx * 0.22, 0.86, 0.92), Vector3(sx * 0.25, 0.42, 0.8), 0.06, jeans, 8)
+		_box(Vector3(sx * 0.25, 0.4, 0.75), Vector3(0.09, 0.08, 0.2), dark)
 
 
 ## A street-legal four-seat golf cart (Club Car Onward / E-Z-GO Express
