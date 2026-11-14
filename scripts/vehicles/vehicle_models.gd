@@ -274,7 +274,6 @@ func _sedan() -> void:  # Toyota Camry
 ## the belt line and a greenhouse that tucks in toward the roof. Wheel
 ## arches are cut into the sides, the windshield, side glass and rear
 ## window follow the body, and the lamps wrap round its corners.
-## (Test model: not in traffic yet.)
 const CAMRY_TOP := [[0.0, 0.55], [0.06, 0.68], [0.2, 0.76], [0.6, 0.83], [1.1, 0.89], [1.55, 0.93],
 	[1.7, 0.98], [2.1, 1.22], [2.45, 1.4], [2.9, 1.445], [3.3, 1.42], [3.6, 1.33], [3.95, 1.13],
 	[4.15, 1.05], [4.55, 1.03], [4.8, 1.0], [4.885, 0.82]]
@@ -310,9 +309,30 @@ func _sedan_camry() -> void:
 	_box(Vector3(0, 0.6, 0.07), Vector3(0.62, 0.05, 0.06), TRIM)
 	# Door mirrors on the door skin, below the A-pillar.
 	_box(Vector3(0.99, 1.0, 1.86), Vector3(0.14, 0.11, 0.22), PAINT, true)
+	_camry_rear(4.885)
 	for az in axles:
 		for sx in [-1.0, 1.0]:
 			_wheel(Vector3(sx * 0.79, 0.0, az), 0.335, 0.225, RIM)
+
+
+## The Camry's tail on its flat back panel (which had only paint): the
+## tail lamps' inner halves on the trunk lid with a dark bar joining them,
+## the plate in its recess, the trunk's shut line, the badge, and the dark
+## lower bumper with its red reflectors.
+func _camry_rear(L: float) -> void:
+	var z := L + 0.006
+	_box(Vector3(0.56, 0.72, z), Vector3(0.3, 0.12, 0.012), TAIL, true)
+	if _lo:
+		return
+	var dark := Color(0.04, 0.04, 0.04, 0.3)
+	_box(Vector3(0, 0.735, z), Vector3(0.8, 0.04, 0.012), dark)
+	_box(Vector3(0, 0.52, z), Vector3(0.36, 0.2, 0.012), dark)
+	_box(Vector3(0, 0.52, z + 0.008), Vector3(0.3, 0.15, 0.012), WHITE)
+	_box(Vector3(0, 0.27, z), Vector3(1.1, 0.14, 0.012), dark)
+	if _hi:
+		_box(Vector3(0, 0.655, z), Vector3(1.1, 0.008, 0.012), dark)
+		_box(Vector3(0, 0.79, z + 0.008), Vector3(0.12, 0.05, 0.012), CHROME)
+		_box(Vector3(0.6, 0.38, z), Vector3(0.12, 0.03, 0.012), Color(0.7, 0.05, 0.03, 0.4), true)
 
 
 ## One cross-section: right side from the floor's middle up to the roof's
