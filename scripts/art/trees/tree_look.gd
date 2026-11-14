@@ -519,7 +519,15 @@ void fragment() {
 		leaf = mix(leaf, twig, b);
 	}
 	// Snow resting on the tops of the crowns.
-	leaf = mix(leaf, vec3(0.4, 0.42, 0.45), snow * smoothstep(0.35, 0.95, tp) * 0.75);
+	float snow_k = 0.75;
+#ifdef DESKTOP_DETAIL
+	// A bare hardwood holds snow only on its limbs, and only for a day or
+	// two after a fall; its twigs shed it, so winter woods read dark
+	// grey-brown over the white ground (photos of Indiana woodlots in
+	// January), not as pale crowns. Conifers keep their load.
+	if (!evergreen) snow_k = mix(0.75, 0.12, smoothstep(0.3, 0.9, look.y));
+#endif
+	leaf = mix(leaf, vec3(0.4, 0.42, 0.45), snow * smoothstep(0.35, 0.95, tp) * snow_k);
 	// A crown holds real shade: the leaves deep inside and on its underside
 	// see only a little of the sky, so it reads as a solid with dark gaps,
 	// not lit from within. Every version of a tree (grown, cards, far quad)
@@ -873,7 +881,8 @@ static func _all_mats() -> Array:
 static func shader(code: String) -> Shader:
 	if not _shaders.has(code):
 		var sh := Shader.new()
-		sh.code = code
+		# The desktop's extra detail (DESKTOP_DETAIL), where it is drawn.
+		sh.code = code.replace("shader_type spatial;", "shader_type spatial;\n" + PhotoGround.defines())
 		_shaders[code] = sh
 	return _shaders[code]
 
