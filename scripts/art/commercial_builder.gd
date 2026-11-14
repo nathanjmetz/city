@@ -1958,16 +1958,31 @@ func _seven_seg(n: int, c: Vector3, col: Color, scale := 1.0) -> void:
 
 ## A fuel dispenser (Gilbarco Encore / Wayne Ovation shape): a plinth, a
 ## pale body with a dark screen and nozzle bay on each face, and a valance
-## in the brand colour on top.
+## in the brand colour on top. It sits lengthwise on the island, its two
+## faces toward the lanes either side (+-x), where the cars pull up.
 func _dispenser(at: Vector3, brand: Color) -> void:
-	_box("paint", Vector3(0.9, 0.2, 0.6), at + Vector3(0, 0.1, 0), Color("#6f6a62"))
-	_box("paint", Vector3(0.8, 1.45, 0.5), at + Vector3(0, 0.92, 0), Color("#e8e6df"))
-	_box("paint", Vector3(0.82, 0.32, 0.52), at + Vector3(0, 1.8, 0), brand)
+	_box("paint", Vector3(0.6, 0.2, 0.9), at + Vector3(0, 0.1, 0), Color("#6f6a62"))
+	_box("paint", Vector3(0.5, 1.45, 0.8), at + Vector3(0, 0.92, 0), Color("#e8e6df"))
+	_box("paint", Vector3(0.52, 0.32, 0.82), at + Vector3(0, 1.8, 0), brand)
 	for f in [-1.0, 1.0]:
-		_box("paint", Vector3(0.6, 0.32, 0.03), at + Vector3(0, 1.3, f * 0.26), Color("#1b1e22"))
+		_box("paint", Vector3(0.03, 0.32, 0.6), at + Vector3(f * 0.26, 1.3, 0), Color("#1b1e22"))
 		if fine_parts:
-			_box("paint", Vector3(0.18, 0.35, 0.06), at + Vector3(-0.22, 0.8, f * 0.27), Color("#2b2b2b"))
-			_box("paint", Vector3(0.18, 0.35, 0.06), at + Vector3(0.22, 0.8, f * 0.27), Color("#2b2b2b"))
+			var hose := Color("#141516")
+			for sz in [-0.22, 0.22]:
+				# The nozzle in its holster on the face...
+				_box("paint", Vector3(0.06, 0.35, 0.18), at + Vector3(f * 0.27, 0.8, sz), Color("#2b2b2b"))
+				_box("paint", Vector3(0.1, 0.07, 0.07), at + Vector3(f * 0.31, 0.93, sz), Color("#3a3a3a"))  # its grip
+				# ...and its hose, out of the top of the cabinet, drooping in a
+				# loop beside the face and back up to the nozzle.
+				var top := at + Vector3(f * 0.28, 1.62, sz * 1.6)
+				var low := at + Vector3(f * 0.42, 0.42, sz * 1.75)
+				var noz := at + Vector3(f * 0.33, 0.9, sz)
+				for seg in [[top, low], [low, noz]]:
+					var p0: Vector3 = seg[0]
+					var p1: Vector3 = seg[1]
+					var d := p1 - p0
+					var basis := Basis(Quaternion(Vector3.UP, d.normalized()))
+					_box("paint", Vector3(0.035, d.length(), 0.035), (p0 + p1) * 0.5, hose, basis)
 
 
 ## A diner or family restaurant: one storey, a long band of windows with a
