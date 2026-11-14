@@ -738,13 +738,15 @@ static func _photo_apply(mat: ShaderMaterial, key: String, level: float, prefix 
 ## the asphalt as a multiply on desktop High and up (RoadMesh._lane_wear).
 const LANE_WEAR := """
 void fragment() {
-	// UV.x * 4 runs 0..1 across the lane.
+	// UV.x * 4 runs 0..1 across the lane, UV.y * 4 metres along it.
 	float a = UV.x * 4.0;
-	vec2 p = world_pos.xz;
+	float s = UV.y * 4.0;
 	float fade = clamp(1.0 - length(VERTEX) / 350.0, 0.0, 1.0);
-	float patchy = smoothstep(0.25, 0.75, texture(noise_soft, p / 11.0 + 0.3).r);
-	float drip = exp(-pow((a - 0.5) / 0.12, 2.0)) * (0.35 + 0.65 * patchy);
-	drip *= 0.7 + 0.6 * texture(noise_grain, p / 0.8).r;
+	// Heavier where traffic queues and lighter between: a slow drift along
+	// the lane, drawn from the lane's own metres (the shared noise
+	// textures, read here, came out as rows of smeared dashes).
+	float patchy = 0.55 + 0.45 * (0.5 + 0.5 * sin(s * 0.21 + 1.3) * sin(s * 0.047 + world_pos.x * 0.013 + world_pos.z * 0.011));
+	float drip = exp(-pow((a - 0.5) / 0.12, 2.0)) * patchy;
 	float tyre = exp(-pow((a - 0.22) / 0.07, 2.0)) + exp(-pow((a - 0.78) / 0.07, 2.0));
 	ALBEDO = vec3(1.0 - fade * (0.3 * drip + 0.07 * tyre));
 }
