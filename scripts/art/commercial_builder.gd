@@ -961,7 +961,23 @@ func _strip_center(to_curb: float, anchor := false) -> void:
 		diner_room = 0.0
 		_glass(Vector3(x + sw * 0.5 - 0.5, 1.45, zf - 0.03), Vector3(-1, 0, 0), 0.95, 2.4, 0.0)
 		_box("paint", Vector3(sw, 0.1, 0.12), Vector3(x, 2.9, zf - 0.06), mull)
-		_box("paint", Vector3(sw, 0.35, 0.12), Vector3(x, 0.47, zf - 0.06), mull)
+		if fine_parts:
+			# Desktop: the bulkhead stops at the tenant's door, which runs to
+			# the walk in a framed aluminium leaf: stiles, a deep bottom
+			# rail, an offset pull, a closer arm and a threshold.
+			var dcx := x + sw * 0.5 - 0.5
+			var bw := sw - 1.05
+			_box("paint", Vector3(bw, 0.35, 0.12), Vector3(x - sw * 0.5 + bw * 0.5, 0.47, zf - 0.06), mull)
+			for e in [-1.0, 1.0]:
+				_box("metal", Vector3(0.09, 2.45, 0.1), Vector3(dcx + e * 0.48, 1.5, zf - 0.08), mull)
+			_box("metal", Vector3(1.05, 0.09, 0.1), Vector3(dcx, 2.7, zf - 0.08), mull)
+			_box("metal", Vector3(0.9, 0.28, 0.09), Vector3(dcx, 0.42, zf - 0.08), mull)
+			_box("metal", Vector3(0.9, 0.07, 0.09), Vector3(dcx, 2.55, zf - 0.08), mull)
+			_box("metal", Vector3(0.04, 0.8, 0.05), Vector3(dcx - 0.34, 1.2, zf - 0.16), Color("#b9bcbe"))
+			_box("metal", Vector3(0.38, 0.05, 0.06), Vector3(dcx + 0.2, 2.47, zf - 0.15), Color("#4a4c4e"))
+			_box("metal", Vector3(1.0, 0.02, 0.18), Vector3(dcx, 0.31, zf - 0.1), Color("#b0b3b5"))
+		else:
+			_box("paint", Vector3(sw, 0.35, 0.12), Vector3(x, 0.47, zf - 0.06), mull)
 		_box("paint", Vector3(0.5, 3.0, 0.2), Vector3(x - bay * 0.5, 1.8, zf - 0.1), wall.darkened(0.1))
 		# The owner's own store takes the first bay; the other tenants' signs
 		# are their own businesses, drawn as stand-in lettering.
