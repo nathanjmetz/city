@@ -1385,7 +1385,13 @@ func _downtown_walk(to_curb: float, width: float, zf: float) -> void:
 	if rng.randf() < 0.4:
 		var lx := (width * 0.5 - 0.4) * (-1.0 if rng.randf() < 0.5 else 1.0)
 		var black := Color("#1f2224")
-		if fine:
+		if fine and PropLog.place(self, "street_lamp_01", Transform3D(Basis().scaled(Vector3.ONE * 1.15), Vector3(lx, 0.0, tz))):
+			# Desktop with the free library: Poly Haven's cast-iron lantern
+			# post (as round the courthouse squares in Marion and
+			# Fairmount), a lamp inside its glass that lights after dark.
+			_cylinder("sign", Vector3(lx, 3.15 * 1.15, tz), 0.205, 0.42, Color(1.0, 0.9, 0.72, 1.0), 8)  # inside its glass
+			_light_pool(Vector3(lx, 0.09, tz + 1.2), 7.0, 6.0, Color(1.0, 0.86, 0.62))
+		elif fine:
 			# Desktop: a cast-iron post (fluted base, slim shaft, a collar) and
 			# a ribbed acorn globe that lights after dark, with its pool of
 			# warm light on the walk.
