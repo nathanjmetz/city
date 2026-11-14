@@ -1432,6 +1432,21 @@ func _street_furniture(width: float, tz: float) -> void:
 			_box("paint", Vector3(1.8, 0.45, 0.06), Vector3(x, 0.72, tz - 0.32), black)
 			for sx in [-0.8, 0.8]:
 				_box("paint", Vector3(0.06, 0.45, 0.5), Vector3(x + sx, 0.22, tz - 0.1), black)
+		elif pick < 0.5 and fine:
+			# Desktop: the steel-slat litter receptacle of every streetscape
+			# grant: a round can of 16 flat bars on a base ring, a top band,
+			# and a domed lid with its side opening (about 0.6 m across, 0.9 m
+			# to the band).
+			_cylinder("paint", Vector3(x, 0.0, tz), 0.3, 0.08, black, 16)
+			for k in 16:
+				var a := TAU * k / 16.0
+				_box("paint", Vector3(0.075, 0.74, 0.02), Vector3(x + cos(a) * 0.285, 0.45, tz + sin(a) * 0.285), black,
+					Basis(Vector3.UP, PI * 0.5 - a))
+			_cylinder("paint", Vector3(x, 0.24, tz), 0.24, 0.6, Color("#141617"), 12)  # the liner inside
+			_cylinder("paint", Vector3(x, 0.82, tz), 0.305, 0.08, black, 16)
+			_cylinder("paint", Vector3(x, 0.9, tz), 0.29, 0.1, black, 16)
+			_cylinder("paint", Vector3(x, 1.0, tz), 0.2, 0.06, black, 12)  # the dome, stepped
+			_cylinder("paint", Vector3(x, 1.06, tz), 0.1, 0.03, black, 10)
 		elif pick < 0.5:
 			_box("paint", Vector3(0.6, 0.9, 0.6), Vector3(x, 0.45, tz), black)  # trash can
 			_box("paint", Vector3(0.64, 0.06, 0.64), Vector3(x, 0.93, tz), black)
@@ -1440,8 +1455,20 @@ func _street_furniture(width: float, tz: float) -> void:
 			_box("concrete", Vector3(1.0, 0.6, 1.0), Vector3(x, 0.3, tz), Color("#b9b3a6"))
 			_shrub(Vector3(x, 0.6, tz), 0.45)
 		elif pick < 0.8 and fine:
+			# Two inverted-U bike hoops (2 in steel tube, 0.9 m tall), not plates.
 			for k in 2:
-				_box("paint", Vector3(0.05, 0.85, 0.6), Vector3(x + k * 0.8, 0.42, tz), black)  # bike hoops
+				var hx: float = x + k * 0.8
+				for sz in [-0.27, 0.27]:
+					_cylinder("paint", Vector3(hx, 0.0, tz + sz), 0.03, 0.62, black, 8)
+				for q in 4:
+					var a0 := PI * q / 4.0
+					var a1 := PI * (q + 1) / 4.0
+					var p0 := Vector2(cos(a0), sin(a0)) * 0.27
+					var p1 := Vector2(cos(a1), sin(a1)) * 0.27
+					var mid := (p0 + p1) * 0.5
+					var seg := p1 - p0
+					_box("paint", Vector3(0.055, 0.055, seg.length() + 0.03), Vector3(hx, 0.62 + mid.y, tz + mid.x), black,
+						Basis(Vector3.RIGHT, -atan2(seg.y, seg.x)))
 
 
 # ---------------------------------------------------------------- offices
