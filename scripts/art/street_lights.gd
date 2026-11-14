@@ -72,6 +72,7 @@ void fragment() {
 var network: RoadNetwork
 ## Kept for DayNight; the shaders read `night` themselves.
 var visible_amount := 0.0
+var _photo := false  # whether the poles were made for High and up (the scanned wooden pole)
 var _multis := {}  # mesh key or "pool" -> MultiMeshInstance3D
 var _dirty := true
 ## The desktop's light map (null in the browser, which draws the pools).
@@ -116,6 +117,7 @@ func setup(net: RoadNetwork) -> void:
 
 
 func _ready() -> void:
+	_photo = Surfaces.photo_level() > 0.0
 	for type in KINDS:
 		var key := mesh_key(type)
 		if not _multis.has(key):
@@ -133,6 +135,15 @@ func _ready() -> void:
 
 
 func _process(delta: float) -> void:
+	if _photo != (Surfaces.photo_level() > 0.0):
+		# The quality tier came up (or went down) since the poles were made
+		# (it's set after the town loads): wooden poles swap between the
+		# scan and the code-built post.
+		_photo = not _photo
+		for type in KINDS:
+			var spec: Array = KINDS[type]
+			if spec[1] == "wood":
+				_multis[mesh_key(type)].multimesh.mesh = _pole_mesh(spec[1], spec[2], spec[3])
 	if _dirty or _curb_moved(delta):
 		_rebuild(_dirty)
 		_dirty = false
@@ -375,7 +386,12 @@ static func _pole_mesh(kind: String, h: float, reach: float) -> ArrayMesh:
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var wood := kind == "wood"
 	var top := h + (1.2 if wood else 0.2)
-	_prism(st, Vector3.ZERO, Vector3(0, top, 0), 0.15 if wood else 0.11, 0.11 if wood else 0.08)
+	# On the desktop's High tier and up a wooden pole is the photo-scanned
+	# one (PoleLine.scan_pole), its 30 cm butt and full height; the arm,
+	# crossarm and head stay drawn.
+	var scan := PoleLine.scan_pole() if wood else null
+	if scan == null:
+		_prism(st, Vector3.ZERO, Vector3(0, top, 0), 0.15 if wood else 0.11, 0.11 if wood else 0.08)
 	# The arm rises gently out over the road.
 	_prism(st, Vector3(0, h - 0.35, 0), Vector3(0, h, reach), 0.05, 0.05)
 	if wood:
@@ -392,6 +408,13 @@ static func _pole_mesh(kind: String, h: float, reach: float) -> ArrayMesh:
 	head.generate_normals()
 	head.commit(mesh)
 	mesh.surface_set_material(1, _shader_mat(HEAD_SHADER))
+	if scan != null:
+		var b := Basis.IDENTITY.scaled(Vector3(0.3 / 0.138, top / 7.0, 0.3 / 0.138))
+		for s in scan.get_surface_count():
+			var pole := SurfaceTool.new()
+			pole.append_from(scan, s, Transform3D(b, Vector3.ZERO))
+			pole.commit(mesh)
+			mesh.surface_set_material(mesh.get_surface_count() - 1, scan.surface_get_material(s))
 	return mesh
 
 

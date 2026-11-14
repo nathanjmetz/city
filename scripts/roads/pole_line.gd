@@ -109,14 +109,17 @@ static func place(pts: PackedVector3Array, off: float, ends: Vector2, avoid := [
 
 ## Draws the poles and the wires between them (flat, at ground level 0:
 ## drape onto the land after). `top`: the top conductor's height.
-static func draw(wood: SurfaceTool, wire: SurfaceTool, poles: Array, three: bool, top: float) -> void:
+## `posts` false leaves the poles themselves out (RoadView stands scanned
+## ones there instead, see scan_pole); the crossarms and wires stay.
+static func draw(wood: SurfaceTool, wire: SurfaceTool, poles: Array, three: bool, top: float, posts := true) -> void:
 	var prev := []
 	for pole in poles:
 		var base: Vector3 = pole[0]
 		var side: Vector3 = pole[1]
 		var yaw := atan2(side.x, side.z)
 		var h := top + 0.4
-		RoadMesh._post(wood, base + Vector3(0, h * 0.5, 0), Vector3(0.26, h, 0.26), Basis(Vector3.UP, yaw))
+		if posts:
+			RoadMesh._post(wood, base + Vector3(0, h * 0.5, 0), Vector3(0.26, h, 0.26), Basis(Vector3.UP, yaw))
 		var row := attach(pole, three, top)
 		if three:
 			# Crossarm square to the road, three pin insulators on it.
@@ -131,6 +134,26 @@ static func draw(wood: SurfaceTool, wire: SurfaceTool, poles: Array, three: bool
 			for i in row.size():
 				span(wire, prev[i], row[i])
 		prev = row
+
+
+## A photo-scanned wooden pole (Poly Haven's CC0 modular_electricity_poles,
+## its tallest pole: real treated wood, checks and all), or null where the
+## art isn't here or the tier draws no photo detail (desktop High and up).
+static func scan_pole() -> Mesh:
+	if Surfaces.photo_level() <= 0.0:
+		return null
+	return AssetLib.mesh("modular_electricity_poles", ["pole_large"])
+
+
+## Where a scanned pole stands for a pole at `base` (on the land) on a line
+## whose top conductor is `top` high: the scan is 7 m tall and 14 cm
+## thick, so it's stretched to the line's 40 ft pole and its 10 in butt
+## (ANSI O5.1 class 4), turned a different way each.
+static func scan_transform(base: Vector3, top: float) -> Transform3D:
+	var h := top + 0.4
+	var yaw := fmod(absf(base.x * 12.9898 + base.z * 78.233), TAU)
+	var b := Basis(Vector3.UP, yaw).scaled(Vector3(0.26 / 0.138, h / 7.0, 0.26 / 0.138))
+	return Transform3D(b, base)
 
 
 ## The points a pole carries its wires at: the primaries, then the neutral.
