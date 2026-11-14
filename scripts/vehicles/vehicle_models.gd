@@ -306,13 +306,37 @@ func _sedan_camry() -> void:
 	_cap(rings[rings.size() - 1], PAINT, Vector3(0, 0, -1))
 	# The wide dark lower grille and the slim upper one between the lamps.
 	_box(Vector3(0, 0.33, 0.03), Vector3(1.15, 0.2, 0.08), TRIM)
-	_box(Vector3(0, 0.6, 0.07), Vector3(0.62, 0.05, 0.06), TRIM)
+	# (It sat inside the nose; now on the front face, under the hood's edge.)
+	_box(Vector3(0, 0.49, -0.006), Vector3(0.62, 0.05, 0.012), TRIM)
+	if _hi:
+		_camry_lamps()
 	# Door mirrors on the door skin, below the A-pillar.
 	_box(Vector3(0.99, 1.0, 1.86), Vector3(0.14, 0.11, 0.22), PAINT, true)
 	_camry_rear(4.885)
 	for az in axles:
 		for sx in [-1.0, 1.0]:
 			_wheel(Vector3(sx * 0.79, 0.0, az), 0.335, 0.225, RIM)
+
+
+## Ultra: the Camry's swept headlamps, which lie on the nose's slope
+## running back toward the fenders: a dark housing with the lens and an
+## LED running-light edge inside it, and the badge on the upper grille.
+func _camry_lamps() -> void:
+	var lift := Vector3(0, 0.006, -0.012)
+	var up := Vector3(0, 0.004, -0.008)
+	var inside := Vector3(0, 0.3, 1.0)
+	for sx in [-1.0, 1.0]:
+		# On the steep band where the face turns into the hood.
+		var a := Vector3(sx * 0.3, 0.556, 0.0) + lift
+		var b := Vector3(sx * 0.67, 0.556, 0.0) + lift
+		var c := Vector3(sx * 0.77, 0.67, 0.07) + lift
+		var d := Vector3(sx * 0.44, 0.68, 0.06) + lift
+		_quad(a, b, c, d, TRIM, inside)
+		_quad(a.lerp(b, 0.25) + up, b.lerp(a, 0.06) + up, c.lerp(d, 0.1) + up, d.lerp(c, 0.3) + up, HEAD, inside)
+		# The lamp's lower edge down the face's corner, and its LED strip.
+		_box(Vector3(sx * 0.56, 0.52, -0.006), Vector3(0.24, 0.06, 0.012), TRIM)
+		_box(Vector3(sx * 0.56, 0.525, -0.014), Vector3(0.2, 0.018, 0.012), HEAD)
+	_box(Vector3(0, 0.49, -0.014), Vector3(0.12, 0.07, 0.012), CHROME)
 
 
 ## The Camry's tail on its flat back panel (which had only paint): the
