@@ -998,7 +998,12 @@ func _strip_center(to_curb: float, anchor := false) -> void:
 		var px := clampf(x, -w * 0.5 + 0.3, w * 0.5 - 0.3)
 		_box(mat, Vector3(0.45, 3.0, 0.45), Vector3(px, 1.9, zf - 2.3), wall if mat == "brick" else wall.lightened(0.1))
 		if style == "towers":
-			_box("paint", Vector3(0.65, 1.1, 0.65), Vector3(px, 0.55, zf - 2.3), pier)  # cultured stone
+			if fine_parts:
+				# Desktop: real stone-veneer coursing under a precast cap.
+				_box("brick", Vector3(0.65, 1.05, 0.65), Vector3(px, 0.525, zf - 2.3), _dressed(pier))
+				_box("concrete", Vector3(0.75, 0.08, 0.75), Vector3(px, 1.09, zf - 2.3), Color("#d2cbbb"))
+			else:
+				_box("paint", Vector3(0.65, 1.1, 0.65), Vector3(px, 0.55, zf - 2.3), pier)  # cultured stone
 		x += bay
 	if aw > 0.0:
 		_grocery_anchor(ax0, w * 0.5, zf, cz, d, wall, mull)
