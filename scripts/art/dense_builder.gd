@@ -601,6 +601,8 @@ func _mixed(to_curb: float, width: float, storeys: int) -> void:
 	# Most downtown fronts are red brick; some are buff brick, and some were
 	# painted over in the last century.
 	var wall := Color(_pick(FACADE_BRICK + FACADE_BRICK + ["#c9b48a", "#d6c39b", "#e6dfcf", "#6f7f86"]))
+	# Painted over: alpha 0.5 gives the brick shader's painted photo.
+	var coat := Color(wall, 0.5 if wall in [Color("#e6dfcf"), Color("#6f7f86")] else 1.0)
 	var trim := Color(_pick(["#d9d3c3", "#cfc8b6", "#efede6", "#3a3530"]))
 	# 1870s-1900s Italianate fronts carry a deep bracketed metal cornice and
 	# hooded window caps; later commercial-style fronts a plain corbelled top.
@@ -615,7 +617,7 @@ func _mixed(to_curb: float, width: float, storeys: int) -> void:
 	var slipcover := not restored and era == "prewar" and storeys >= 2 and mark < 220
 	if restored:
 		trim = Color(["#3d4a3a", "#5a2626", "#e6dcc0", "#6b5038", "#2f3a4a"][mark % 5])
-	_block("brick", 0.0, w, d, cz, deck, top, wall)
+	_block("brick", 0.0, w, d, cz, deck, top, coat)
 	# One storefront every 7-8 m, each with its own sign and maybe an awning.
 	var fronts := maxi(1, roundi(w / 7.5))
 	var fw := w / fronts
