@@ -558,7 +558,11 @@ void fragment() {
 	// and drifts in patches before it covers everything. Leafless Indiana
 	// hardwoods catch only about a tenth of a snowfall in their branches, so
 	// the woods floor stays white with litter showing through in thin spots.
+#ifdef DESKTOP_DETAIL
 	float under = smoothstep(0.3, 0.65, cover.r) * (1.0 - painted) * 0.15 + smoothstep(0.2, 0.45, steep) * 0.4;
+#else
+	float under = smoothstep(0.3, 0.65, cover.r) * (1.0 - painted) * 0.45 + smoothstep(0.2, 0.45, steep) * 0.4;
+#endif
 	float lies = smoothstep(0.05, 0.45, snow * 1.15 - clump * 0.35 - (1.0 - mid) * 0.15 + 0.1 - under);
 	lies *= 1.0 - smoothstep(0.03, 0.3, cover.g) * 0.5;
 	lies *= 1.0 - hw_paved * 0.85;
