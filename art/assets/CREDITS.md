@@ -59,6 +59,7 @@ leaves `art/assets/` out. Licences:
 
 ## Surfaces (PBR textures)
 
+- `beige_wall_001` Beige Wall 001 by Dimitrios Savva, Rico Cilliers, CC0-1.0, https://polyhaven.com/a/beige_wall_001. Used for: EIFS fronts and tenant towers of 1990s-2010s strip centres (tinted to the wall colour)
 - `bitumen` Bitumen by Rob Tuytel, CC0-1.0, https://polyhaven.com/a/bitumen. Used for: flat roofs of downtown blocks, schools and shops
 - `box_profile_metal_sheet` Box Profile Metal Sheet by Amal Kumar, CC0-1.0, https://polyhaven.com/a/box_profile_metal_sheet. Used for: pole barns and newer farm shops, metal roofs on houses
 - `concrete_block_wall` Concrete Block Wall by Charlotte Baglioni, CC0-1.0, https://polyhaven.com/a/concrete_block_wall. Used for: CMU walls: garages, shops, small factories, dugouts

@@ -924,6 +924,7 @@ func _strip_center(to_curb: float, anchor := false) -> void:
 		mat = "brick"
 	elif style == "towers":
 		wall = Color(["#d8c9a8", "#cdbb98", "#e0d4ba", "#c4b391"][sr.randi() % 4])
+		mat = "eifs"
 	# A neighborhood center: a supermarket anchors the +x end.
 	var aw := clampf(w * 0.4, 32.0, 56.0) if anchor and w >= 70.0 else 0.0
 	var ax0 := w * 0.5 - aw
@@ -962,14 +963,14 @@ func _strip_center(to_curb: float, anchor := false) -> void:
 	if style == "mansard":
 		_strip_mansard(-w * 0.5 - 0.2, x1 + 0.2, zf, h + 1.2, Color(["#4a3f36", "#3e3e3c", "#5a4a3c", "#6b5a45"][sr.randi() % 4]))
 	else:
-		_box("paint", Vector3(w + 0.4, 0.5, 2.6), Vector3(0, 3.65, zf - 1.3), wall.lightened(0.1))
+		_box("eifs" if style == "towers" else "paint", Vector3(w + 0.4, 0.5, 2.6), Vector3(0, 3.65, zf - 1.3), wall.lightened(0.1))
 		_quad("paint", Vector3(-w * 0.5 - 0.2, 3.39, zf - 2.6), Vector3(w * 0.5 + 0.2, 3.39, zf - 2.6),
 			Vector3(w * 0.5 + 0.2, 3.39, zf), Vector3(-w * 0.5 - 0.2, 3.39, zf), SOFFIT, [], Vector3.DOWN)
 	var pier := Color(["#9c8f7a", "#b3a58c", "#8a7f70"][sr.randi() % 3])
 	var x := -w * 0.5
 	while x <= x1 + 0.01:
 		var px := clampf(x, -w * 0.5 + 0.3, w * 0.5 - 0.3)
-		_box(mat, Vector3(0.45, 3.0, 0.45), Vector3(px, 1.9, zf - 2.3), wall.lightened(0.1) if mat == "paint" else wall)
+		_box(mat, Vector3(0.45, 3.0, 0.45), Vector3(px, 1.9, zf - 2.3), wall if mat == "brick" else wall.lightened(0.1))
 		if style == "towers":
 			_box("paint", Vector3(0.65, 1.1, 0.65), Vector3(px, 0.55, zf - 2.3), pier)  # cultured stone
 		x += bay
@@ -985,6 +986,9 @@ func _strip_center(to_curb: float, anchor := false) -> void:
 		if n >= 5:
 			_raised_front(-w * 0.5 + (n / 2 + 0.5) * bay, bay, zf, h + 1.2, wall, "paint")
 	_shop_parking(to_curb, w, zf - 2.6, 0.0)
+	# The walk carries on under the canopy to the shop doors (concrete from
+	# curb to storefront, as at every strip centre), not grass.
+	_flat_rect("drive", -w * 0.5 - 0.5, w * 0.5 + 0.5, zf - 2.6, zf, 0.08)
 	if fine_parts:
 		_strip_lot_dress(to_curb, zf - 4.6, n, wall)
 
@@ -1025,9 +1029,9 @@ func _strip_towers(w: float, bay: float, n: int, stop: float, zf: float, top: fl
 		var fw := bay * sr.randf_range(0.55, 0.85)
 		var rise := sr.randf_range(1.4, 3.2)
 		var tint := wall.lightened(sr.randf_range(-0.08, 0.1))
-		_box("paint", Vector3(fw, rise + 0.6, 1.0), Vector3(cx, top + rise * 0.5 - 0.3, zf - 0.4), tint)
-		_box("paint", Vector3(fw + 0.5, 0.35, 1.4), Vector3(cx, top + rise + 0.12, zf - 0.4), cap)
-		_box("paint", Vector3(fw + 0.2, 0.2, 1.15), Vector3(cx, top + rise - 0.6, zf - 0.4), cap)
+		_box("eifs", Vector3(fw, rise + 0.6, 1.0), Vector3(cx, top + rise * 0.5 - 0.3, zf - 0.4), tint)
+		_box("eifs", Vector3(fw + 0.5, 0.35, 1.4), Vector3(cx, top + rise + 0.12, zf - 0.4), cap)
+		_box("eifs", Vector3(fw + 0.2, 0.2, 1.15), Vector3(cx, top + rise - 0.6, zf - 0.4), cap)
 		if sr.randf() < 0.4:
 			var y := top + rise + 0.3
 			var hx := fw * 0.5 + 0.2
