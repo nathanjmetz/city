@@ -1082,15 +1082,30 @@ func _shop_stoops(w: float, zf: float, fronts: int, fw: float) -> void:
 			var pot := Color(["#9a5a3c", "#3b3f42", "#d8d2c4"][r.randi() % 3])
 			for sx in [-1.0, 1.0]:
 				var px: float = fx + sx * 1.15
-				_box("paint", Vector3(0.5, 0.5, 0.5), Vector3(px, 0.25, zf - 0.45), pot)
+				# The scanned wooden planter box (desktop with the art), a
+				# metre long against the front; a painted pot otherwise.
+				var boxed := PropLog.place(self, "planter_box_02",
+					Transform3D(Basis().scaled(Vector3.ONE * 0.8), Vector3(px + sx * 0.1, 0, zf - 0.32)))
+				if not boxed:
+					_box("paint", Vector3(0.5, 0.5, 0.5), Vector3(px, 0.25, zf - 0.45), pot)
 				var keep := rng
 				rng = r
-				_shrub(Vector3(px, 0.5, zf - 0.45), 0.32)
+				if boxed:
+					_shrub(Vector3(px + sx * 0.1, 0.5, zf - 0.32), 0.34, 2)  # boxwood filling the box (the same draws)
+				else:
+					_shrub(Vector3(px, 0.5, zf - 0.45), 0.32)
 				rng = keep
 		var pick := r.randf()
 		if pick < 0.3:
 			# A sandwich board, two chalkboards leaning together.
 			var ax := fx + sw * r.randf_range(0.22, 0.38) * (1.0 if r.randf() < 0.5 else -1.0)
+			var widths := []
+			for q in 8:
+				widths.append(r.randf_range(0.22, 0.48))  # drawn either way, so the next fronts don't move
+			# The scanned A-frame (desktop with the art), about 1.1 m tall.
+			if PropLog.place(self, "standing_chalkboard_01",
+					Transform3D(Basis().scaled(Vector3.ONE * 0.72), Vector3(ax, 0, zf - 0.95))):
+				continue
 			for sz in [-1.0, 1.0]:
 				var tilt := Basis(Vector3.RIGHT, deg_to_rad(-12.0 * sz))  # tops lean together
 				_box("paint", Vector3(0.62, 0.95, 0.03), Vector3(ax, 0.47, zf - 0.95 + sz * 0.1), Color("#2b2f2c"), tilt)
@@ -1098,12 +1113,15 @@ func _shop_stoops(w: float, zf: float, fronts: int, fw: float) -> void:
 				# Chalked specials on the face toward the walk.
 				var c := Vector3(ax, 0.47, zf - 0.95 + sz * 0.1)
 				for line in 4:
-					var lw := r.randf_range(0.22, 0.48)
+					var lw: float = widths[line + (4 if sz > 0.0 else 0)]
 					_box("paint", Vector3(lw, 0.035, 0.01), c + tilt * Vector3(0, 0.3 - line * 0.17, 0.025 * sz), Color("#e8e6df"), tilt)
 		elif pick < 0.5:
 			# A cafe's bistro set: a round-ish table and two chairs.
 			var tx := fx + sw * 0.3 * (1.0 if r.randf() < 0.5 else -1.0)
 			var tz := zf - 0.85
+			# The scanned set, its two chairs along the front.
+			if PropLog.place(self, "outdoor_table_chair_set_01", Transform3D(Basis(Vector3.UP, PI * 0.5), Vector3(tx, 0, tz))):
+				continue
 			_box("paint", Vector3(0.06, 0.72, 0.06), Vector3(tx, 0.36, tz), black)
 			_box("paint", Vector3(0.62, 0.04, 0.62), Vector3(tx, 0.74, tz), black)
 			_box("paint", Vector3(0.44, 0.04, 0.62), Vector3(tx, 0.741, tz), black.lightened(0.05), Basis(Vector3.UP, PI * 0.25))
@@ -1366,6 +1384,9 @@ func _street_furniture(width: float, tz: float) -> void:
 		var pick := r.randf()
 		if pick < 0.3:
 			# A bench, its back to the street.
+			if PropLog.place(self, "modular_street_seating", Transform3D(Basis(Vector3.UP, PI), Vector3(x, 0, tz - 0.1)),
+					["legs_single", "legs_double", "crossbar", "suspended_support_01", "back_support_*", "arm_rest_*", "seat", "seat_back"]):
+				continue
 			_box("paint", Vector3(1.8, 0.06, 0.45), Vector3(x, 0.45, tz - 0.1), black)
 			_box("paint", Vector3(1.8, 0.45, 0.06), Vector3(x, 0.72, tz - 0.32), black)
 			for sx in [-0.8, 0.8]:

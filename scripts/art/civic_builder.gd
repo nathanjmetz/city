@@ -118,6 +118,44 @@ func _fire(front: float, to_curb: float) -> void:
 	_parking(ox - ow * 0.5 + 0.3, ox + ow * 0.5 - 0.3, front + 0.3, oz - 2.0, to_curb, ox)
 	_flagpole(Vector3(ox - ow * 0.5 + 1.2, 0, front + 1.5))
 	_flat_rect("drive", ax - aw * 0.5, ax + aw * 0.5, zf + ad, front + FIRST_D, 0.08)
+	_fire_life(ax, aw, zf, ad, bays, bay_w, ox, ow, oz, od, front, brick, trim)
+
+
+## What a real Indiana volunteer station has round its bays: concrete-filled
+## yellow pipe bollards at every door jamb front and back, a painted stop
+## bar across each bay's apron, the town's old fire bell on a brick pedestal
+## by the front door, a Knox box at the door, and the outdoor warning siren on its tall
+## wood pole out back (the siren still sounds for storms and noon tests).
+func _fire_life(ax: float, aw: float, zf: float, ad: float, bays: int, bay_w: float, ox: float, ow: float,
+		oz: float, od: float, front: float, brick: Color, trim: Color) -> void:
+	var r := RandomNumberGenerator.new()
+	r.seed = hash([rng.seed, "fire_life"])
+	var yellow := Color("#e0b81e")
+	for i in bays:
+		var x := ax - aw * 0.5 + 0.8 + (i + 0.5) * bay_w
+		for e in [-1.0, 1.0]:
+			_dr_bollard(Vector3(x + e * 2.25, 0.0, zf - 0.45))
+			_dr_bollard(Vector3(x + e * 2.25, 0.0, zf + ad + 0.45))
+		_flat_rect("line", x - 2.3, x + 2.3, zf - 7.0, zf - 6.7, 0.1, yellow)
+	# The old fire bell on a brick pedestal by the front door.
+	var b := Vector3(ox + ow * 0.25 - 2.8, 0.0, oz - 1.0)
+	_box("brick", Vector3(1.0, 1.1, 1.0), b + Vector3(0, 0.55, 0), brick)
+	_box("paint", Vector3(1.15, 0.12, 1.15), b + Vector3(0, 1.16, 0), trim)
+	for e in [-1.0, 1.0]:
+		_box("paint", Vector3(0.1, 1.0, 0.1), b + Vector3(e * 0.38, 1.7, 0), Color("#2b2b2b"))
+	_box("paint", Vector3(0.86, 0.1, 0.12), b + Vector3(0, 2.2, 0), Color("#2b2b2b"))
+	for k in 3:  # the bell, flaring to its lip
+		_cylinder("paint", b + Vector3(0, 1.45 + k * 0.2, 0), 0.34 - k * 0.07, 0.22, Color("#9a7a3a"), 12)
+	_box("paint", Vector3(0.6, 0.06, 0.25), b + Vector3(0, 0.7, -0.51), Color("#9a7a3a"))  # plaque
+	# Knox box beside the office door.
+	_box("paint", Vector3(0.2, 0.25, 0.1), Vector3(ox + ow * 0.25 + 1.6, 1.6, oz - 0.06), Color("#8a1f1a"))
+	# Outdoor warning siren on a wood pole behind the office.
+	var sp := Vector3(ox - ow * 0.5 + 1.5, 0.0, oz + od + 2.5 + r.randf_range(0.0, 1.5))
+	_cyl_y(sp + Vector3(0, 7.5, 0), 0.16, 15.0, POLE)
+	_box("paint", Vector3(0.8, 0.9, 0.8), sp + Vector3(0, 15.2, 0), Color("#d8d6cf"))  # rotator
+	_box("paint", Vector3(0.5, 0.5, 1.6), sp + Vector3(0, 15.6, -0.6), Color("#d8d6cf"))  # horn
+	_box("paint", Vector3(0.7, 0.7, 0.06), sp + Vector3(0, 15.6, -1.42), Color("#5a5a56"))
+	_box("paint", Vector3(0.5, 0.7, 0.3), sp + Vector3(0, 2.0, -0.25), Color("#9da3a6"))  # control box
 
 
 # ---------------------------------------------------------------- police
@@ -717,6 +755,43 @@ func _clinic(front: float, to_curb: float) -> void:
 	for i in 2:
 		var pick := TreeField.pick(rng, true)
 		trees.append([Vector3((i * 2 - 1) * 13.0, 0, zf + d + 2.0), pick[0], pick[1], rng.randf_range(0.7, 0.95)])
+	_clinic_back(w, d, zf, eifs, ex)
+
+
+## The back of a real walk-in clinic: the exam rooms' windows along the
+## rear wall, the staff door with a little canopy, light and stoop, a
+## concrete walk from it round the side to the lot, and a locked corral for
+## the dumpster and the red medical-waste carts, opening onto the lot.
+func _clinic_back(w: float, d: float, zf: float, eifs: Color, ex: float) -> void:
+	var r := RandomNumberGenerator.new()
+	r.seed = hash([rng.seed, "clinic_back"])
+	var keep := rng
+	rng = r  # the shared helpers draw from rng; keep the builder's sequence
+	var zb := zf + d
+	var dx := ex + r.randf_range(-1.5, 1.5)
+	_window_row(-w * 0.25 - 1.0, zb, w * 0.5 - 4.0, 1.6, 1.4, 3, eifs, Vector3.BACK)
+	_window_row(w * 0.25 + 1.0, zb, w * 0.5 - 4.0, 1.6, 1.4, 3, eifs, Vector3.BACK)
+	_steel_door(Vector3(dx, 1.05, zb + 0.03), 1.0)
+	_box("paint", Vector3(1.8, 0.15, 1.1), Vector3(dx, 2.75, zb + 0.55), eifs.darkened(0.1))
+	_box("paint", Vector3(0.3, 0.25, 0.2), Vector3(dx, 3.15, zb + 0.1), DARK)
+	# Walk from the door along the back and down the -x side to the lot.
+	var wx := -w * 0.5 - 1.0
+	_flat_rect("drive", wx - 0.75, dx + 0.6, zb + 0.6, zb + 2.1, 0.08)
+	_flat_rect("drive", wx - 0.75, wx + 0.75, zf - 6.0, zb + 2.1, 0.08)
+	# Dumpster and medical-waste corral at the back of the lot, open to it
+	# for the hauler's truck.
+	var cx := w * 0.5 + 2.5
+	var cz := zf - 4.4
+	var wall := Color(["#b9b2a2", "#8a6a48", "#a8a49a"][r.randi() % 3])
+	_box("paint", Vector3(3.8, 0.1, 2.8), Vector3(cx, 0.05, cz), CONCRETE)
+	_box("paint", Vector3(3.8, 1.8, 0.15), Vector3(cx, 0.9, cz + 1.35), wall)
+	for e in [-1.0, 1.0]:
+		_box("paint", Vector3(0.15, 1.8, 2.8), Vector3(cx + e * 1.85, 0.9, cz), wall)
+	_box("paint", Vector3(1.9, 1.2, 1.3), Vector3(cx - 0.7, 0.7, cz + 0.4), Color("#2f5a3a"))
+	_box("paint", Vector3(1.95, 0.08, 1.35), Vector3(cx - 0.7, 1.34, cz + 0.4), Color("#1e1e1e"))
+	for k in r.randi_range(1, 2):
+		_box("paint", Vector3(0.6, 1.0, 0.7), Vector3(cx + 0.9 + k * 0.0, 0.55, cz - 0.2 + k * 0.8), Color("#b8322a"))  # medical waste cart
+	rng = keep
 
 
 # ---------------------------------------------------------------- school
@@ -1270,14 +1345,15 @@ func _bus_yard_life(w: float, back: float, dx: float, iz: float, gx: float, gw: 
 	var wz := gz + gd
 	_box("paint", Vector3(1.2, 1.4, 0.9), Vector3(gx - 1.8, 0.7, wz + 0.5), Color("#3d4a3a"))  # used oil
 	_box("paint", Vector3(1.3, 0.12, 1.0), Vector3(gx - 1.8, 0.06, wz + 0.5), Color("#2e2e2e"))  # spill pan
-	_box("paint", Vector3(2.4, 2.0, 0.08), Vector3(gx + 0.9, 1.0, wz + 1.0), Color("#c46a20"))  # tire rack
+	_box("paint", Vector3(2.4, 2.0, 0.08), Vector3(gx + 0.9, 1.0, wz + 0.06), Color("#c46a20"))  # tire rack
 	for k in 3:
 		_box("paint", Vector3(2.3, 0.04, 0.9), Vector3(gx + 0.9, 0.3 + k * 0.75, wz + 0.55), Color("#c46a20"))
 		for t in 3:
 			_cylinder("paint", Vector3(gx + 0.15 + t * 0.75, 0.34 + k * 0.75, wz + 0.15), 0.5, 0.28, Color("#1d1d1d"), 10)
 	_cyl_y(Vector3(gx - 0.2, 1.8, wz + 0.15), 0.32, 0.2, Color("#c42a20"))  # hose reel
 	for e in [-1.0, 1.0]:
-		_box("paint", Vector3(0.5, 0.35, 0.3), Vector3(gx + e * gw * 0.5 * 0.92, 5.4, wz + 0.15), dark)
+		if not _wall_light(Vector3(gx + e * gw * 0.5 * 0.92, 5.5, wz), Vector3(0, 0, 1)):
+			_box("paint", Vector3(0.5, 0.35, 0.3), Vector3(gx + e * gw * 0.5 * 0.92, 5.4, wz + 0.15), dark)
 	# Shoebox yard lights on 9 m poles over the back corners.
 	for e in [-1.0, 1.0]:
 		var px: float = e * (w * 0.5 - 1.2)
@@ -1492,14 +1568,16 @@ func _taxi_life(w: float, ox: float, ow: float, oz: float, od: float, trim: Colo
 	_box("paint", Vector3(1.0, 2.15, 0.06), Vector3(dx, 1.08, zb + 0.03), Color("#6d7377"))
 	_box("paint", Vector3(0.06, 0.25, 0.08), Vector3(dx + 0.35, 1.05, zb + 0.07), dark)
 	_box("metal", Vector3(1.8, 0.12, 1.0), Vector3(dx, 2.6, zb + 0.5), Color("#2b2f33"))
-	_box("paint", Vector3(0.35, 0.25, 0.18), Vector3(dx, 3.1, zb + 0.09), dark)
+	if not _wall_light(Vector3(dx, 3.7, zb), Vector3(0, 0, 1)):
+		_box("paint", Vector3(0.35, 0.25, 0.18), Vector3(dx, 3.1, zb + 0.09), dark)
 	_box("paint", Vector3(0.35, 0.45, 0.2), Vector3(dx - 1.1, 1.3, zb + 0.1), Color("#4a4f52"))
 	# Break bench and ash urn under the eave.
 	var bx := dx + 2.4
-	_box("paint", Vector3(1.6, 0.06, 0.45), Vector3(bx, 0.45, zb + 0.6), Color("#5a4632"))
-	for e in [-1.0, 1.0]:
-		_box("paint", Vector3(0.06, 0.45, 0.45), Vector3(bx + e * 0.7, 0.22, zb + 0.6), dark)
-	_box("paint", Vector3(1.6, 0.4, 0.05), Vector3(bx, 0.75, zb + 0.82), Color("#5a4632"))
+	if not PropLog.place(self, "wooden_picnic_table", Transform3D(Basis(Vector3.UP, PI * 0.5), Vector3(dx - 3.4, 0.0, zb + 1.15))):
+		_box("paint", Vector3(1.6, 0.06, 0.45), Vector3(bx, 0.45, zb + 0.6), Color("#5a4632"))
+		for e in [-1.0, 1.0]:
+			_box("paint", Vector3(0.06, 0.45, 0.45), Vector3(bx + e * 0.7, 0.22, zb + 0.6), dark)
+		_box("paint", Vector3(1.6, 0.4, 0.05), Vector3(bx, 0.75, zb + 0.82), Color("#5a4632"))
 	_cylinder("paint", Vector3(bx + 1.3, 0.0, zb + 0.5), 0.17, 0.75, Color("#5c6266"), 10)
 	# Meters and two condensers on the side wall away from the drive.
 	_box("paint", Vector3(0.18, 0.5, 0.4), Vector3(xl - 0.1, 1.5, zb - 1.0), Color("#9da3a6"))

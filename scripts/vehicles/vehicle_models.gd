@@ -639,19 +639,66 @@ func _police() -> void:  # Ford Explorer Police Interceptor Utility
 	_box(Vector3(0, 1.8, 2.5), Vector3(1.2, 0.06, 0.3), TRIM)
 	_box(Vector3(-0.32, 1.86, 2.5), Vector3(0.55, 0.08, 0.26), BEACON_RED)
 	_box(Vector3(0.32, 1.86, 2.5), Vector3(0.55, 0.08, 0.26), BEACON_BLUE)
-	if not _lo:
+	if _hi:
+		_patrol_livery(2.0, 0.72, 2.6, 0.6, "POLICE", 1.1)
+	elif not _lo:
 		_box(Vector3(0, 0.6, -0.08), Vector3(1.1, 0.5, 0.08), TRIM)
 
 
 ## Police light bar and push bumper, shared by the patrol cars.
-func _patrol_gear(W: float, roof: float, z: float, doors: Array) -> void:
+func _patrol_gear(W: float, roof: float, z: float, doors: Array, text := "POLICE") -> void:
 	for s in [-1.0, 1.0]:
 		_box(Vector3(s * (W * 0.5 + 0.002), doors[0], doors[1]), Vector3(0.004, doors[2], doors[3]), WHITE)
 	_box(Vector3(0, roof + 0.02, z), Vector3(1.2, 0.06, 0.3), TRIM)
 	_box(Vector3(-0.32, roof + 0.08, z), Vector3(0.55, 0.08, 0.26), BEACON_RED)
 	_box(Vector3(0.32, roof + 0.08, z), Vector3(0.55, 0.08, 0.26), BEACON_BLUE)
-	if not _lo:
+	if _hi:
+		_patrol_livery(W, doors[0], doors[1], doors[2], text, 1.0)
+	elif not _lo:
 		_box(Vector3(0, 0.55, -0.08), Vector3(1.1, 0.45, 0.08), TRIM)
+
+
+## Ultra: a patrol car's markings and push bumper (Setina style). Block
+## letters across the white door panel (centred at y, z, panel h tall) in
+## department navy over a blue reflective stripe, the word on the trunk
+## too, and the bumper's tubular frame instead of a black slab.
+func _patrol_livery(W: float, y: float, z: float, h: float, text: String, push_h: float) -> void:
+	var navy := Color(0.06, 0.1, 0.3, 0.4)
+	var hw := W * 0.5
+	for s in [-1.0, 1.0]:
+		_box(Vector3(s * (hw + 0.01), y - h * 0.5 + 0.08, z), Vector3(0.004, 0.06, h * 3.0), Color(0.1, 0.3, 0.75, 0.4))
+		_letters(text, s, hw + 0.01, y + 0.03, z, 0.034, navy)
+	var c := Color(0.04, 0.04, 0.04, 0.3)
+	for x in [-0.32, 0.32]:
+		_box(Vector3(x, 0.25 + push_h * 0.3, -0.12), Vector3(0.07, push_h * 0.6, 0.06), c)
+		_beam(Vector3(x, 0.4, -0.1), Vector3(x, 0.4, 0.15), 0.05, c)
+	for yy in [0.38, 0.25 + push_h * 0.55]:
+		_box(Vector3(0, yy, -0.15), Vector3(0.9, 0.05, 0.05), c)
+
+
+## Block letters, 3 by 5 squares of px each, standing on the car's side at
+## x = side * x (6 mm proud of the panel beneath), reading left to right
+## for someone on that side: from the back toward the front on the right,
+## from the front toward the back on the left.
+const GLYPHS := {
+	"P": ["111", "101", "111", "100", "100"], "O": ["111", "101", "101", "101", "111"],
+	"L": ["100", "100", "100", "100", "111"], "I": ["111", "010", "010", "010", "111"],
+	"C": ["111", "100", "100", "100", "111"], "E": ["111", "100", "110", "100", "111"],
+	"S": ["111", "100", "111", "001", "111"], "H": ["101", "101", "111", "101", "101"],
+	"R": ["110", "101", "110", "101", "101"], "F": ["111", "100", "110", "100", "100"],
+}
+func _letters(text: String, side: float, x: float, y: float, z: float, px: float, col: Color) -> void:
+	var step := px * 4.0
+	var dir := -1.0 if side > 0.0 else 1.0  # +z on the left side, -z on the right
+	var start := z - dir * (text.length() * step - px) * 0.5
+	for i in text.length():
+		var g: Array = GLYPHS.get(text[i], [])
+		for row in g.size():
+			for col_i in 3:
+				if (g[row] as String)[col_i] != "1":
+					continue
+				var zz := start + dir * (i * step + (col_i + 0.5) * px)
+				_box(Vector3(side * x, y + (2 - row) * px, zz), Vector3(0.004, px, px), col)
 
 
 func _police_charger() -> void:  # Dodge Charger Pursuit
@@ -663,7 +710,7 @@ func _police_charger() -> void:  # Dodge Charger Pursuit
 func _police_tahoe() -> void:  # Chevrolet Tahoe PPV, the county sheriff's usual
 	_car({"L": 5.35, "W": 2.06, "H": 1.93, "clear": 0.26, "hood": 1.2, "belt": 1.3, "a": 1.45,
 		"b": 2.15, "c": 4.95, "e": 5.2, "tail": 1.3, "wr": 0.4, "axles": [1.05, 4.15], "c_pillar": false})
-	_patrol_gear(2.06, 1.93, 2.6, [0.85, 2.7, 0.65, 2.0])
+	_patrol_gear(2.06, 1.93, 2.6, [0.85, 2.7, 0.65, 2.0], "SHERIFF")
 
 
 ## Ultra close-up detail on a car body: door seams and handles, mirror
@@ -1039,9 +1086,48 @@ func _rv() -> void:
 			_box(Vector3(s * (hw + 0.005), 2.15, z), Vector3(0.006, 0.6, 1.1), GLASS)
 		_box(Vector3(s * (hw - 0.3), 2.4, 1.15), Vector3(0.006, 0.3, 0.5), GLASS)
 	if not _lo:
-		_box(Vector3(hw + 0.005, 1.7, 4.6), Vector3(0.006, 1.8, 0.65), Color(0.85, 0.85, 0.83, 0.4))
+		_box(Vector3(hw + 0.012, 1.7, 4.6), Vector3(0.006, 1.8, 0.65), Color(0.85, 0.85, 0.83, 0.4))
 		_box(Vector3(0, 3.55, 6.0), Vector3(0.75, 0.22, 0.9), WHITE)  # roof air conditioner
 		_box(Vector3(0, 0.6, L + 0.12), Vector3(0.3, 0.12, 0.24), TRIM)  # hitch
+	if _hi:
+		_rv_rear(L, hw, 0.75, 3.2, false)
+
+
+## Ultra: a motorhome's back (Thor, Winnebago, Tiffin), which was blank:
+## the ladder up the driver's side to the roof, the maker's paint swoosh
+## across the cap, a small rear window (Class C) or the diesel pusher's
+## engine grille (Class A), the DOT's three red ID lamps and two corner
+## clearance lamps along the top, amber turn and white reversing lamps
+## under the tail lamps, the bumper and the plate.
+func _rv_rear(L: float, hw: float, y0: float, top: float, pusher: bool) -> void:
+	var z := L + 0.008
+	var dark := Color(0.05, 0.05, 0.05, 0.3)
+	# Ladder on standoffs, off the cap.
+	var lx := -hw + 0.3
+	for x in [lx - 0.2, lx + 0.2]:
+		_box(Vector3(x, (1.1 + top + 0.2) * 0.5, L + 0.07), Vector3(0.04, top + 0.2 - 1.1, 0.03), STEEL)
+		for y in [1.3, top - 0.2]:
+			_box(Vector3(x, y, L + 0.035), Vector3(0.03, 0.03, 0.06), STEEL)
+	var y := 1.25
+	while y < top + 0.1:
+		_box(Vector3(lx, y, L + 0.07), Vector3(0.4, 0.025, 0.025), STEEL)
+		y += 0.3
+	for k in 2:
+		_box(Vector3(0.2, 1.75 + k * 0.16, z), Vector3(hw * 2.0 - 0.9, 0.08, 0.006), PAINT)
+	if pusher:
+		_box(Vector3(0, y0 + 0.55, z), Vector3(1.3, 0.6, 0.006), dark)
+		for i in 6:
+			_box(Vector3(0, y0 + 0.3 + i * 0.1, z + 0.008), Vector3(1.24, 0.03, 0.006), STEEL)
+	else:
+		_box(Vector3(0.25, 2.45, z), Vector3(0.9, 0.5, 0.006), GLASS)
+	for x in [-0.25, 0.0, 0.25]:
+		_box(Vector3(x, top - 0.08, z), Vector3(0.08, 0.04, 0.012), TAIL)
+	for sx in [-1.0, 1.0]:
+		_box(Vector3(sx * (hw - 0.1), top - 0.08, z), Vector3(0.08, 0.04, 0.012), TAIL)
+		_box(Vector3(sx * (hw - 0.08), y0 + 0.62, z), Vector3(0.14, 0.12, 0.012), Color(1.0, 0.55, 0.05, 0.5))
+		_box(Vector3(sx * (hw - 0.08), y0 + 0.47, z), Vector3(0.14, 0.1, 0.012), Color(0.9, 0.9, 0.88, 0.4))
+	_box(Vector3(0, y0 - 0.02, L + 0.1), Vector3(hw * 2.0 - 0.1, 0.16, 0.2), dark)
+	_box(Vector3(0.6, y0 + 0.25, z + 0.006), Vector3(0.3, 0.15, 0.012), WHITE)
 
 
 ## A Class A diesel pusher (Winnebago, Tiffin): a bus-like box with a big
@@ -1076,6 +1162,8 @@ func _motorhome() -> void:
 		_box(Vector3(0, 0.75, 0.02), Vector3(1.4, 0.35, 0.06), CHROME)
 		for z in [3.5, 8.0]:
 			_box(Vector3(0, 3.85, z), Vector3(0.75, 0.22, 0.9), WHITE)
+	if _hi:
+		_rv_rear(L, hw, 0.5, 3.5, true)
 
 
 ## A Ford F-250 with a slide-in truck camper (Lance): the cabover bunk
@@ -2303,6 +2391,9 @@ func _combine_hi(L: float, rim: Color) -> void:
 func _motorcycle() -> void:  # cruiser (Harley-Davidson Street Glide) with rider
 	_wheel(Vector3(0, 0, 0.35), 0.33, 0.13, CHROME, true)
 	_wheel(Vector3(0, 0, 1.85), 0.33, 0.15, CHROME, true)
+	if _hi:
+		_street_glide()
+		return
 	_loft([
 		[0.25, 0.75, 0.95, 1.1, 0.25, 0.4, 0.3],
 		[0.7, 0.45, 0.9, 1.0, 0.18, 0.2, 0.16],
@@ -2313,6 +2404,71 @@ func _motorcycle() -> void:  # cruiser (Harley-Davidson Street Glide) with rider
 	_box(Vector3(0, 1.55, 1.15), Vector3(0.24, 0.26, 0.26), Color(0.06, 0.06, 0.07, 0.2))
 	_box(Vector3(0, 0.95, 0.27), Vector3(0.16, 0.1, 0.06), HEAD, true)
 	_box(Vector3(0, 0.85, 2.15), Vector3(0.14, 0.06, 0.04), TAIL, true)
+
+
+## Ultra: the bagger itself instead of a lump (Street Glide: 1625 mm
+## wheelbase): the batwing fairing and its short windshield on the forks,
+## fenders over both wheels, the teardrop tank, the V-twin with its two
+## jugs and crankcase, the frame's down tube, the stepped seat, hard
+## saddlebags, chrome pipes down both sides, the bars, lamps and turn
+## signals, and the rider astride it in jacket, jeans and helmet.
+func _street_glide() -> void:
+	var dark := Color(0.06, 0.06, 0.07, 0.3)
+	var amber := Color(1.0, 0.55, 0.05, 0.5)
+	for x in [-0.09, 0.09]:
+		_cyl(Vector3(x, 0.33, 0.35), Vector3(x, 0.98, 0.58), 0.024, CHROME, 8)
+	_fender(Vector3(0, 0.33, 0.35), 0.38, 0.15)
+	_loft([
+		[0.32, 0.86, 1.12, 1.26, 0.22, 0.37, 0.2],
+		[0.42, 0.84, 1.14, 1.3, 0.3, 0.4, 0.24],
+		[0.6, 0.86, 1.14, 1.24, 0.3, 0.38, 0.22],
+	], [_edges(PAINT, PAINT)], PAINT, PAINT)
+	_quad(Vector3(-0.22, 1.28, 0.42), Vector3(0.22, 1.28, 0.42), Vector3(0.18, 1.44, 0.52),
+		Vector3(-0.18, 1.44, 0.52), GLASS, Vector3(0, 1.2, 1.0))
+	_box(Vector3(0, 1.04, 0.31), Vector3(0.16, 0.12, 0.03), HEAD)
+	for sx in [-1.0, 1.0]:
+		_box(Vector3(sx * 0.2, 0.92, 0.36), Vector3(0.05, 0.04, 0.05), amber)
+	_beam(Vector3(-0.4, 1.2, 0.68), Vector3(0.4, 1.2, 0.68), 0.03, dark)
+	# Tank, frame, V-twin.
+	_loft([
+		[0.6, 0.88, 1.0, 1.06, 0.12, 0.17, 0.1],
+		[0.85, 0.85, 1.0, 1.1, 0.15, 0.2, 0.13],
+		[1.1, 0.82, 0.92, 0.98, 0.1, 0.14, 0.08],
+	], [_edges(PAINT, PAINT)], PAINT, PAINT)
+	_cyl(Vector3(0, 0.95, 0.6), Vector3(0, 0.3, 0.85), 0.03, dark, 6)
+	_box(Vector3(0, 0.4, 1.02), Vector3(0.24, 0.24, 0.42), dark)
+	for d in [-1.0, 1.0]:
+		var base := Vector3(0, 0.5, 1.02 + d * 0.06)
+		_cyl(base, base + Vector3(0, 0.36, d * 0.16), 0.085, STEEL, 10)
+		_cyl(base + Vector3(0, 0.33, d * 0.15), base + Vector3(0, 0.39, d * 0.17), 0.1, CHROME, 10)
+	_cyl(Vector3(0.16, 0.6, 1.0), Vector3(0.2, 0.6, 1.0), 0.11, CHROME, 12)  # air cleaner
+	# Seat, saddlebags, rear fender, pipes.
+	_loft([
+		[1.1, 0.78, 0.84, 0.88, 0.12, 0.17, 0.14],
+		[1.45, 0.76, 0.82, 0.86, 0.15, 0.2, 0.17],
+		[1.6, 0.8, 0.92, 0.96, 0.12, 0.15, 0.12],
+		[1.85, 0.82, 0.92, 0.95, 0.1, 0.12, 0.1],
+	], [_edges(dark, dark)], dark, dark)
+	_fender(Vector3(0, 0.33, 1.85), 0.38, 0.22)
+	for sx in [-1.0, 1.0]:
+		_box(Vector3(sx * 0.27, 0.68, 1.95), Vector3(0.18, 0.34, 0.6), PAINT)
+		_box(Vector3(sx * 0.27, 0.86, 1.95), Vector3(0.19, 0.02, 0.61), dark)
+		_cyl(Vector3(sx * 0.14, 0.3, 1.15), Vector3(sx * 0.2, 0.32, 1.6), 0.04, CHROME, 8)
+		_cyl(Vector3(sx * 0.2, 0.32, 1.6), Vector3(sx * 0.22, 0.38, 2.32), 0.045, CHROME, 8)
+		_box(Vector3(sx * 0.18, 0.82, 2.27), Vector3(0.05, 0.04, 0.04), amber)
+	_box(Vector3(0, 0.9, 2.2), Vector3(0.14, 0.05, 0.03), TAIL)
+	_box(Vector3(0, 0.78, 2.22), Vector3(0.18, 0.1, 0.01), WHITE)
+	# The rider.
+	var jacket := Color(0.08, 0.07, 0.07, 0.4)
+	var jeans := Color(0.15, 0.2, 0.32, 0.4)
+	_cyl(Vector3(0, 0.92, 1.33), Vector3(0, 1.45, 1.18), 0.17, jacket, 10)
+	_cyl(Vector3(0, 1.5, 1.15), Vector3(0, 1.74, 1.13), 0.125, Color(0.1, 0.1, 0.11, 0.2), 12)
+	_box(Vector3(0, 1.62, 1.03), Vector3(0.2, 0.06, 0.02), Color(0.02, 0.02, 0.02, 0.4))
+	for sx in [-1.0, 1.0]:
+		_cyl(Vector3(sx * 0.17, 1.4, 1.15), Vector3(sx * 0.36, 1.21, 0.7), 0.045, jacket, 8)
+		_cyl(Vector3(sx * 0.12, 0.88, 1.3), Vector3(sx * 0.22, 0.86, 0.92), 0.075, jeans, 8)
+		_cyl(Vector3(sx * 0.22, 0.86, 0.92), Vector3(sx * 0.25, 0.42, 0.8), 0.06, jeans, 8)
+		_box(Vector3(sx * 0.25, 0.4, 0.75), Vector3(0.09, 0.08, 0.2), dark)
 
 
 ## A street-legal four-seat golf cart (Club Car Onward / E-Z-GO Express
@@ -2356,6 +2512,18 @@ func _buggy() -> void:
 	var bay := Color(0.48, 0.29, 0.15, 0.4)
 	var dark := Color(0.08, 0.06, 0.05, 0.4)
 	# Horse: barrel, chest, neck and head, legs mid-trot, tail.
+	if _hi:
+		_standardbred(bay, dark)
+	else:
+		_horse_simple(bay, dark)
+	# Shafts and harness.
+	for s in [-1.0, 1.0]:
+		_beam(Vector3(s * 0.42, 1.15, 0.9), Vector3(s * 0.5, 0.95, 3.4), 0.05, TRIM)
+	_box(Vector3(0, 1.4, 1.25), Vector3(0.7, 0.08, 0.12), TRIM)
+	_buggy_body(dark)
+
+
+func _horse_simple(bay: Color, dark: Color) -> void:
 	_loft([
 		[0.75, 1.0, 1.35, 1.55, 0.2, 0.28, 0.18],
 		[1.1, 0.95, 1.35, 1.6, 0.26, 0.32, 0.22],
@@ -2371,10 +2539,67 @@ func _buggy() -> void:
 		var z: float = legs[i][0]
 		_beam(Vector3(s * 0.15, 1.0, z), Vector3(s * 0.15, 0.0, z + legs[i][1]), 0.1, dark if _lo else bay)
 	_beam(Vector3(0, 1.45, 2.4), Vector3(0, 0.75, 2.65), 0.1, dark)
-	# Shafts and harness.
+
+
+## Ultra: the Standardbred in the shafts, rounded instead of square beams:
+## a barrel with chest, withers and a wider croup, the neck rising to a
+## tapered head with ears and a dark muzzle, jointed legs mid-trot (knee,
+## cannon, dark hoof) in diagonal pairs, a full dark tail and mane, and
+## the black harness: collar, saddle pad, breeching, bridle and reins
+## back to the driver's hands.
+func _standardbred(bay: Color, dark: Color) -> void:
+	_loft([
+		[0.7, 1.08, 1.3, 1.45, 0.12, 0.2, 0.1],
+		[0.85, 0.98, 1.36, 1.58, 0.22, 0.29, 0.15],
+		[1.2, 0.93, 1.36, 1.6, 0.27, 0.33, 0.19],
+		[1.8, 0.95, 1.36, 1.57, 0.28, 0.34, 0.21],
+		[2.2, 1.0, 1.38, 1.6, 0.25, 0.33, 0.24],
+		[2.45, 1.1, 1.38, 1.53, 0.16, 0.25, 0.16],
+		[2.56, 1.22, 1.38, 1.46, 0.06, 0.12, 0.06],
+	], [_edges(bay, bay)], bay, bay)
+	# Neck in two tapering pieces, then the head down to the muzzle.
+	_cyl(Vector3(0, 1.4, 0.95), Vector3(0, 1.8, 0.62), 0.19, bay, 10)
+	_cyl(Vector3(0, 1.78, 0.64), Vector3(0, 2.0, 0.46), 0.14, bay, 10)
+	_cyl(Vector3(0, 2.04, 0.5), Vector3(0, 1.74, 0.16), 0.105, bay, 10)
+	_cyl(Vector3(0, 1.76, 0.18), Vector3(0, 1.64, 0.04), 0.08, Color(0.2, 0.13, 0.08, 0.4), 10)
 	for s in [-1.0, 1.0]:
-		_beam(Vector3(s * 0.42, 1.15, 0.9), Vector3(s * 0.5, 0.95, 3.4), 0.05, TRIM)
-	_box(Vector3(0, 1.4, 1.25), Vector3(0.7, 0.08, 0.12), TRIM)
+		_beam(Vector3(s * 0.06, 2.06, 0.52), Vector3(s * 0.08, 2.2, 0.56), 0.035, bay)
+		_box(Vector3(s * 0.1, 1.97, 0.4), Vector3(0.01, 0.03, 0.04), Color(0.02, 0.02, 0.02, 0.4))
+	_box(Vector3(0, 1.82, 0.86), Vector3(0.05, 0.12, 0.62), dark)  # mane
+	_cyl(Vector3(0, 2.06, 0.6), Vector3(0, 1.9, 0.82), 0.04, dark, 6)
+	# Legs mid-trot: near fore with off hind forward, the others back.
+	var legs := [[-1.0, 0.95, 0.18], [1.0, 1.0, -0.16], [-1.0, 2.2, -0.14], [1.0, 2.25, 0.2]]
+	for l in legs:
+		var sx: float = l[0]
+		var z: float = l[1]
+		var swing: float = l[2]
+		var top := Vector3(sx * 0.16, 1.05, z)
+		var knee := Vector3(sx * 0.16, 0.55, z + swing * 0.6)
+		var fet := Vector3(sx * 0.16, 0.12, z + swing)
+		_cyl(top, knee, 0.075, bay, 8)
+		_cyl(knee, fet, 0.042, dark, 8)
+		_cyl(fet, fet - Vector3(0, 0.12, -0.02), 0.06, Color(0.05, 0.04, 0.03, 0.4), 8)
+	# Tail.
+	_cyl(Vector3(0, 1.46, 2.56), Vector3(0, 1.1, 2.68), 0.07, dark, 8)
+	_cyl(Vector3(0, 1.12, 2.67), Vector3(0, 0.6, 2.7), 0.09, dark, 8)
+	# Harness: collar, saddle pad, breeching round the rump, bridle, reins.
+	var black := Color(0.03, 0.03, 0.03, 0.4)
+	for i in 10:
+		var a0 := TAU * i / 10.0
+		var a1 := TAU * (i + 1) / 10.0
+		var c := Vector3(0, 1.5, 0.92)
+		_beam(c + Vector3(cos(a0) * 0.27, sin(a0) * 0.27, 0), c + Vector3(cos(a1) * 0.27, sin(a1) * 0.27, 0), 0.06, black)
+	_box(Vector3(0, 1.61, 1.3), Vector3(0.3, 0.05, 0.3), black)
+	for s in [-1.0, 1.0]:
+		_beam(Vector3(s * 0.3, 1.4, 0.95), Vector3(s * 0.33, 1.3, 2.3), 0.03, black)
+		_beam(Vector3(s * 0.33, 1.3, 2.3), Vector3(s * 0.26, 1.1, 2.5), 0.03, black)
+		_beam(Vector3(s * 0.11, 1.85, 0.28), Vector3(s * 0.32, 1.6, 1.3), 0.012, black)
+		_beam(Vector3(s * 0.32, 1.6, 1.3), Vector3(0.18 + s * 0.08, 1.5, 3.85), 0.012, black)
+	_beam(Vector3(-0.11, 1.9, 0.38), Vector3(0.11, 1.9, 0.38), 0.025, black)
+
+
+## The buggy itself, behind the horse.
+func _buggy_body(dark: Color) -> void:
 	# Buggy: box seat body, black top, open front with the driver.
 	_box(Vector3(0, 0.95, 4.3), Vector3(1.3, 0.5, 1.9), PAINT)
 	_loft([

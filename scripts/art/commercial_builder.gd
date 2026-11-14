@@ -684,6 +684,14 @@ func _coping(w: float, d: float, cz: float, top: float, old := false) -> void:
 ## A sign that says what the place is (a civic building, a utility, a
 ## company's office): what it is, lettered (a station sign or
 ## cast letters on a panel), never a shop's stand-in trade word.
+## A dusk-to-dawn yard light (the scanned one: a globe hanging from an arm
+## that points +x) on a wall whose outward normal is `n`, its arm meeting
+## the wall at `p`. False: draw the code-built one.
+func _wall_light(p: Vector3, n: Vector3) -> bool:
+	return PropLog.place(self, "security_light",
+		Transform3D(Basis(Vector3.UP, atan2(n.z, -n.x)), p + n * 0.17 - Vector3(0, 0.42, 0)))
+
+
 func _civic_sign(c: Vector3, w: float, h: float, text: String, panel: String, letter: String, style: String) -> void:
 	var was := sign_spec
 	sign_spec = {"text": text, "style": style, "panel": Color(panel), "letter": Color(letter)}
@@ -1955,6 +1963,20 @@ func _shop_diner(to_curb: float) -> void:
 	site.door = Vector2(-w * 0.5 + 1.0, zf - 2.0)
 	_box("paint", Vector3(2.6, 3.0, 2.0), Vector3(-w * 0.5 + 1.0, 1.8, zf - 1.0), band)
 	_glass(Vector3(-w * 0.5 + 1.0, 1.4, zf - 2.02), Vector3(-1, 0, 0), 1.6, 2.2, 0.0)
+	if fine_parts:
+		# Desktop: a pair of aluminium storefront doors in the glass (narrow
+		# stiles, a kick rail, a transom over them, pulls at the meeting
+		# stiles), the way every restaurant entry is built.
+		var ex := -w * 0.5 + 1.0
+		var ez := zf - 2.065  # clear of the glass at -2.02
+		var al := Color("#b9bcbc")
+		_box("metal", Vector3(1.76, 0.08, 0.06), Vector3(ex, 2.5, ez), al)  # head
+		_box("metal", Vector3(1.6, 0.07, 0.06), Vector3(ex, 2.08, ez), al)  # transom bar
+		for sx in [-0.84, 0.0, 0.84]:
+			_box("metal", Vector3(0.08, 2.2, 0.06), Vector3(ex + sx, 1.4, ez), al)  # jambs and meeting stile
+		_box("metal", Vector3(1.6, 0.22, 0.06), Vector3(ex, 0.41, ez), al)  # kick rail
+		for sx in [-0.12, 0.12]:
+			_box("metal", Vector3(0.035, 0.42, 0.04), Vector3(ex + sx, 1.15, ez - 0.07), Color("#d9dbd8"))  # pulls
 	# Half of them wear the 1970s family-restaurant mansard: a shingled
 	# slope all the way round the top of the walls (Frisch's, Ponderosa and
 	# the local diners built off US 35 and SR 9 in Marion).
