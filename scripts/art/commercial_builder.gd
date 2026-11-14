@@ -39,6 +39,9 @@ var site := {"stalls": [], "door": Vector2(0.0, 0.4), "cut_x": 0.0, "aisle_z": 0
 ## A shop's first stage (BuildingTypes "shop" level 0), which may be drawn
 ## as a corner store (CornerStore).
 var small_store := false
+## When set, stand-in signs pick from these TRADE_WORDS indices instead of
+## any random trade (an office tower never reads SHOES).
+var sign_words := []
 ## The trade words a strip centre's tenants letter on its fascia, in order,
 ## for its pylon's panels.
 var _tenant_words := []
@@ -697,6 +700,8 @@ func _sign(c: Vector3, w: float, h: float, word := -1) -> void:
 		labels.append_array(SignText.on_panel(sign_spec, c + Vector3(0, 0, -0.01), w, h, Vector3.FORWARD, true))
 	var r := Vector3(-w * 0.5, 0, 0)
 	var u := Vector3(0, h, 0)
+	if word < 0 and not sign_words.is_empty():
+		word = sign_words[posmod(hash([rng.seed, snappedf(c.x, 0.1), 61]), sign_words.size())]
 	var v0 := (_word_slot(c.x) if word < 0 else 2.0 * (word + 1)) if sign_spec.is_empty() else 0.0
 	# Faces the street (-z); x runs right to left as seen from the street.
 	_quad("sign", c + r, c - r, c - r + u, c + r + u, col,
@@ -716,7 +721,14 @@ const TRADE_WORDS := [
 	"GROCERY", "FOODS", "DISCOUNT", "PHARMACY", "SUPERCENTER", "OUTLET",
 	# What banks, plants and drive-through pads letter (also never at random).
 	"SAVINGS", "TRUST", "MFG", "MACHINE", "PLASTICS", "TOOLING", "BURGERS", "CHICKEN", "FOUNDRY",
+	# What offices, mills, packers, apartments and hotels letter (never at random).
+	"OFFICES", "LAW", "MEDICAL", "LUMBER", "SAWMILL", "PACKING", "APARTMENTS", "LOFTS", "HOTEL", "INN", "MOTEL", "SUITES",
 ]
+## Word groups for builders whose signs must name their own kind of business.
+const OFFICE_WORDS := [26, 41, 6, 57, 56, 65, 66, 67]
+const PLANT_WORDS := [58, 59, 60, 61, 64]
+const HOME_WORDS := [71, 72]
+const HOTEL_WORDS := [73, 74, 75, 76]
 
 
 ## What a family restaurant's reader board says this week (two lines, at
