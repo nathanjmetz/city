@@ -437,12 +437,24 @@ void fragment() {
 	vec3 drape = mix(vec3(0.62, 0.58, 0.50), vec3(0.75, 0.74, 0.70), hash(wcell + 2.7));
 	drape = mix(drape, vec3(0.30, 0.34, 0.42), step(0.85, hash(wcell + 5.1)));
 	float side = max(1.0 - smoothstep(0.17, 0.24, ux), smoothstep(0.76, 0.83, ux));
-	col = mix(col, lin(drape) * 0.55, side * step(h1, 0.6) * (1.0 - blinds * 0.7));
+	col = mix(col, lin(drape) * 0.55, side * step(h1, 0.6) * (1.0 - blinds * 0.7) * (1.0 - office));
 	col += vec3(0.022, 0.02, 0.017) * (1.0 - UV.y) * (1.0 - blinds);
 	float fres = pow(1.0 - clamp(dot(NORMAL, VIEW), 0.0, 1.0), 4.0);
 	vec3 sky = mix(vec3(0.20, 0.26, 0.34), vec3(0.45, 0.52, 0.60), UV.y);
 	sky *= 1.0 - night * 0.85;
 	ALBEDO = mix(col, sky, 0.18 + 0.5 * fres);
+	if (office > 0.5) {
+		// Tinted low-e office glass by day: mostly the sky it faces, each
+		// pane's reflection a touch off its neighbour's (no two lites sit
+		// quite flat), and only the ceiling's pale band showing through.
+		float hx = world_pos.x + world_pos.z;
+		float pane = hash(vec2(floor(hx / 1.5), floor(world_pos.y / 3.6)) + 31.7);
+		vec3 tint = vec3(0.72, 0.84, 0.86);
+		vec3 deep = mix(room, vcol(COLOR.rgb) * 0.3 * slat, blinds);
+		deep += vec3(0.03, 0.032, 0.034) * smoothstep(0.8, 0.95, UV.y) * (1.0 - blinds);
+		vec3 refl = sky * (0.9 + 0.2 * pane) * mix(0.85, 1.05, UV.y);
+		ALBEDO = mix(deep, refl, 0.38 + 0.45 * fres) * tint;
+	}
 	ROUGHNESS = 0.08;
 	SPECULAR = 0.6;
 	// After dark some rooms have a light on: one pick per window-sized patch
