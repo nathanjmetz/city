@@ -54,7 +54,7 @@ func _init() -> void:
 		if kind == "oil":
 			parts.append([[IndustryBuilder.build_beam(seed)], Vector3(27, 5.6, 20)])
 		for part in parts:
-			for m in part[0]:
+			for m in part[0].filter(func(x): return x is Mesh):
 				var mi := MeshInstance3D.new()
 				mi.mesh = m
 				mi.position = part[1]

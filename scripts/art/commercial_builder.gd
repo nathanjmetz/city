@@ -676,6 +676,16 @@ func _coping(w: float, d: float, cz: float, top: float, old := false) -> void:
 	_box("paint", Vector3(0.35, 0.1, d), Vector3(w * 0.5, top, cz), col)
 
 
+## A sign that says what the place is (a civic building, a utility, a
+## company's office): what it is, lettered (a station sign or
+## cast letters on a panel), never a shop's stand-in trade word.
+func _civic_sign(c: Vector3, w: float, h: float, text: String, panel: String, letter: String, style: String) -> void:
+	var was := sign_spec
+	sign_spec = {"text": text, "style": style, "panel": Color(panel), "letter": Color(letter)}
+	_sign(c, w, h)
+	sign_spec = was
+
+
 func _sign(c: Vector3, w: float, h: float, word := -1) -> void:
 	var col := Color(_pick(SIGNS))
 	col.a = minf(w / 60.0, 0.49)

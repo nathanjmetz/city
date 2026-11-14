@@ -72,15 +72,6 @@ static func build_service(kind: int, seed: int, size: Vector2, to_curb: float, b
 	return [b._commit_house(), b._commit_flat(), b.trees, b.labels]
 
 
-## A civic building's own sign: what it is, lettered (a station sign or
-## cast letters on a panel), never a shop's stand-in trade word.
-func _civic_sign(c: Vector3, w: float, h: float, text: String, panel: String, letter: String, style: String) -> void:
-	var was := sign_spec
-	sign_spec = {"text": text, "style": style, "panel": Color(panel), "letter": Color(letter)}
-	_sign(c, w, h)
-	sign_spec = was
-
-
 # ---------------------------------------------------------------- fire
 
 func _fire(front: float, to_curb: float) -> void:
