@@ -1140,15 +1140,89 @@ func _bus_depot(size: Vector2, front: float, to_curb: float) -> void:
 	_civic_sign(Vector3(gx + gw * 0.2, 5.2, gz - 0.04), gw * 0.4, 0.9, "TRANSIT", "#1f3b6e", "#f2efe6", "franklin")
 	# Fuel and wash island by the yard gate.
 	var fz := yard_z + 1.5
-	_box("paint", Vector3(1.2, 0.9, 3.0), Vector3(drive_x, 0.45, fz + 1.5), CONCRETE)
 	for e in [-1.0, 1.0]:
 		_box("paint", Vector3(0.25, 4.6, 0.25), Vector3(drive_x + e * 3.2, 2.3, fz + 1.5), GALV)
 	_box("metal", Vector3(7.4, 0.35, 5.0), Vector3(drive_x, 4.75, fz + 1.5), WHITE)
+	_bus_yard_life(w, back, drive_x, fz + 1.5, gx, gw, gz, gd)
 	# Chain-link along the sides and back of the yard (thin strips, so the
 	# gate side stays open).
 	_fence(Vector2(-w * 0.5 + 0.2, yard_z), Vector2(-w * 0.5 + 0.4, back - 0.3), 2.1)
 	_fence(Vector2(w * 0.5 - 0.4, yard_z), Vector2(w * 0.5 - 0.2, back - 0.3), 2.1)
 	_fence(Vector2(-w * 0.5 + 0.2, back - 0.5), Vector2(w * 0.5 - 0.2, back - 0.3), 2.1)
+
+
+## The working kit of a real small-city transit garage yard (the kind a
+## county transit system runs in Indiana): a raised curbed fuel island with
+## two diesel dispensers and DEF, guarded by yellow bollards under a canopy
+## with a coloured fascia; an above-ground double-wall diesel vault tank
+## beside the garage; an emergency fuel shutoff post; and on the garage's
+## yard wall a used-oil tank, a tire rack, a hose reel and wall packs, with
+## tall shoebox lights over the back corners of the stalls.
+func _bus_yard_life(w: float, back: float, dx: float, iz: float, gx: float, gw: float, gz: float, gd: float) -> void:
+	var r := RandomNumberGenerator.new()
+	r.seed = hash([rng.seed, "bus_yard_life"])
+	var dark := Color("#33363a")
+	var fascia := Color(["#1f3b6e", "#2f6b3a", "#9a2a24"][r.randi() % 3])
+	# Fuel island: a 1.4 x 6 m curbed concrete pad, two dispensers.
+	_box("paint", Vector3(1.4, 0.2, 6.0), Vector3(dx, 0.1, iz), CONCRETE)
+	for k in 2:
+		var z := iz - 1.4 + k * 2.8
+		_box("paint", Vector3(0.75, 1.9, 0.5), Vector3(dx, 1.15, z), Color("#d8d8d2"))
+		_box("paint", Vector3(0.78, 0.35, 0.53), Vector3(dx, 1.85, z), fascia)
+		_box("paint", Vector3(0.8, 0.3, 0.06), Vector3(dx, 1.35, z - 0.27), dark)  # display
+		for e in [-1.0, 1.0]:
+			_box("paint", Vector3(0.08, 0.9, 0.08), Vector3(dx + e * 0.42, 1.05, z + 0.1), Color("#1c1c1c"))  # hose
+	# DEF tote at the island end.
+	_box("paint", Vector3(1.0, 1.1, 1.2), Vector3(dx, 0.75, iz + 2.6), Color("#e4e6e8"))
+	_box("paint", Vector3(1.02, 0.12, 1.22), Vector3(dx, 1.36, iz + 2.6), Color("#2a5ea8"))
+	for zz in [iz - 3.2, iz + 3.4]:
+		_dr_bollard(Vector3(dx, 0.0, zz))
+	for e in [-1.0, 1.0]:
+		_dr_bollard(Vector3(dx + e * 0.75, 0.0, iz - 3.0))
+	# Canopy fascia stripe and down lights.
+	_box("paint", Vector3(7.5, 0.5, 0.05), Vector3(dx, 4.75, iz - 2.52), fascia)
+	_box("paint", Vector3(7.5, 0.5, 0.05), Vector3(dx, 4.75, iz + 2.52), fascia)
+	for e in [-1.0, 1.0]:
+		_box("paint", Vector3(0.05, 0.5, 5.0), Vector3(dx + e * 3.72, 4.75, iz), fascia)
+		_box("paint", Vector3(0.6, 0.05, 0.6), Vector3(dx + e * 1.6, 4.55, iz), Color("#f1efe4"))
+	# Emergency shutoff post (NFPA 30A), 6 m from the dispensers.
+	var ex := dx + 3.2
+	_box("paint", Vector3(0.12, 1.5, 0.12), Vector3(ex, 0.75, iz - 4.5), GALV)
+	_box("paint", Vector3(0.35, 0.45, 0.12), Vector3(ex, 1.6, iz - 4.5), Color("#c42a20"))
+	# Double-wall vault tank (about 4,000 gal) beside the garage, on its own
+	# pad behind bollards, with a vent stack and a fill box.
+	var tx := gx + gw * 0.5 + 1.25
+	var tz := gz + gd - 3.5
+	_box("paint", Vector3(2.2, 0.15, 5.8), Vector3(tx, 0.08, tz), CONCRETE)
+	_box("paint", Vector3(1.6, 1.6, 5.0), Vector3(tx, 0.95, tz), Color("#d6d4cc"))
+	for k in 3:
+		_box("paint", Vector3(1.7, 0.18, 0.2), Vector3(tx, 0.24, tz - 2.0 + k * 2.0), dark)  # saddles
+	_box("paint", Vector3(0.08, 2.4, 0.08), Vector3(tx - 0.5, 2.9, tz + 2.0), GALV)
+	_box("paint", Vector3(0.18, 0.1, 0.18), Vector3(tx - 0.5, 4.12, tz + 2.0), GALV)
+	_box("paint", Vector3(0.5, 0.3, 0.4), Vector3(tx, 1.9, tz - 1.6), Color("#c9a21e"))
+	_box("paint", Vector3(0.05, 0.4, 1.4), Vector3(tx + 0.83, 1.1, tz), Color("#c42a20"))  # DIESEL label
+	for k in 3:
+		_dr_bollard(Vector3(tx + 1.15, 0.0, tz - 2.4 + k * 2.4))
+	# Yard wall of the garage, between the two doors.
+	var wz := gz + gd
+	_box("paint", Vector3(1.2, 1.4, 0.9), Vector3(gx - 1.8, 0.7, wz + 0.5), Color("#3d4a3a"))  # used oil
+	_box("paint", Vector3(1.3, 0.12, 1.0), Vector3(gx - 1.8, 0.06, wz + 0.5), Color("#2e2e2e"))  # spill pan
+	_box("paint", Vector3(2.4, 2.0, 0.08), Vector3(gx + 0.9, 1.0, wz + 1.0), Color("#c46a20"))  # tire rack
+	for k in 3:
+		_box("paint", Vector3(2.3, 0.04, 0.9), Vector3(gx + 0.9, 0.3 + k * 0.75, wz + 0.55), Color("#c46a20"))
+		for t in 3:
+			_cylinder("paint", Vector3(gx + 0.15 + t * 0.75, 0.34 + k * 0.75, wz + 0.15), 0.5, 0.28, Color("#1d1d1d"), 10)
+	_cyl_y(Vector3(gx - 0.2, 1.8, wz + 0.15), 0.32, 0.2, Color("#c42a20"))  # hose reel
+	for e in [-1.0, 1.0]:
+		_box("paint", Vector3(0.5, 0.35, 0.3), Vector3(gx + e * gw * 0.5 * 0.92, 5.4, wz + 0.15), dark)
+	# Shoebox yard lights on 9 m poles over the back corners.
+	for e in [-1.0, 1.0]:
+		var px: float = e * (w * 0.5 - 1.2)
+		var pz := back - 1.3
+		_box("paint", Vector3(0.2, 9.0, 0.2), Vector3(px, 4.5, pz), Color("#7b7f80"))
+		_box("paint", Vector3(0.08, 0.08, 1.2), Vector3(px, 8.9, pz - 0.6), Color("#7b7f80"))
+		_box("paint", Vector3(0.6, 0.18, 0.75), Vector3(px, 8.85, pz - 1.3), dark)
+		_box("paint", Vector3(1.0, 0.4, 1.0), Vector3(px, 0.2, pz), CONCRETE)
 
 
 ## The depot's development tree (BusNet.TREE) at the depot itself, each as
