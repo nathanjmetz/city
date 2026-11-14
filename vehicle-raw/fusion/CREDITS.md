@@ -1,0 +1,1 @@
+"2016 Ford Fusion Photoscan" by Gizmitt (https://sketchfab.com/Gizmitt), https://sketchfab.com/3d-models/2016-ford-fusion-photoscan-b9df0c1e69524b9dbcbd0932b830cf82, licensed CC BY 4.0 (http://creativecommons.org/licenses/by/4.0/). Unmodified Sketchfab glTF download.
