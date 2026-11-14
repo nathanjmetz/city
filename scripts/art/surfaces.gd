@@ -168,8 +168,12 @@ void fragment() {
 	float tcell = floor(along / 11.0);
 	float th = fract(sin(tcell * 41.37 + block.x * 7.13 + block.y * 3.71) * 43758.5453);
 	float th2 = fract(th * 57.3);
-	float wob = (texture(noise_soft, vec2(across * 0.7, tcell * 0.37)).r - 0.5) * 1.6
-		+ (texture(noise_grain, p / 1.3).r - 0.5) * 0.08;
+	// One soft bend over the lane plus a few small kinks: a sealed crack
+	// meanders, it doesn't zigzag (the soft noise is ~80 px a feature on a
+	// 512 px tile, so across * 0.7 made a 25 cm sawtooth).
+	float wob = (texture(noise_soft, vec2(across * 0.03, tcell * 0.37)).r - 0.5) * 1.4
+		+ (texture(noise_soft, vec2(across * 0.25, tcell * 0.53 + 0.3)).r - 0.5) * 0.7
+		+ (texture(noise_grain, p / 2.2).r - 0.5) * 0.1;
 	float dt = abs(along - tcell * 11.0 - 2.0 - th * 7.0 - wob);
 	float from = th2 * 0.5;
 	float span = step(0.3, th) * smoothstep(from - 0.03, from, across) * smoothstep(from + 0.5 + th * 0.5, from + 0.47 + th * 0.5, across);
