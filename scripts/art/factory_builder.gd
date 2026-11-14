@@ -550,8 +550,61 @@ func _sawmill(to_curb: float) -> void:
 	_hall(kx, kz, 10.0, 12.0, 6.5, Color("#c9cbc8"))
 	_door(kx - 2.2, kz - 6.0, 4.0, 4.6)
 	_door(kx + 2.2, kz - 6.0, 4.0, 4.6)
-	_cone_top(Vector3(sx + sw * 0.5 + 6.0, 0.0, sz), 5.0, 4.0, SAWDUST, "paint", 14)
+	_mill_flow(sx, sw, sz, back)
 	_log_yard(sx - sw * 0.5 - 4.0, zf + 4.0, back)
+
+
+## How the wood moves through a real hardwood mill, from Indiana mill
+## photos: logs roll down a sloped steel log deck to the debarker and the
+## headrig in the saw house; the sawdust rides an inclined belt conveyor
+## out the back onto its pile (inside the yard, for the boiler or the
+## bedding trade), and the slabs go through a chipper whose blower pipe
+## arcs up into a chip bin on legs that a trailer backs under.
+func _mill_flow(sx: float, sw: float, sz: float, back: float) -> void:
+	var r := RandomNumberGenerator.new()
+	r.seed = hash([rng.seed, "mill_flow"])
+	var steel := Color("#6b6f72")
+	var hx := sx + sw * 0.32  # the saw house
+	# Log deck: three sloped skids from the yard up to the saw house, with
+	# logs lying across them waiting their turn.
+	var lx := hx - sw * 0.15 - 3.0
+	for k in 3:
+		var x := lx - 2.5 + k * 2.5
+		UpgradeKits._strut(self, Vector3(x, 0.15, sz + 13.0), Vector3(x, 1.3, sz + 6.0), 0.3, steel)
+	for k in r.randi_range(2, 4):
+		var z := sz + 7.5 + k * 1.3
+		var y := 1.3 - (z - sz - 6.0) / 7.0 * 1.15 + 0.5
+		UpgradeKits._drum(self, Vector3(lx, y, z), 0.42, 7.0, BARK, true, 10)
+		for e in [-1.0, 1.0]:
+			_box("paint", Vector3(0.05, 0.7, 0.7), Vector3(lx + e * 3.52, y, z), LOG_END)
+	# Debarker housing at the top of the deck.
+	_box("metal", Vector3(3.0, 2.2, 2.4), Vector3(lx + 1.0, 1.6, sz + 4.6), Color("#8c7a52"))
+	_box("paint", Vector3(0.6, 0.6, 0.6), Vector3(lx + 2.8, 1.0, sz + 4.6), Color("#3d5a7a"))  # motor
+	# Sawdust: an inclined belt conveyor out the back onto its pile.
+	var pile := Vector3(minf(sx + sw * 0.5 - 2.5, half - 4.0), 0.0, sz + 9.2)
+	if _in_lot(pile, 2.6) and pile.z + 2.6 < back:
+		_cone_top(pile, 2.6, 2.6, SAWDUST, "paint", 14)
+		var a := Vector3(hx, 2.4, sz + 6.2)
+		var b := pile + Vector3(0, 4.0, 0)
+		UpgradeKits._strut(self, a, b, 0.7, Color("#9aa0a4"))
+		UpgradeKits._strut(self, a + Vector3(0, 0.45, 0), b + Vector3(0, 0.45, 0), 0.1, steel)  # hood
+		_box("paint", Vector3(0.25, 4.0, 0.25), Vector3((a.x + b.x) * 0.5, 2.0, (a.z + b.z) * 0.5 + 0.4), steel)
+	# Chip bin on legs at the front of the shed, the blower pipe arcing up
+	# into it from the chipper.
+	var bx := hx + sw * 0.12
+	var bz := sz - 9.0
+	if _in_lot(Vector3(bx, 0, bz), 2.0):
+		for e in [Vector2(-1, -1), Vector2(1, -1), Vector2(-1, 1), Vector2(1, 1)]:
+			_box("paint", Vector3(0.25, 5.0, 0.25), Vector3(bx + e.x * 1.5, 2.5, bz + e.y * 1.5), steel)
+		_box("metal", Vector3(3.4, 2.6, 3.4), Vector3(bx, 6.3, bz), Color("#a8aaa6"))
+		_box("metal", Vector3(2.0, 0.9, 2.0), Vector3(bx, 4.6, bz), Color("#a8aaa6").darkened(0.1))  # hopper
+		_box("paint", Vector3(1.8, 1.2, 1.4), Vector3(hx, 0.6, sz - 7.0), Color("#c46a20"))  # chipper
+		var p0 := Vector3(hx, 1.2, sz - 7.0)
+		var p1 := Vector3(hx, 8.6, sz - 7.6)
+		var p2 := Vector3(bx, 8.2, bz)
+		UpgradeKits._strut(self, p0, p1, 0.32, Color("#b9bcbc"))
+		UpgradeKits._strut(self, p1, p2, 0.32, Color("#b9bcbc"))
+		_box("paint", Vector3(0.5, 0.4, 0.5), p2 + Vector3(0, -0.2, 0), Color("#b9bcbc"))  # cyclone
 
 
 ## A grown sawmill's log yard: on a wide lot the logs bought ahead for the
