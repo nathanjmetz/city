@@ -1613,7 +1613,7 @@ func _office_mirror(to_curb: float, width: float, storeys: int) -> void:
 	_box("metal", Vector3(bw + 2.0, 0.4, bd + 3.0), Vector3(0, bh + 0.2, zf - (bd + 3.0) * 0.5), frame)  # canopy
 	_flat_rect("drive", -bw * 0.5 - 1.0, bw * 0.5 + 1.0, zf - bd - 4.5, zf - bd, 0.07)
 	_flat_rect("drive", -1.5, 1.5, -0.3, zf - bd - 4.5, 0.07)
-	_sign(Vector3(bw * 0.5 + 3.0, 0.3, zf - 8.0), 3.6, 0.8)
+	_monument_sign(Vector3(bw * 0.5 + 3.0, 0.3, zf - 8.0), 3.6, 0.8)
 	if fine:
 		# Three flagpoles on the lawn (flag, state, company), as real
 		# office parks fly them.
@@ -1686,7 +1686,7 @@ func _office(to_curb: float, width: float, storeys: int) -> void:
 	for s in [-1.0, 1.0]:
 		_box("concrete", Vector3(1.4, 0.6, 1.4), Vector3(s * 3.2, 0.3, zf - 3.0), FOUNDATION)
 		_shrub(Vector3(s * 3.2, 0.6, zf - 3.0), 0.5)
-	_sign(Vector3(0, 0.3, zf - 5.0), 3.2, 0.7)
+	_monument_sign(Vector3(0, 0.3, zf - 5.0), 3.2, 0.7)
 	for i in rng.randi_range(2, 4):
 		_box("metal", Vector3(2.2, 1.4, 1.6), Vector3(rng.randf_range(-w * 0.3, w * 0.3), deck + 0.7,
 			cz + rng.randf_range(-d * 0.2, d * 0.2)), Color("#b9bcbc"))

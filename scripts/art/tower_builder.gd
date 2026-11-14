@@ -1328,7 +1328,7 @@ func _tw_balcony(to_curb: float, width: float, storeys: int) -> void:
 		_flat_rect("drive", sx * 8.0 - 3.0, sx * 8.0 + 3.0, -to_curb + RoadStyle.CURB_WIDTH, zf - 9.0, 0.07)
 	_box("concrete", Vector3(5.0, 0.6, 3.0), Vector3(0, 0.3, zf - 13.0 + 3.0), Color("#8f8b84"))  # island planter
 	_shrub(Vector3(0, 0.6, zf - 10.0), 0.8)
-	_sign(Vector3(0, 0.3, zf - 11.6), 3.0, 0.6)
+	_monument_sign(Vector3(0, 0.3, zf - 11.6), 3.0, 0.6)
 	var keep := rng
 	rng = r
 	var sx := -w * 0.5 + 1.0
