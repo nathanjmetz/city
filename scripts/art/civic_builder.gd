@@ -717,6 +717,43 @@ func _clinic(front: float, to_curb: float) -> void:
 	for i in 2:
 		var pick := TreeField.pick(rng, true)
 		trees.append([Vector3((i * 2 - 1) * 13.0, 0, zf + d + 2.0), pick[0], pick[1], rng.randf_range(0.7, 0.95)])
+	_clinic_back(w, d, zf, eifs, ex)
+
+
+## The back of a real walk-in clinic: the exam rooms' windows along the
+## rear wall, the staff door with a little canopy, light and stoop, a
+## concrete walk from it round the side to the lot, and a locked corral for
+## the dumpster and the red medical-waste carts, opening onto the lot.
+func _clinic_back(w: float, d: float, zf: float, eifs: Color, ex: float) -> void:
+	var r := RandomNumberGenerator.new()
+	r.seed = hash([rng.seed, "clinic_back"])
+	var keep := rng
+	rng = r  # the shared helpers draw from rng; keep the builder's sequence
+	var zb := zf + d
+	var dx := ex + r.randf_range(-1.5, 1.5)
+	_window_row(-w * 0.25 - 1.0, zb, w * 0.5 - 4.0, 1.6, 1.4, 3, eifs, Vector3.BACK)
+	_window_row(w * 0.25 + 1.0, zb, w * 0.5 - 4.0, 1.6, 1.4, 3, eifs, Vector3.BACK)
+	_steel_door(Vector3(dx, 1.05, zb + 0.03), 1.0)
+	_box("paint", Vector3(1.8, 0.15, 1.1), Vector3(dx, 2.75, zb + 0.55), eifs.darkened(0.1))
+	_box("paint", Vector3(0.3, 0.25, 0.2), Vector3(dx, 3.15, zb + 0.1), DARK)
+	# Walk from the door along the back and down the -x side to the lot.
+	var wx := -w * 0.5 - 1.0
+	_flat_rect("drive", wx - 0.75, dx + 0.6, zb + 0.6, zb + 2.1, 0.08)
+	_flat_rect("drive", wx - 0.75, wx + 0.75, zf - 6.0, zb + 2.1, 0.08)
+	# Dumpster and medical-waste corral at the back of the lot, open to it
+	# for the hauler's truck.
+	var cx := w * 0.5 + 2.5
+	var cz := zf - 4.4
+	var wall := Color(["#b9b2a2", "#8a6a48", "#a8a49a"][r.randi() % 3])
+	_box("paint", Vector3(3.8, 0.1, 2.8), Vector3(cx, 0.05, cz), CONCRETE)
+	_box("paint", Vector3(3.8, 1.8, 0.15), Vector3(cx, 0.9, cz + 1.35), wall)
+	for e in [-1.0, 1.0]:
+		_box("paint", Vector3(0.15, 1.8, 2.8), Vector3(cx + e * 1.85, 0.9, cz), wall)
+	_box("paint", Vector3(1.9, 1.2, 1.3), Vector3(cx - 0.7, 0.7, cz + 0.4), Color("#2f5a3a"))
+	_box("paint", Vector3(1.95, 0.08, 1.35), Vector3(cx - 0.7, 1.34, cz + 0.4), Color("#1e1e1e"))
+	for k in r.randi_range(1, 2):
+		_box("paint", Vector3(0.6, 1.0, 0.7), Vector3(cx + 0.9 + k * 0.0, 0.55, cz - 0.2 + k * 0.8), Color("#b8322a"))  # medical waste cart
+	rng = keep
 
 
 # ---------------------------------------------------------------- school
