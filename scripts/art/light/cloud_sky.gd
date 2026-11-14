@@ -84,6 +84,7 @@ const CODE := "shader_type sky;\n" + COMMON + """
 uniform vec3 top_color : source_color = vec3(0.17, 0.36, 0.70);
 uniform vec3 horizon_color : source_color = vec3(0.74, 0.79, 0.84);
 uniform float curve = 0.12;
+global uniform float snow;
 uniform float stars_alpha = 0.0;
 // Where the sun really is, set or not (SkyLight._twilight_sun): straight up
 // while it's high, which turns the twilight off.
@@ -180,6 +181,18 @@ void sky() {
 		// Light on the clouds from under the horizon: orange toward the
 		// glow, pink overhead and away from it.
 		tw_light = lum * mix(vec3(1.1, 0.75, 0.75), vec3(2.2, 1.0, 0.45), toward * toward) * (1.0 - deep * 0.8) * tw;
+	}
+	// Below the horizon. On screen that is only ever the haze past the
+	// farthest land, so it stays the horizon colour. But the scene's
+	// skylight and reflections (the cubemap pass) see this half too, and
+	// there it is the ground: grass and fields of about 18% albedo lit by
+	// sun and sky, roughly half as bright as the horizon sky and
+	// green-brown (under snow, about as bright as the sky). Without it the
+	// undersides of eaves, cars and trees and the lower half of every wall
+	// were filled by bright haze, and glass looking down reflected sky.
+	if (AT_CUBEMAP_PASS && up < 0.0) {
+		vec3 ground = mix(horizon_color * vec3(0.46, 0.52, 0.38), horizon_color * 0.9, clamp(snow, 0.0, 1.0));
+		col = mix(col, ground, smoothstep(0.0, -0.08, up));
 	}
 	// Stars, faded in at night and lost low down in the haze and the
 	// town's glow. Only on the screen: the sky's light on the town (its
