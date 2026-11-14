@@ -2,7 +2,7 @@ extends "res://tools/screenshot.gd"
 ## The demo town at a chosen hour and month, for checking day/night and
 ## seasons. Same arguments as screenshot.gd, plus environment variables:
 ##   LOOK_MONTH (1-12; whole months, the hour sets the day's time), LOOK_HOUR (0-24), LOOK_CYCLE (1 = day/night on),
-##   LOOK_SEASONS (0 = off), LOOK_COVER (share of the sky that is cloud, 0-1).
+##   LOOK_SEASONS (0 = off), LOOK_COVER (share of the sky that is cloud, 0-1), LOOK_RAIN (rain 0-1, with LOOK_COVER).
 ## Run: xvfb-run godot --rendering-driver opengl3 -s tools/look_shot.gd -- out.png yaw pitch dist
 
 
@@ -19,6 +19,6 @@ func _process(delta: float) -> bool:
 		if OS.get_environment("LOOK_COVER") != "":
 			# A fixed share of cloud (Weather's report override), 0 to 1.
 			for w in _main.find_children("*", "Weather", true, false):
-				w.live = [float(OS.get_environment("LOOK_COVER")), 0.0, 0.0, 0.0]
+				w.live = [float(OS.get_environment("LOOK_COVER")), float(OS.get_environment("LOOK_RAIN")), 0.0, 0.0]
 				w.cover = float(OS.get_environment("LOOK_COVER"))
 	return super(delta)
