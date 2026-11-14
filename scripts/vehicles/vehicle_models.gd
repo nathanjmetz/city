@@ -1910,7 +1910,10 @@ func _box_truck() -> void:  # 26 ft box truck
 		[3.15, 1.0, 3.8, 3.9, 1.3, 1.3, 1.28],
 		[L, 1.0, 3.8, 3.9, 1.3, 1.3, 1.28],
 	], [_edges(PAINT, STEEL)], PAINT, Color(0.8, 0.8, 0.8, 0.4))
-	_wheels([1.2, 7.9], 0.5, 1.2, 0.3)
+	if _hi:
+		_box_truck_detail(L)
+	else:
+		_wheels([1.2, 7.9], 0.5, 1.2, 0.3)
 	_box(Vector3(1.1, 1.0, L + 0.01), Vector3(0.12, 0.2, 0.04), TAIL, true)
 	_box(Vector3(-1.1, 1.0, L + 0.01), Vector3(0.12, 0.2, 0.04), TAIL, true)
 	for s in [-1.0, 1.0]:
@@ -1922,6 +1925,39 @@ func _box_truck() -> void:  # 26 ft box truck
 		for y in [1.6, 2.2, 2.8, 3.4]:
 			_box(Vector3(0, y, L + 0.012), Vector3(2.3, 0.03, 0.01), DARK)
 		_box(Vector3(0, 0.95, L + 0.15), Vector3(2.2, 0.12, 0.3), DARK)  # step bumper
+
+
+## Ultra: a dry-freight van body's hardware (Morgan, Supreme): extruded
+## aluminium top rails, side posts every metre, DOT clearance lamps on the
+## box's front and rear corners, side markers and three red ID lamps, the
+## roll-up door's pull strap and latch, a grab handle, and the 26 ft
+## truck's dual rear wheels.
+func _box_truck_detail(L: float) -> void:
+	var x := 1.3
+	for s in [-1.0, 1.0]:
+		var sx: float = s
+		_box(Vector3(sx * (x + 0.012), 3.78, (3.15 + L) * 0.5), Vector3(0.024, 0.1, L - 3.15), ALUM)
+		var z := 4.15
+		while z < L - 0.3:
+			_box(Vector3(sx * (x + 0.006), 2.45, z), Vector3(0.012, 2.6, 0.045), ALUM)
+			z += 1.0
+		# Clearance lamps: amber at the front corners, red at the back;
+		# side markers low at each end.
+		_box(Vector3(sx * 1.2, 3.8, 3.138), Vector3(0.08, 0.05, 0.012), BEACON_AMBER)
+		_box(Vector3(sx * 1.2, 3.8, L + 0.012), Vector3(0.08, 0.05, 0.012), TAIL)
+		_box(Vector3(sx * (x + 0.014), 1.3, 3.35), Vector3(0.012, 0.05, 0.08), BEACON_AMBER)
+		_box(Vector3(sx * (x + 0.014), 1.3, L - 0.2), Vector3(0.012, 0.05, 0.08), TAIL)
+		# Front axle, and dual wheels at the back.
+		_wheel(Vector3(sx * (1.2 - 0.12), 0.0, 1.2), 0.5, 0.3, RIM)
+		_arch(Vector3(sx * 1.204, 0.5, 1.2), 0.57, sx)
+		_wheel(Vector3(sx * (1.2 - 0.1), 0.0, 7.9), 0.5, 0.24, RIM)
+		_wheel(Vector3(sx * (1.2 - 0.36), 0.0, 7.9), 0.5, 0.24, RIM)
+	for xx in [-0.15, 0.0, 0.15]:
+		_box(Vector3(xx, 3.8, L + 0.012), Vector3(0.06, 0.04, 0.012), TAIL)
+	# Roll-up door: the latch bar at its foot, a pull strap, grab handle.
+	_box(Vector3(0, 1.22, L + 0.02), Vector3(0.5, 0.06, 0.012), STEEL)
+	_box(Vector3(0.2, 0.95, L + 0.016), Vector3(0.05, 0.5, 0.008), DARK)
+	_cyl(Vector3(-1.2, 1.4, L + 0.06), Vector3(-1.2, 2.4, L + 0.06), 0.02, STEEL, 6)
 
 
 func _dump_truck() -> void:  # tandem dump on a conventional chassis
