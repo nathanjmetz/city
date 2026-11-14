@@ -82,6 +82,16 @@ uniform float bp_size = 1.4;
 uniform sampler2D bp_albedo : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
 uniform sampler2D bp_normal : hint_normal, filter_linear_mipmap_anisotropic, repeat_enable;
 uniform sampler2D bp_arm : filter_linear_mipmap_anisotropic, repeat_enable;
+// And painted walls take Poly Haven's painted brick (AssetLib
+// "painted_brick", CC0): coats of paint worn at the joints and arrises,
+// as on the painted side walls of old blocks; its shading only, so the
+// building keeps its own paint colour. Builders mark painted walls with
+// vertex alpha 0.5.
+uniform float pp = 0.0;
+uniform float pp_size = 1.8;
+uniform sampler2D pp_albedo : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
+uniform sampler2D pp_normal : hint_normal, filter_linear_mipmap_anisotropic, repeat_enable;
+uniform sampler2D pp_arm : filter_linear_mipmap_anisotropic, repeat_enable;
 void fragment() {
 	float t = UV.y / 0.0677;
 	float row = floor(t);
@@ -105,9 +115,22 @@ void fragment() {
 		float paint = smoothstep(0.3, 0.5, dot(vcol(COLOR.rgb), vec3(0.3, 0.59, 0.11)));
 		ratio = mix(ratio, vec3(dot(ratio, vec3(0.3, 0.59, 0.11))), paint * 0.85);
 		vec3 arm = texture(bp_arm, puv).rgb;
+		vec2 nb = texture(bp_normal, puv).rg * 2.0 - 1.0;
+		// Vertex alpha under 1 marks a wall painted over (buff brick is
+		// light too, but its own brick).
+		float coat = 1.0 - step(0.99, COLOR.a);
+		if (pp > 0.0 && coat > 0.0) {
+			vec2 quv = UV / pp_size;
+			vec3 lw = vec3(0.3, 0.59, 0.11);
+			float pr = dot(texture(pp_albedo, quv).rgb, lw) / max(dot(textureLod(pp_albedo, vec2(0.5), 12.0).rgb, lw), 0.02);
+			float k = coat * pp;
+			ratio = mix(ratio, vec3(pr), k);
+			arm = mix(arm, texture(pp_arm, quv).rgb, k);
+			nb = mix(nb, texture(pp_normal, quv).rg * 2.0 - 1.0, k);
+		}
 		col = mix(col, vcol(COLOR.rgb) * ratio * mix(1.0, arm.r, 0.6), bp);
 		rough = mix(rough, arm.g, bp);
-		vec2 nb = (texture(bp_normal, puv).rg * 2.0 - 1.0) * bp;
+		nb *= bp;
 		vec3 n = normalize(world_normal);
 		vec3 across = normalize(cross(vec3(0.0, 1.0, 0.0), n) + vec3(1e-4, 0.0, 0.0));
 		vec3 upw = cross(n, across);
@@ -899,7 +922,7 @@ static func get_mat(key: String) -> Material:
 	var mat: Material
 	match key:
 		"siding": mat = _shader(SIDING)
-		"brick": mat = _photo_on(_shader(BRICK), "red_brick", "bp")
+		"brick": mat = _photo_on(_photo_on(_shader(BRICK), "red_brick", "bp"), "painted_brick", "pp")
 		"roof": mat = _shader(ROOF)
 		"glass": mat = _shader(GLASS)
 		"yard": mat = _yard()
