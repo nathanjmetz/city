@@ -1776,9 +1776,11 @@ func _shop_gas_station(to_curb: float) -> void:
 	_flat_roofed("paint", sw, sd, cz, 4.2, 4.8, wall)
 	_box("paint", Vector3(sw + 0.1, 0.7, 0.2), Vector3(0, 4.45, zf - 0.1), brand)
 	shopfront = fine_parts  # aisles of snacks and the cooler wall inside
+	allnight = true  # open late or all night, like any Indiana c-store
 	for i in 4:
 		_glass(Vector3(-sw * 0.3 + i * 1.6, 1.7, zf - 0.03), Vector3(-1, 0, 0), 1.5, 2.3, 0.0)
 	shopfront = false
+	allnight = false
 	_box("paint", Vector3(6.6, 0.1, 0.12), Vector3(-sw * 0.3 + 2.4, 2.9, zf - 0.06), MULLION[1])
 	# Canopy: a deep flat roof on columns. Its fascia is in the brand colour,
 	# or white with a brand stripe (Speedway, Marathon and Casey's canopies on

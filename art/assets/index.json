@@ -1,0 +1,1331 @@
+{
+ "hdris": {
+  "kloofendal_48d_partly_cloudy_puresky": {
+   "author": "Greg Zaal, Jarod Guest",
+   "licence": "CC0-1.0",
+   "loop": "lighting",
+   "name": "Kloofendal 48d Partly Cloudy (Pure Sky)",
+   "page": "https://polyhaven.com/a/kloofendal_48d_partly_cloudy_puresky",
+   "path": "res://art/assets/hdri/kloofendal_48d_partly_cloudy_puresky.hdr",
+   "real": "Midwestern summer fair-weather cumulus",
+   "source": "polyhaven",
+   "use": "summer fair-weather cumulus sky for reflections and ambient"
+  },
+  "kloofendal_overcast_puresky": {
+   "author": "Greg Zaal",
+   "licence": "CC0-1.0",
+   "loop": "lighting",
+   "name": "Kloofendal Overcast (Pure Sky)",
+   "page": "https://polyhaven.com/a/kloofendal_overcast_puresky",
+   "path": "res://art/assets/hdri/kloofendal_overcast_puresky.hdr",
+   "real": "Indiana winter overcast",
+   "source": "polyhaven",
+   "use": "grey overcast sky (most November-March days)"
+  },
+  "qwantani_sunset_puresky": {
+   "author": "Greg Zaal, Jarod Guest",
+   "licence": "CC0-1.0",
+   "loop": "lighting",
+   "name": "Qwantani Sunset (Pure Sky)",
+   "page": "https://polyhaven.com/a/qwantani_sunset_puresky",
+   "path": "res://art/assets/hdri/qwantani_sunset_puresky.hdr",
+   "real": "clear prairie sunset",
+   "source": "polyhaven",
+   "use": "clear sunset sky"
+  },
+  "snow_field_puresky": {
+   "author": "Jarod Guest, Sergej Majboroda",
+   "licence": "CC0-1.0",
+   "loop": "lighting",
+   "name": "Snow Field (Pure Sky)",
+   "page": "https://polyhaven.com/a/snow_field_puresky",
+   "path": "res://art/assets/hdri/snow_field_puresky.hdr",
+   "real": "flat white winter sky",
+   "source": "polyhaven",
+   "use": "snowy overcast winter sky"
+  }
+ },
+ "models": {
+  "barrel_03": {
+   "author": "Serhii Khromov",
+   "licence": "CC0-1.0",
+   "loop": "countryside",
+   "name": "Barrel 03",
+   "page": "https://polyhaven.com/a/barrel_03",
+   "path": "res://art/assets/models/barrel_03/barrel_03.gltf",
+   "real": "55 US gal steel drum (0.9 m tall)",
+   "size_m": [
+    0.634,
+    0.93,
+    0.639
+   ],
+   "source": "polyhaven",
+   "tris": 1473,
+   "use": "55-gallon drums at farm shops, factories, burn barrels"
+  },
+  "boulder_01": {
+   "author": "Rico Cilliers",
+   "licence": "CC0-1.0",
+   "loop": "countryside",
+   "name": "Boulder 01",
+   "page": "https://polyhaven.com/a/boulder_01",
+   "path": "res://art/assets/models/boulder_01/boulder_01.gltf",
+   "real": "glacial erratic (Grant County is glacial till; farmers pile field stones at corners)",
+   "size_m": [
+    1.273,
+    1.004,
+    1.831
+   ],
+   "source": "polyhaven",
+   "tris": 123976,
+   "use": "glacial erratic boulders at field corners, lanes and yards"
+  },
+  "cardboard_box_01": {
+   "author": "Rahul Chaudhary",
+   "licence": "CC0-1.0",
+   "loop": "civic",
+   "name": "Cardboard Box 01",
+   "page": "https://polyhaven.com/a/cardboard_box_01",
+   "path": "res://art/assets/models/cardboard_box_01/cardboard_box_01.gltf",
+   "real": "corrugated shipping box",
+   "size_m": [
+    0.387,
+    0.342,
+    0.516
+   ],
+   "source": "polyhaven",
+   "tris": 16952,
+   "use": "boxes at docks and moving days"
+  },
+  "concrete_road_barrier": {
+   "author": "Amal Kumar",
+   "licence": "CC0-1.0",
+   "loop": "roads",
+   "name": "Concrete Road Barrier",
+   "page": "https://polyhaven.com/a/concrete_road_barrier",
+   "path": "res://art/assets/models/concrete_road_barrier/concrete_road_barrier.gltf",
+   "real": "Jersey barrier (New Jersey-shape concrete median barrier, 0.8 m tall)",
+   "size_m": [
+    1.545,
+    0.835,
+    0.641
+   ],
+   "source": "polyhaven",
+   "tris": 80776,
+   "use": "work zones, road closures, bridge approaches"
+  },
+  "concrete_road_barrier_02": {
+   "author": "Amal Kumar",
+   "licence": "CC0-1.0",
+   "loop": "roads",
+   "name": "Concrete Road Barrier 02",
+   "page": "https://polyhaven.com/a/concrete_road_barrier_02",
+   "path": "res://art/assets/models/concrete_road_barrier_02/concrete_road_barrier_02.gltf",
+   "real": "Jersey barrier variant",
+   "size_m": [
+    1.567,
+    1.112,
+    0.442
+   ],
+   "source": "polyhaven",
+   "tris": 42578,
+   "use": "work zones and dead ends, second shape"
+  },
+  "covered_car": {
+   "author": "MP",
+   "licence": "CC0-1.0",
+   "loop": "houses",
+   "name": "Covered Car",
+   "page": "https://polyhaven.com/a/covered_car",
+   "path": "res://art/assets/models/covered_car/covered_car.gltf",
+   "real": "car cover on a stored car",
+   "size_m": [
+    1.789,
+    1.411,
+    4.38
+   ],
+   "source": "polyhaven",
+   "tris": 12592,
+   "use": "car under a tarp in driveways and farmyards (stored cars)"
+  },
+  "dead_tree_trunk": {
+   "author": "Rob Tuytel",
+   "licence": "CC0-1.0",
+   "loop": "countryside",
+   "name": "Dead Tree Trunk",
+   "page": "https://polyhaven.com/a/dead_tree_trunk",
+   "path": "res://art/assets/models/dead_tree_trunk/dead_tree_trunk.gltf",
+   "real": "downed log in an Indiana woodlot",
+   "size_m": [
+    3.051,
+    0.29,
+    0.278
+   ],
+   "source": "polyhaven",
+   "tris": 101802,
+   "use": "fallen logs on woods floors and creek banks"
+  },
+  "dead_tree_trunk_02": {
+   "author": "Jenelle van Heerden, Rico Cilliers",
+   "licence": "CC0-1.0",
+   "loop": "countryside",
+   "name": "Dead Tree Trunk 02",
+   "page": "https://polyhaven.com/a/dead_tree_trunk_02",
+   "path": "res://art/assets/models/dead_tree_trunk_02/dead_tree_trunk_02.gltf",
+   "real": "downed hardwood log",
+   "size_m": [
+    4.054,
+    1.055,
+    1.057
+   ],
+   "source": "polyhaven",
+   "tris": 155864,
+   "use": "big fallen log, creek banks"
+  },
+  "dry_branches_medium_01": {
+   "author": "Rico Cilliers",
+   "licence": "CC0-1.0",
+   "loop": "countryside",
+   "name": "Dry Branches Medium 01",
+   "page": "https://polyhaven.com/a/dry_branches_medium_01",
+   "path": "res://art/assets/models/dry_branches_medium_01/dry_branches_medium_01.gltf",
+   "real": "dead branches",
+   "size_m": [
+    1.059,
+    0.341,
+    1.299
+   ],
+   "source": "polyhaven",
+   "tris": 16803,
+   "use": "brush and fallen branches in woods and fencerows"
+  },
+  "fire_hydrant": {
+   "author": "Gon\u00e7alo Fel\u00edcio",
+   "licence": "CC0-1.0",
+   "loop": "roads",
+   "name": "Fire Hydrant",
+   "page": "https://polyhaven.com/a/fire_hydrant",
+   "path": "res://art/assets/models/fire_hydrant/fire_hydrant.gltf",
+   "real": "red dry-barrel US hydrant, two hose nozzles + pumper nozzle, ~0.8 m tall (AWWA C502)",
+   "size_m": [
+    0.875,
+    0.799,
+    0.318
+   ],
+   "source": "polyhaven",
+   "tris": 86316,
+   "use": "street fire hydrants in the grass strip, one a block (hydrants #961)"
+  },
+  "flood_lights": {
+   "author": "James Ray Cock",
+   "licence": "CC0-1.0",
+   "loop": "civic",
+   "name": "Flood Lights",
+   "page": "https://polyhaven.com/a/flood_lights",
+   "path": "res://art/assets/models/flood_lights/flood_lights.gltf",
+   "real": "sports/lot floodlight cluster",
+   "size_m": [
+    4.607,
+    1.811,
+    2.113
+   ],
+   "source": "polyhaven",
+   "tris": 76868,
+   "use": "ball field and lot flood light heads"
+  },
+  "garden_gnome": {
+   "author": "Bhargav Kubal",
+   "licence": "CC0-1.0",
+   "loop": "houses",
+   "name": "Garden Gnome",
+   "page": "https://polyhaven.com/a/garden_gnome",
+   "path": "res://art/assets/models/garden_gnome/garden_gnome.gltf",
+   "real": "lawn gnome",
+   "size_m": [
+    0.258,
+    0.599,
+    0.21
+   ],
+   "source": "polyhaven",
+   "tris": 28858,
+   "use": "front-yard ornament (rare, cared-for yards)"
+  },
+  "garden_hose_wall_mounted_01": {
+   "author": "Kuutti Siitonen",
+   "licence": "CC0-1.0",
+   "loop": "houses",
+   "name": "Garden Hose Wall Mounted 01",
+   "page": "https://polyhaven.com/a/garden_hose_wall_mounted_01",
+   "path": "res://art/assets/models/garden_hose_wall_mounted_01/garden_hose_wall_mounted_01.gltf",
+   "real": "wall hose reel by the spigot",
+   "size_m": [
+    0.467,
+    0.557,
+    0.25
+   ],
+   "source": "polyhaven",
+   "tris": 11684,
+   "use": "hose reel on house walls"
+  },
+  "garden_sprinkler_01": {
+   "author": "Amal Kumar",
+   "licence": "CC0-1.0",
+   "loop": "houses",
+   "name": "Garden Sprinkler 01",
+   "page": "https://polyhaven.com/a/garden_sprinkler_01",
+   "path": "res://art/assets/models/garden_sprinkler_01/garden_sprinkler_01.gltf",
+   "real": "lawn sprinkler",
+   "size_m": [
+    0.36,
+    0.216,
+    0.249
+   ],
+   "source": "polyhaven",
+   "tris": 8192,
+   "use": "lawn sprinklers in summer front yards"
+  },
+  "hand_truck": {
+   "author": "Mutanzom3D",
+   "licence": "CC0-1.0",
+   "loop": "civic",
+   "name": "Hand Truck",
+   "page": "https://polyhaven.com/a/hand_truck",
+   "path": "res://art/assets/models/hand_truck/hand_truck.gltf",
+   "real": "two-wheel hand truck",
+   "size_m": [
+    0.593,
+    1.403,
+    0.693
+   ],
+   "source": "polyhaven",
+   "tris": 13220,
+   "use": "loading docks and delivery trucks"
+  },
+  "metal_jerrycan": {
+   "author": "Sean Buckley",
+   "licence": "CC0-1.0",
+   "loop": "countryside",
+   "name": "Metal Jerrycan",
+   "page": "https://polyhaven.com/a/metal_jerrycan",
+   "path": "res://art/assets/models/metal_jerrycan/metal_jerrycan.gltf",
+   "real": "steel jerrycan",
+   "size_m": [
+    0.35,
+    0.455,
+    0.172
+   ],
+   "source": "polyhaven",
+   "tris": 20022,
+   "use": "fuel cans in farm shops and garages"
+  },
+  "metal_trash_can": {
+   "author": "GurJas Studios",
+   "licence": "CC0-1.0",
+   "loop": "roads",
+   "name": "Metal Trash Can",
+   "page": "https://polyhaven.com/a/metal_trash_can",
+   "path": "res://art/assets/models/metal_trash_can/metal_trash_can.gltf",
+   "real": "galvanised steel cans, still common in Midwestern alleys",
+   "size_m": [
+    1.847,
+    0.906,
+    0.556
+   ],
+   "source": "polyhaven",
+   "tris": 13960,
+   "use": "curbside cans and alley cans by garages"
+  },
+  "modular_chainlink_fence": {
+   "author": "James Ray Cock, Amal Kumar",
+   "licence": "CC0-1.0",
+   "loop": "civic",
+   "name": "Modular Chainlink Fence",
+   "page": "https://polyhaven.com/a/modular_chainlink_fence",
+   "path": "res://art/assets/models/modular_chainlink_fence/modular_chainlink_fence.gltf",
+   "real": "galvanised chain-link fence, 6 ft (1.8 m), top rail and line posts",
+   "size_m": [
+    8.115,
+    2.523,
+    2.149
+   ],
+   "source": "polyhaven",
+   "tris": 89232,
+   "use": "chain-link around ball fields, schools, industry, substations"
+  },
+  "modular_electricity_poles": {
+   "author": "James Ray Cock",
+   "licence": "CC0-1.0",
+   "loop": "roads",
+   "name": "Modular Electricity Poles",
+   "page": "https://polyhaven.com/a/modular_electricity_poles",
+   "path": "res://art/assets/models/modular_electricity_poles/modular_electricity_poles.gltf",
+   "real": "Class 4-5 wooden distribution poles with pole-top transformers (Duke Energy/Indiana Michigan Power style)",
+   "size_m": [
+    13.119,
+    7.0,
+    1.957
+   ],
+   "source": "polyhaven",
+   "tris": 200610,
+   "use": "wooden utility poles with crossarms and pole transformers along streets and county roads"
+  },
+  "modular_fire_escape": {
+   "author": "Juniix",
+   "licence": "CC0-1.0",
+   "loop": "downtown",
+   "name": "Modular Fire Escape",
+   "page": "https://polyhaven.com/a/modular_fire_escape",
+   "path": "res://art/assets/models/modular_fire_escape/modular_fire_escape.gltf",
+   "real": "steel fire escape stairs on 1890s-1920s Indiana commercial blocks",
+   "size_m": [
+    6.661,
+    9.757,
+    1.421
+   ],
+   "source": "polyhaven",
+   "tris": 11322,
+   "use": "fire escapes on the backs of 2-4 storey downtown blocks"
+  },
+  "modular_industrial_pipes_01": {
+   "author": "Jorge Camacho",
+   "licence": "CC0-1.0",
+   "loop": "civic",
+   "name": "Modular Industrial Pipes 01",
+   "page": "https://polyhaven.com/a/modular_industrial_pipes_01",
+   "path": "res://art/assets/models/modular_industrial_pipes_01/modular_industrial_pipes_01.gltf",
+   "real": "industrial pipe runs",
+   "size_m": [
+    1.403,
+    1.955,
+    0.308
+   ],
+   "source": "polyhaven",
+   "tris": 12340,
+   "use": "pipe racks on factories, gas regulator stations"
+  },
+  "modular_metal_gutter": {
+   "author": "Maxim Domnin",
+   "licence": "CC0-1.0",
+   "loop": "civic",
+   "name": "Modular Metal Gutter",
+   "page": "https://polyhaven.com/a/modular_metal_gutter",
+   "path": "res://art/assets/models/modular_metal_gutter/modular_metal_gutter.gltf",
+   "real": "metal gutter and downspout",
+   "size_m": [
+    2.268,
+    1.843,
+    1.515
+   ],
+   "source": "polyhaven",
+   "tris": 16490,
+   "use": "gutters and downspouts on commercial and industrial buildings"
+  },
+  "modular_street_seating": {
+   "author": "Stuart Attenborrow",
+   "licence": "CC0-1.0",
+   "loop": "downtown",
+   "name": "Modular Street Seating",
+   "page": "https://polyhaven.com/a/modular_street_seating",
+   "path": "res://art/assets/models/modular_street_seating/modular_street_seating.gltf",
+   "real": "slatted metal and wood street bench",
+   "size_m": [
+    4.34,
+    0.95,
+    0.77
+   ],
+   "source": "polyhaven",
+   "tris": 25156,
+   "use": "benches on downtown sidewalks and plazas"
+  },
+  "old_tyre": {
+   "author": "MP",
+   "licence": "CC0-1.0",
+   "loop": "countryside",
+   "name": "Old Tyre",
+   "page": "https://polyhaven.com/a/old_tyre",
+   "path": "res://art/assets/models/old_tyre/old_tyre.gltf",
+   "real": "car tire; farmers weight silage tarps with old tires",
+   "size_m": [
+    0.6,
+    0.6,
+    0.165
+   ],
+   "source": "polyhaven",
+   "tris": 2880,
+   "use": "old tires by farm shops and junk piles, silage-tarp tires"
+  },
+  "outdoor_table_chair_set_01": {
+   "author": "James Ray Cock",
+   "licence": "CC0-1.0",
+   "loop": "downtown",
+   "name": "Outdoor Table Chair Set 01",
+   "page": "https://polyhaven.com/a/outdoor_table_chair_set_01",
+   "path": "res://art/assets/models/outdoor_table_chair_set_01/outdoor_table_chair_set_01.gltf",
+   "real": "outdoor cafe table and chairs",
+   "size_m": [
+    0.776,
+    0.859,
+    1.831
+   ],
+   "source": "polyhaven",
+   "tris": 9828,
+   "use": "sidewalk tables outside cafes and diners"
+  },
+  "overhead_crane": {
+   "author": "Timothy3D",
+   "licence": "CC0-1.0",
+   "loop": "civic",
+   "name": "Overhead Crane",
+   "page": "https://polyhaven.com/a/overhead_crane",
+   "path": "res://art/assets/models/overhead_crane/overhead_crane.gltf",
+   "real": "overhead bridge/gantry crane (steel fabricators, precast plants)",
+   "size_m": [
+    12.492,
+    5.133,
+    4.0
+   ],
+   "source": "polyhaven",
+   "tris": 89964,
+   "use": "outdoor gantry crane at steel and precast yards"
+  },
+  "planter_box_01": {
+   "author": "James Ray Cock",
+   "licence": "CC0-1.0",
+   "loop": "houses",
+   "name": "Planter Box 01",
+   "page": "https://polyhaven.com/a/planter_box_01",
+   "path": "res://art/assets/models/planter_box_01/planter_box_01.gltf",
+   "real": "wooden planter box",
+   "size_m": [
+    0.913,
+    0.425,
+    0.414
+   ],
+   "source": "polyhaven",
+   "tris": 8094,
+   "use": "porch planters"
+  },
+  "planter_box_02": {
+   "author": "James Ray Cock",
+   "licence": "CC0-1.0",
+   "loop": "downtown",
+   "name": "Planter Box 02",
+   "page": "https://polyhaven.com/a/planter_box_02",
+   "path": "res://art/assets/models/planter_box_02/planter_box_02.gltf",
+   "real": "wooden sidewalk planter",
+   "size_m": [
+    1.252,
+    0.453,
+    0.467
+   ],
+   "source": "polyhaven",
+   "tris": 10944,
+   "use": "sidewalk planters in front of shops"
+  },
+  "plastic_crate_03": {
+   "author": "Pacific Penguin",
+   "licence": "CC0-1.0",
+   "loop": "civic",
+   "name": "Plastic Crate 03",
+   "page": "https://polyhaven.com/a/plastic_crate_03",
+   "path": "res://art/assets/models/plastic_crate_03/plastic_crate_03.gltf",
+   "real": "plastic produce/dairy crate",
+   "size_m": [
+    0.481,
+    0.266,
+    0.265
+   ],
+   "source": "polyhaven",
+   "tris": 21740,
+   "use": "stacked crates at docks, groceries, farmers' market"
+  },
+  "plastic_monobloc_chair_01": {
+   "author": "Kuutti Siitonen",
+   "licence": "CC0-1.0",
+   "loop": "houses",
+   "name": "Plastic Monobloc Chair 01",
+   "page": "https://polyhaven.com/a/plastic_monobloc_chair_01",
+   "path": "res://art/assets/models/plastic_monobloc_chair_01/plastic_monobloc_chair_01.gltf",
+   "real": "white resin monobloc chair, on half the porches in Grant County",
+   "size_m": [
+    0.642,
+    0.88,
+    0.628
+   ],
+   "source": "polyhaven",
+   "tris": 3356,
+   "use": "porch and patio chairs"
+  },
+  "portable_generator": {
+   "author": "James Ray Cock",
+   "licence": "CC0-1.0",
+   "loop": "civic",
+   "name": "Portable Generator",
+   "page": "https://polyhaven.com/a/portable_generator",
+   "path": "res://art/assets/models/portable_generator/portable_generator.gltf",
+   "real": "portable gas generator",
+   "size_m": [
+    0.818,
+    0.577,
+    0.564
+   ],
+   "source": "polyhaven",
+   "tris": 26419,
+   "use": "construction sites, fair booths"
+  },
+  "rock_moss_set_01": {
+   "author": "Kless Gyzen",
+   "licence": "CC0-1.0",
+   "loop": "countryside",
+   "name": "Rock Moss Set 01",
+   "page": "https://polyhaven.com/a/rock_moss_set_01",
+   "path": "res://art/assets/models/rock_moss_set_01/rock_moss_set_01.gltf",
+   "real": "fieldstone pile",
+   "size_m": [
+    8.005,
+    1.768,
+    6.949
+   ],
+   "source": "polyhaven",
+   "tris": 63127,
+   "use": "fieldstone piles along fencerows and creek riprap"
+  },
+  "rock_moss_set_02": {
+   "author": "Kless Gyzen",
+   "licence": "CC0-1.0",
+   "loop": "countryside",
+   "name": "Rock Moss Set 02",
+   "page": "https://polyhaven.com/a/rock_moss_set_02",
+   "path": "res://art/assets/models/rock_moss_set_02/rock_moss_set_02.gltf",
+   "real": "fieldstone pile",
+   "size_m": [
+    8.278,
+    1.368,
+    3.41
+   ],
+   "source": "polyhaven",
+   "tris": 57647,
+   "use": "fieldstone piles, second set"
+  },
+  "rollershutter_door": {
+   "author": "MP",
+   "licence": "CC0-1.0",
+   "loop": "civic",
+   "name": "Rollershutter Door",
+   "page": "https://polyhaven.com/a/rollershutter_door",
+   "path": "res://art/assets/models/rollershutter_door/rollershutter_door.gltf",
+   "real": "rolling steel overhead door",
+   "size_m": [
+    3.08,
+    2.4,
+    0.3
+   ],
+   "source": "polyhaven",
+   "tris": 1104,
+   "use": "overhead coiling doors on loading docks, garages, fire stations"
+  },
+  "rollershutter_window_01": {
+   "author": "MP",
+   "licence": "CC0-1.0",
+   "loop": "downtown",
+   "name": "Rollershutter Window 01",
+   "page": "https://polyhaven.com/a/rollershutter_window_01",
+   "path": "res://art/assets/models/rollershutter_window_01/rollershutter_window_01.gltf",
+   "real": "rolling counter/window shutter",
+   "size_m": [
+    5.1,
+    1.851,
+    0.3
+   ],
+   "source": "polyhaven",
+   "tris": 1104,
+   "use": "security shutters on closed or older shop fronts"
+  },
+  "security_light": {
+   "author": "Maximilian Schuster",
+   "licence": "CC0-1.0",
+   "loop": "civic",
+   "name": "Security Light",
+   "page": "https://polyhaven.com/a/security_light",
+   "path": "res://art/assets/models/security_light/security_light.gltf",
+   "real": "wall-mounted security floodlight",
+   "size_m": [
+    0.323,
+    0.531,
+    0.417
+   ],
+   "source": "polyhaven",
+   "tris": 4668,
+   "use": "wall-pack security lights on shops, factories, barns"
+  },
+  "standing_chalkboard_01": {
+   "author": "ParzivalCG",
+   "licence": "CC0-1.0",
+   "loop": "downtown",
+   "name": "Standing Chalkboard 01",
+   "page": "https://polyhaven.com/a/standing_chalkboard_01",
+   "path": "res://art/assets/models/standing_chalkboard_01/standing_chalkboard_01.gltf",
+   "real": "sidewalk sandwich-board chalkboard",
+   "size_m": [
+    0.92,
+    1.509,
+    0.759
+   ],
+   "source": "polyhaven",
+   "tris": 2372,
+   "use": "A-frame sidewalk signs outside diners, bars and shops"
+  },
+  "stone_fire_pit": {
+   "author": "Sebastian Platen",
+   "licence": "CC0-1.0",
+   "loop": "houses",
+   "name": "Stone Fire Pit",
+   "page": "https://polyhaven.com/a/stone_fire_pit",
+   "path": "res://art/assets/models/stone_fire_pit/stone_fire_pit.gltf",
+   "real": "backyard stone fire pit",
+   "size_m": [
+    1.448,
+    0.388,
+    1.433
+   ],
+   "source": "polyhaven",
+   "tris": 3887,
+   "use": "backyard fire rings"
+  },
+  "street_lamp_01": {
+   "author": "Josh Dean",
+   "licence": "CC0-1.0",
+   "loop": "downtown",
+   "name": "Street Lamp 01",
+   "page": "https://polyhaven.com/a/street_lamp_01",
+   "path": "res://art/assets/models/street_lamp_01/street_lamp_01.gltf",
+   "real": "ornamental cast-iron acorn/lantern lamp like the courthouse-square lamps in Marion, Fairmount and many Indiana downtowns",
+   "size_m": [
+    0.704,
+    3.871,
+    0.386
+   ],
+   "source": "polyhaven",
+   "tris": 30610,
+   "use": "historic downtown lamp posts (decorative)"
+  },
+  "trashbag": {
+   "author": "Benny Weimer",
+   "licence": "CC0-1.0",
+   "loop": "roads",
+   "name": "Trashbag",
+   "page": "https://polyhaven.com/a/trashbag",
+   "path": "res://art/assets/models/trashbag/trashbag.gltf",
+   "real": "black curbside bags",
+   "size_m": [
+    0.528,
+    0.575,
+    0.463
+   ],
+   "source": "polyhaven",
+   "tris": 4482,
+   "use": "trash bags out at the curb on pickup day"
+  },
+  "tree_stump_01": {
+   "author": "Rob Tuytel",
+   "licence": "CC0-1.0",
+   "loop": "countryside",
+   "name": "Tree Stump 01",
+   "page": "https://polyhaven.com/a/tree_stump_01",
+   "path": "res://art/assets/models/tree_stump_01/tree_stump_01.gltf",
+   "real": "hardwood stump",
+   "size_m": [
+    1.426,
+    0.573,
+    1.59
+   ],
+   "source": "polyhaven",
+   "tris": 41046,
+   "use": "stumps in woods, fencerows and cleared lots"
+  },
+  "tree_stump_02": {
+   "author": "Rob Tuytel",
+   "licence": "CC0-1.0",
+   "loop": "countryside",
+   "name": "Tree Stump 02",
+   "page": "https://polyhaven.com/a/tree_stump_02",
+   "path": "res://art/assets/models/tree_stump_02/tree_stump_02.gltf",
+   "real": "hardwood stump",
+   "size_m": [
+    1.522,
+    0.522,
+    1.393
+   ],
+   "source": "polyhaven",
+   "tris": 62345,
+   "use": "stumps, second shape"
+  },
+  "utility_box_02": {
+   "author": "James Ray Cock",
+   "licence": "CC0-1.0",
+   "loop": "roads",
+   "name": "Utility Box 02",
+   "page": "https://polyhaven.com/a/utility_box_02",
+   "path": "res://art/assets/models/utility_box_02/utility_box_02.gltf",
+   "real": "green electrical cabinet",
+   "size_m": [
+    0.92,
+    1.12,
+    0.432
+   ],
+   "source": "polyhaven",
+   "tris": 6268,
+   "use": "electric cabinets by substations and signals"
+  },
+  "water_manhole_cover": {
+   "author": "Raunox",
+   "licence": "CC0-1.0",
+   "loop": "roads",
+   "name": "Water Manhole Cover",
+   "page": "https://polyhaven.com/a/water_manhole_cover",
+   "path": "res://art/assets/models/water_manhole_cover/water_manhole_cover.gltf",
+   "real": "cast-iron 0.6-0.7 m round lid, as on every Indiana street",
+   "size_m": [
+    0.691,
+    0.068,
+    0.691
+   ],
+   "source": "polyhaven",
+   "tris": 6301,
+   "use": "manhole lids in the street over sewer and water lines"
+  },
+  "wooden_crate_02": {
+   "author": "James Ray Cock, Jurita Burger",
+   "licence": "CC0-1.0",
+   "loop": "countryside",
+   "name": "Wooden Crate 02",
+   "page": "https://polyhaven.com/a/wooden_crate_02",
+   "path": "res://art/assets/models/wooden_crate_02/wooden_crate_02.gltf",
+   "real": "wooden produce crate",
+   "size_m": [
+    1.166,
+    0.464,
+    0.529
+   ],
+   "source": "polyhaven",
+   "tris": 5176,
+   "use": "farm stands and farmers' market"
+  },
+  "wooden_ladder": {
+   "author": "Miroslav Turura",
+   "licence": "CC0-1.0",
+   "loop": "houses",
+   "name": "Wooden Ladder",
+   "page": "https://polyhaven.com/a/wooden_ladder",
+   "path": "res://art/assets/models/wooden_ladder/wooden_ladder.gltf",
+   "real": "wooden step ladder",
+   "size_m": [
+    0.959,
+    1.335,
+    0.5
+   ],
+   "source": "polyhaven",
+   "tris": 8492,
+   "use": "ladders on construction sites and against garages"
+  },
+  "wooden_picnic_table": {
+   "author": "Ulan Cabanilla",
+   "licence": "CC0-1.0",
+   "loop": "civic",
+   "name": "Wooden Picnic Table",
+   "page": "https://polyhaven.com/a/wooden_picnic_table",
+   "path": "res://art/assets/models/wooden_picnic_table/wooden_picnic_table.gltf",
+   "real": "classic wooden picnic table with attached benches (park department style)",
+   "size_m": [
+    2.241,
+    0.746,
+    3.022
+   ],
+   "source": "polyhaven",
+   "tris": 10210,
+   "use": "park shelters, school yards, backyards, church lawns"
+  }
+ },
+ "textures": {
+  "bitumen": {
+   "author": "Rob Tuytel",
+   "dir": "res://art/assets/pbr/bitumen",
+   "licence": "CC0-1.0",
+   "loop": "downtown",
+   "name": "Bitumen",
+   "page": "https://polyhaven.com/a/bitumen",
+   "real": "built-up tar/modified bitumen flat roof",
+   "size_m": [
+    20.0,
+    20.0
+   ],
+   "source": "polyhaven",
+   "use": "flat roofs of downtown blocks, schools and shops"
+  },
+  "box_profile_metal_sheet": {
+   "author": "Amal Kumar",
+   "dir": "res://art/assets/pbr/box_profile_metal_sheet",
+   "licence": "CC0-1.0",
+   "loop": "countryside",
+   "name": "Box Profile Metal Sheet",
+   "page": "https://polyhaven.com/a/box_profile_metal_sheet",
+   "real": "ribbed steel panel (R-panel) on post-frame buildings",
+   "size_m": [
+    2.0,
+    2.0
+   ],
+   "source": "polyhaven",
+   "use": "pole barns and newer farm shops, metal roofs on houses"
+  },
+  "concrete_block_wall": {
+   "author": "Charlotte Baglioni",
+   "dir": "res://art/assets/pbr/concrete_block_wall",
+   "licence": "CC0-1.0",
+   "loop": "civic",
+   "name": "Concrete Block Wall",
+   "page": "https://polyhaven.com/a/concrete_block_wall",
+   "real": "8x8x16 in concrete masonry units",
+   "size_m": [
+    2.0,
+    2.0
+   ],
+   "source": "polyhaven",
+   "use": "CMU walls: garages, shops, small factories, dugouts"
+  },
+  "concrete_pavement": {
+   "author": "Charlotte Baglioni",
+   "dir": "res://art/assets/pbr/concrete_pavement",
+   "licence": "CC0-1.0",
+   "loop": "roads",
+   "name": "Concrete Pavement",
+   "page": "https://polyhaven.com/a/concrete_pavement",
+   "real": "scored concrete sidewalk",
+   "size_m": [
+    1.8,
+    1.8
+   ],
+   "source": "polyhaven",
+   "use": "older concrete sidewalks close up"
+  },
+  "corrugated_iron_02": {
+   "author": "Jenelle van Heerden, Sergej Majboroda",
+   "dir": "res://art/assets/pbr/corrugated_iron_02",
+   "licence": "CC0-1.0",
+   "loop": "countryside",
+   "name": "Corrugated Iron 02",
+   "page": "https://polyhaven.com/a/corrugated_iron_02",
+   "real": "galvanised corrugated steel",
+   "size_m": [
+    2.7,
+    2.7
+   ],
+   "source": "polyhaven",
+   "use": "machine sheds and hog barns"
+  },
+  "dry_decay_leaves": {
+   "author": "Amal Kumar",
+   "dir": "res://art/assets/pbr/dry_decay_leaves",
+   "licence": "CC0-1.0",
+   "loop": "countryside",
+   "name": "Dry Decay Leaves",
+   "page": "https://polyhaven.com/a/dry_decay_leaves",
+   "real": "oak/maple leaf litter",
+   "size_m": [
+    2.0,
+    2.0
+   ],
+   "source": "polyhaven",
+   "use": "October-November leaf litter under trees (seasons loop)"
+  },
+  "factory_brick": {
+   "author": "Rob Tuytel",
+   "dir": "res://art/assets/pbr/factory_brick",
+   "licence": "CC0-1.0",
+   "loop": "civic",
+   "name": "Factory Brick",
+   "page": "https://polyhaven.com/a/factory_brick",
+   "real": "red-brown factory face brick (Marion's glass/paper mills)",
+   "size_m": [
+    1.5,
+    1.5
+   ],
+   "source": "polyhaven",
+   "use": "old factory and mill walls"
+  },
+  "factory_wall": {
+   "author": "Rob Tuytel",
+   "dir": "res://art/assets/pbr/factory_wall",
+   "licence": "CC0-1.0",
+   "loop": "civic",
+   "name": "Factory Wall",
+   "page": "https://polyhaven.com/a/factory_wall",
+   "real": "insulated steel wall panel on pre-engineered metal buildings",
+   "size_m": [
+    3.0,
+    3.0
+   ],
+   "source": "polyhaven",
+   "use": "steel industrial building walls"
+  },
+  "large_red_bricks": {
+   "author": "Rob Tuytel",
+   "dir": "res://art/assets/pbr/large_red_bricks",
+   "licence": "CC0-1.0",
+   "loop": "civic",
+   "name": "Large Red Bricks",
+   "page": "https://polyhaven.com/a/large_red_bricks",
+   "real": "face brick on 1920s-50s schools",
+   "size_m": [
+    2.0,
+    2.0
+   ],
+   "source": "polyhaven",
+   "use": "schools, churches, courthouses' brick wings"
+  },
+  "mud_forest": {
+   "author": "eye-candy.xyz",
+   "dir": "res://art/assets/pbr/mud_forest",
+   "licence": "CC0-1.0",
+   "loop": "countryside",
+   "name": "Mud Forest",
+   "page": "https://polyhaven.com/a/mud_forest",
+   "real": "wet woodland mud",
+   "size_m": [
+    2.35,
+    2.35
+   ],
+   "source": "polyhaven",
+   "use": "creek bottoms and wet woods"
+  },
+  "muddy_tracks": {
+   "author": "Amal Kumar",
+   "dir": "res://art/assets/pbr/muddy_tracks",
+   "licence": "CC0-1.0",
+   "loop": "countryside",
+   "name": "Muddy Tracks",
+   "page": "https://polyhaven.com/a/muddy_tracks",
+   "real": "rutted mud at field drives",
+   "size_m": [
+    2.25,
+    2.25
+   ],
+   "source": "polyhaven",
+   "use": "field entrances and farm lanes in spring"
+  },
+  "oriented_strand_board": {
+   "author": "Dimitrios Savva",
+   "dir": "res://art/assets/pbr/oriented_strand_board",
+   "licence": "CC0-1.0",
+   "loop": "houses",
+   "name": "Oriented Strand Board",
+   "page": "https://polyhaven.com/a/oriented_strand_board",
+   "real": "OSB sheathing on new framing",
+   "size_m": [
+    2.51,
+    2.51
+   ],
+   "source": "polyhaven",
+   "use": "sheathing on houses under construction"
+  },
+  "painted_brick": {
+   "author": "Amal Kumar",
+   "dir": "res://art/assets/pbr/painted_brick",
+   "licence": "CC0-1.0",
+   "loop": "downtown",
+   "name": "Painted Brick",
+   "page": "https://polyhaven.com/a/painted_brick",
+   "real": "painted brick party walls",
+   "size_m": [
+    1.8,
+    1.8
+   ],
+   "source": "polyhaven",
+   "use": "painted side walls of downtown blocks (tint the albedo, ghost signs)"
+  },
+  "playground_sand": {
+   "author": "eye-candy.xyz",
+   "dir": "res://art/assets/pbr/playground_sand",
+   "licence": "CC0-1.0",
+   "loop": "civic",
+   "name": "Playground Sand",
+   "page": "https://polyhaven.com/a/playground_sand",
+   "real": "play sand",
+   "size_m": [
+    2.07,
+    2.07
+   ],
+   "source": "polyhaven",
+   "use": "sand volleyball, sandboxes, ball diamond infields (tint)"
+  },
+  "red_brick": {
+   "author": "Rob Tuytel",
+   "dir": "res://art/assets/pbr/red_brick",
+   "licence": "CC0-1.0",
+   "loop": "downtown",
+   "name": "Red Brick",
+   "page": "https://polyhaven.com/a/red_brick",
+   "real": "red common brick, running bond, 1880s-1920s Indiana Main Street blocks",
+   "size_m": [
+    1.4,
+    1.4
+   ],
+   "source": "polyhaven",
+   "use": "downtown commercial block brick"
+  },
+  "red_brick_03": {
+   "author": "Rob Tuytel",
+   "dir": "res://art/assets/pbr/red_brick_03",
+   "licence": "CC0-1.0",
+   "loop": "downtown",
+   "name": "Red Brick 03",
+   "page": "https://polyhaven.com/a/red_brick_03",
+   "real": "weathered red industrial brick",
+   "size_m": [
+    1.0,
+    1.0
+   ],
+   "source": "polyhaven",
+   "use": "sooty older brick: factories, rear walls"
+  },
+  "road_damaged": {
+   "author": "Dimitrios Savva",
+   "dir": "res://art/assets/pbr/road_damaged",
+   "licence": "CC0-1.0",
+   "loop": "roads",
+   "name": "Road Damaged",
+   "page": "https://polyhaven.com/a/road_damaged",
+   "real": "cracked asphalt",
+   "size_m": [
+    2.2,
+    2.2
+   ],
+   "source": "polyhaven",
+   "use": "cracked neglected streets and alleys"
+  },
+  "rough_block_wall": {
+   "author": "Rob Tuytel",
+   "dir": "res://art/assets/pbr/rough_block_wall",
+   "licence": "CC0-1.0",
+   "loop": "civic",
+   "name": "Rough Block Wall",
+   "page": "https://polyhaven.com/a/rough_block_wall",
+   "real": "split-face CMU",
+   "size_m": [
+    3.04,
+    3.0
+   ],
+   "source": "polyhaven",
+   "use": "split-face block on newer shops and churches"
+  },
+  "rusty_corrugated_iron": {
+   "author": "Charlotte Baglioni",
+   "dir": "res://art/assets/pbr/rusty_corrugated_iron",
+   "licence": "CC0-1.0",
+   "loop": "countryside",
+   "name": "Rusty Corrugated Iron",
+   "page": "https://polyhaven.com/a/rusty_corrugated_iron",
+   "real": "galvanised corrugated steel gone to rust",
+   "size_m": [
+    2.0,
+    2.0
+   ],
+   "source": "polyhaven",
+   "use": "old machine sheds, corn crib roofs, grain bin roofs"
+  },
+  "sparse_grass": {
+   "author": "Amal Kumar",
+   "dir": "res://art/assets/pbr/sparse_grass",
+   "licence": "CC0-1.0",
+   "loop": "countryside",
+   "name": "Sparse Grass",
+   "page": "https://polyhaven.com/a/sparse_grass",
+   "real": "thin worn turf",
+   "size_m": [
+    2.0,
+    2.0
+   ],
+   "source": "polyhaven",
+   "use": "worn lawns, foul lines, lane edges"
+  },
+  "tarred_gravel": {
+   "author": "Dimitrios Savva",
+   "dir": "res://art/assets/pbr/tarred_gravel",
+   "licence": "CC0-1.0",
+   "loop": "roads",
+   "name": "Tarred Gravel",
+   "page": "https://polyhaven.com/a/tarred_gravel",
+   "real": "chip seal (tar and chip), the surface of most Grant County roads",
+   "size_m": [
+    2.2,
+    2.2
+   ],
+   "source": "polyhaven",
+   "use": "chip-seal county roads"
+  },
+  "weathered_brown_planks": {
+   "author": "Dimitrios Savva, Rico Cilliers",
+   "dir": "res://art/assets/pbr/weathered_brown_planks",
+   "licence": "CC0-1.0",
+   "loop": "countryside",
+   "name": "Weathered Brown Planks",
+   "page": "https://polyhaven.com/a/weathered_brown_planks",
+   "real": "weathered vertical board",
+   "size_m": [
+    1.8,
+    1.8
+   ],
+   "source": "polyhaven",
+   "use": "corn cribs, sheds, old fences"
+  },
+  "weathered_plank_siding": {
+   "author": "Dimitrios Savva",
+   "dir": "res://art/assets/pbr/weathered_plank_siding",
+   "licence": "CC0-1.0",
+   "loop": "countryside",
+   "name": "Weathered Plank Siding",
+   "page": "https://polyhaven.com/a/weathered_plank_siding",
+   "real": "unpainted weathered barn siding on 1900s bank and English barns",
+   "size_m": [
+    1.57,
+    1.57
+   ],
+   "source": "polyhaven",
+   "use": "old barn board siding"
+  },
+  "white_planks_clean": {
+   "author": "Rob Tuytel",
+   "dir": "res://art/assets/pbr/white_planks_clean",
+   "licence": "CC0-1.0",
+   "loop": "houses",
+   "name": "White Planks Clean",
+   "page": "https://polyhaven.com/a/white_planks_clean",
+   "real": "painted wood lap siding on pre-war houses",
+   "size_m": [
+    1.8,
+    1.8
+   ],
+   "source": "polyhaven",
+   "use": "painted wood clapboard and porch ceilings close up"
+  },
+  "white_sandstone_blocks_02": {
+   "author": "Rob Tuytel",
+   "dir": "res://art/assets/pbr/white_sandstone_blocks_02",
+   "licence": "CC0-1.0",
+   "loop": "civic",
+   "name": "White Sandstone Blocks 02",
+   "page": "https://polyhaven.com/a/white_sandstone_blocks_02",
+   "real": "stand-in for Indiana (Bedford) oolitic limestone ashlar",
+   "size_m": [
+    2.0,
+    2.0
+   ],
+   "source": "polyhaven",
+   "use": "ashlar stone on courthouses, banks, churches, post offices"
+  },
+  "winter_leaves": {
+   "author": "Dimitrios Savva",
+   "dir": "res://art/assets/pbr/winter_leaves",
+   "licence": "CC0-1.0",
+   "loop": "countryside",
+   "name": "Winter Leaves",
+   "page": "https://polyhaven.com/a/winter_leaves",
+   "real": "matted leaves after snow melt",
+   "size_m": [
+    2.0,
+    2.0
+   ],
+   "source": "polyhaven",
+   "use": "late-winter matted leaves, woods floors"
+  },
+  "withered_grass": {
+   "author": "Charlotte Baglioni",
+   "dir": "res://art/assets/pbr/withered_grass",
+   "licence": "CC0-1.0",
+   "loop": "countryside",
+   "name": "Withered Grass",
+   "page": "https://polyhaven.com/a/withered_grass",
+   "real": "dormant cool-season grass",
+   "size_m": [
+    2.0,
+    2.0
+   ],
+   "source": "polyhaven",
+   "use": "dormant November-March grass, CRP and ditch grass"
+  },
+  "wood_chips": {
+   "author": "eye-candy.xyz",
+   "dir": "res://art/assets/pbr/wood_chips",
+   "licence": "CC0-1.0",
+   "loop": "civic",
+   "name": "Wood Chips",
+   "page": "https://polyhaven.com/a/wood_chips",
+   "real": "playground wood-chip surface",
+   "size_m": [
+    2.0,
+    2.0
+   ],
+   "source": "polyhaven",
+   "use": "playground and landscape mulch"
+  },
+  "wood_peeling_paint_weathered": {
+   "author": "Rob Tuytel, Dimitrios Savva",
+   "dir": "res://art/assets/pbr/wood_peeling_paint_weathered",
+   "licence": "CC0-1.0",
+   "loop": "countryside",
+   "name": "Wood Peeling Paint Weathered",
+   "page": "https://polyhaven.com/a/wood_peeling_paint_weathered",
+   "real": "peeling barn paint",
+   "size_m": [
+    0.76,
+    0.76
+   ],
+   "source": "polyhaven",
+   "use": "red/white barns with peeling paint (tint the albedo)"
+  },
+  "wooden_garage_door": {
+   "author": "Dimitrios Savva",
+   "dir": "res://art/assets/pbr/wooden_garage_door",
+   "licence": "CC0-1.0",
+   "loop": "houses",
+   "name": "Wooden Garage Door",
+   "page": "https://polyhaven.com/a/wooden_garage_door",
+   "real": "wood panel garage door",
+   "size_m": [
+    1.98,
+    1.98
+   ],
+   "source": "polyhaven",
+   "use": "stained wood carriage garage doors"
+  },
+  "worn_asphalt": {
+   "author": "Amal Kumar",
+   "dir": "res://art/assets/pbr/worn_asphalt",
+   "licence": "CC0-1.0",
+   "loop": "roads",
+   "name": "Worn Asphalt",
+   "page": "https://polyhaven.com/a/worn_asphalt",
+   "real": "aged asphalt with raveling and leaf litter",
+   "size_m": [
+    2.0,
+    2.0
+   ],
+   "source": "polyhaven",
+   "use": "old city streets and parking lots"
+  },
+  "yellow_brick": {
+   "author": "Rob Tuytel",
+   "dir": "res://art/assets/pbr/yellow_brick",
+   "licence": "CC0-1.0",
+   "loop": "houses",
+   "name": "Yellow Brick",
+   "page": "https://polyhaven.com/a/yellow_brick",
+   "real": "buff/yellow brick common on Indiana postwar ranches",
+   "size_m": [
+    2.0,
+    2.0
+   ],
+   "source": "polyhaven",
+   "use": "buff brick ranches and 1950s-60s schools"
+  }
+ }
+}

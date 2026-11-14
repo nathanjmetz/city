@@ -1,0 +1,448 @@
+{
+ "_doc": "The free asset library (tools/assets/README.md). Every entry: loop (which visual loop owns placing it), use (where it goes in the game), real (the real Midwestern thing it matches, the real-world rule). src defaults to polyhaven (CC0). fetch.py refuses any licence but CC0-1.0 and CC-BY-4.0.",
+ "models": {
+  "fire_hydrant": {
+   "loop": "roads",
+   "use": "street fire hydrants in the grass strip, one a block (hydrants #961)",
+   "real": "red dry-barrel US hydrant, two hose nozzles + pumper nozzle, ~0.8 m tall (AWWA C502)",
+   "parts": "clean: mesh(id, ['fire_hydrant', 'fire_hydrant_cap_*', 'fire_hydrant_chain']); worn: mesh(id, ['*aged'])"
+  },
+  "water_manhole_cover": {
+   "loop": "roads",
+   "use": "manhole lids in the street over sewer and water lines",
+   "real": "cast-iron 0.6-0.7 m round lid, as on every Indiana street"
+  },
+  "concrete_road_barrier": {
+   "loop": "roads",
+   "use": "work zones, road closures, bridge approaches",
+   "real": "Jersey barrier (New Jersey-shape concrete median barrier, 0.8 m tall)",
+   "check": "reads as a block barrier with lifting loops, not a true New Jersey profile: fine for work zones"
+  },
+  "concrete_road_barrier_02": {
+   "loop": "roads",
+   "use": "work zones and dead ends, second shape",
+   "real": "Jersey barrier variant"
+  },
+  "metal_trash_can": {
+   "loop": "roads",
+   "use": "curbside cans and alley cans by garages",
+   "real": "galvanised steel cans, still common in Midwestern alleys",
+   "parts": "clean can: ['metal_trash_can', 'metal_trash_can_lid', 'metal_trash_can_handle_*']; rusty: ['metal_trash_can_rust*']"
+  },
+  "trashbag": {
+   "loop": "roads",
+   "use": "trash bags out at the curb on pickup day",
+   "real": "black curbside bags"
+  },
+  "street_lamp_01": {
+   "loop": "downtown",
+   "use": "historic downtown lamp posts (decorative)",
+   "real": "ornamental cast-iron acorn/lantern lamp like the courthouse-square lamps in Marion, Fairmount and many Indiana downtowns",
+   "check": "4 m tall: confirm it reads as a post-top lantern, not a European wall lamp"
+  },
+  "modular_electricity_poles": {
+   "loop": "roads",
+   "use": "wooden utility poles with crossarms and pole transformers along streets and county roads",
+   "real": "Class 4-5 wooden distribution poles with pole-top transformers (Duke Energy/Indiana Michigan Power style)",
+   "res": "1k",
+   "parts": "three ready poles: ['preset_01_*'], ['preset_02_*'], ['preset_03_*'] (01/03 carry transformers); loose parts for building your own"
+  },
+  "garden_hose_wall_mounted_01": {
+   "loop": "houses",
+   "use": "hose reel on house walls",
+   "real": "wall hose reel by the spigot"
+  },
+  "garden_sprinkler_01": {
+   "loop": "houses",
+   "use": "lawn sprinklers in summer front yards",
+   "real": "lawn sprinkler"
+  },
+  "garden_gnome": {
+   "loop": "houses",
+   "use": "front-yard ornament (rare, cared-for yards)",
+   "real": "lawn gnome"
+  },
+  "plastic_monobloc_chair_01": {
+   "loop": "houses",
+   "use": "porch and patio chairs",
+   "real": "white resin monobloc chair, on half the porches in Grant County"
+  },
+  "stone_fire_pit": {
+   "loop": "houses",
+   "use": "backyard fire rings",
+   "real": "backyard stone fire pit"
+  },
+  "wooden_picnic_table": {
+   "loop": "civic",
+   "use": "park shelters, school yards, backyards, church lawns",
+   "real": "classic wooden picnic table with attached benches (park department style)"
+  },
+  "covered_car": {
+   "loop": "houses",
+   "use": "car under a tarp in driveways and farmyards (stored cars)",
+   "real": "car cover on a stored car"
+  },
+  "planter_box_01": {
+   "loop": "houses",
+   "use": "porch planters",
+   "real": "wooden planter box"
+  },
+  "wooden_ladder": {
+   "loop": "houses",
+   "use": "ladders on construction sites and against garages",
+   "real": "wooden step ladder"
+  },
+  "modular_street_seating": {
+   "loop": "downtown",
+   "use": "benches on downtown sidewalks and plazas",
+   "real": "slatted metal and wood street bench",
+   "check": "contemporary style: fine for rebuilt streetscapes, not 1900s squares",
+   "parts": "kit: 'seat_bench' + 'legs_*' + 'seat_back' for a bench"
+  },
+  "planter_box_02": {
+   "loop": "downtown",
+   "use": "sidewalk planters in front of shops",
+   "real": "wooden sidewalk planter"
+  },
+  "standing_chalkboard_01": {
+   "loop": "downtown",
+   "use": "A-frame sidewalk signs outside diners, bars and shops",
+   "real": "sidewalk sandwich-board chalkboard"
+  },
+  "outdoor_table_chair_set_01": {
+   "loop": "downtown",
+   "use": "sidewalk tables outside cafes and diners",
+   "real": "outdoor cafe table and chairs"
+  },
+  "security_light": {
+   "loop": "civic",
+   "use": "wall-pack security lights on shops, factories, barns",
+   "real": "wall-mounted security floodlight"
+  },
+  "flood_lights": {
+   "loop": "civic",
+   "use": "ball field and lot flood light heads",
+   "real": "sports/lot floodlight cluster",
+   "parts": "kit: '*standing_single_*' one light on a stand, '*wall_*' wall light, '*double*' twin heads"
+  },
+  "utility_box_02": {
+   "loop": "roads",
+   "use": "electric cabinets by substations and signals",
+   "real": "green electrical cabinet"
+  },
+  "modular_chainlink_fence": {
+   "loop": "civic",
+   "use": "chain-link around ball fields, schools, industry, substations",
+   "real": "galvanised chain-link fence, 6 ft (1.8 m), top rail and line posts",
+   "parts": "kit: 'modular_chainlink_fence' (one panel), '*_post', '*_corner_*', '*_door_*' gate pieces"
+  },
+  "rollershutter_door": {
+   "loop": "civic",
+   "use": "overhead coiling doors on loading docks, garages, fire stations",
+   "real": "rolling steel overhead door",
+   "parts": "clean: ['rollershutter_door']; graffiti: ['rollershutter_door_graffiti'] (rare in small Indiana towns)"
+  },
+  "rollershutter_window_01": {
+   "loop": "downtown",
+   "use": "security shutters on closed or older shop fronts",
+   "real": "rolling counter/window shutter",
+   "parts": "clean and graffiti versions, like rollershutter_door"
+  },
+  "modular_fire_escape": {
+   "loop": "downtown",
+   "use": "fire escapes on the backs of 2-4 storey downtown blocks",
+   "real": "steel fire escape stairs on 1890s-1920s Indiana commercial blocks",
+   "parts": "kit: platform, stairs, railings, ladder pieces stacked per storey"
+  },
+  "modular_metal_gutter": {
+   "loop": "civic",
+   "use": "gutters and downspouts on commercial and industrial buildings",
+   "real": "metal gutter and downspout"
+  },
+  "hand_truck": {
+   "loop": "civic",
+   "use": "loading docks and delivery trucks",
+   "real": "two-wheel hand truck"
+  },
+  "plastic_crate_03": {
+   "loop": "civic",
+   "use": "stacked crates at docks, groceries, farmers' market",
+   "real": "plastic produce/dairy crate"
+  },
+  "cardboard_box_01": {
+   "loop": "civic",
+   "use": "boxes at docks and moving days",
+   "real": "corrugated shipping box"
+  },
+  "wooden_crate_02": {
+   "loop": "countryside",
+   "use": "farm stands and farmers' market",
+   "real": "wooden produce crate"
+  },
+  "portable_generator": {
+   "loop": "civic",
+   "use": "construction sites, fair booths",
+   "real": "portable gas generator"
+  },
+  "modular_industrial_pipes_01": {
+   "loop": "civic",
+   "use": "pipe racks on factories, gas regulator stations",
+   "real": "industrial pipe runs"
+  },
+  "overhead_crane": {
+   "loop": "civic",
+   "use": "outdoor gantry crane at steel and precast yards",
+   "real": "overhead bridge/gantry crane (steel fabricators, precast plants)"
+  },
+  "barrel_03": {
+   "loop": "countryside",
+   "use": "55-gallon drums at farm shops, factories, burn barrels",
+   "real": "55 US gal steel drum (0.9 m tall)"
+  },
+  "metal_jerrycan": {
+   "loop": "countryside",
+   "use": "fuel cans in farm shops and garages",
+   "real": "steel jerrycan"
+  },
+  "old_tyre": {
+   "loop": "countryside",
+   "use": "old tires by farm shops and junk piles, silage-tarp tires",
+   "real": "car tire; farmers weight silage tarps with old tires"
+  },
+  "tree_stump_01": {
+   "loop": "countryside",
+   "use": "stumps in woods, fencerows and cleared lots",
+   "real": "hardwood stump"
+  },
+  "tree_stump_02": {
+   "loop": "countryside",
+   "use": "stumps, second shape",
+   "real": "hardwood stump"
+  },
+  "dead_tree_trunk": {
+   "loop": "countryside",
+   "use": "fallen logs on woods floors and creek banks",
+   "real": "downed log in an Indiana woodlot"
+  },
+  "dead_tree_trunk_02": {
+   "loop": "countryside",
+   "use": "big fallen log, creek banks",
+   "real": "downed hardwood log"
+  },
+  "dry_branches_medium_01": {
+   "loop": "countryside",
+   "use": "brush and fallen branches in woods and fencerows",
+   "real": "dead branches"
+  },
+  "boulder_01": {
+   "loop": "countryside",
+   "use": "glacial erratic boulders at field corners, lanes and yards",
+   "real": "glacial erratic (Grant County is glacial till; farmers pile field stones at corners)"
+  },
+  "rock_moss_set_01": {
+   "loop": "countryside",
+   "use": "fieldstone piles along fencerows and creek riprap",
+   "real": "fieldstone pile"
+  },
+  "rock_moss_set_02": {
+   "loop": "countryside",
+   "use": "fieldstone piles, second set",
+   "real": "fieldstone pile"
+  }
+ },
+ "textures": {
+  "weathered_plank_siding": {
+   "loop": "countryside",
+   "use": "old barn board siding",
+   "real": "unpainted weathered barn siding on 1900s bank and English barns"
+  },
+  "weathered_brown_planks": {
+   "loop": "countryside",
+   "use": "corn cribs, sheds, old fences",
+   "real": "weathered vertical board"
+  },
+  "wood_peeling_paint_weathered": {
+   "loop": "countryside",
+   "use": "red/white barns with peeling paint (tint the albedo)",
+   "real": "peeling barn paint"
+  },
+  "white_planks_clean": {
+   "loop": "houses",
+   "use": "painted wood clapboard and porch ceilings close up",
+   "real": "painted wood lap siding on pre-war houses"
+  },
+  "red_brick": {
+   "loop": "downtown",
+   "use": "downtown commercial block brick",
+   "real": "red common brick, running bond, 1880s-1920s Indiana Main Street blocks"
+  },
+  "red_brick_03": {
+   "loop": "downtown",
+   "use": "sooty older brick: factories, rear walls",
+   "real": "weathered red industrial brick"
+  },
+  "large_red_bricks": {
+   "loop": "civic",
+   "use": "schools, churches, courthouses' brick wings",
+   "real": "face brick on 1920s-50s schools"
+  },
+  "factory_brick": {
+   "loop": "civic",
+   "use": "old factory and mill walls",
+   "real": "red-brown factory face brick (Marion's glass/paper mills)"
+  },
+  "painted_brick": {
+   "loop": "downtown",
+   "use": "painted side walls of downtown blocks (tint the albedo, ghost signs)",
+   "real": "painted brick party walls"
+  },
+  "yellow_brick": {
+   "loop": "houses",
+   "use": "buff brick ranches and 1950s-60s schools",
+   "real": "buff/yellow brick common on Indiana postwar ranches"
+  },
+  "concrete_block_wall": {
+   "loop": "civic",
+   "use": "CMU walls: garages, shops, small factories, dugouts",
+   "real": "8x8x16 in concrete masonry units"
+  },
+  "rough_block_wall": {
+   "loop": "civic",
+   "use": "split-face block on newer shops and churches",
+   "real": "split-face CMU"
+  },
+  "rusty_corrugated_iron": {
+   "loop": "countryside",
+   "use": "old machine sheds, corn crib roofs, grain bin roofs",
+   "real": "galvanised corrugated steel gone to rust"
+  },
+  "corrugated_iron_02": {
+   "loop": "countryside",
+   "use": "machine sheds and hog barns",
+   "real": "galvanised corrugated steel"
+  },
+  "box_profile_metal_sheet": {
+   "loop": "countryside",
+   "use": "pole barns and newer farm shops, metal roofs on houses",
+   "real": "ribbed steel panel (R-panel) on post-frame buildings"
+  },
+  "factory_wall": {
+   "loop": "civic",
+   "use": "steel industrial building walls",
+   "real": "insulated steel wall panel on pre-engineered metal buildings"
+  },
+  "bitumen": {
+   "loop": "downtown",
+   "use": "flat roofs of downtown blocks, schools and shops",
+   "real": "built-up tar/modified bitumen flat roof"
+  },
+  "worn_asphalt": {
+   "loop": "roads",
+   "use": "old city streets and parking lots",
+   "real": "aged asphalt with raveling and leaf litter"
+  },
+  "road_damaged": {
+   "loop": "roads",
+   "use": "cracked neglected streets and alleys",
+   "real": "cracked asphalt"
+  },
+  "tarred_gravel": {
+   "loop": "roads",
+   "use": "chip-seal county roads",
+   "real": "chip seal (tar and chip), the surface of most Grant County roads"
+  },
+  "concrete_pavement": {
+   "loop": "roads",
+   "use": "older concrete sidewalks close up",
+   "real": "scored concrete sidewalk",
+   "check": "described as pavers; compare to a 5-ft scored sidewalk slab"
+  },
+  "wooden_garage_door": {
+   "loop": "houses",
+   "use": "stained wood carriage garage doors",
+   "real": "wood panel garage door"
+  },
+  "oriented_strand_board": {
+   "loop": "houses",
+   "use": "sheathing on houses under construction",
+   "real": "OSB sheathing on new framing"
+  },
+  "wood_chips": {
+   "loop": "civic",
+   "use": "playground and landscape mulch",
+   "real": "playground wood-chip surface"
+  },
+  "playground_sand": {
+   "loop": "civic",
+   "use": "sand volleyball, sandboxes, ball diamond infields (tint)",
+   "real": "play sand"
+  },
+  "withered_grass": {
+   "loop": "countryside",
+   "use": "dormant November-March grass, CRP and ditch grass",
+   "real": "dormant cool-season grass"
+  },
+  "sparse_grass": {
+   "loop": "countryside",
+   "use": "worn lawns, foul lines, lane edges",
+   "real": "thin worn turf"
+  },
+  "dry_decay_leaves": {
+   "loop": "countryside",
+   "use": "October-November leaf litter under trees (seasons loop)",
+   "real": "oak/maple leaf litter"
+  },
+  "winter_leaves": {
+   "loop": "countryside",
+   "use": "late-winter matted leaves, woods floors",
+   "real": "matted leaves after snow melt"
+  },
+  "muddy_tracks": {
+   "loop": "countryside",
+   "use": "field entrances and farm lanes in spring",
+   "real": "rutted mud at field drives"
+  },
+  "mud_forest": {
+   "loop": "countryside",
+   "use": "creek bottoms and wet woods",
+   "real": "wet woodland mud"
+  },
+  "white_sandstone_blocks_02": {
+   "loop": "civic",
+   "use": "ashlar stone on courthouses, banks, churches, post offices",
+   "real": "stand-in for Indiana (Bedford) oolitic limestone ashlar",
+   "check": "compare to Grant County Courthouse limestone; tint toward grey-buff"
+  }
+ },
+ "hdris": {
+  "kloofendal_48d_partly_cloudy_puresky": {
+   "loop": "lighting",
+   "use": "summer fair-weather cumulus sky for reflections and ambient",
+   "real": "Midwestern summer fair-weather cumulus"
+  },
+  "kloofendal_overcast_puresky": {
+   "loop": "lighting",
+   "use": "grey overcast sky (most November-March days)",
+   "real": "Indiana winter overcast"
+  },
+  "qwantani_sunset_puresky": {
+   "loop": "lighting",
+   "use": "clear sunset sky",
+   "real": "clear prairie sunset"
+  },
+  "snow_field_puresky": {
+   "loop": "lighting",
+   "use": "snowy overcast winter sky",
+   "real": "flat white winter sky"
+  }
+ },
+ "_rejected": {
+  "exterior_aircon_unit": "wall-mounted split units (Europe/Asia); US houses have a square condenser on a pad: still code-built",
+  "propane_tank": "red European gas bottle; US 20 lb cylinders are white/grey",
+  "small_lpg_tank": "red European gas bottle",
+  "utility_box_01": "blue European street cabinet with high-voltage stickers",
+  "roof_07/roof_09/roof_3/roof_tiles": "clay tile roofs: almost none in Grant County. Poly Haven has no asphalt shingle photo yet (keep code-built shingles)",
+  "pine_tree_01/fir_tree_01/island_tree_*": "scanned trees are 2-17 million triangles: far too heavy for a town full of trees",
+  "grass_medium_*/celandine_01": "scanned plants of 1-2 million triangles"
+ }
+}

@@ -157,7 +157,7 @@ float box_t(vec3 o, vec3 rd, vec3 bmin, vec3 bmax, out float top) {
 	return (tin > 0.0 && tin < tout) ? tin : 1e9;
 }
 
-bool shop_room(vec2 uv, vec3 vw, bool diner, float sill, out vec3 col, out float glow) {
+bool shop_room(vec2 uv, vec3 vw, bool diner, bool aisles, float sill, out vec3 col, out float glow) {
 	vec3 n = normalize(world_normal);
 	vec3 inw = dot(vw, n) > 0.0 ? n : -n;
 	vec3 rt = normalize(cross(vec3(0.0, 1.0, 0.0), inw));
@@ -207,7 +207,7 @@ bool shop_room(vec2 uv, vec3 vw, bool diner, float sill, out vec3 col, out float
 		// A wall: the back one (along x) or a side one (along depth).
 		float u = t == tz ? h.x : h.z;
 		col = wallc;
-		bool racks = hash(vec2(sid, 3.0)) > 0.72;
+		bool racks = !aisles && hash(vec2(sid, 3.0)) > 0.72;  // a c-store is all aisles
 		if (diner) {
 			// The lunch counter along the back: formica front, a chrome
 			// edge, the pie case on it; a menu board on the wall above.
@@ -330,17 +330,19 @@ void fragment() {
 	// UV.x in 2..4: a shop's room behind its glass; 6..8: a diner's, its
 	// windows high over the booths (6..7) or low on Main Street (7..8).
 	bool diner = UV.x >= 6.0 && UV.x < 8.0;
-	if ((UV.x >= 2.0 && UV.x < 4.0) || diner) {
+	// 10..11: a shop that never closes (a gas station's convenience store).
+	bool allnight = UV.x >= 10.0 && UV.x < 11.0;
+	if ((UV.x >= 2.0 && UV.x < 4.0) || diner || allnight) {
 		vec3 vw = normalize((INV_VIEW_MATRIX * vec4(-VIEW, 0.0)).xyz);
 		vec3 inside;
 		float glow;
 		float low = step(7.0, UV.x);
-		if (shop_room(UV - vec2(diner ? 4.0 + low : 0.0, 0.0), vw, diner, diner ? 0.9 - 0.45 * low : 0.45, inside, glow)) {
+		if (shop_room(UV - vec2(diner ? 4.0 + low : (allnight ? 8.0 : 0.0), 0.0), vw, diner, allnight, diner ? 0.9 - 0.45 * low : 0.45, inside, glow)) {
 			float fres = pow(1.0 - clamp(dot(NORMAL, VIEW), 0.0, 1.0), 4.0);
 			vec3 sky = mix(vec3(0.20, 0.26, 0.34), vec3(0.45, 0.52, 0.60), UV.y) * (1.0 - night * 0.85);
 			float blinds = step(1.0 - COLOR.a, UV.y);
 			inside = mix(inside, vcol(COLOR.rgb) * 0.3, blinds);
-			float open = mix(1.0, step(hash(floor(world_pos.xz / 4.0)), 0.75), smoothstep(0.2, 0.6, night));
+			float open = allnight ? 1.0 : mix(1.0, step(hash(floor(world_pos.xz / 4.0)), 0.75), smoothstep(0.2, 0.6, night));
 			float k = 0.12 + 0.5 * fres;
 			ALBEDO = mix(inside * 0.16, sky, k);
 			ROUGHNESS = 0.08;

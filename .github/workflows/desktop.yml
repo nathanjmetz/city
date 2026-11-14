@@ -74,6 +74,34 @@ jobs:
           cp build/windows/Neighbors.exe out/Neighbors-windows.exe
           ls -la out
 
+      - name: Art packs (the free asset library, one small pack per asset)
+        # A Poly Haven outage must never hold up a game update: the last
+        # build's art list carries over (Write latest.json).
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Only new or changed assets are fetched, packed and uploaded
+          # (tools/assets/release.py); apps download only those.
+          gh release download desktop -p assets.json -O old-assets.json 2>/dev/null || echo '{}' > old-assets.json
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/desktop" --jq '[.assets[].name]' > release-names.json 2>/dev/null || echo '[]' > release-names.json
+          python3 tools/assets/release.py plan old-assets.json release-names.json > need.txt
+          cat need.txt
+          if [ -n "$(tr -d '[:space:]' < need.txt)" ]; then
+            python3 tools/assets/fetch.py $(cat need.txt)
+            ~/godot-cache/godot --headless --import >/dev/null 2>&1 || true
+            ~/godot-cache/godot --headless -s tools/assets/pack.gd -- packs/macos macos $(cat need.txt)
+            ~/godot-cache/godot --headless -s tools/assets/pack.gd -- packs/windows windows $(cat need.txt)
+          fi
+          python3 tools/assets/release.py finish old-assets.json release-names.json packs out
+          if ! gh release view desktop >/dev/null 2>&1; then
+            gh release create desktop --title "Neighbors for Mac and Windows" --latest \
+              --notes "Free downloads: https://nathanjmetz.github.io/city/download/ . The apps update themselves."
+          fi
+          if [ -n "$(ls out/art)" ]; then
+            gh release upload desktop out/art/* --clobber
+          fi
+
       - name: Write latest.json
         run: |
           python3 - <<'PY'
@@ -82,11 +110,15 @@ jobs:
           m = json.load(open("out/meta.json"))
           m["engine"] = os.environ["GODOT_VERSION"]
           m["packs"] = {}
+          for a in ["out/assets.json", "old-assets.json"]:
+              if os.path.exists(a):
+                  m["assets"] = json.load(open(a))
+                  break
           for p in ["macos", "windows"]:
               data = open("out/game-%s.pck" % p, "rb").read()
               m["packs"][p] = {"url": "%s/game-%s.pck" % (url, p), "sha256": hashlib.sha256(data).hexdigest(), "size": len(data)}
           json.dump(m, open("out/latest.json", "w"), indent=2)
-          print(json.dumps(m, indent=2))
+          print(json.dumps({k: v for k, v in m.items() if k != "assets"}, indent=2))
           PY
 
       - name: Publish to the desktop release
@@ -101,4 +133,9 @@ jobs:
           # pack that isn't there yet.
           gh release upload desktop out/Neighbors-mac.zip out/Neighbors-windows.exe \
             out/game-macos.pck out/game-windows.pck --clobber
+          if [ -s out/assets.json ]; then gh release upload desktop out/assets.json --clobber; fi
           gh release upload desktop out/latest.json --clobber
+          # Art packs the newest build no longer lists, now that nothing points at them.
+          if [ -s out/stale.txt ]; then
+            for n in $(cat out/stale.txt); do gh release delete-asset desktop "$n" -y || true; done
+          fi
