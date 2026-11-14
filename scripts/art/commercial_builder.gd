@@ -42,6 +42,7 @@ var small_store := false
 ## When set, stand-in signs pick from these TRADE_WORDS indices instead of
 ## any random trade (an office tower never reads SHOES).
 var sign_words := []
+var _slots := {}  # snapped x -> the stand-in word slot drawn there
 ## The trade words a strip centre's tenants letter on its fascia, in order,
 ## for its pylon's panels.
 var _tenant_words := []
@@ -748,7 +749,20 @@ const EATERIES := [0, 1, 2, 7, 8, 11, 28, 29, 35]
 ## Which stand-in trade word a shop at `x` letters, as the sign shader reads
 ## it from UV.y (2 * (word + 1) on): its board and awning say the same.
 func _word_slot(x: float) -> float:
-	return 2.0 * (1 + posmod(hash([rng.seed, snappedf(x, 0.1)]), 50))
+	var k := snappedf(x, 0.1)
+	if _slots.has(k):
+		return _slots[k]
+	# One building's shopfronts are different businesses: two QUILTS side
+	# by side reads as a copy-paste, so a trade already on this building
+	# moves on to the next one.
+	var n := posmod(hash([rng.seed, k]), 50)
+	var used := _slots.values()
+	for i in 50:
+		if not used.has(2.0 * (1 + n)):
+			break
+		n = (n + 1) % 50
+	_slots[k] = 2.0 * (1 + n)
+	return _slots[k]
 
 
 ## Desktop: a strip tenant's name in channel letters, the way strip-centre
