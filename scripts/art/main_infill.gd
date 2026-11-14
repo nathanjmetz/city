@@ -138,6 +138,27 @@ static func _mi_midcentury(b: DenseBuilder, r: RandomNumberGenerator, to_curb: f
 	var sx := -e * (w * 0.5 - 0.9)
 	b._box("paint", Vector3(1.0, 2.2, 0.06), Vector3(sx, 1.1, zf - 0.17), Color("#6b5038"))
 	b._box("paint", Vector3(0.5, 2.2, 0.06), Vector3(sx + e * 0.8, 1.1, zf - 0.17), Color("#d8dcd8"))
+	if DenseBuilder.fine:
+		# Desktop: the flats' door as built: a stained flush door with a
+		# narrow wired-glass lite, in an aluminium frame, a kick plate, a
+		# lever and the street number; the sidelight is real glass block,
+		# 8 in units set in white mortar, catching the light unevenly.
+		var al := ALUMINIUM
+		b._box("metal", Vector3(1.12, 0.06, 0.08), Vector3(sx, 2.23, zf - 0.19), al)
+		for jx in [-0.53, 0.53]:
+			b._box("metal", Vector3(0.06, 2.2, 0.08), Vector3(sx + jx, 1.1, zf - 0.19), al)
+		b._glass(Vector3(sx + e * 0.22, 1.45, zf - 0.205), Vector3(-1, 0, 0), 0.16, 0.9, 0.4)
+		b._box("metal", Vector3(0.84, 0.25, 0.01), Vector3(sx, 0.17, zf - 0.205), Color("#b8b4a8"))  # kick plate
+		b._box("metal", Vector3(0.14, 0.025, 0.04), Vector3(sx - e * 0.36, 1.0, zf - 0.23), Color("#c9c6bc"))  # lever
+		b._box("paint", Vector3(0.24, 0.1, 0.01), Vector3(sx, 2.36, zf - 0.205), Color("#1c1d1f"))  # number plate
+		b._box("concrete", Vector3(1.3, 0.12, 0.5), Vector3(sx, 0.06, zf - 0.4), Color("#c4beb2"))  # the step
+		var gx := sx + e * 0.8
+		b._box("paint", Vector3(0.5, 2.2, 0.05), Vector3(gx, 1.1, zf - 0.165), Color("#e9e6dd"))  # mortar
+		for row in 10:
+			for col in 2:
+				var lit := float(posmod(hash([r.seed, row, col, 31]), 100)) / 100.0
+				b._box("paint", Vector3(0.2, 0.2, 0.03), Vector3(gx - 0.11 + col * 0.22, 0.12 + row * 0.215, zf - 0.2),
+					Color("#a9c3c8").lightened(0.1 + lit * 0.25))
 	b._box("metal", Vector3(1.8, 1.0, 1.2), Vector3(r.randf_range(-w * 0.3, w * 0.3), deck + 0.5, cz + 2.0), Color("#b9bcbc"))
 	b._alley_side(w, zf + d, fronts, fw, storeys, shop_h, floor_h, wall)
 	b._downtown_walk(to_curb, width, zf)
