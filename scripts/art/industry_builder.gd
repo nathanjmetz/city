@@ -24,7 +24,12 @@ static func build_hq(kind: String, seed: int, built := [], addons := {}) -> Arra
 	var b := IndustryBuilder.new()
 	b._begin(seed)
 	b._flat_rect("gravel", -20, 20, -20, 20, 0.09, YARD_GRAVEL)
+	# The office's sign says whose yard it is (an oil lease operator, a
+	# mining company), never a shop's stand-in word.
+	b.sign_spec = {"text": {"oil": "OIL & GAS", "ore": "MINING CO."}.get(kind, "OFFICE"), "style": "franklin",
+		"panel": Color("#2a2a2c"), "letter": Color("#f2efe6")}
 	b._office(-8.0, -10.0)
+	b.sign_spec = {}
 	match kind:
 		"oil":
 			if "tank_battery" in built:
@@ -55,7 +60,7 @@ static func build_hq(kind: String, seed: int, built := [], addons := {}) -> Arra
 				# Out of the crusher's side, to a transfer house at the yard's edge.
 				UpgradeKits.overland_conveyor(b, Vector3(14.0, 9.0, at.z), Vector3(at.x + 11.0, 0, at.z))
 			"rail_loadout": UpgradeKits.rail_loadout(b, at)
-	return [b._commit_house(), b._commit_flat()]
+	return [b._commit_house(), b._commit_flat(), [], b.labels]
 
 
 ## [mesh, ground mesh] for one pad: a well or a pit.

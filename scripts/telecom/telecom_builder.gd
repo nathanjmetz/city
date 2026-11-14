@@ -43,7 +43,7 @@ static func build_office(seed: int, to_curb: float, built := []) -> Array:
 	b._office(to_curb)
 	if "middle_mile" in built:
 		b._fiber_hut()
-	return [b._commit_house(), b._commit_flat(), b.trees]
+	return [b._commit_house(), b._commit_flat(), b.trees, b.labels]
 
 
 ## The same for one block it bought, built up `levels` times.
@@ -55,7 +55,7 @@ static func build_block(art: String, levels: int, seed: int) -> Array:
 		"office": b._ops_center(levels)
 		"data": b._data_center(levels)
 		_: b._crew_garage(levels)
-	return [b._commit_house(), b._commit_flat(), b.trees]
+	return [b._commit_house(), b._commit_flat(), b.trees, b.labels]
 
 
 ## A tower with its compound: kind is "monopole", "lattice" or "monopine",
@@ -157,7 +157,7 @@ func _office(to_curb: float) -> void:
 	_box("paint", Vector3(9.4, 0.3, 5.4), Vector3(-13.0, 3.75, zf - 2.5), Color("#cfcbc2"))
 	_window_row(-15.5, zf - 5.0, 3.6, 1.6, 1.4, 2, LIMESTONE_TRIM)
 	_entry(-10.0, zf - 5.0, LIMESTONE_TRIM)
-	_sign(Vector3(-13.0, 3.2, zf - 5.06), 6.0, 0.6)
+	_civic_sign(Vector3(-13.0, 3.2, zf - 5.06), 6.0, 0.6, "TELEPHONE COMPANY", "#1f3b6e", "#f2efe6", "franklin")
 	# The cable vault: conduits come up out of the street into the building.
 	_box("paint", Vector3(1.6, 0.12, 1.2), Vector3(-4.0, 0.06, front + 3.0), CONCRETE)
 	# Standby generator on its pad, behind a short screen fence.
@@ -430,7 +430,7 @@ func _store() -> void:
 	for i in 6:
 		_glass(Vector3(-5.0 + i * 2.0, 1.7, zf - 0.04), Vector3(-1, 0, 0), 1.9, 2.6, 0.0)
 	_box("paint", Vector3(16.4, 0.5, 0.2), Vector3(0, 3.4, zf - 0.1), Color(_pick(AWNING)))
-	_sign(Vector3(0, 4.0, zf - 0.22), 9.0, 0.8)
+	_civic_sign(Vector3(0, 4.0, zf - 0.22), 9.0, 0.8, "WIRELESS", "#2a2a2c", "#f2efe6", "franklin")
 	_parking(-18.0, 18.0, -S + 1.0, zf - 1.0, 0.0, 0.0)
 	_box("metal", Vector3(0.6, 1.1, 0.5), Vector3(8.5, 0.85, zf - 1.6), Color("#2f4a8a"))  # drop box
 

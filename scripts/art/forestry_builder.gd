@@ -71,7 +71,7 @@ static func mill(seed: int, size: Vector2, built := [], addons := {}) -> Array:
 			"dry_kiln": UpgradeKits.dry_kilns(b, at)
 			"pellet_mill": UpgradeKits.pellet_mill(b, at)
 			"replanting": UpgradeKits.seedling_cooler(b, at)
-	return [b._commit_house(), b._commit_flat(), b.trees]
+	return [b._commit_house(), b._commit_flat(), b.trees, b.labels]
 
 
 # ---------------------------------------------------------------- woods
@@ -308,7 +308,7 @@ func _mill(size: Vector2) -> void:
 	_quad("roof", Vector3(ox - 3.8, 3.5, oz - 2.3), Vector3(ox + 3.8, 3.5, oz - 2.3), Vector3(ox + 3.8, 3.15, oz + 2.3), Vector3(ox - 3.8, 3.15, oz + 2.3), Color("#5c5c5e"), [], Vector3.UP)
 	_glass(Vector3(ox + 1.6, 2.0, oz - 2.03), Vector3(-1, 0, 0), 1.6, 1.0, 0.3)
 	_box("paint", Vector3(0.9, 2.0, 0.06), Vector3(ox - 1.8, 1.5, oz - 2.03), Color("#7a1f1f"))
-	_sign(Vector3(ox, 3.6, oz - 2.35), 4.0, 0.6)
+	_civic_sign(Vector3(ox, 3.6, oz - 2.35), 4.0, 0.6, "SCALE HOUSE", "#f2efe6", "#1a1a1a", "franklin")
 	# Truck scale in front of the office.
 	_flat_rect("drive", ox + 5.0, ox + 8.5, -hz, -hz + 18.0, 0.08)
 

@@ -358,8 +358,15 @@ func _hq(id: int, s: Dictionary, root: Node3D, built: Array, trees: Array) -> vo
 	if built.size() > 2:
 		_put({}, [ArrayMesh.new(), ArrayMesh.new(), built[2]], Transform3D(node.basis, s.pos), trees)
 	var ref := "ind:%d" % id
+	var labels: Array = built[3] if built.size() > 3 else []
 	ConstructionSite.add_to(node, parts, "factory", func(): return sim.construction.state(ref, sim.tick_count),
-		func(): pass)
+		func():
+			# Its sign lettering goes up with the finished building.
+			if is_instance_valid(node) and not labels.is_empty() and not node.has_node("Signs"):
+				var signs := Node3D.new()
+				signs.name = "Signs"
+				SignText.add(signs, labels)
+				node.add_child(signs))
 
 
 func _put(merged: Dictionary, built: Array, frame: Transform3D, trees: Array, built_cells := {}) -> void:
