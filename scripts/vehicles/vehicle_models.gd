@@ -2415,8 +2415,10 @@ func _tractor_unit(sleeper: bool) -> void:
 			[cab_end, 0.75, 3.6, 3.95, hw - 0.1, hw - 0.08, hw - 0.3],
 			[back, 0.75, 3.6, 3.95, hw - 0.1, hw - 0.08, hw - 0.3],
 		], [_edges(PAINT, TRIM)], PAINT, PAINT)
-	else:
+	elif not _hi:
 		_box(Vector3(0, 3.2, cab_end - 0.4), Vector3(2.2, 0.4, 0.8), PAINT)
+	if _hi:
+		_aero_tractor(hw, cab_end, back, sleeper)
 	# Frame, fuel tanks, fifth wheel, stacks.
 	_box(Vector3(0, 0.85, (back + 7.4) * 0.5), Vector3(1.0, 0.3, 7.4 - back), TRIM)
 	_box(Vector3(0, 1.15, back + 1.4), Vector3(1.6, 0.12, 1.1), TRIM)
@@ -2435,6 +2437,44 @@ func _tractor_unit(sleeper: bool) -> void:
 	if not _lo:
 		for s in [-1.0, 1.0]:
 			_box(Vector3(s * (hw + 0.14), 2.35, 2.0), Vector3(0.06, 0.5, 0.14), TRIM)
+
+
+## Ultra: the aero kit a modern Class 8 tractor wears (Cascadia, 579):
+## a roof fairing ramping from the windshield header up to the sleeper (or
+## over a day cab), chassis skirts over the tanks with a step cut in,
+## cab extenders closing the gap to the trailer, the bunk window, door
+## seams and grab handles, and the five amber roof marker lamps.
+func _aero_tractor(hw: float, cab_end: float, back: float, sleeper: bool) -> void:
+	var top := 3.95 if sleeper else 3.55
+	_loft([
+		[2.4, 2.97, 2.99, 3.0, hw - 0.3, hw - 0.3, hw - 0.32],
+		[cab_end + 0.02, 2.97, top - 0.3, top, hw - 0.12, hw - 0.1, hw - 0.3],
+	], [_edges(PAINT, PAINT)], PAINT, PAINT)
+	for x in [-0.4, -0.2, 0.0, 0.2, 0.4]:
+		_box(Vector3(x, 3.02, 2.42), Vector3(0.07, 0.04, 0.03), BEACON_AMBER)
+	var seam := Color(0.04, 0.04, 0.04, 0.3)
+	for s in [-1.0, 1.0]:
+		var sx: float = s
+		var x := sx * (hw - 0.05)
+		# Chassis skirt from behind the steer tyre to the drive axles.
+		var z0 := 2.0
+		var z1 := back + 0.4
+		_box(Vector3(x, 0.92, (z0 + z1) * 0.5), Vector3(0.05, 0.7, z1 - z0), PAINT)
+		_box(Vector3(x + sx * 0.03, 0.62, 2.35), Vector3(0.012, 0.18, 0.4), DARK)
+		_box(Vector3(x + sx * 0.03, 0.95, 2.35), Vector3(0.012, 0.16, 0.4), DARK)
+		# Cab door seams, handle, grab handle.
+		var xd := sx * (hw - 0.04)
+		for zz in [2.05, 3.25]:
+			_box(Vector3(xd, 2.0, zz), Vector3(0.006, 1.6, 0.012), seam)
+		_box(Vector3(sx * (hw - 0.03), 1.95, 3.05), Vector3(0.02, 0.04, 0.16), CHROME)
+		_cyl(Vector3(sx * (hw - 0.02), 1.4, 3.32), Vector3(sx * (hw - 0.02), 2.6, 3.32), 0.02, CHROME, 6)
+		if sleeper:
+			# Bunk window and the luggage door under it.
+			_box(Vector3(sx * (hw - 0.07), 2.55, 4.6), Vector3(0.006, 0.32, 0.55), GLASS)
+			_box(Vector3(sx * (hw - 0.07), 1.35, 4.3), Vector3(0.006, 0.55, 0.012), seam)
+			_box(Vector3(sx * (hw - 0.07), 1.35, 4.9), Vector3(0.006, 0.55, 0.012), seam)
+		# Cab extender off the back corner toward the trailer.
+		_box(Vector3(sx * (hw - 0.12), (1.5 + top - 0.15) * 0.5, back + 0.17), Vector3(0.04, top - 1.65, 0.34), PAINT)
 
 
 func _tractor_sleeper() -> void:
