@@ -1337,6 +1337,9 @@ func _flat(c: Vector3, along: Vector3, n: Vector3, length: float, width: float, 
 func _delivery_van() -> void:  # step van (Freightliner MT45 / Ford P1000)
 	var L := 7.0
 	var hw := 1.2
+	if _hi:
+		_step_van(L, hw)
+		return
 	_loft([
 		[0.0, 0.42, 0.95, 1.05, hw - 0.14, hw - 0.1, hw - 0.2],
 		[0.5, 0.38, 1.1, 1.2, hw - 0.03, hw, hw - 0.04],
@@ -1352,6 +1355,85 @@ func _delivery_van() -> void:  # step van (Freightliner MT45 / Ford P1000)
 	_box(Vector3(hw - 0.08, 1.0, L + 0.01), Vector3(0.12, 0.3, 0.04), TAIL, true)
 	if not _lo:
 		_box(Vector3(0, 1.6, L + 0.01), Vector3(1.6, 2.2, 0.02), DARK)
+
+
+## Ultra: a walk-in step van as parcel fleets run them (Freightliner MT45
+## chassis, Utilimaster/Morgan Olson body): a short sloped hood with round
+## lamps, a flat two-pane windshield under the box overhang, sliding cab
+## doors, West Coast mirrors, a ribbed aluminium box with a rub rail, DOT
+## clearance and ID lamps, and a roll-up rear door over a step bumper.
+func _step_van(L: float, hw: float) -> void:
+	var f := 0.68
+	_loft([
+		[0.0, 0.42, 0.92, 1.06, hw - 0.22, hw - 0.18, hw - 0.32],
+		[0.35, 0.4, 1.06, 1.2, hw - 0.1, hw - 0.08, hw - 0.18],
+		[f, 0.4, 1.18, 1.3, hw - 0.06, hw - 0.04, hw - 0.12],
+	], [_edges(PAINT, TRIM)], PAINT, PAINT)
+	_loft([
+		[f + 0.02, 0.38, 2.95, 3.1, hw - 0.03, hw, hw - 0.04],
+		[L, 0.38, 2.95, 3.1, hw - 0.02, hw, hw - 0.02],
+	], [_edges(PAINT, TRIM)], PAINT, PAINT)
+	var zf := f + 0.02
+	# Windshield: black surround, two flat panes, centre post, wipers.
+	_box(Vector3(0, 1.82, zf - 0.008), Vector3(2.24, 1.06, 0.004), TRIM)
+	for s in [-1.0, 1.0]:
+		_box(Vector3(s * 0.55, 1.83, zf - 0.016), Vector3(1.0, 0.94, 0.004), GLASS)
+		_beam(Vector3(s * 0.15, 1.38, zf - 0.03), Vector3(s * 0.75, 1.7, zf - 0.03), 0.02, TRIM)
+	# Box front above the cab: clearance and ID lamps.
+	for x in [-hw + 0.08, -0.2, 0.0, 0.2, hw - 0.08]:
+		_box(Vector3(x, 3.0, zf - 0.012), Vector3(0.07, 0.05, 0.02), BEACON_AMBER)
+	# Hood nose: grille, round headlamps, amber parking lamps, bumper.
+	_box(Vector3(0, 0.76, -0.008), Vector3(0.86, 0.34, 0.016), CHROME)
+	for i in 4:
+		_box(Vector3(0, 0.64 + i * 0.08, -0.02), Vector3(0.78, 0.035, 0.012), DARK)
+	for s in [-1.0, 1.0]:
+		_cyl(Vector3(s * 0.7, 0.76, 0.01), Vector3(s * 0.7, 0.76, -0.03), 0.105, CHROME, 12)
+		_cyl(Vector3(s * 0.7, 0.76, -0.02), Vector3(s * 0.7, 0.76, -0.036), 0.085, HEAD, 12)
+		_box(Vector3(s * 0.93, 0.76, 0.06), Vector3(0.1, 0.07, 0.03), BEACON_AMBER)
+	_box(Vector3(0, 0.47, -0.1), Vector3(2.3, 0.2, 0.16), DARK)
+	for s in [-1.0, 1.0]:
+		var sx: float = s
+		var x := sx * (hw + 0.008)
+		# Sliding cab door: lower panel seams and the door glass.
+		_box(Vector3(x, 1.85, 1.95), Vector3(0.006, 0.8, 0.75), GLASS)
+		_box(Vector3(x, 1.3, 1.57), Vector3(0.006, 1.9, 0.03), TRIM)
+		_box(Vector3(x, 1.3, 2.33), Vector3(0.006, 1.9, 0.03), TRIM)
+		_box(Vector3(x, 1.2, 2.22), Vector3(0.006, 0.08, 0.14), STEEL)
+		# Cab step under the door.
+		_box(Vector3(sx * (hw - 0.15), 0.36, 1.95), Vector3(0.32, 0.04, 0.75), STEEL)
+		# Body: rub rail, roof drip, rivet posts, side clearance lamps.
+		_box(Vector3(x, 0.55, (2.5 + L) * 0.5), Vector3(0.012, 0.08, L - 2.6), TRIM)
+		_box(Vector3(x, 2.94, (zf + L) * 0.5), Vector3(0.012, 0.03, L - zf), TRIM)
+		var z := 2.6
+		while z < L - 0.3:
+			_box(Vector3(x, 1.75, z), Vector3(0.006, 2.3, 0.025), ALUM)
+			z += 1.1
+		_box(Vector3(x + sx * 0.006, 2.85, zf + 0.15), Vector3(0.012, 0.05, 0.08), BEACON_AMBER)
+		_box(Vector3(x + sx * 0.006, 2.85, L - 0.12), Vector3(0.012, 0.05, 0.08), TAIL)
+		# West Coast mirror on two arms.
+		var root := Vector3(sx * hw, 2.0, zf + 0.15)
+		var head := Vector3(sx * (hw + 0.28), 1.95, zf + 0.02)
+		_beam(root, head, 0.025, STEEL)
+		_beam(root + Vector3(0, -0.4, 0), head + Vector3(0, -0.3, 0), 0.025, STEEL)
+		_box(head + Vector3(0, -0.12, 0), Vector3(0.07, 0.42, 0.16), TRIM)
+	# Rear: roll-up door in its frame, slats, lamps, step bumper, plate.
+	var zr := L + 0.006
+	_box(Vector3(0, 1.62, zr), Vector3(2.08, 2.5, 0.004), TRIM)
+	_box(Vector3(0, 1.6, zr + 0.008), Vector3(1.86, 2.38, 0.008), ALUM)
+	for i in 10:
+		_box(Vector3(0, 0.55 + i * 0.235, zr + 0.016), Vector3(1.86, 0.018, 0.004), STEEL)
+	_box(Vector3(0, 0.5, zr + 0.016), Vector3(0.24, 0.04, 0.006), DARK)
+	for x in [-0.2, 0.0, 0.2]:
+		_box(Vector3(x, 3.0, zr + 0.004), Vector3(0.07, 0.05, 0.008), TAIL)
+	for s in [-1.0, 1.0]:
+		_box(Vector3(s * (hw - 0.05), 1.15, zr + 0.004), Vector3(0.09, 0.32, 0.008), TAIL)
+		_box(Vector3(s * (hw - 0.05), 1.42, zr + 0.004), Vector3(0.09, 0.14, 0.008), BEACON_AMBER)
+		_box(Vector3(s * (hw - 0.05), 0.92, zr + 0.004), Vector3(0.09, 0.1, 0.008), HEAD)
+		_cyl(Vector3(s * (hw - 0.12), 0.9, L + 0.05), Vector3(s * (hw - 0.12), 2.0, L + 0.05), 0.017, STEEL, 6)
+	_box(Vector3(0, 0.4, L + 0.16), Vector3(2.3, 0.18, 0.3), DARK)
+	_box(Vector3(0, 0.495, L + 0.16), Vector3(1.4, 0.012, 0.28), STEEL)
+	_box(Vector3(0.75, 0.4, L + 0.322), Vector3(0.3, 0.15, 0.008), WHITE)
+	_wheels([1.0, 5.3], 0.45, hw, 0.28)
 
 
 ## A conventional medium-duty cab (Freightliner M2): hood, cab and its glass.
