@@ -69,6 +69,7 @@ leaves `art/assets/` out. Licences:
 - `factory_brick` Factory Brick by Rob Tuytel, CC0-1.0, https://polyhaven.com/a/factory_brick. Used for: old factory and mill walls
 - `factory_wall` Factory Wall by Rob Tuytel, CC0-1.0, https://polyhaven.com/a/factory_wall. Used for: steel industrial building walls
 - `large_red_bricks` Large Red Bricks by Rob Tuytel, CC0-1.0, https://polyhaven.com/a/large_red_bricks. Used for: schools, churches, courthouses' brick wings
+- `large_sandstone_blocks` Large Sandstone Blocks by Rob Tuytel, CC0-1.0, https://polyhaven.com/a/large_sandstone_blocks. Used for: dressed stone bases, belt courses and cornices of downtown blocks, banks and office buildings (its shading only, tinted to the stone colour)
 - `mud_forest` Mud Forest by eye-candy.xyz, CC0-1.0, https://polyhaven.com/a/mud_forest. Used for: creek bottoms and wet woods
 - `muddy_tracks` Muddy Tracks by Amal Kumar, CC0-1.0, https://polyhaven.com/a/muddy_tracks. Used for: field entrances and farm lanes in spring
 - `oriented_strand_board` Oriented Strand Board by Dimitrios Savva, CC0-1.0, https://polyhaven.com/a/oriented_strand_board. Used for: sheathing on houses under construction

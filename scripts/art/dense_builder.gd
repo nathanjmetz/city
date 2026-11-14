@@ -246,7 +246,7 @@ func _park_hq(cx: float, w: float, zf: float, d: float, band: Color, r: RandomNu
 	var stone := Color(["#cfc8ba", "#b9b2a4", "#d8d2c4"][r.randi() % 3])
 	var tint := Color(["#3f5560", "#4a5a52", "#2f3a44", "#5b6870"][r.randi() % 4])
 	_block("paint", cx, w, d, cz, top, top + 1.2, tint.darkened(0.2))
-	_box("brick", Vector3(w + 0.2, 4.6, d + 0.2), Vector3(cx, 2.3, cz), stone)  # stone base
+	_box("brick", Vector3(w + 0.2, 4.6, d + 0.2), Vector3(cx, 2.3, cz), _dressed(stone))  # stone base
 	for f in range(1, storeys):
 		var y := f * fh + 0.6 + fh * 0.5
 		for face in [[Vector3(cx, 0, zf - 0.03), Vector3(-1, 0, 0), w], [Vector3(cx, 0, zf + d + 0.03), Vector3(1, 0, 0), w],

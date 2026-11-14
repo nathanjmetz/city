@@ -417,6 +417,11 @@
    "loop": "downtown",
    "use": "EIFS fronts and tenant towers of 1990s-2010s strip centres (tinted to the wall colour)",
    "real": "exterior insulation and finish system: fine sand-finish acrylic stucco over foam, the dress of every 1990s-2010s Indiana strip centre and pad restaurant"
+  },
+  "large_sandstone_blocks": {
+   "loop": "downtown",
+   "use": "dressed stone bases, belt courses and cornices of downtown blocks, banks and office buildings (its shading only, tinted to the stone colour)",
+   "real": "sawn Indiana (Bedford) limestone ashlar, the base and trim of nearly every Indiana courthouse-square bank and office block"
   }
  },
  "hdris": {
