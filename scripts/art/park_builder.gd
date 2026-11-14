@@ -1046,9 +1046,7 @@ func _football(size: Vector2, to_curb: float, built := [], on := false) -> void:
 	for sx in [-1.0, 1.0]:
 		for sz in [-1.0, 1.0]:
 			var p := Vector3(sx * 32.0, 0, sz * (fz + 12.0 if sz > 0 else fz + 9.0))
-			_cyl_y(p + Vector3(0, 12.5, 0), 0.3, 25.0, Color("#8a8f94"))
-			_box("paint", Vector3(4.0, 2.2, 0.4), p + Vector3(0, 25.6, -sz * 0.4), Color("#d8dadb"))
-			_box("paint", Vector3(4.2, 0.12, 0.6), p + Vector3(0, 24.4, -sz * 0.4), Color("#5a5e60"))
+			_light_tower(p, Vector3(sx * 12.0, 0, 0))
 	var sb := Vector3(-hx + 4.0, 0, 0)
 	for u in [-1.0, 1.0]:
 		_box("paint", Vector3(0.3, 6.0, 0.3), sb + Vector3(0, 3.0, u * 3.0), DARK)
@@ -1057,6 +1055,36 @@ func _football(size: Vector2, to_curb: float, built := [], on := false) -> void:
 		"height": 0.5, "color": Color("#e8c23a")})
 	_fence(Vector2(-hx + 1.0, -hz + 1.0), Vector2(hx - 1.0, hz - 1.0), 1.8)
 	_flat_rect("drive", -3.0, 3.0, -hz - to_curb, -fz - 9.0, 0.06)
+
+
+## A high school field light tower, as Indiana schools have put up since
+## the 2000s (Musco-style): an 80 ft galvanized pole tapering in two
+## sections on a concrete pier, its control cabinet at the foot, and at the
+## top three crossarms of fixtures, each a dark housing with a pale lens
+## and a visor, every head aimed down at its patch of the field (`aim`).
+func _light_tower(p: Vector3, aim: Vector3) -> void:
+	var galv := Color("#9aa0a3")
+	_cyl_y(p + Vector3(0, 0.3, 0), 0.55, 0.6, CONCRETE)
+	_cyl_y(p + Vector3(0, 7.5, 0), 0.3, 14.0, galv)
+	_cyl_y(p + Vector3(0, 19.2, 0), 0.22, 9.6, galv)
+	var f := Vector3(aim.x - p.x, 0, aim.z - p.z).normalized()
+	var across := f.cross(Vector3.UP)
+	_box("paint", Vector3(0.6, 1.0, 0.35), p + f * 0.55 + Vector3(0, 1.2, 0), Color("#7d8486"),
+		Basis(Vector3.UP, atan2(-f.x, -f.z)))  # control cabinet
+	var yaw := atan2(-f.x, -f.z)
+	for row in 3:
+		var y := 23.4 + row * 0.95
+		var arm := p + f * 0.5 + Vector3(0, y + 0.35, 0)
+		_box("paint", Vector3(4.6, 0.12, 0.12), arm, Color("#6f7476"), Basis(Vector3.UP, yaw))
+		var pitch := 0.75 - row * 0.15  # the top row throws farthest
+		var b := Basis(Vector3.UP, yaw) * Basis(Vector3.RIGHT, -pitch)
+		var fwd := b * Vector3(0, 0, -1)
+		for k in 5:
+			var c := arm + across * (-1.9 + k * 0.95) + f * 0.25 + Vector3(0, -0.15, 0)
+			_box("paint", Vector3(0.62, 0.5, 0.38), c, Color("#3b3f42"), b)  # housing
+			_box("paint", Vector3(0.54, 0.42, 0.03), c + fwd * 0.2, Color("#e6e3d4"), b)  # lens
+			_box("paint", Vector3(0.66, 0.03, 0.32), c + fwd * 0.28 + b * Vector3(0, 0.27, 0), Color("#3b3f42"), b)  # visor
+	_strut(p + Vector3(0, 3.0, 0) + f * 0.25, p + Vector3(0, 23.0, 0) + f * 0.25, 0.06, Color("#5a5e60"))  # wiring raceway
 
 
 ## What every Indiana high school field has on a Friday night beyond the
