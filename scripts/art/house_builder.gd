@@ -2595,7 +2595,16 @@ func _steel_door(c: Vector3, out_z: float, col := Color("#5a5e60"), stoop := tru
 	_box("metal", Vector3(0.14, 0.03, 0.05), Vector3(c.x + 0.3, bottom + 0.97, c.z + o * 0.06), Color("#a9acae"))
 	_box("metal", Vector3(0.3, 0.07, 0.07), Vector3(c.x - 0.22, bottom + 1.98, c.z + o * 0.07), Color("#8a8c8e"))
 	_box("metal", Vector3(0.26, 0.2, 0.14), Vector3(c.x, bottom + 2.55, c.z + o * 0.07), Color("#2a2b2c"))
-	_box("paint", Vector3(0.2, 0.06, 0.02), Vector3(c.x, bottom + 2.47, c.z + o * 0.145), Color("#e8e2c8"))
+	if CommercialBuilder.fine_parts:
+		# Desktop: the wall pack is on after dark (dusk-to-dawn photocell, as
+		# code and insurers want over every exit door): a lit lens, a wash
+		# down the wall and a pool on the pavement out front.
+		_box("sign", Vector3(0.2, 0.06, 0.02), Vector3(c.x, bottom + 2.47, c.z + o * 0.145), Color(1.0, 0.93, 0.8, 1.0))
+		_light_pool(Vector3(c.x, bottom + 1.55, c.z + o * 0.13), 3.4, 3.6, Color(1.0, 0.9, 0.75), Vector3(0, 0, o))
+		if stoop:
+			_light_pool(Vector3(c.x, 0.1, c.z + o * 2.2), 5.0, 4.4, Color(1.0, 0.9, 0.75))
+	else:
+		_box("paint", Vector3(0.2, 0.06, 0.02), Vector3(c.x, bottom + 2.47, c.z + o * 0.145), Color("#e8e2c8"))
 	if stoop and bottom > 0.05:
 		# 4 cm proud of any slab it meets so the two tops don't flicker.
 		_box("paint", Vector3(1.5, bottom + 0.04, 1.1), Vector3(c.x, (bottom + 0.04) * 0.5, c.z + o * 0.61), Color("#b9b5ab"))
