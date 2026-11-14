@@ -412,6 +412,97 @@ static func _mustang_codes(z: float, m: int) -> Array:
 	return out
 
 
+## Ultra: a Toyota RAV4 (XA50, 2019-25), America's best-selling vehicle,
+## lofted from its blueprints like the Camry: 4595 mm long, 1855 wide,
+## 1700 high, 2690 wheelbase. An upright blunt nose, a high belt, the
+## roof running nearly flat to a spoiler over a steep hatch glass, a
+## near-vertical tailgate, dark cladding low round the body, roof rails.
+const RAV4_TOP := [[0.0, 0.86], [0.06, 0.95], [0.2, 0.99], [0.6, 1.03], [1.1, 1.08], [1.45, 1.12],
+	[1.6, 1.17], [2.0, 1.5], [2.3, 1.66], [2.8, 1.7], [3.6, 1.69], [4.3, 1.65], [4.48, 1.22],
+	[4.56, 1.12], [4.595, 1.06]]
+const RAV4_BELT := [[0.0, 0.84], [0.06, 0.92], [0.2, 0.96], [1.0, 1.04], [1.6, 1.1], [3.0, 1.13],
+	[4.0, 1.17], [4.45, 1.17], [4.56, 1.1], [4.595, 1.05]]
+const RAV4_ROCKER := [[0.0, 0.34], [0.3, 0.3], [0.7, 0.26], [3.9, 0.26], [4.595, 0.4]]
+const RAV4_WIDTH := [[0.0, 0.74], [0.1, 0.83], [0.35, 0.9], [0.9, 0.925], [2.5, 0.927], [4.0, 0.92],
+	[4.45, 0.89], [4.595, 0.84]]
+const RAV4_ROOF_W := [[1.6, 0.82], [2.3, 0.72], [3.0, 0.7], [4.0, 0.72], [4.35, 0.8]]
+
+
+func _rav4() -> void:
+	var L := 4.595
+	var axles := [0.93, 3.62]
+	var P := {"top": RAV4_TOP, "belt": RAV4_BELT, "rocker": RAV4_ROCKER,
+		"width": RAV4_WIDTH, "roof_w": RAV4_ROOF_W, "tyre": 0.36, "floor": 0.21}
+	var zs := []
+	var z := 0.0
+	while z < L:
+		zs.append(z)
+		z += 0.05
+	zs.append(L)
+	var rings := []
+	for zz in zs:
+		rings.append(_camry_ring(zz, axles, P))
+	var m: int = rings[0].size()
+	var codes := []
+	for i in zs.size() - 1:
+		codes.append(_rav4_codes(0.5 * (zs[i] + zs[i + 1]), m))
+	_skin(rings, codes)
+	_cap(rings[0], PAINT, Vector3(0, 0, 1))
+	_cap(rings[rings.size() - 1], PAINT, Vector3(0, 0, -1))
+	var dark := Color(0.03, 0.03, 0.03, 0.3)
+	# Face: slim lamps under the hood edge with the upper grille between,
+	# the big trapezoid lower grille, fog recesses, silver skid plate.
+	var zf := -0.006
+	for sx in [-1.0, 1.0]:
+		_box(Vector3(sx * 0.5, 0.75, zf), Vector3(0.34, 0.1, 0.012), TRIM)
+		_box(Vector3(sx * 0.52, 0.76, zf - 0.008), Vector3(0.26, 0.05, 0.012), HEAD)
+		_box(Vector3(sx * 0.48, 0.72, zf - 0.008), Vector3(0.28, 0.012, 0.012), HEAD)
+		_box(Vector3(sx * 0.6, 0.44, zf), Vector3(0.18, 0.12, 0.012), dark)
+	_box(Vector3(0, 0.75, zf), Vector3(0.62, 0.07, 0.012), dark)
+	_box(Vector3(0, 0.76, zf - 0.008), Vector3(0.1, 0.06, 0.012), CHROME)
+	for i in 4:
+		_box(Vector3(0, 0.4 + i * 0.065, zf), Vector3(0.72 + i * 0.07, 0.067, 0.012), dark)
+	_box(Vector3(0, 0.3, zf), Vector3(0.7, 0.06, 0.012), ALUM)
+	# Mirrors, roof rails, the spoiler over the hatch glass.
+	for sx in [-1.0, 1.0]:
+		_box(Vector3(sx * 0.95, 1.18, 1.78), Vector3(0.16, 0.12, 0.22), PAINT)
+		_box(Vector3(sx * 0.6, 1.69, 3.35), Vector3(0.05, 0.04, 1.7), TRIM)
+	_box(Vector3(0, 1.665, 4.3), Vector3(1.3, 0.04, 0.16), PAINT)
+	# Tailgate: lamps wrapping in from the corners, the dark garnish bar,
+	# badge, plate, dark bumper with reflectors.
+	var zr := L + 0.006
+	for sx in [-1.0, 1.0]:
+		_box(Vector3(sx * 0.66, 0.97, zr), Vector3(0.26, 0.11, 0.012), TAIL)
+		_box(Vector3(sx * 0.6, 0.38, zr), Vector3(0.1, 0.03, 0.012), Color(0.7, 0.05, 0.03, 0.4))
+	_box(Vector3(0, 0.97, zr), Vector3(1.06, 0.05, 0.012), dark)
+	_box(Vector3(0, 0.88, zr + 0.008), Vector3(0.12, 0.06, 0.012), CHROME)
+	_box(Vector3(0, 0.66, zr), Vector3(0.36, 0.2, 0.012), dark)
+	_box(Vector3(0, 0.66, zr + 0.008), Vector3(0.3, 0.15, 0.012), WHITE)
+	_box(Vector3(0, 0.36, zr), Vector3(1.5, 0.16, 0.012), dark)
+	for az in axles:
+		for sx in [-1.0, 1.0]:
+			_wheel(Vector3(sx * 0.815, 0.0, az), 0.36, 0.225, RIM)
+
+
+## The RAV4's finish strips: dark cladding along the rocker and round the
+## arches, windshield, side glass with B and C pillars and the rear
+## quarter window, the hatch glass, lamps wrapping the corners.
+static func _rav4_codes(z: float, m: int) -> Array:
+	var side := [TRIM, TRIM, TRIM, PAINT, PAINT, PAINT, PAINT, PAINT]
+	if z < 0.25:
+		side[3] = HEAD
+	elif z > 4.54:
+		side[3] = TAIL
+	if z > 1.65 and z < 4.32 and not (z > 2.72 and z < 2.84) and not (z > 3.74 and z < 3.86):
+		side[5] = GLASS
+	if z > 1.62 and z < 2.28 or z > 4.3 and z < 4.5:
+		side[7] = GLASS
+	var out := []
+	for e in m:
+		out.append(side[e] if e < 8 else side[m - 1 - e])
+	return out
+
+
 ## Ultra: the Camry's swept headlamps, which lie on the nose's slope
 ## running back toward the fenders: a dark housing with the lens and an
 ## LED running-light edge inside it, and the badge on the upper grille.
@@ -594,6 +685,9 @@ func _hatchback() -> void:  # Honda Civic hatch
 
 
 func _crossover() -> void:  # Toyota RAV4
+	if _hi:
+		_rav4()
+		return
 	_car({"L": 4.6, "W": 1.86, "H": 1.7, "clear": 0.22, "hood": 1.0, "belt": 1.12, "a": 1.15,
 		"b": 1.9, "c": 3.85, "e": 4.42, "tail": 1.14, "wr": 0.37, "axles": [0.95, 3.6], "c_pillar": false, "clad": true})
 
