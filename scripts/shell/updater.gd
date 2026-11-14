@@ -17,6 +17,11 @@ extends Node
 ## download page for a fresh app instead. (Official engine builds refuse
 ## --main-pack, so mounting the pack is the way that works everywhere.)
 ##
+## The free art library (AssetLib: photo-scanned props, surfaces, skies) is
+## not in the game pack. Each asset comes as its own small pack, listed under
+## "assets" in latest.json; they download in the background one by one, only
+## when new or changed, and are mounted every launch before the game pack.
+##
 ## The browser build updates by reloading the page, so this does nothing
 ## there, nor in the editor, headless servers or unstamped local builds.
 
@@ -27,6 +32,8 @@ const MANIFEST := "https://github.com/nathanjmetz/city/releases/download/desktop
 const DOWNLOAD_PAGE := "https://nathanjmetz.github.io/city/download/"
 const DIR := "user://updates"
 const STATE := "user://updates/state.json"
+## The art packs on this computer: {"engine": ..., "packs": {id: {path, sha256}}}.
+const ART_STATE := "user://updates/art.json"
 const BUILD_INFO := "res://scripts/build_info.gd"
 const APP_KEY := "updater/runtime/app"
 const MOUNTED_KEY := "updater/runtime/mounted"
@@ -51,6 +58,8 @@ var last_status := ""
 static var current: GameUpdater
 
 var _http: HTTPRequest
+var _art_http: HTTPRequest
+var _art_queue: Array = []
 var _manifest := {}
 var _restart_when_ready := false
 var _check_tries := 0
@@ -68,6 +77,7 @@ func _init() -> void:
 	# variables, so what _ready needs is kept in project settings.
 	ProjectSettings.set_setting(APP_KEY, {"built": int(app.BUILT), "settings": str(app.get("SETTINGS", ""))})
 	DirAccess.make_dir_recursive_absolute(DIR)
+	_mount_art()
 	var st := _read()
 	var pack := str(st.get("pack", ""))
 	if pack == "":
@@ -174,6 +184,7 @@ func _on_manifest(result: int, code: int, _headers: PackedStringArray, body: Pac
 	if typeof(m) != TYPE_DICTIONARY:
 		return
 	_manifest = m
+	_check_art(m)
 	var newest := maxi(built(), int(_read().get("built", 0)))
 	if int(m.get("built", 0)) <= newest:
 		_restart_when_ready = false
@@ -268,13 +279,105 @@ func _on_title_screen() -> bool:
 		and session != null and session.client == null and session.host == null
 
 
-## Removes packs left over from earlier updates.
+## Removes packs left over from earlier updates (art packs are kept).
 func _tidy() -> void:
 	var keep := str(_read().get("pack", ""))
 	for f in DirAccess.get_files_at(DIR):
 		var path := DIR.path_join(f)
-		if f.ends_with(".pck") and path != keep and path != mounted:
+		if f.ends_with(".pck") and not f.begins_with("art-") and path != keep and path != mounted:
 			DirAccess.remove_absolute(path)
+
+
+## Mounts the art packs this computer has, under the game's own files (they
+## never replace one). A pack made for another engine version is dropped.
+func _mount_art() -> void:
+	var st := _read_json(ART_STATE)
+	var packs: Dictionary = st.get("packs", {})
+	if str(st.get("engine", "")) != engine():
+		for id in packs:
+			DirAccess.remove_absolute(str(packs[id].get("path", "")))
+		DirAccess.remove_absolute(ART_STATE)
+		return
+	for id in packs.keys():
+		var path := str(packs[id].get("path", ""))
+		if not FileAccess.file_exists(path) or not ProjectSettings.load_resource_pack(path, false):
+			packs.erase(id)
+	_write_json(ART_STATE, st)
+
+
+## Queues the art packs that are new or changed in the release, drops the
+## ones it no longer lists, and starts downloading.
+func _check_art(m: Dictionary) -> void:
+	if str(m.get("engine", "")) != engine() or _art_http != null:
+		return
+	var listed: Array = m.get("assets", {}).get(platform(), [])
+	if listed.is_empty():
+		return
+	var st := _read_json(ART_STATE)
+	var packs: Dictionary = st.get("packs", {})
+	var wanted := {}
+	_art_queue.clear()
+	for e in listed:
+		wanted[str(e.get("id", ""))] = true
+		var have: Dictionary = packs.get(str(e.get("id", "")), {})
+		if str(have.get("sha256", "")) != str(e.get("sha256", "")) or not FileAccess.file_exists(str(have.get("path", ""))):
+			_art_queue.append(e)
+	for id in packs.keys():
+		if not wanted.has(id):
+			DirAccess.remove_absolute(str(packs[id].get("path", "")))
+			packs.erase(id)
+	st.engine = engine()
+	st.packs = packs
+	_write_json(ART_STATE, st)
+	if not _art_queue.is_empty():
+		_tell("art_download", {"packs": _art_queue.size()})
+		_next_art()
+
+
+func _next_art() -> void:
+	if _art_queue.is_empty():
+		return
+	var e: Dictionary = _art_queue[0]
+	_art_http = HTTPRequest.new()
+	_art_http.use_threads = true
+	_art_http.timeout = 0.0
+	_art_http.download_chunk_size = 1 << 20
+	_art_http.download_file = DIR.path_join("art.part")
+	add_child(_art_http)
+	_art_http.request_completed.connect(_on_art.bind(e))
+	if _art_http.request(str(e.get("url", ""))) != OK:
+		_art_http.queue_free()
+		_art_http = null
+
+
+func _on_art(result: int, code: int, _headers: PackedStringArray, _body: PackedByteArray, e: Dictionary) -> void:
+	var part := _art_http.download_file
+	_art_http.queue_free()
+	_art_http = null
+	if result != HTTPRequest.RESULT_SUCCESS or code != 200 or FileAccess.get_sha256(part) != str(e.get("sha256", "")):
+		# Try the rest next launch; a bad network shouldn't spin here.
+		_tell("art_download_failed", {"id": str(e.get("id", "")), "result": result, "code": code})
+		DirAccess.remove_absolute(part)
+		_art_queue.clear()
+		return
+	var id := str(e.get("id", ""))
+	var st := _read_json(ART_STATE)
+	var packs: Dictionary = st.get("packs", {})
+	var old := str(packs.get(id, {}).get("path", ""))
+	var path := DIR.path_join("art-%s-%s.pck" % [id, str(e.sha256).left(10)])
+	if old != "" and old != path:
+		DirAccess.remove_absolute(old)
+	DirAccess.remove_absolute(path)
+	if DirAccess.rename_absolute(part, path) != OK:
+		_art_queue.clear()
+		return
+	packs[id] = {"path": path, "sha256": str(e.sha256)}
+	st.packs = packs
+	_write_json(ART_STATE, st)
+	_art_queue.pop_front()
+	if _art_queue.is_empty():
+		_tell("art_ready", {"packs": packs.size()})
+	_next_art()
 
 
 func _done() -> void:
@@ -309,6 +412,19 @@ static func _read() -> Dictionary:
 		return {}
 	var d = JSON.parse_string(FileAccess.get_file_as_string(STATE))
 	return d if typeof(d) == TYPE_DICTIONARY else {}
+
+
+static func _read_json(path: String) -> Dictionary:
+	if not FileAccess.file_exists(path):
+		return {}
+	var d = JSON.parse_string(FileAccess.get_file_as_string(path))
+	return d if typeof(d) == TYPE_DICTIONARY else {}
+
+
+static func _write_json(path: String, d: Dictionary) -> void:
+	var f := FileAccess.open(path, FileAccess.WRITE)
+	if f:
+		f.store_string(JSON.stringify(d))
 
 
 static func _write(st: Dictionary) -> void:
