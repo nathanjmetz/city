@@ -443,18 +443,15 @@ func _playground(c: Vector3, size: Vector2) -> void:
 	var red := Color("#b83a2a").lerp(Color("#9a8a7a"), fade)
 	var blue := Color("#2f5a8a").lerp(Color("#8a8f94"), fade)
 	var yel := Color("#d9a92a").lerp(Color("#a89a7a"), fade)
-	var p := c + Vector3(-3.5, 0, 0)
-	# Play tower with a deck, a roof and a slide.
-	_box("paint", Vector3(2.6, 0.12, 2.6), p + Vector3(0, 1.6, 0), blue)
-	for sx in [-1.0, 1.0]:
-		for sz in [-1.0, 1.0]:
-			_box("paint", Vector3(0.12, 3.2, 0.12), p + Vector3(sx * 1.25, 1.6, sz * 1.25), yel)
-	_box("paint", Vector3(2.8, 0.15, 2.8), p + Vector3(0, 3.2, 0), red)
-	_box("paint", Vector3(0.8, 0.06, 3.4), p + Vector3(0.6, 0.85, 2.9), yel, Basis(Vector3.RIGHT, -0.5))
-	if tier >= 2:
-		# A second deck and a climbing wall in kept parks.
-		_box("paint", Vector3(2.2, 0.12, 2.2), p + Vector3(-2.6, 1.0, 0), blue)
-		_box("paint", Vector3(0.1, 1.0, 2.0), p + Vector3(-3.7, 0.5, 0), red)
+	_play_structure(c + Vector3(-3.5, 0, 0), red, blue, yel, worn)
+	if tier >= 1:
+		# Spring riders by the tower, for the little ones.
+		for k in 2:
+			var q := c + Vector3(-3.5 + (k * 2 - 1) * 2.2, 0, size.y * 0.5 - 2.0)
+			_box("paint", Vector3(0.5, 0.06, 0.5), q + Vector3(0, 0.03, 0), DARK)
+			_cyl_y(q + Vector3(0, 0.3, 0), 0.12, 0.5, GALV)  # the spring
+			_box("paint", Vector3(0.28, 0.4, 0.8), q + Vector3(0, 0.75, 0), [yel, red][k])
+			_box("paint", Vector3(0.24, 0.3, 0.3), q + Vector3(0, 1.0, -0.42), [yel, red][k])  # head
 	# Swing set; a worn one has a seat missing.
 	var s := c + Vector3(4.0, 0, 0)
 	_box("paint", Vector3(0.1, 0.1, 4.5), s + Vector3(0, 2.4, 0), DARK if not worn else Color("#6a4a3a"))
@@ -467,6 +464,72 @@ func _playground(c: Vector3, size: Vector2) -> void:
 		_box("paint", Vector3(0.25, 0.04, 0.5), s + Vector3(0, 0.55, -1.4 + i * 1.4), DARK)
 		_box("paint", Vector3(0.02, 1.85, 0.02), s + Vector3(0, 1.48, -1.4 + i * 1.4 - 0.22), GALV)
 		_box("paint", Vector3(0.02, 1.85, 0.02), s + Vector3(0, 1.48, -1.4 + i * 1.4 + 0.22), GALV)
+
+
+## A modular composite play structure, the kind most Indiana parks have
+## bought since the 1990s: 4 ft square decks on 3 1/2 in posts at two
+## heights, a canopy over the high one, guard panels round the edges,
+## steps up to the low deck, a straight slide and a double slide off the
+## high one, a rock-climbing panel, and a transfer step between them.
+func _play_structure(p: Vector3, red: Color, blue: Color, yel: Color, worn: bool) -> void:
+	var decks := [[p + Vector3(0.65, 0, 0), 1.5], [p + Vector3(-0.65, 0, 0), 0.9]]
+	if tier >= 2:
+		decks.append([p + Vector3(-0.65, 0, -1.3), 1.2])
+	for dk in decks:
+		var q: Vector3 = dk[0]
+		var y: float = dk[1]
+		_box("paint", Vector3(1.22, 0.06, 1.22), q + Vector3(0, y, 0), blue.darkened(0.15))  # perforated steel deck
+		for sx in [-1.0, 1.0]:
+			for sz in [-1.0, 1.0]:
+				var ph := 2.7 if dk == decks[0] else y + 0.95  # to the canopy, or to rail height
+				_cyl_y(q + Vector3(sx * 0.6, ph * 0.5, sz * 0.6), 0.045, ph, yel)
+	var hi: Vector3 = decks[0][0]
+	var lo: Vector3 = decks[1][0]
+	# The canopy: a four-sided plastic roof over the high deck.
+	var top := hi + Vector3(0, 3.1, 0)
+	var base_y := 2.65
+	var cn := [Vector3(-0.85, base_y, -0.85), Vector3(0.85, base_y, -0.85), Vector3(0.85, base_y, 0.85), Vector3(-0.85, base_y, 0.85)]
+	for i in 4:
+		var a: Vector3 = hi + cn[i]
+		var b: Vector3 = hi + cn[(i + 1) % 4]
+		var n := ((a + b) * 0.5 - hi).normalized() + Vector3.UP
+		_tri("paint", top + Vector3(0, 0.45, 0), b, a, red, [], n.normalized())
+		_tri("paint", top + Vector3(0, 0.45, 0), a, b, red.darkened(0.3), [], -n.normalized())
+	# Guard panels on the open sides: high deck back and front, low deck back.
+	_box("paint", Vector3(1.1, 0.75, 0.05), hi + Vector3(0, 1.5 + 0.45, 0.6), red)
+	_box("paint", Vector3(0.05, 0.75, 1.1), hi + Vector3(0.6, 1.5 + 0.45, 0), blue)
+	_box("paint", Vector3(1.1, 0.7, 0.05), lo + Vector3(0, 0.9 + 0.42, 0.6), yel)
+	# Steps up to the low deck from the west.
+	for k in 3:
+		_box("paint", Vector3(0.3, 0.05, 0.9), lo + Vector3(-0.75 - k * 0.3, 0.9 - (k + 1) * 0.22, 0), blue.darkened(0.15))
+	for e in [-1.0, 1.0]:
+		_strut(lo + Vector3(-0.62, 1.7, e * 0.48), lo + Vector3(-1.6, 0.55, e * 0.48), 0.04, yel)  # handrails
+	# Transfer step between the decks.
+	_box("paint", Vector3(0.3, 0.05, 1.0), hi + Vector3(-0.65, 1.2, 0), blue.darkened(0.15))
+	# Straight slide off the high deck's front: a bed and two side walls.
+	var s0 := hi + Vector3(0, 1.5, -0.62)
+	var s1 := hi + Vector3(0, 0.3, -3.2)
+	var sl := s0.distance_to(s1)
+	var tilt := Basis(Vector3.RIGHT, atan2(s0.y - s1.y, s0.z - s1.z))
+	_box("paint", Vector3(0.55, 0.04, sl), (s0 + s1) * 0.5, yel, tilt)
+	for e in [-1.0, 1.0]:
+		_box("paint", Vector3(0.04, 0.22, sl), (s0 + s1) * 0.5 + Vector3(e * 0.28, 0.1, 0), yel.darkened(0.1), tilt)
+	_box("paint", Vector3(0.55, 0.04, 0.5), s1 + Vector3(0, 0, -0.25), yel)  # run-out
+	if not worn:
+		# A double slide off the low deck's front, in the other colour.
+		var d0 := lo + Vector3(0, 0.9, -0.62)
+		var d1 := lo + Vector3(0, 0.3, -2.2)
+		var dl := d0.distance_to(d1)
+		var dt := Basis(Vector3.RIGHT, atan2(d0.y - d1.y, d0.z - d1.z))
+		_box("paint", Vector3(1.0, 0.04, dl), (d0 + d1) * 0.5, blue, dt)
+		for e in [-1.0, 0.0, 1.0]:
+			_box("paint", Vector3(0.04, 0.18, dl), (d0 + d1) * 0.5 + Vector3(e * 0.5, 0.08, 0), blue.darkened(0.1), dt)
+		# Rock-climbing panel up the high deck's east side, holds dotted on.
+		var w0 := hi + Vector3(0.62, 0, 0)
+		_box("paint", Vector3(0.06, 1.6, 1.1), w0 + Vector3(0.45, 0.75, 0), Color("#8a8478"), Basis(Vector3.BACK, 0.3))
+		for k in 7:
+			var hy := 0.25 + k * 0.2
+			_box("paint", Vector3(0.08, 0.08, 0.1), w0 + Vector3(0.45 + (0.75 - hy) * 0.3 + 0.05, hy, -0.4 + fmod(k * 0.37, 0.8)), [red, yel, blue][k % 3])
 
 
 func _pavilion(c: Vector3, size: Vector2) -> void:
