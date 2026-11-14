@@ -1509,10 +1509,9 @@ func _cc_parking(to_curb: float, w: float, zw: float, xg0: float, cr: RandomNumb
 	var pad := Rect2(lot1 - 20.0, 2.0, 19.0, 15.0)
 	var pc := pad.get_center()
 	var brick := Color(FACADE_BRICK[cr.randi() % FACADE_BRICK.size()])
-	# EIFS over a brick wainscot, the 1990s pad restaurant's dress (painted,
-	# so its far version takes the center's own wall colour).
-	_box("paint", Vector3(12.0, 4.2, 9.0), Vector3(pc.x, 2.1, pc.y + 1.0), Color(["#d9c7a6", "#cbb894", "#e2d6bd"][cr.randi() % 3]))
-	_box("paint", Vector3(12.06, 1.1, 9.06), Vector3(pc.x, 0.55, pc.y + 1.0), brick)
+	# EIFS over a brick wainscot, the 1990s pad restaurant's dress.
+	_box("eifs", Vector3(12.0, 4.2, 9.0), Vector3(pc.x, 2.1, pc.y + 1.0), Color(["#d9c7a6", "#cbb894", "#e2d6bd"][cr.randi() % 3]))
+	_box("brick", Vector3(12.06, 1.1, 9.06), Vector3(pc.x, 0.55, pc.y + 1.0), brick)
 	_quad("membrane", Vector3(pc.x - 6.0, 4.22, pc.y - 3.5), Vector3(pc.x + 6.0, 4.22, pc.y - 3.5),
 		Vector3(pc.x + 6.0, 4.22, pc.y + 5.5), Vector3(pc.x - 6.0, 4.22, pc.y + 5.5), Color("#9a9790"), [], Vector3.UP)
 	var accent := Color(AWNING[cr.randi() % AWNING.size()])
@@ -1955,7 +1954,9 @@ func _shop_diner(to_curb: float) -> void:
 	var band := Color(_pick(["#c8102e", "#1f3b6e", "#2a7a6e", "#d8d6cf"]))
 	var wall := Color(_pick(["#e9e6dc", "#d8d2c2", "#a8775c"]))
 	_box("paint", Vector3(w + 0.1, 0.3, d + 0.1), Vector3(0, 0.15, cz), FOUNDATION)
-	_flat_roofed("paint", w, d, cz, 4.0, 4.6, wall)
+	# Pale ones are EIFS (synthetic stucco), the brown one face brick:
+	# what freestanding family restaurants wear since the 1980s.
+	_flat_roofed("brick" if wall == Color("#a8775c") else "eifs", w, d, cz, 4.0, 4.6, wall)
 	_box("metal", Vector3(w + 0.1, 0.45, 0.12), Vector3(0, 1.0, zf - 0.06), Color("#c9cbc8"))
 	_box("paint", Vector3(w + 0.1, 0.55, 0.14), Vector3(0, 3.3, zf - 0.07), band)
 	var n := int((w - 3.0) / 1.5)
