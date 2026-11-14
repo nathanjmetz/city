@@ -2396,6 +2396,36 @@ func _city_bus() -> void:  # 40 ft low-floor transit bus (Gillig, New Flyer)
 	for x in [-0.6, 0.6]:
 		_box(Vector3(x, 0.75, -0.12), Vector3(0.05, 0.5, 0.05), STEEL)
 	_box(Vector3(0, 0.98, -0.16), Vector3(1.3, 0.05, 0.12), STEEL)
+	if _hi:
+		_city_bus_hi(L, hw)
+
+
+## Ultra: a low-floor transit bus close up (Gillig, New Flyer): the ram's
+## horn mirrors curving down in front of the windshield, its centre post
+## and wipers, the black bumper, and at the back the louvred engine door,
+## the rear window above it, the route sign and the bumper.
+func _city_bus_hi(L: float, hw: float) -> void:
+	var dark := Color(0.04, 0.04, 0.04, 0.3)
+	for s in [-1.0, 1.0]:
+		var sx: float = s
+		var root := Vector3(sx * (hw - 0.1), 2.95, 0.02)
+		var bend := Vector3(sx * (hw + 0.15), 2.85, -0.3)
+		var head := Vector3(sx * (hw + 0.12), 2.45, -0.42)
+		_beam(root, bend, 0.035, dark)
+		_beam(bend, head, 0.035, dark)
+		_box(head + Vector3(0, -0.18, 0), Vector3(0.1, 0.42, 0.24), dark)
+		_box(Vector3(sx * 0.35, 1.08, -0.02), Vector3(0.6, 0.02, 0.02), dark)
+	_box(Vector3(0, 1.85, -0.016), Vector3(0.06, 1.7, 0.012), dark)
+	_box(Vector3(0, 0.45, -0.06), Vector3(hw * 2.0, 0.28, 0.12), dark)
+	# Back: louvred engine door, rear window, route sign, bumper.
+	var z := L + 0.006
+	_box(Vector3(0, 1.1, z), Vector3(1.7, 0.9, 0.006), dark)
+	for i in 7:
+		_box(Vector3(0, 0.75 + i * 0.11, z + 0.006), Vector3(1.6, 0.03, 0.006), STEEL)
+	_box(Vector3(0, 2.25, z), Vector3(1.9, 0.75, 0.008), GLASS)
+	_box(Vector3(-0.55, 2.78, z + 0.006), Vector3(0.5, 0.16, 0.008), Color(1.0, 0.6, 0.1, 0.5))
+	_box(Vector3(0, 0.42, L + 0.06), Vector3(hw * 2.0, 0.26, 0.12), dark)
+	_box(Vector3(0.6, 1.62, z + 0.004), Vector3(0.3, 0.15, 0.008), WHITE)
 
 
 ## A 45 ft intercity motorcoach (MCI J4500, Prevost H3-45): high deck over
