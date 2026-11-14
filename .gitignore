@@ -10,3 +10,9 @@ tools/audio/.cache/
 # tracking them again blocks its self-update (git refuses to overwrite).
 tests/test_county.gd.uid
 tools/audio_shot.gd.uid
+
+# The free asset library's files (CC0/CC-BY) are fetched, not committed:
+# python3 tools/assets/fetch.py. index.json and CREDITS.md stay in git.
+art/assets/models/
+art/assets/pbr/
+art/assets/hdri/
