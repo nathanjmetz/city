@@ -8,11 +8,13 @@ var sim: CitySim
 var _nodes := {}  # warehouse id -> Node3D
 var _shapes := {}  # warehouse id -> [kind, level, bays] it was drawn at
 var _trees := TreeField.new()
+var _props := PropField.new()  # scanned props the builder stood on the site (PropLog)
 
 
 func setup(s: CitySim) -> void:
 	sim = s
 	add_child(_trees)
+	add_child(_props)
 	sim.warehouses_changed.connect(_sync)
 	sim.lots_changed.connect(_sync)
 	_sync()
@@ -23,6 +25,7 @@ func _sync() -> void:
 		var w = sim.warehouses.buildings.get(id)
 		if w == null or _shapes[id] != [w.kind, w.level, w.bays, w.get("built", []).size()]:
 			_trees.remove(_nodes[id].get_meta("tree_key"))
+			_props.drop(_nodes[id].get_meta("tree_key"))
 			_nodes[id].queue_free()
 			_nodes.erase(id)
 			_shapes.erase(id)
@@ -52,7 +55,9 @@ func _spawn(id: int, w: Dictionary) -> Node3D:
 	root.basis = Basis.looking_at(w.dir, Vector3.UP)
 	var to_curb := Warehouses.SETBACK + RoadStyle.CURB_WIDTH + RoadStyle.PARKWAY_WIDTH + RoadStyle.SIDEWALK_WIDTH
 	var seed := int(w.pos.x * 73.0) ^ int(w.pos.z * 151.0) ^ (id << 16)
-	var built := WarehouseBuilder.build_warehouse(w, seed, to_curb)
+	var box := []  # (a lambda can't set the caller's variable)
+	var props := PropLog.collect(func(): box.append(WarehouseBuilder.build_warehouse(w, seed, to_curb)))
+	var built: Array = box[0]
 	built[1] = Terrain.drape_local(built[1], Transform3D(root.basis, root.position))
 	var key := "wh:%d" % id
 	root.set_meta("tree_key", key)
@@ -68,5 +73,6 @@ func _spawn(id: int, w: Dictionary) -> Node3D:
 				var at: Transform3D = frame * Transform3D(yaw.scaled(Vector3.ONE * t[3]), t[0])
 				at.origin.y = Terrain.ground_y(at.origin.x, at.origin.z)
 				trees.append([at, t[1], t[2]])
-			_trees.set_trees(key, trees))
+			_trees.set_trees(key, trees)
+			_props.put(key, frame, props))
 	return root

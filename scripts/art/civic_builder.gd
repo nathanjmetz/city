@@ -1345,14 +1345,15 @@ func _bus_yard_life(w: float, back: float, dx: float, iz: float, gx: float, gw: 
 	var wz := gz + gd
 	_box("paint", Vector3(1.2, 1.4, 0.9), Vector3(gx - 1.8, 0.7, wz + 0.5), Color("#3d4a3a"))  # used oil
 	_box("paint", Vector3(1.3, 0.12, 1.0), Vector3(gx - 1.8, 0.06, wz + 0.5), Color("#2e2e2e"))  # spill pan
-	_box("paint", Vector3(2.4, 2.0, 0.08), Vector3(gx + 0.9, 1.0, wz + 1.0), Color("#c46a20"))  # tire rack
+	_box("paint", Vector3(2.4, 2.0, 0.08), Vector3(gx + 0.9, 1.0, wz + 0.06), Color("#c46a20"))  # tire rack
 	for k in 3:
 		_box("paint", Vector3(2.3, 0.04, 0.9), Vector3(gx + 0.9, 0.3 + k * 0.75, wz + 0.55), Color("#c46a20"))
 		for t in 3:
 			_cylinder("paint", Vector3(gx + 0.15 + t * 0.75, 0.34 + k * 0.75, wz + 0.15), 0.5, 0.28, Color("#1d1d1d"), 10)
 	_cyl_y(Vector3(gx - 0.2, 1.8, wz + 0.15), 0.32, 0.2, Color("#c42a20"))  # hose reel
 	for e in [-1.0, 1.0]:
-		_box("paint", Vector3(0.5, 0.35, 0.3), Vector3(gx + e * gw * 0.5 * 0.92, 5.4, wz + 0.15), dark)
+		if not _wall_light(Vector3(gx + e * gw * 0.5 * 0.92, 5.5, wz), Vector3(0, 0, 1)):
+			_box("paint", Vector3(0.5, 0.35, 0.3), Vector3(gx + e * gw * 0.5 * 0.92, 5.4, wz + 0.15), dark)
 	# Shoebox yard lights on 9 m poles over the back corners.
 	for e in [-1.0, 1.0]:
 		var px: float = e * (w * 0.5 - 1.2)
@@ -1567,14 +1568,16 @@ func _taxi_life(w: float, ox: float, ow: float, oz: float, od: float, trim: Colo
 	_box("paint", Vector3(1.0, 2.15, 0.06), Vector3(dx, 1.08, zb + 0.03), Color("#6d7377"))
 	_box("paint", Vector3(0.06, 0.25, 0.08), Vector3(dx + 0.35, 1.05, zb + 0.07), dark)
 	_box("metal", Vector3(1.8, 0.12, 1.0), Vector3(dx, 2.6, zb + 0.5), Color("#2b2f33"))
-	_box("paint", Vector3(0.35, 0.25, 0.18), Vector3(dx, 3.1, zb + 0.09), dark)
+	if not _wall_light(Vector3(dx, 3.7, zb), Vector3(0, 0, 1)):
+		_box("paint", Vector3(0.35, 0.25, 0.18), Vector3(dx, 3.1, zb + 0.09), dark)
 	_box("paint", Vector3(0.35, 0.45, 0.2), Vector3(dx - 1.1, 1.3, zb + 0.1), Color("#4a4f52"))
 	# Break bench and ash urn under the eave.
 	var bx := dx + 2.4
-	_box("paint", Vector3(1.6, 0.06, 0.45), Vector3(bx, 0.45, zb + 0.6), Color("#5a4632"))
-	for e in [-1.0, 1.0]:
-		_box("paint", Vector3(0.06, 0.45, 0.45), Vector3(bx + e * 0.7, 0.22, zb + 0.6), dark)
-	_box("paint", Vector3(1.6, 0.4, 0.05), Vector3(bx, 0.75, zb + 0.82), Color("#5a4632"))
+	if not PropLog.place(self, "wooden_picnic_table", Transform3D(Basis(Vector3.UP, PI * 0.5), Vector3(dx - 3.4, 0.0, zb + 1.15))):
+		_box("paint", Vector3(1.6, 0.06, 0.45), Vector3(bx, 0.45, zb + 0.6), Color("#5a4632"))
+		for e in [-1.0, 1.0]:
+			_box("paint", Vector3(0.06, 0.45, 0.45), Vector3(bx + e * 0.7, 0.22, zb + 0.6), dark)
+		_box("paint", Vector3(1.6, 0.4, 0.05), Vector3(bx, 0.75, zb + 0.82), Color("#5a4632"))
 	_cylinder("paint", Vector3(bx + 1.3, 0.0, zb + 0.5), 0.17, 0.75, Color("#5c6266"), 10)
 	# Meters and two condensers on the side wall away from the drive.
 	_box("paint", Vector3(0.18, 0.5, 0.4), Vector3(xl - 0.1, 1.5, zb - 1.0), Color("#9da3a6"))

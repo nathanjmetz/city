@@ -50,6 +50,7 @@ var _nodes := {}  # service id -> Node3D
 var _coverage := MeshInstance3D.new()
 var _cover_mat := StandardMaterial3D.new()
 var _trees := TreeField.new()
+var _props := PropField.new()  # scanned props the builders stood on the sites (PropLog)
 static var _footing_mat: Material
 ## Parts of a site taller than this (metres) are buildings that need a
 ## foundation; fences, bollards and pads are lower.
@@ -75,6 +76,7 @@ const ALSO := {Services.Kind.CLINIC: [Services.Kind.HOSPITAL]}
 func setup(s: CitySim) -> void:
 	sim = s
 	add_child(_trees)
+	add_child(_props)
 	sim.lots_changed.connect(_sync)
 	sim.stats_changed.connect(_draw_coverage)
 	_cover_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
@@ -95,12 +97,14 @@ func _sync() -> void:
 				Transform3D(Basis.looking_at(sim.services.buildings[id].dir, Vector3.UP), sim.services.buildings[id].pos)) \
 				or _nodes[id].get_meta("size") != Services.size_of(sim.services.buildings[id]):
 			_trees.remove(_nodes[id].get_meta("tree_key"))
+			_props.drop(_nodes[id].get_meta("tree_key"))
 			_nodes[id].queue_free()
 			_nodes.erase(id)
 	for id in sim.services.buildings:
 		# A hospital that grew (or gave back) a building is drawn afresh.
 		if _nodes.has(id) and _nodes[id].get_meta("look") != _look(id):
 			_trees.remove(_nodes[id].get_meta("tree_key"))
+			_props.drop(_nodes[id].get_meta("tree_key"))
 			_nodes[id].queue_free()
 			_nodes.erase(id)
 		if not _nodes.has(id):
@@ -117,6 +121,7 @@ func regraded(box: Rect2) -> void:
 		var size: Vector2 = _nodes[id].get_meta("size")
 		if box.grow(size.length() * 0.5 + 10.0).has_point(Vector2(at.origin.x, at.origin.z)):
 			_trees.remove(_nodes[id].get_meta("tree_key"))
+			_props.drop(_nodes[id].get_meta("tree_key"))
 			_nodes[id].queue_free()
 			_nodes.erase(id)
 			any = true
@@ -431,7 +436,8 @@ func _spawn(id: int, b: Dictionary) -> Node3D:
 	var size: Vector2 = Services.size_of(b)
 	root.set_meta("size", size)
 	var box := []  # (a lambda can't set the caller's variable)
-	var doors := DoorLog.collect(func(): box.append(build_of(sim, id, b)))
+	var doors := []
+	var props := PropLog.collect(func(): doors.append_array(DoorLog.collect(func(): box.append(build_of(sim, id, b)))))
 	if not doors.is_empty():
 		root.set_meta("doors", doors)  # (never in the browser: DoorLog.collect)
 	var built: Array = box[0]
@@ -455,6 +461,7 @@ func _spawn(id: int, b: Dictionary) -> Node3D:
 				var yaw := Basis(Vector3.UP, fposmod(t[0].x * 7.3 + t[0].z * 3.1, TAU))
 				trees.append([frame * Transform3D(yaw.scaled(Vector3.ONE * t[3]), t[0]), t[1], t[2]])
 			_trees.set_trees(str(b.pos), trees)
+			_props.put(str(b.pos), frame, props)
 			# Its sign lettering goes up with the finished building.
 			if built.size() > 3 and not built[3].is_empty() and not root.has_node("Signs"):
 				var signs := Node3D.new()

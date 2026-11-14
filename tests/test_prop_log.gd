@@ -32,6 +32,27 @@ func _initialize() -> void:
 			_check(PropLog.mesh_of(p[0]) != null, "seed %d: %s has a mesh" % [sd, p[0]])
 	if AssetLib.has("standing_chalkboard_01"):
 		_check(seen > 0, "Main Street blocks stand some scanned props when the art is here")
+	# Civic and industry yards: the bus garage, the cab office and a
+	# warehouse come out the same with or without their scanned yard lights,
+	# picnic table and back-door clutter.
+	var yard_props := 0
+	for sd in range(40, 46):
+		for kind in [Services.Kind.BUS_DEPOT, Services.Kind.TAXI_COMPANY]:
+			var size: Vector2 = Services.KINDS[kind].size
+			var plain: Array = CivicBuilder.build_service(kind, sd, size, 3.9, [])
+			var box := []
+			var props := PropLog.collect(func(): box.append(CivicBuilder.build_service(kind, sd, size, 3.9, [])))
+			yard_props += props.size()
+			_check(plain[2].size() == box[0][2].size(), "service %d seed %d: same trees with the props" % [kind, sd])
+			_check(plain[3].size() == box[0][3].size(), "service %d seed %d: same labels with the props" % [kind, sd])
+		var w := {"kind": "medium", "bays": 0, "level": 1, "built": [], "pos": Vector3.ZERO, "dir": Vector3(0, 0, -1)}
+		var wplain: Array = WarehouseBuilder.build_warehouse(w, sd, 3.9)
+		var wbox := []
+		var wprops := PropLog.collect(func(): wbox.append(WarehouseBuilder.build_warehouse(w, sd, 3.9)))
+		yard_props += wprops.size()
+		_check(wplain[2].size() == wbox[0][2].size(), "warehouse seed %d: same trees with the props" % sd)
+	if AssetLib.has("security_light"):
+		_check(yard_props > 0, "civic and industry yards stand scanned props when the art is here")
 	# The field: put, count, drop.
 	var field := PropField.new()
 	field.put("a", Transform3D(Basis(), Vector3(10, 0, 10)), [["x|", Transform3D.IDENTITY], ["x|", Transform3D.IDENTITY]])
