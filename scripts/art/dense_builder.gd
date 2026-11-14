@@ -13,6 +13,7 @@ extends CommercialBuilder
 ## Same local space and output as HouseBuilder, but sized to the real lot
 ## width instead of the 20 m standard lot.
 
+const SILL_STONE := Color("#cfc6b0")  # Indiana limestone sills and lintels
 const SPANDREL := ["#c9c4b8", "#b8b2a6", "#8f8a80", "#d8d4ca", "#6e6a64"]
 const OFFICE_GLASS := Color(0.55, 0.62, 0.66, 0.35)
 ## Small parts only the desktop draws (door pulls, bulkhead panels, transom
@@ -692,14 +693,38 @@ func _mixed(to_curb: float, width: float, storeys: int) -> void:
 			var x := lerpf(-w * 0.5 + 1.4, w * 0.5 - 1.4, float(i) / (n - 1))
 			var wh := rng.randf_range(1.8, 2.0)
 			_glass(Vector3(x, y, zf - 0.02), Vector3(-1, 0, 0), 1.0, wh, rng.randf_range(0.0, 0.7))
-			_box("paint", Vector3(1.3, 0.1, 0.16), Vector3(x, y - wh * 0.5 - 0.05, zf - 0.08), trim)
+			# Desktop: the later fronts' sills and lintels are cut Indiana
+			# limestone, as on most brick Main Street blocks of 1890-1920.
+			var limestone := fine and not italianate
+			_box("brick" if limestone else "paint", Vector3(1.3, 0.1, 0.16), Vector3(x, y - wh * 0.5 - 0.05, zf - 0.08),
+				_dressed(SILL_STONE) if limestone else trim)
 			if fine:
 				_sash(x, y, 1.0, wh, zf, trim)
 				uppers.append(Vector3(x, y, wh))
-			if italianate:
+			var head := y + wh * 0.5
+			if italianate and fine:
+				# Desktop: a pedimented hood, cast iron or pressed tin painted
+				# to match the cornice (Mesker and kin sold them by catalogue):
+				# a flat frieze over the opening on two scroll consoles, a
+				# projecting cap, and a low pediment on top.
+				_box("paint", Vector3(1.24, 0.24, 0.08), Vector3(x, head + 0.12, zf - 0.04), trim)
+				for sx in [-0.67, 0.67]:
+					_box("paint", Vector3(0.11, 0.38, 0.15), Vector3(x + sx, head + 0.06, zf - 0.075), trim.darkened(0.08))
+				_box("paint", Vector3(1.6, 0.07, 0.24), Vector3(x, head + 0.275, zf - 0.12), trim.lightened(0.04))
+				_tri("paint", Vector3(x - 0.74, head + 0.31, zf - 0.2), Vector3(x + 0.74, head + 0.31, zf - 0.2),
+					Vector3(x, head + 0.5, zf - 0.2), trim, [], Vector3.FORWARD)
+				for sx in [-1.0, 1.0]:
+					# The pediment's raking cap.
+					_box("paint", Vector3(0.8, 0.05, 0.26), Vector3(x + sx * 0.37, head + 0.415, zf - 0.12), trim.lightened(0.04),
+						Basis(Vector3.FORWARD, sx * atan2(0.19, 0.74)))
+			elif italianate:
 				# A hood mould: a wider cap with a raised crown.
 				_box("paint", Vector3(1.5, 0.3, 0.16), Vector3(x, y + wh * 0.5 + 0.15, zf - 0.08), trim)
 				_box("paint", Vector3(0.7, 0.16, 0.18), Vector3(x, y + wh * 0.5 + 0.38, zf - 0.09), trim)
+			elif limestone:
+				# A stone lintel with a keystone.
+				_box("brick", Vector3(1.4, 0.26, 0.12), Vector3(x, head + 0.13, zf - 0.06), _dressed(SILL_STONE))
+				_box("brick", Vector3(0.24, 0.32, 0.14), Vector3(x, head + 0.15, zf - 0.07), _dressed(SILL_STONE.lightened(0.04)))
 			else:
 				_box("paint", Vector3(1.4, 0.26, 0.12), Vector3(x, y + wh * 0.5 + 0.13, zf - 0.06), trim)
 	if slipcover:
