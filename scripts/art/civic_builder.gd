@@ -1001,6 +1001,69 @@ func _water_tower(front: float, to_curb: float) -> void:
 	_steel_door(Vector3(px - 1.8, 1.35, pz - 2.53), -1.0)
 	_flat_rect("gravel", px - 3.0, px + 3.0, front - to_curb, pz - 2.7, 0.08, Color("#8d877c"))
 	_fence(Vector2(-13.5, front + 1.5), Vector2(13.5, front + 28.0), 2.0)
+	_tower_base_life(c, bases, tops, front, y0, cw, tank)
+
+
+## What stands round a real Indiana multi-leg water tower besides the legs:
+## a wireless carrier's leased compound (equipment cabinets on a pad, a
+## standby generator, and an ice bridge carrying the coax to a leg and up it
+## to sector panel antennas clamped to the catwalk rail, as on most town
+## towers), the overflow pipe down the riser to a riprap splash pad, the
+## riser's access manhole, a red obstruction light on the roof vent, and
+## the fence gate with its warning sign.
+func _tower_base_life(c: Vector3, bases: Array, tops: Array, front: float, y0: float, cw: float, tank: Color) -> void:
+	var r := RandomNumberGenerator.new()
+	r.seed = hash([rng.seed, "tower_base_life"])
+	var cab := Color("#d8d8d2")
+	var dark := Color("#2e3032")
+	# Overflow pipe down the riser, out to a riprap pad.
+	_cyl_y(c + Vector3(1.25, (y0 + 0.5) * 0.5, 0), 0.18, y0 - 0.5, tank.darkened(0.06))
+	_box("paint", Vector3(0.36, 0.36, 2.2), c + Vector3(1.25, 0.4, -1.1), tank.darkened(0.06))
+	_flat_rect("gravel", c.x + 0.6, c.x + 2.0, c.z - 4.2, c.z - 2.2, 0.09, Color("#8a8680"))
+	_box("paint", Vector3(0.5, 0.5, 0.06), c + Vector3(1.25, 0.4, -2.22), dark)  # flap gate
+	# Riser access manhole near the base.
+	_box("paint", Vector3(0.9, 0.6, 0.12), c + Vector3(0, 1.4, -1.0), tank.darkened(0.15))
+	# Obstruction light on the roof vent.
+	_cyl_y(c + Vector3(0, y0 + 15.35, 0), 0.22, 0.4, Color("#c42a20"))
+	# Carrier compound inside the fence, opposite the pump house.
+	var kx := -9.0
+	var kz := front + 5.0
+	_box("paint", Vector3(6.0, 0.2, 4.4), Vector3(kx, 0.1, kz), CONCRETE)
+	var n := r.randi_range(2, 3)
+	for i in n:
+		var x := kx - 2.0 + i * 1.6
+		_box("paint", Vector3(1.2, 1.8, 0.8), Vector3(x, 1.1, kz + 1.0), cab)
+		_box("paint", Vector3(1.0, 0.2, 0.08), Vector3(x, 1.7, kz + 0.56), Color("#5a5f63"))  # vents
+	_box("paint", Vector3(2.0, 1.3, 1.0), Vector3(kx + 1.6, 0.85, kz - 1.0), Color("#c9c6bc"))  # generator
+	_box("paint", Vector3(0.1, 0.9, 0.1), Vector3(kx + 2.4, 1.9, kz - 1.0), dark)  # exhaust
+	_box("paint", Vector3(0.6, 0.9, 0.3), Vector3(kx - 2.6, 1.3, kz - 1.9), Color("#9da3a6"))  # meter/telco
+	# Ice bridge from the cabinets to the nearest leg, then coax up it.
+	var best := 0
+	for i in bases.size():
+		if Vector2(bases[i].x - kx, bases[i].z - kz).length() < Vector2(bases[best].x - kx, bases[best].z - kz).length():
+			best = i
+	var lb: Vector3 = bases[best]
+	var lt: Vector3 = tops[best]
+	var a := Vector3(kx, 2.6, kz + 1.6)
+	var b := Vector3(lb.x, 2.6, lb.z)
+	_strut(a, b, 0.5, GALV)
+	for t in [0.0, 0.5, 1.0]:
+		var p := a.lerp(b, t)
+		_box("paint", Vector3(0.1, 2.6, 0.1), Vector3(p.x, 1.3, p.z), GALV)
+	var off := (Vector3(c.x, 0, c.z) - Vector3(lb.x, 0, lb.z)).normalized() * 0.55
+	_strut(lb + off + Vector3(0, 2.6, 0), _leg_at(lb, lt, cw) + off, 0.22, dark)
+	# Three sectors of panel antennas on the catwalk rail.
+	var a0 := r.randf_range(0.0, TAU)
+	for k in 3:
+		var ang := a0 + TAU * k / 3.0
+		for j in 3:
+			var at := ang + (j - 1) * 0.08
+			var p := c + Vector3(cos(at) * 10.55, cw + 1.4, sin(at) * 10.55)
+			_box("paint", Vector3(0.45, 1.8, 0.18), p, Color("#c9cdd0"), Basis(Vector3.UP, -at - PI * 0.5))
+	# Fence gate on the drive side, with its sign.
+	_box("paint", Vector3(0.12, 2.1, 0.12), Vector3(5.0, 1.05, front + 1.5), GALV)
+	_box("paint", Vector3(0.9, 0.6, 0.04), Vector3(2.5, 1.4, front + 1.45), Color("#f2f0ea"))
+	_box("paint", Vector3(0.9, 0.18, 0.045), Vector3(2.5, 1.62, front + 1.44), Color("#c42a20"))
 
 
 func _leg_at(base: Vector3, top: Vector3, y: float) -> Vector3:
