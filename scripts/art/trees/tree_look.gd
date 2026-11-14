@@ -531,6 +531,18 @@ void fragment() {
 		if (zone_mode == 1) alpha *= mix(1.0, 0.55, b);
 		t.rgb = mix(t.rgb, tw.rgb, b);
 		vec3 twig = vec3(0.2, 0.17, 0.15) * (0.85 + tree_rand * 0.3);
+#ifdef DESKTOP_DETAIL
+		// Bark and twigs are dark (grey-brown, an albedo near 0.1), so bare
+		// woods read as a dusky grey-brown haze, never the pale lilac of a
+		// frosted crown (oblique photos of Indiana woodlots, November to
+		// April). Red maples flower on the bare twigs in March and early
+		// April and tint whole crowns a dull red; elms and willows go a
+		// faint yellow-green just before the leaves.
+		twig = vec3(0.112, 0.086, 0.064) * (0.85 + tree_rand * 0.3);
+		float buds = smoothstep(0.0, 0.6, look.z) * (1.0 - smoothstep(0.0, 0.35, look.x));
+		if (sp == 0 && tree_rand < 0.55) twig = mix(twig, vec3(0.26, 0.07, 0.05), buds * 0.8);
+		else if (tree_rand > 0.8) twig = mix(twig, vec3(0.2, 0.22, 0.07), buds * 0.6);
+#endif
 		leaf = mix(leaf, twig, b);
 	}
 	// Snow resting on the tops of the crowns.
