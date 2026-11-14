@@ -338,6 +338,13 @@ static func drape(mesh: Mesh, on_ground := false, max_edge := 0.0) -> ArrayMesh:
 		arrays[Mesh.ARRAY_VERTEX] = verts
 		out.add_surface_from_arrays(mesh.surface_get_primitive_type(s), arrays)
 		out.surface_set_material(s, mesh.surface_get_material(s))
+	if mesh.has_meta("lids"):
+		# Points standing on the road (manhole lids) go down with it.
+		var lids: PackedVector3Array = mesh.get_meta("lids").duplicate()
+		for i in lids.size():
+			var v := lids[i]
+			lids[i] = Vector3(v.x, v.y + (ground_y(v.x, v.z) if on_ground else base_y(v.x, v.z)), v.z)
+		out.set_meta("lids", lids)
 	return out
 
 

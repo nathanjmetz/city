@@ -699,6 +699,22 @@ func _civic_sign(c: Vector3, w: float, h: float, text: String, panel: String, le
 	sign_spec = was
 
 
+## A ground sign by an office's drive. Desktop: a monument sign, as
+## every office park and bank branch builds them: a dressed limestone
+## plinth with a projecting cap, the name panel set into its face, in a
+## mulched bed. Otherwise the plain panel on the lawn.
+func _monument_sign(c: Vector3, w: float, h: float) -> void:
+	if not fine_parts:
+		_sign(c, w, h)
+		return
+	var stone := _dressed(Color("#cfc6b0"))
+	_flat_rect("mulch", c.x - w * 0.5 - 0.9, c.x + w * 0.5 + 0.9, c.z - 0.8, c.z + 1.2, 0.075)
+	_box("brick", Vector3(w + 0.6, h + 0.75, 0.5), Vector3(c.x, (h + 0.75) * 0.5, c.z + 0.26), stone)
+	_box("brick", Vector3(w + 0.8, 0.14, 0.62), Vector3(c.x, h + 0.82, c.z + 0.26), stone)
+	_box("brick", Vector3(w + 0.7, 0.2, 0.56), Vector3(c.x, 0.1, c.z + 0.26), _dressed(Color("#b9b09a")))  # its base course
+	_sign(Vector3(c.x, 0.45, c.z - 0.005), w, h)
+
+
 func _sign(c: Vector3, w: float, h: float, word := -1) -> void:
 	var col := Color(_pick(SIGNS))
 	col.a = minf(w / 60.0, 0.49)
@@ -1816,6 +1832,18 @@ func _shop_gas_station(to_curb: float) -> void:
 	if white_fascia:
 		# Desktop: the brand band is lit from inside after dark.
 		_box("sign" if fine_parts else "paint", Vector3(cw + 0.04, 0.3, cd + 0.04), Vector3(0, 5.2, ccz), Color(brand, 0.0))
+	if fine_parts:
+		# Real canopy fascias are aluminium composite with formed coping on
+		# top and a drip edge under, and a backlit logo crown centred on the
+		# street and store faces, standing proud of the band.
+		for y in [5.71, 4.81]:
+			_box("metal", Vector3(cw + 0.08, 0.06, cd + 0.08), Vector3(0, y, ccz), Color("#9a9c9e"))
+		for f in [-1.0, 1.0]:
+			var fz: float = ccz + f * (cd * 0.5 + 0.07)
+			_box("sign", Vector3(2.8, 1.5, 0.14), Vector3(0, 5.45, fz), Color(brand, 0.0))
+			_box("metal", Vector3(2.9, 0.06, 0.2), Vector3(0, 6.22, fz), Color("#9a9c9e"))
+			_box("sign", Vector3(2.1, 1.0, 0.04), Vector3(0, 5.45, fz + f * 0.08), Color(1.0, 1.0, 1.0, 0.0))
+			_box("sign", Vector3(0.62, 0.62, 0.03), Vector3(0, 5.45, fz + f * 0.1), Color(brand, 0.0), Basis(Vector3(0, 0, 1), PI * 0.25))
 	_quad("paint", Vector3(-cw * 0.5, 4.79, ccz - cd * 0.5), Vector3(cw * 0.5, 4.79, ccz - cd * 0.5),
 		Vector3(cw * 0.5, 4.79, ccz + cd * 0.5), Vector3(-cw * 0.5, 4.79, ccz + cd * 0.5), Color("#e8e6df"), [], Vector3.DOWN)
 	if fine_parts:
@@ -1832,14 +1860,34 @@ func _shop_gas_station(to_curb: float) -> void:
 	for i in islands:
 		var x := (i - (islands - 1) * 0.5) * cw / islands
 		_box("concrete", Vector3(1.2, 0.2, 5.5), Vector3(x, 0.1, ccz), FOUNDATION)
-		_box("paint", Vector3(0.4, 4.6, 0.4), Vector3(x, 2.5, ccz), Color("#d8d6cf"))
+		if fine_parts:
+			# Real canopy columns: a steel tube inside aluminium composite
+			# cladding with a reveal under the deck, standing on a
+			# concrete-filled pier that guards it from bumpers, with a
+			# brand-colour wrap at eye height.
+			_box("concrete", Vector3(0.62, 0.9, 0.62), Vector3(x, 0.65, ccz), Color("#c9c5bb"))
+			_box("paint", Vector3(0.68, 0.05, 0.68), Vector3(x, 1.12, ccz), Color("#b9b5ab"))
+			_box("paint", Vector3(0.5, 3.55, 0.5), Vector3(x, 2.92, ccz), Color("#e4e2dc"))
+			_box("paint", Vector3(0.52, 0.55, 0.52), Vector3(x, 1.75, ccz), brand)
+			_box("paint", Vector3(0.36, 0.12, 0.36), Vector3(x, 4.75, ccz), Color("#8d8f90"))
+		else:
+			_box("paint", Vector3(0.4, 4.6, 0.4), Vector3(x, 2.5, ccz), Color("#d8d6cf"))
 		for s in [-1.0, 1.0]:
 			_dispenser(Vector3(x, 0.2, ccz + s * 1.5), brand)
 			# Concrete-filled steel bollards guard each end of the island.
 			_box("paint", Vector3(0.16, 1.1, 0.16), Vector3(x, 0.75, ccz + s * 2.9), Color("#f2c200"))
 		if fine_parts:
 			# A trash can and squeegee bucket by the column.
-			_box("paint", Vector3(0.5, 0.9, 0.5), Vector3(x + 0.4, 0.65, ccz), Color("#2d3f2e"))
+			# Island service centre: a square steel trash receptacle with a
+			# push-flap top, a towel box on its side and a windshield
+			# squeegee bucket hung on the front.
+			var tx := x + 0.62
+			_box("paint", Vector3(0.48, 0.92, 0.48), Vector3(tx, 0.66, ccz), Color("#3b3f42"))
+			_box("paint", Vector3(0.52, 0.08, 0.52), Vector3(tx, 1.16, ccz), Color("#2a2d2f"))
+			_box("paint", Vector3(0.3, 0.05, 0.02), Vector3(tx, 1.0, ccz - 0.25), Color("#1b1c1d"))
+			_box("paint", Vector3(0.3, 0.36, 0.14), Vector3(tx, 1.38, ccz + 0.12), Color("#f2f1ec"))
+			_box("paint", Vector3(0.24, 0.3, 0.18), Vector3(tx + 0.33, 0.95, ccz), Color("#2f6fb0"))
+			_box("paint", Vector3(0.04, 0.5, 0.04), Vector3(tx + 0.33, 1.2, ccz + 0.05), Color("#1d1d1d"))
 	# Price sign on a pole near the street: the brand panel on top, then a
 	# black LED board with a row for each grade (red digits, Indiana law
 	# posts the per-gallon price to the tenth of a cent).
@@ -1888,7 +1936,25 @@ func _shop_gas_station(to_curb: float) -> void:
 	# By the front door: the ice chest and the propane exchange cage.
 	_box("paint", Vector3(1.8, 1.7, 0.8), Vector3(sw * 0.5 - 1.4, 1.15, zf - 0.6), Color("#eef2f4"))
 	_box("paint", Vector3(1.82, 0.35, 0.82), Vector3(sw * 0.5 - 1.4, 1.75, zf - 0.6), Color("#1e5aa8"))
-	_box("metal", Vector3(1.5, 1.6, 0.8), Vector3(sw * 0.5 - 3.4, 1.1, zf - 0.6), Color("#8d9093"))
+	if fine_parts:
+		# Real ones: a merchandiser's twin lids show as a seam and two
+		# handles; the exchange cage is welded steel mesh round three
+		# shelves of 20 lb cylinders, padlocked, on a steel base.
+		var ix := sw * 0.5 - 1.4
+		_box("paint", Vector3(0.02, 1.2, 0.02), Vector3(ix, 1.0, zf - 1.01), Color("#b9c0c4"))
+		for s in [-1.0, 1.0]:
+			_box("metal", Vector3(0.05, 0.4, 0.05), Vector3(ix + s * 0.18, 1.1, zf - 1.03), Color("#9aa0a4"))
+		var gx := sw * 0.5 - 3.4
+		_box("metal", Vector3(1.5, 0.3, 0.8), Vector3(gx, 0.45, zf - 0.6), Color("#2f4f7a"))
+		_box("chain", Vector3(1.5, 1.3, 0.8), Vector3(gx, 1.25, zf - 0.6), Color("#c9ccce"))
+		_box("metal", Vector3(1.56, 0.06, 0.86), Vector3(gx, 1.93, zf - 0.6), Color("#2f4f7a"))
+		for row in 2:
+			_box("metal", Vector3(1.44, 0.03, 0.74), Vector3(gx, 0.62 + row * 0.66, zf - 0.6), Color("#7d8285"))
+			for k in 3:
+				_cylinder("paint", Vector3(gx - 0.45 + k * 0.45, 0.64 + row * 0.66, zf - 0.6), 0.15, 0.46, Color("#e9ecee") if (k + row) % 3 else Color("#3a6aa8"), 10)
+		_box("metal", Vector3(0.08, 0.1, 0.04), Vector3(gx + 0.3, 1.3, zf - 1.02), Color("#b08a3a"))
+	else:
+		_box("metal", Vector3(1.5, 1.6, 0.8), Vector3(sw * 0.5 - 3.4, 1.1, zf - 0.6), Color("#8d9093"))
 	# Cars pull up beside the pumps, one each side of an island, and the
 	# driver walks in to pay.
 	if not small_store:
@@ -1942,16 +2008,31 @@ func _seven_seg(n: int, c: Vector3, col: Color, scale := 1.0) -> void:
 
 ## A fuel dispenser (Gilbarco Encore / Wayne Ovation shape): a plinth, a
 ## pale body with a dark screen and nozzle bay on each face, and a valance
-## in the brand colour on top.
+## in the brand colour on top. It sits lengthwise on the island, its two
+## faces toward the lanes either side (+-x), where the cars pull up.
 func _dispenser(at: Vector3, brand: Color) -> void:
-	_box("paint", Vector3(0.9, 0.2, 0.6), at + Vector3(0, 0.1, 0), Color("#6f6a62"))
-	_box("paint", Vector3(0.8, 1.45, 0.5), at + Vector3(0, 0.92, 0), Color("#e8e6df"))
-	_box("paint", Vector3(0.82, 0.32, 0.52), at + Vector3(0, 1.8, 0), brand)
+	_box("paint", Vector3(0.6, 0.2, 0.9), at + Vector3(0, 0.1, 0), Color("#6f6a62"))
+	_box("paint", Vector3(0.5, 1.45, 0.8), at + Vector3(0, 0.92, 0), Color("#e8e6df"))
+	_box("paint", Vector3(0.52, 0.32, 0.82), at + Vector3(0, 1.8, 0), brand)
 	for f in [-1.0, 1.0]:
-		_box("paint", Vector3(0.6, 0.32, 0.03), at + Vector3(0, 1.3, f * 0.26), Color("#1b1e22"))
+		_box("paint", Vector3(0.03, 0.32, 0.6), at + Vector3(f * 0.26, 1.3, 0), Color("#1b1e22"))
 		if fine_parts:
-			_box("paint", Vector3(0.18, 0.35, 0.06), at + Vector3(-0.22, 0.8, f * 0.27), Color("#2b2b2b"))
-			_box("paint", Vector3(0.18, 0.35, 0.06), at + Vector3(0.22, 0.8, f * 0.27), Color("#2b2b2b"))
+			var hose := Color("#141516")
+			for sz in [-0.22, 0.22]:
+				# The nozzle in its holster on the face...
+				_box("paint", Vector3(0.06, 0.35, 0.18), at + Vector3(f * 0.27, 0.8, sz), Color("#2b2b2b"))
+				_box("paint", Vector3(0.1, 0.07, 0.07), at + Vector3(f * 0.31, 0.93, sz), Color("#3a3a3a"))  # its grip
+				# ...and its hose, out of the top of the cabinet, drooping in a
+				# loop beside the face and back up to the nozzle.
+				var top := at + Vector3(f * 0.28, 1.62, sz * 1.6)
+				var low := at + Vector3(f * 0.42, 0.42, sz * 1.75)
+				var noz := at + Vector3(f * 0.33, 0.9, sz)
+				for seg in [[top, low], [low, noz]]:
+					var p0: Vector3 = seg[0]
+					var p1: Vector3 = seg[1]
+					var d := p1 - p0
+					var basis := Basis(Quaternion(Vector3.UP, d.normalized()))
+					_box("paint", Vector3(0.035, d.length(), 0.035), (p0 + p1) * 0.5, hose, basis)
 
 
 ## A diner or family restaurant: one storey, a long band of windows with a

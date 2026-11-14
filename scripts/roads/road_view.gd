@@ -481,6 +481,7 @@ func _rebuild_all(gen: int) -> void:
 	_redraw = false
 	var wood := []
 	var wire := []
+	var scans := []
 	var drives := _drives()
 	_drawn_drives = drives
 	# Ramps joining highways start where they clear the through lanes.
@@ -589,7 +590,7 @@ func _rebuild_all(gen: int) -> void:
 					if treat.get(key, "") == RoadTreatments.MAIN:
 						var span: Vector2 = sim.traffic.stall_span(id, side)
 						treat["stalls_" + key] = span - Vector2(ja, ja) if span.y > span.x else Vector2.ZERO
-			var key := [pts, type, rural, seg_gaps, Terrain.shift, line_cuts, breaks, urban, dips, treat]
+			var key := [pts, type, rural, seg_gaps, Terrain.shift, line_cuts, breaks, urban, dips, treat, RoadMesh.scan_lid() != null]
 			var cached: Array = _street_cache.get(id, [])
 			if cached.is_empty() or cached[0] != key:
 				if (sliced or not cached.is_empty()) and (Perf.now() - t0) / 1000.0 > _remesh_ms():
@@ -605,6 +606,7 @@ func _rebuild_all(gen: int) -> void:
 			if not cached.is_empty():
 				street_cache[id] = cached
 				mi.mesh = cached[1]
+				_stand_lids(mi)
 			_seg_mi[id] = mi
 			if rural or urban:
 				# A pole line runs down one side of a country road (on into
@@ -659,7 +661,8 @@ func _rebuild_all(gen: int) -> void:
 			pole_cache[run.id] = poles
 			wood.append(poles[1])
 			wire.append(poles[2])
-	_add_poles(wood, wire)
+			scans.append(poles)
+	_add_poles(wood, wire, scans)
 	for k in BRIDGE_MATS:
 		var parts := []
 		for p in piers:
@@ -951,7 +954,7 @@ func _pole_key(run: Dictionary, drives: Array) -> Array:
 		off = maxf(off, RoadStyle.half_width(type) + back)
 		three = three or PoleLine.three_phase(type)
 	return [pts, run.ids, PoleLine.side_for(dir) * off, run.ends, _drives_near(drives, pts), Terrain.shift, three,
-		PoleLine.top_for(dir)]
+		PoleLine.top_for(dir), PoleLine.scan_pole() != null]
 
 
 ## Draws one run's poles and wires: [key, wood, wire, the poles].
@@ -961,7 +964,7 @@ func _draw_pole_run(pkey: Array, run: Dictionary) -> Array:
 	w.begin(Mesh.PRIMITIVE_TRIANGLES)
 	r.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var poles: Array = PoleLine.place(run.pts, pkey[2], pkey[3], pkey[4], _pole_blocked(run.ids))
-	PoleLine.draw(w, r, poles, pkey[6], pkey[7])
+	PoleLine.draw(w, r, poles, pkey[6], pkey[7], not pkey[8])
 	return [pkey, Terrain.drape(w.commit(), true), Terrain.drape(r.commit(), true), poles]
 
 
@@ -1036,7 +1039,9 @@ func _rebuild_drops() -> void:
 ## In the shadow map a wire is thinner than a texel, and it came out as a
 ## dashed dark line across roads and along truck sides (vehicles loop,
 ## 2026-10-29).
-func _add_poles(wood: Array, wire: Array) -> void:
+## `lines`: the pole runs drawn ([key, wood, wire, poles]); where a run was
+## drawn without its posts, the scanned poles stand in one MultiMesh.
+func _add_poles(wood: Array, wire: Array, lines: Array = []) -> void:
 	if wood.is_empty():
 		return
 	for entry in [[wood, _mats.pole], [wire, _mats.wire]]:
@@ -1047,6 +1052,58 @@ func _add_poles(wood: Array, wire: Array) -> void:
 			pm.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		add_child(pm)
 		_merged.append(pm)
+	var scan := PoleLine.scan_pole()
+	if scan == null:
+		return
+	var xforms := []
+	var was := Terrain.shift
+	Terrain.shift = Terrain.shift_for(self)
+	for line in lines:
+		if line.size() < 4 or (line[0] as Array).size() < 9 or not line[0][8]:
+			continue
+		for pole in line[3]:
+			var b: Vector3 = pole[0]
+			xforms.append(PoleLine.scan_transform(Vector3(b.x, b.y + Terrain.ground_y(b.x, b.z), b.z), line[0][7]))
+	Terrain.shift = was
+	if xforms.is_empty():
+		return
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.mesh = scan
+	mm.instance_count = xforms.size()
+	for i in xforms.size():
+		mm.set_instance_transform(i, xforms[i])
+	var mmi := MultiMeshInstance3D.new()
+	mmi.multimesh = mm
+	add_child(mmi)
+	_merged.append(mmi)
+
+
+## A street's scanned manhole lids (RoadMesh.scan_lid, desktop High and up)
+## as one MultiMesh under its mesh, where the street mesh lists them.
+static func _stand_lids(mi: MeshInstance3D) -> void:
+	var lids: PackedVector3Array = mi.mesh.get_meta("lids", PackedVector3Array()) if mi.mesh else PackedVector3Array()
+	var old: MultiMeshInstance3D = mi.get_node_or_null("Lids")
+	if lids.is_empty():
+		if old:
+			old.free()
+		return
+	if old and old.multimesh.get_meta("of") == mi.mesh:
+		return
+	if old == null:
+		old = MultiMeshInstance3D.new()
+		old.name = "Lids"
+		old.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		old.visibility_range_end = 250.0
+		mi.add_child(old)
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.mesh = RoadMesh.scan_lid()
+	mm.instance_count = lids.size()
+	for i in lids.size():
+		mm.set_instance_transform(i, RoadMesh.lid_transform(lids[i]))
+	mm.set_meta("of", mi.mesh)
+	old.multimesh = mm
 
 
 func _add_corners(corners: Dictionary) -> void:
@@ -1074,6 +1131,7 @@ func _remesh_later() -> void:
 			job[8], job[9] if job.size() > 9 else {}))
 		_street_cache[id] = [job[0], mesh]
 		mi.mesh = mesh
+		_stand_lids(mi)
 		if (Perf.now() - t) / 1000.0 > _remesh_ms():
 			break
 	for id in _poles_later.keys():
@@ -1113,7 +1171,7 @@ func _remerge() -> void:
 	for id in _pole_cache:
 		wood.append(_pole_cache[id][1])
 		wire.append(_pole_cache[id][2])
-	_add_poles(wood, wire)
+	_add_poles(wood, wire, _pole_cache.values())
 	if not _junction_cache.is_empty():
 		var corners := _corner_lists()
 		for node in _junction_cache:
