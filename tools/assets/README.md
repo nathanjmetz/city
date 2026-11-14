@@ -29,6 +29,19 @@ var node := AssetLib.instance("wooden_picnic_table")    # a full scene copy
 AssetLib.ids("models", "roads")                          # what a loop owns and has on this machine
 ```
 
+### Props on a lot (builders)
+
+Builders draw a building into one merged mesh, so a scan doesn't go in it. Note where it stands with
+`PropLog.place(self, id, xf, parts, skip)` (xf in the builder's lot frame: x across, y up, -z to the
+street). It returns true only while BuildingView (or the art gallery) collects and the scan is on
+this machine; then BuildingView shows it through `PropField` (one MultiMesh per prop and 256 m
+square, fading out past 420 m). On false, draw the code-built version, and keep that fallback off the
+builder's `rng` so the building comes out the same either way (tests/test_prop_log.gd). Not for
+house plans that HouseBuilder caches and re-places: those need the plan to carry them.
+
+    if not PropLog.place(self, "standing_chalkboard_01", Transform3D(Basis().scaled(Vector3.ONE * 0.72), Vector3(x, 0, z))):
+        _code_built_sandwich_board(x, z)
+
 Many scans are kits or come clean and worn side by side: the catalog's `parts` note says which node
 names to pick. Scans are heavy (often 10k-90k triangles): use them close up and in MultiMeshes, let
 their LODs work, and keep code-built far versions.
