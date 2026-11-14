@@ -1086,9 +1086,48 @@ func _rv() -> void:
 			_box(Vector3(s * (hw + 0.005), 2.15, z), Vector3(0.006, 0.6, 1.1), GLASS)
 		_box(Vector3(s * (hw - 0.3), 2.4, 1.15), Vector3(0.006, 0.3, 0.5), GLASS)
 	if not _lo:
-		_box(Vector3(hw + 0.005, 1.7, 4.6), Vector3(0.006, 1.8, 0.65), Color(0.85, 0.85, 0.83, 0.4))
+		_box(Vector3(hw + 0.012, 1.7, 4.6), Vector3(0.006, 1.8, 0.65), Color(0.85, 0.85, 0.83, 0.4))
 		_box(Vector3(0, 3.55, 6.0), Vector3(0.75, 0.22, 0.9), WHITE)  # roof air conditioner
 		_box(Vector3(0, 0.6, L + 0.12), Vector3(0.3, 0.12, 0.24), TRIM)  # hitch
+	if _hi:
+		_rv_rear(L, hw, 0.75, 3.2, false)
+
+
+## Ultra: a motorhome's back (Thor, Winnebago, Tiffin), which was blank:
+## the ladder up the driver's side to the roof, the maker's paint swoosh
+## across the cap, a small rear window (Class C) or the diesel pusher's
+## engine grille (Class A), the DOT's three red ID lamps and two corner
+## clearance lamps along the top, amber turn and white reversing lamps
+## under the tail lamps, the bumper and the plate.
+func _rv_rear(L: float, hw: float, y0: float, top: float, pusher: bool) -> void:
+	var z := L + 0.008
+	var dark := Color(0.05, 0.05, 0.05, 0.3)
+	# Ladder on standoffs, off the cap.
+	var lx := -hw + 0.3
+	for x in [lx - 0.2, lx + 0.2]:
+		_box(Vector3(x, (1.1 + top + 0.2) * 0.5, L + 0.07), Vector3(0.04, top + 0.2 - 1.1, 0.03), STEEL)
+		for y in [1.3, top - 0.2]:
+			_box(Vector3(x, y, L + 0.035), Vector3(0.03, 0.03, 0.06), STEEL)
+	var y := 1.25
+	while y < top + 0.1:
+		_box(Vector3(lx, y, L + 0.07), Vector3(0.4, 0.025, 0.025), STEEL)
+		y += 0.3
+	for k in 2:
+		_box(Vector3(0.2, 1.75 + k * 0.16, z), Vector3(hw * 2.0 - 0.9, 0.08, 0.006), PAINT)
+	if pusher:
+		_box(Vector3(0, y0 + 0.55, z), Vector3(1.3, 0.6, 0.006), dark)
+		for i in 6:
+			_box(Vector3(0, y0 + 0.3 + i * 0.1, z + 0.008), Vector3(1.24, 0.03, 0.006), STEEL)
+	else:
+		_box(Vector3(0.25, 2.45, z), Vector3(0.9, 0.5, 0.006), GLASS)
+	for x in [-0.25, 0.0, 0.25]:
+		_box(Vector3(x, top - 0.08, z), Vector3(0.08, 0.04, 0.012), TAIL)
+	for sx in [-1.0, 1.0]:
+		_box(Vector3(sx * (hw - 0.1), top - 0.08, z), Vector3(0.08, 0.04, 0.012), TAIL)
+		_box(Vector3(sx * (hw - 0.08), y0 + 0.62, z), Vector3(0.14, 0.12, 0.012), Color(1.0, 0.55, 0.05, 0.5))
+		_box(Vector3(sx * (hw - 0.08), y0 + 0.47, z), Vector3(0.14, 0.1, 0.012), Color(0.9, 0.9, 0.88, 0.4))
+	_box(Vector3(0, y0 - 0.02, L + 0.1), Vector3(hw * 2.0 - 0.1, 0.16, 0.2), dark)
+	_box(Vector3(0.6, y0 + 0.25, z + 0.006), Vector3(0.3, 0.15, 0.012), WHITE)
 
 
 ## A Class A diesel pusher (Winnebago, Tiffin): a bus-like box with a big
@@ -1123,6 +1162,8 @@ func _motorhome() -> void:
 		_box(Vector3(0, 0.75, 0.02), Vector3(1.4, 0.35, 0.06), CHROME)
 		for z in [3.5, 8.0]:
 			_box(Vector3(0, 3.85, z), Vector3(0.75, 0.22, 0.9), WHITE)
+	if _hi:
+		_rv_rear(L, hw, 0.5, 3.5, true)
 
 
 ## A Ford F-250 with a slide-in truck camper (Lance): the cabover bunk
