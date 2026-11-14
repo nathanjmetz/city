@@ -263,6 +263,13 @@ func _building(v: PackedVector3Array, nrm: PackedVector3Array, col: PackedColorA
 	wall.a = 1.0
 	if not house:
 		var flat: Color = FLAT_ROOFS[(pick / 7) % FLAT_ROOFS.size()]
+		if _trees > 0.0:
+			# Desktop: a white membrane weathers to a dirty light grey within a
+			# few years (aged TPO reflects about 0.6-0.7, fresh about 0.8), each
+			# roof its own age; and the roof carries its heating and cooling.
+			if flat.r > 0.7:
+				flat = Color(0.80, 0.81, 0.80).lerp(Color(0.60, 0.60, 0.58), 0.45 + 0.4 * float(pick % 11) / 10.0)
+			_roof_units(v, nrm, col, pts, y1, area, pick)
 		_quad(v, nrm, col, Vector3(pts[0].x, y1, pts[0].y), Vector3(pts[3].x, y1, pts[3].y),
 			Vector3(pts[2].x, y1, pts[2].y), Vector3(pts[1].x, y1, pts[1].y), flat)
 		return
@@ -292,6 +299,62 @@ func _building(v: PackedVector3Array, nrm: PackedVector3Array, col: PackedColorA
 	var e1 := r1 - mid
 	_tri(v, nrm, col, Vector3(p3.x, y1, p3.y), Vector3(p0.x, y1, p0.y), R0, wall, Vector3(e0.x, 0.0, e0.y))
 	_tri(v, nrm, col, Vector3(p1.x, y1, p1.y), Vector3(p2.x, y1, p2.y), R1, wall, Vector3(e1.x, 0.0, e1.y))
+
+
+## Packaged rooftop units on a flat-roofed store, office or plant
+## (desktop): a commercial building is heated and cooled by boxes about
+## 3 x 2 m and 1.4 m tall, roughly one per 450 m² of floor (aerial
+## photos of Midwest big-box stores show 30-50 units on 15,000-20,000 m²
+## of roof), galvanised or beige and darker than the membrane, set in rows
+## down the middle of the roof with walkway room to the edge. From the
+## backdrop's 450 m they read as rows of light dots with short shadows,
+## the way every big-box roof does from the air.
+func _roof_units(v: PackedVector3Array, nrm: PackedVector3Array, col: PackedColorArray,
+		pts: Array, y1: float, area: float, pick: int) -> void:
+	if area < 450.0:
+		return
+	var a: Vector2 = pts[0]
+	var du: Vector2 = pts[1] - pts[0]
+	var dw: Vector2 = pts[3] - pts[0]
+	if du.length() < dw.length():
+		var t := du
+		du = dw
+		dw = t
+	var lu := du.length()
+	var lw := dw.length()
+	if lu < 14.0 or lw < 10.0:
+		return
+	var n := clampi(int(area / 450.0 + 0.5), 1, 60)
+	var rows := clampi(int(round(sqrt(float(n) * lw / lu))), 1, 6)
+	var per := ceili(float(n) / rows)
+	var eu := du / lu
+	var ew := dw / lw
+	var grey := Color(0.56, 0.56, 0.53).lerp(Color(0.46, 0.47, 0.46), float(pick % 5) / 4.0)
+	var side := grey.darkened(0.2)
+	var k := 0
+	for r in rows:
+		var fw := (r + 1.0) / (rows + 1.0)
+		for i in per:
+			if k >= n:
+				return
+			k += 1
+			var fu := (i + 1.0) / (per + 1.0)
+			# A little scatter: units go where the ducts below need them.
+			var h := absi(hash(Vector3i(pick, r, i)))
+			fu += (float(h % 7) - 3.0) / 7.0 * 0.4 / (per + 1.0)
+			var c := a + du * fu + dw * fw
+			var hu := eu * (1.5 if h % 3 else 1.0)
+			var hw := ew * 1.0
+			var q := [c - hu - hw, c + hu - hw, c + hu + hw, c - hu + hw]
+			var top := y1 + 1.4
+			_quad(v, nrm, col, Vector3(q[0].x, top, q[0].y), Vector3(q[1].x, top, q[1].y),
+				Vector3(q[2].x, top, q[2].y), Vector3(q[3].x, top, q[3].y), grey)
+			for s in 4:
+				var p0: Vector2 = q[s]
+				var p1: Vector2 = q[(s + 1) % 4]
+				var away := (p0 + p1) * 0.5 - c
+				_quad(v, nrm, col, Vector3(p0.x, y1, p0.y), Vector3(p1.x, y1, p1.y),
+					Vector3(p1.x, top, p1.y), Vector3(p0.x, top, p0.y), side, Vector3(away.x, 0.0, away.y))
 
 
 ## A house's yard trees (_trees per house on average): crowns in the front
