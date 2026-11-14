@@ -997,6 +997,21 @@
    "source": "polyhaven",
    "use": "schools, churches, courthouses' brick wings"
   },
+  "large_sandstone_blocks": {
+   "author": "Rob Tuytel",
+   "dir": "res://art/assets/pbr/large_sandstone_blocks",
+   "licence": "CC0-1.0",
+   "loop": "downtown",
+   "name": "Large Sandstone Blocks",
+   "page": "https://polyhaven.com/a/large_sandstone_blocks",
+   "real": "sawn Indiana (Bedford) limestone ashlar, the base and trim of nearly every Indiana courthouse-square bank and office block",
+   "size_m": [
+    3.0,
+    3.0
+   ],
+   "source": "polyhaven",
+   "use": "dressed stone bases, belt courses and cornices of downtown blocks, banks and office buildings (its shading only, tinted to the stone colour)"
+  },
   "mud_forest": {
    "author": "eye-candy.xyz",
    "dir": "res://art/assets/pbr/mud_forest",

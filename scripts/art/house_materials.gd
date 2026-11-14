@@ -92,6 +92,15 @@ uniform float pp_size = 1.8;
 uniform sampler2D pp_albedo : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
 uniform sampler2D pp_normal : hint_normal, filter_linear_mipmap_anisotropic, repeat_enable;
 uniform sampler2D pp_arm : filter_linear_mipmap_anisotropic, repeat_enable;
+// And dressed stone (vertex alpha 0.8: limestone bases, belt courses and
+// cornices) takes Poly Haven's ashlar photo (AssetLib
+// "large_sandstone_blocks", CC0) in the stone's own colour: sawn Bedford
+// limestone, as on every Indiana courthouse-square bank.
+uniform float sp = 0.0;
+uniform float sp_size = 3.0;
+uniform sampler2D sp_albedo : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
+uniform sampler2D sp_normal : hint_normal, filter_linear_mipmap_anisotropic, repeat_enable;
+uniform sampler2D sp_arm : filter_linear_mipmap_anisotropic, repeat_enable;
 void fragment() {
 	float t = UV.y / 0.0677;
 	float row = floor(t);
@@ -118,7 +127,8 @@ void fragment() {
 		vec2 nb = texture(bp_normal, puv).rg * 2.0 - 1.0;
 		// Vertex alpha under 1 marks a wall painted over (buff brick is
 		// light too, but its own brick).
-		float coat = 1.0 - step(0.99, COLOR.a);
+		float coat = step(0.4, COLOR.a) * (1.0 - step(0.6, COLOR.a));
+		float dressed = step(0.7, COLOR.a) * (1.0 - step(0.9, COLOR.a));
 		if (pp > 0.0 && coat > 0.0) {
 			vec2 quv = UV / pp_size;
 			vec3 lw = vec3(0.3, 0.59, 0.11);
@@ -127,6 +137,14 @@ void fragment() {
 			ratio = mix(ratio, vec3(pr), k);
 			arm = mix(arm, texture(pp_arm, quv).rgb, k);
 			nb = mix(nb, texture(pp_normal, quv).rg * 2.0 - 1.0, k);
+		}
+		if (sp > 0.0 && dressed > 0.0) {
+			vec2 suv = UV / sp_size;
+			vec3 lw = vec3(0.3, 0.59, 0.11);
+			float sr = dot(texture(sp_albedo, suv).rgb, lw) / max(dot(textureLod(sp_albedo, vec2(0.5), 12.0).rgb, lw), 0.02);
+			ratio = vec3(mix(1.0, sr, 0.45 * sp));  // sawn stone is cleaner than the photo
+			arm = texture(sp_arm, suv).rgb;
+			nb = texture(sp_normal, suv).rg * 2.0 - 1.0;
 		}
 		col = mix(col, vcol(COLOR.rgb) * ratio * mix(1.0, arm.r, 0.6), bp);
 		rough = mix(rough, arm.g, bp);
@@ -962,7 +980,7 @@ static func get_mat(key: String) -> Material:
 	var mat: Material
 	match key:
 		"siding": mat = _shader(SIDING)
-		"brick": mat = _photo_on(_photo_on(_shader(BRICK), "red_brick", "bp"), "painted_brick", "pp")
+		"brick": mat = _photo_on(_photo_on(_photo_on(_shader(BRICK), "red_brick", "bp"), "painted_brick", "pp"), "large_sandstone_blocks", "sp")
 		"roof": mat = _shader(ROOF)
 		"glass": mat = _shader(GLASS)
 		"yard": mat = _yard()

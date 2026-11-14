@@ -157,7 +157,7 @@ func _tw_bank(to_curb: float, width: float, storeys: int) -> void:
 	var shaft := Color(["#8a4a38", "#9b5a42", "#b89b72", "#c9b48a"][r.randi() % 4])
 	_downtown_walk(to_curb, width, zf)
 	# The banking hall: limestone, three arched windows between columns.
-	_box("brick", Vector3(w, hall, d), Vector3(0, hall * 0.5, cz), lime)
+	_box("brick", Vector3(w, hall, d), Vector3(0, hall * 0.5, cz), _dressed(lime))
 	var aw := (w - 4.0) / 3.0
 	for i in 3:
 		var x := -w * 0.5 + 2.0 + (i + 0.5) * aw
@@ -189,7 +189,7 @@ func _tw_bank(to_curb: float, width: float, storeys: int) -> void:
 					_glass(c + face[1] * k * 0.75, face[1], 1.15, 2.0, r.randf_range(0.0, 0.6))
 				_box("paint", Vector3(len_b * 0.8, 0.12, 0.25), c + out * 0.1 + Vector3(0, -1.08, 0), lime, _tw_yaw(face[1]))  # sill
 	# The attic storey in limestone, a deep cornice and a balustraded parapet.
-	_box("brick", Vector3(w, floor_h, d), Vector3(0, y_attic + floor_h * 0.5, cz), lime)
+	_box("brick", Vector3(w, floor_h, d), Vector3(0, y_attic + floor_h * 0.5, cz), _dressed(lime))
 	_box("paint", Vector3(w + 0.3, 0.4, d + 0.3), Vector3(0, y_attic, cz), lime.lightened(0.08))  # belt
 	for face in _tw_faces(w, d, cz):
 		var n := maxi(4, roundi(face[2] / 2.4))
@@ -199,7 +199,7 @@ func _tw_bank(to_curb: float, width: float, storeys: int) -> void:
 			_glass(c, face[1], 1.0, 1.2, 0.3)
 	_box("paint", Vector3(w + 2.2, 0.9, d + 2.2), Vector3(0, top + 0.45, cz), lime.lightened(0.1))  # cornice
 	_box("paint", Vector3(w + 1.4, 0.3, d + 1.4), Vector3(0, top + 0.05, cz), lime.darkened(0.05))  # bed mould
-	_box("brick", Vector3(w, 1.2, d), Vector3(0, top + 1.5, cz), lime)  # parapet
+	_box("brick", Vector3(w, 1.2, d), Vector3(0, top + 1.5, cz), _dressed(lime))  # parapet
 	_tw_roof(w, d, cz, top + 2.1)
 	_tw_rooftop(w, d, cz, top + 2.1, 0.0, false, true)
 	if fine:
@@ -272,7 +272,7 @@ func _tw_chicago(to_curb: float, width: float, storeys: int, roof := true) -> vo
 	var zc := zf + d - _court.y
 	_court_z = zc
 	# The stone base with its tall shop and lobby windows.
-	_box("brick", Vector3(w, y_base, d), Vector3(0, y_base * 0.5, cz), stone)
+	_box("brick", Vector3(w, y_base, d), Vector3(0, y_base * 0.5, cz), _dressed(stone))
 	_tw_u(w, d, zf, y_base, top - y_base, 0.0, shaft, "brick")
 	if _court != Vector2.ZERO:
 		_tw_roof(_court.x, _court.y, zc + _court.y * 0.5, y_base)
@@ -661,7 +661,7 @@ func _tw_deco(to_curb: float, width: float, storeys: int) -> void:
 		var f1: int = t[2]
 		var y1 := ground_h + floor_h * (f1 - 1)
 		var cz := zf + d * 0.5
-		_box("brick", Vector3(tw, y1 - y0, td), Vector3(0, (y0 + y1) * 0.5, cz), stone)
+		_box("brick", Vector3(tw, y1 - y0, td), Vector3(0, (y0 + y1) * 0.5, cz), _dressed(stone))
 		for f in range(maxi(f0, 1), f1):
 			var y := ground_h + floor_h * (f - 1) + 1.8
 			# One band of windows and one of dark cast spandrels per facade
@@ -717,7 +717,7 @@ func _tw_deco(to_curb: float, width: float, storeys: int) -> void:
 		cd -= 4.0
 		if cw < 4.0 or cd < 4.0:
 			break
-		_box("brick", Vector3(cw, 3.5, cd), Vector3(0, top + 1.75, zf + d * 0.5), stone)
+		_box("brick", Vector3(cw, 3.5, cd), Vector3(0, top + 1.75, zf + d * 0.5), _dressed(stone))
 		top += 3.5
 	# The crown hides the house tank, as deco towers did: steps under a
 	# flagpole (Indianapolis's Circle Tower), a copper or gilded pyramid
@@ -731,7 +731,7 @@ func _tw_deco(to_curb: float, width: float, storeys: int) -> void:
 		2:
 			var lw := maxf(cw * 0.55, 3.0)
 			var ld := maxf(cd * 0.55, 3.0)
-			_box("brick", Vector3(lw, 5.0, ld), Vector3(0, top + 2.5, cz1), stone)
+			_box("brick", Vector3(lw, 5.0, ld), Vector3(0, top + 2.5, cz1), _dressed(stone))
 			for face in _tw_faces(lw, ld, cz1):
 				var c: Vector3 = face[0]
 				c.y = top + 2.6
@@ -1513,7 +1513,7 @@ func _tw_notch_faces(w: float, d: float, cz: float, n: float) -> Array:
 func _tw_arch(at: Vector3, w: float, h: float, stone: Color, glass_col: Color, door := false) -> void:
 	var r := w * 0.5 - 0.8
 	var spring := h - r - 0.6
-	_box("brick", Vector3(w, h, 0.7), at + Vector3(0, h * 0.5, -0.35), stone)
+	_box("brick", Vector3(w, h, 0.7), at + Vector3(0, h * 0.5, -0.35), _dressed(stone))
 	_glass(at + Vector3(0, spring * 0.5, -0.73), Vector3(-1, 0, 0), r * 2.0, spring, 0.0)
 	var segs := 10
 	var c := at + Vector3(0, spring, -0.73)
@@ -1585,7 +1585,7 @@ func _tw_crown(kind: String, w: float, d: float, cz: float, y: float, stone: Col
 			for k in 2:
 				cw -= 3.0
 				cd -= 3.0
-				_box("brick", Vector3(cw, 3.0, cd), Vector3(0, yy + 1.5, cz), stone)
+				_box("brick", Vector3(cw, 3.0, cd), Vector3(0, yy + 1.5, cz), _dressed(stone))
 				if fine_parts and k == 0:
 					# Stone urns on the corners of the setback (the 1980s
 					# borrowing of the 1920s cornice finial).
@@ -1602,7 +1602,7 @@ func _tw_crown(kind: String, w: float, d: float, cz: float, y: float, stone: Col
 			_tw_pyramid(Vector3(0, yy, cz), cw, cd, minf(cw, cd) * 0.75, top_col)
 			_tw_pyramid_trim(Vector3(0, yy, cz), cw, cd, minf(cw, cd) * 0.75, top_col)
 		"spires":
-			_box("brick", Vector3(w - 2.0, 4.0, d - 2.0), Vector3(0, y + 2.0, cz), stone)
+			_box("brick", Vector3(w - 2.0, 4.0, d - 2.0), Vector3(0, y + 2.0, cz), _dressed(stone))
 			for sx in [-1.0, 1.0]:
 				var b := Vector3(sx * (w * 0.5 - 4.0), y + 4.0, cz - d * 0.5 + 4.0)
 				_box("brick", Vector3(4.0, 6.0, 4.0), b + Vector3(0, 3.0, 0), stone.lightened(0.05))
@@ -1615,7 +1615,7 @@ func _tw_crown(kind: String, w: float, d: float, cz: float, y: float, stone: Col
 			for k in 3:
 				cw *= 0.72
 				cd *= 0.72
-				_box("brick", Vector3(cw, 3.2, cd), Vector3(0, yy + 1.6, cz), stone)
+				_box("brick", Vector3(cw, 3.2, cd), Vector3(0, yy + 1.6, cz), _dressed(stone))
 				for face in _tw_faces(cw, cd, cz):
 					_glass(face[0] + Vector3(0, yy + 1.8, 0), face[1], face[2] * 0.6, 1.6, 0.0)
 				yy += 3.2
@@ -1976,7 +1976,7 @@ func _tw_flats(to_curb: float, width: float, storeys: int) -> void:
 			_shrub(Vector3(sx, 0, zf - 0.8), rng.randf_range(0.45, 0.7))
 		sx += rng.randf_range(1.6, 2.4)
 	# The base: rusticated limestone, tall windows, the entry.
-	_box("brick", Vector3(w, y_base, d), Vector3(0, y_base * 0.5, cz), stone)
+	_box("brick", Vector3(w, y_base, d), Vector3(0, y_base * 0.5, cz), _dressed(stone))
 	_box("brick", Vector3(w, top - y_base, d), Vector3(0, (y_base + top) * 0.5, cz), brick)
 	_box("paint", Vector3(w + 0.3, 0.45, d + 0.3), Vector3(0, y_base + 0.1, cz), stone.lightened(0.08))  # belt course
 	var bays := maxi(4, roundi(w / 3.6))
@@ -2023,14 +2023,14 @@ func _tw_flats(to_curb: float, width: float, storeys: int) -> void:
 			var q := Vector3(qx * (w * 0.5 - 0.35), 0, cz + qz * (d * 0.5 - 0.35))
 			var y := y_base
 			while y < top - 0.6:
-				_box("brick", Vector3(0.9 if int(y / 0.6) % 2 == 0 else 0.75, 0.55, 0.9 if int(y / 0.6) % 2 == 1 else 0.75), q + Vector3(0, y + 0.3, 0), stone)
+				_box("brick", Vector3(0.9 if int(y / 0.6) % 2 == 0 else 0.75, 0.55, 0.9 if int(y / 0.6) % 2 == 1 else 0.75), q + Vector3(0, y + 0.3, 0), _dressed(stone))
 				y += 0.6
 	# The cornice, then the penthouse and its tile roof, or a parapet.
 	_box("paint", Vector3(w + 1.4, 0.7, d + 1.4), Vector3(0, top + 0.35, cz), stone.lightened(0.06))
 	if pent:
 		var pw := w - 8.0
 		var pd := d - 8.0
-		_box("brick", Vector3(pw, 4.0, pd), Vector3(0, top + 2.7, cz), stone)
+		_box("brick", Vector3(pw, 4.0, pd), Vector3(0, top + 2.7, cz), _dressed(stone))
 		for face in _tw_faces(pw, pd, cz):
 			var n := maxi(3, roundi(face[2] / 3.0))
 			for i in n:
