@@ -1291,7 +1291,9 @@ func _alley_services(w: float, zb: float, fronts: int, fw: float, storeys: int, 
 		var levels: Array[float] = []
 		for f in range(1, storeys):
 			levels.append(shop_h + (f - 1) * floor_h + 0.6)
-		for li in levels.size():
+		# The free library's scanned stairs stand instead of the drawn steel.
+		var scanned := _scanned_escape(xa, xb, zb, levels, esc_lo == 0)
+		for li in (0 if scanned else levels.size()):
 			var ly: float = levels[li]
 			_box("metal", Vector3(xb - xa, 0.05, dep), Vector3((xa + xb) * 0.5, ly, zc), steel)  # grating
 			_box("metal", Vector3(xb - xa, 0.05, 0.05), Vector3((xa + xb) * 0.5, ly + 1.0, zb + 0.06 + dep), steel)  # top rail
@@ -1316,14 +1318,15 @@ func _alley_services(w: float, zb: float, fronts: int, fw: float, storeys: int, 
 				for s in steps:  # the stringer, as a stepped side plate
 					_box("metal", Vector3(run, rise / steps, 0.03), Vector3(x0 + dir * (s + 0.5) * run, ly + (s + 0.5) * rise / steps, sz + 0.32), steel)
 		# Drop ladder from the bottom landing, hung 2.4 m off the pavement.
-		var lx := xb - 0.5 if esc_lo == 0 else xa + 0.5
-		var lz := zb + 0.06 + dep - 0.2
-		var top: float = levels[0]
-		for s in [-0.22, 0.22]:
-			_box("metal", Vector3(0.04, top - 2.4, 0.04), Vector3(lx + s, (top + 2.4) * 0.5, lz), steel)
-		var rungs := int((top - 2.4) / 0.3)
-		for i in rungs:
-			_box("metal", Vector3(0.44, 0.025, 0.025), Vector3(lx, 2.55 + i * 0.3, lz), steel)
+		if not scanned:
+			var lx := xb - 0.5 if esc_lo == 0 else xa + 0.5
+			var lz := zb + 0.06 + dep - 0.2
+			var top: float = levels[0]
+			for s in [-0.22, 0.22]:
+				_box("metal", Vector3(0.04, top - 2.4, 0.04), Vector3(lx + s, (top + 2.4) * 0.5, lz), steel)
+			var rungs := int((top - 2.4) / 0.3)
+			for i in rungs:
+				_box("metal", Vector3(0.44, 0.025, 0.025), Vector3(lx, 2.55 + i * 0.3, lz), steel)
 	# Window air conditioners in some of the flats upstairs.
 	for f in range(1, storeys):
 		var y := shop_h + (f - 1) * floor_h + 1.6
@@ -1334,6 +1337,31 @@ func _alley_services(w: float, zb: float, fronts: int, fw: float, storeys: int, 
 				var x := lerpf(-w * 0.5 + 1.8, w * 0.5 - 1.8, float(i) / (n - 1))
 				_box("metal", Vector3(0.62, 0.4, 0.5), Vector3(x, y - 0.6, zb + 0.3), Color("#d2cdc2"))
 				_box("metal", Vector3(0.5, 0.26, 0.02), Vector3(x, y - 0.6, zb + 0.56), Color("#8f8b84"))  # back grille
+
+
+## Poly Haven's modular fire escape (AssetLib, CC0) on an alley wall at
+## zb between xa and xb: a grated landing with its railing at each level,
+## a flight up between landings and the drop ladder at the `right` end.
+## False (draw the steel) in the browser or without the art.
+func _scanned_escape(xa: float, xb: float, zb: float, levels: Array[float], right: bool) -> bool:
+	const KIT := "modular_fire_escape"
+	var sx := (xb - xa) / 4.79
+	var zc := zb + 0.06 + 0.68
+	var face := Basis(Vector3.UP, PI)  # its open side to the alley
+	var cx := (xa + xb) * 0.5
+	for li in levels.size():
+		var ly: float = levels[li]
+		var at := Transform3D(face.scaled(Vector3(sx, 1.0, 1.0)), Vector3(cx, ly - 0.77, zc))
+		if not PropLog.place(self, KIT, at, ["*platform_middle"]):
+			return false
+		PropLog.place(self, KIT, Transform3D(face.scaled(Vector3(sx, 1.0, 1.0)), Vector3(cx, ly, zc)), ["*railing_middle"])
+		if li + 1 < levels.size():
+			var rise: float = levels[li + 1] - ly
+			var flip := 1.0 if li % 2 == 0 else -1.0
+			PropLog.place(self, KIT, Transform3D(face.scaled(Vector3(flip, rise / 4.0, 1.0)), Vector3(cx, ly, zc)), ["*stairs"])
+	var lx := xb - 0.5 if right else xa + 0.5
+	PropLog.place(self, KIT, Transform3D(face.scaled(Vector3(1.0, (levels[0] - 2.4) / 6.47, 1.0)), Vector3(lx, 2.4, zc + 0.5)), ["*ladder_bottom"])
+	return true
 
 
 ## A downtown sidewalk: concrete from the shopfronts all the way to the curb
