@@ -1064,6 +1064,23 @@ func _strip_rear(w: float, n: int, bay: float, aw: float, back: float, top: floa
 		_box("metal", Vector3(0.28, 0.34, 0.2), Vector3(gx + 0.2 + k * 0.35, 1.05, back + 0.38), Color("#9a9c9a"))
 
 
+## A lot light's footing at `c` (ground), `h` tall. Desktop: as built, a
+## round formed concrete pier (24 in sonotube) with a chamfered top, the
+## square steel base plate on four anchor bolts and nuts, and a base cover
+## round the pole's foot. Otherwise the plain block.
+func _pole_base(c: Vector3, h: float) -> void:
+	if not fine_parts:
+		_box("concrete", Vector3(0.6, h, 0.6), c + Vector3(0, h * 0.5, 0), FOUNDATION)
+		return
+	_cylinder("concrete", c, 0.3, h - 0.04, FOUNDATION, 16)
+	_cylinder("concrete", c + Vector3(0, h - 0.04, 0), 0.27, 0.04, FOUNDATION.lightened(0.05), 16)
+	_box("metal", Vector3(0.36, 0.03, 0.36), c + Vector3(0, h + 0.015, 0), Color("#3a3c3e"))
+	for sx in [-1.0, 1.0]:
+		for sz in [-1.0, 1.0]:
+			_box("metal", Vector3(0.05, 0.06, 0.05), c + Vector3(sx * 0.13, h + 0.06, sz * 0.13), Color("#6d6f70"))
+	_box("paint", Vector3(0.26, 0.22, 0.26), c + Vector3(0, h + 0.14, 0), Color("#2e3032"))
+
+
 ## A 1970s-80s strip's mansard: a steep slope of asphalt shingles from the
 ## canopy's edge over the walk up to the parapet, closed at the ends, a
 ## fascia at its foot and the walk's soffit under it.
@@ -1646,7 +1663,7 @@ func _cc_parking(to_curb: float, w: float, zw: float, xg0: float, cr: RandomNumb
 			var x := lot0 + 14.0
 			while x < lot1 - 8.0:
 				if absf(x - cut_x) > 7.0 and not pad.grow(2.0).has_point(Vector2(x, sz)):
-					_box("concrete", Vector3(0.6, 0.9, 0.6), Vector3(x, 0.45, sz), FOUNDATION)
+					_pole_base(Vector3(x, 0, sz), 0.9)
 					_box("paint", Vector3(0.16, 10.0, 0.16), Vector3(x, 5.9, sz), Color("#2e3032"))
 					_box("paint", Vector3(0.6, 0.18, 0.8), Vector3(x, 10.9, sz), Color("#2e3032"))
 					_box("sign", Vector3(0.5, 0.02, 0.7), Vector3(x, 10.8, sz), Color(0.95, 0.96, 1.0, 1.0))  # LED lens
@@ -1793,7 +1810,7 @@ func _strip_lot_dress(to_curb: float, back: float, n: int, wall: Color) -> void:
 		var px := lerpf(lot0, lot1, (i + 0.5) / poles)
 		if absf(px) < 4.5:
 			px += 6.0  # clear of the curb cut
-		_box("concrete", Vector3(0.6, 0.6, 0.6), Vector3(px, 0.3, 0.7), FOUNDATION)
+		_pole_base(Vector3(px, 0, 0.7), 0.6)
 		_box("paint", Vector3(0.15, 8.6, 0.15), Vector3(px, 4.9, 0.7), dark)
 		for s in [-1.0, 1.0]:
 			_box("paint", Vector3(0.08, 0.08, 0.7), Vector3(px, 9.1, 0.7 + s * 0.35), dark)
