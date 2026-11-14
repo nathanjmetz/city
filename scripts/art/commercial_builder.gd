@@ -1848,14 +1848,34 @@ func _shop_gas_station(to_curb: float) -> void:
 	for i in islands:
 		var x := (i - (islands - 1) * 0.5) * cw / islands
 		_box("concrete", Vector3(1.2, 0.2, 5.5), Vector3(x, 0.1, ccz), FOUNDATION)
-		_box("paint", Vector3(0.4, 4.6, 0.4), Vector3(x, 2.5, ccz), Color("#d8d6cf"))
+		if fine_parts:
+			# Real canopy columns: a steel tube inside aluminium composite
+			# cladding with a reveal under the deck, standing on a
+			# concrete-filled pier that guards it from bumpers, with a
+			# brand-colour wrap at eye height.
+			_box("concrete", Vector3(0.62, 0.9, 0.62), Vector3(x, 0.65, ccz), Color("#c9c5bb"))
+			_box("paint", Vector3(0.68, 0.05, 0.68), Vector3(x, 1.12, ccz), Color("#b9b5ab"))
+			_box("paint", Vector3(0.5, 3.55, 0.5), Vector3(x, 2.92, ccz), Color("#e4e2dc"))
+			_box("paint", Vector3(0.52, 0.55, 0.52), Vector3(x, 1.75, ccz), brand)
+			_box("paint", Vector3(0.36, 0.12, 0.36), Vector3(x, 4.75, ccz), Color("#8d8f90"))
+		else:
+			_box("paint", Vector3(0.4, 4.6, 0.4), Vector3(x, 2.5, ccz), Color("#d8d6cf"))
 		for s in [-1.0, 1.0]:
 			_dispenser(Vector3(x, 0.2, ccz + s * 1.5), brand)
 			# Concrete-filled steel bollards guard each end of the island.
 			_box("paint", Vector3(0.16, 1.1, 0.16), Vector3(x, 0.75, ccz + s * 2.9), Color("#f2c200"))
 		if fine_parts:
 			# A trash can and squeegee bucket by the column.
-			_box("paint", Vector3(0.5, 0.9, 0.5), Vector3(x + 0.4, 0.65, ccz), Color("#2d3f2e"))
+			# Island service centre: a square steel trash receptacle with a
+			# push-flap top, a towel box on its side and a windshield
+			# squeegee bucket hung on the front.
+			var tx := x + 0.62
+			_box("paint", Vector3(0.48, 0.92, 0.48), Vector3(tx, 0.66, ccz), Color("#3b3f42"))
+			_box("paint", Vector3(0.52, 0.08, 0.52), Vector3(tx, 1.16, ccz), Color("#2a2d2f"))
+			_box("paint", Vector3(0.3, 0.05, 0.02), Vector3(tx, 1.0, ccz - 0.25), Color("#1b1c1d"))
+			_box("paint", Vector3(0.3, 0.36, 0.14), Vector3(tx, 1.38, ccz + 0.12), Color("#f2f1ec"))
+			_box("paint", Vector3(0.24, 0.3, 0.18), Vector3(tx + 0.33, 0.95, ccz), Color("#2f6fb0"))
+			_box("paint", Vector3(0.04, 0.5, 0.04), Vector3(tx + 0.33, 1.2, ccz + 0.05), Color("#1d1d1d"))
 	# Price sign on a pole near the street: the brand panel on top, then a
 	# black LED board with a row for each grade (red digits, Indiana law
 	# posts the per-gallon price to the tenth of a cent).
