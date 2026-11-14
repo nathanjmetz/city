@@ -918,12 +918,13 @@ func _strip_center(to_curb: float, anchor := false) -> void:
 	var style: String = ["flat", "flat", "mansard", "mansard", "towers"][sr.randi() % 5]
 	if era == "recent":
 		style = ["mansard", "towers", "towers"][sr.randi() % 3]
-	var mat := "paint"
+	var mat := "cmu"  # painted block
 	if style == "mansard":
 		wall = Color(FACADE_BRICK[sr.randi() % FACADE_BRICK.size()])
 		mat = "brick"
 	elif style == "towers":
 		wall = Color(["#d8c9a8", "#cdbb98", "#e0d4ba", "#c4b391"][sr.randi() % 4])
+		mat = "eifs"
 	# A neighborhood center: a supermarket anchors the +x end.
 	var aw := clampf(w * 0.4, 32.0, 56.0) if anchor and w >= 70.0 else 0.0
 	var ax0 := w * 0.5 - aw
@@ -962,14 +963,14 @@ func _strip_center(to_curb: float, anchor := false) -> void:
 	if style == "mansard":
 		_strip_mansard(-w * 0.5 - 0.2, x1 + 0.2, zf, h + 1.2, Color(["#4a3f36", "#3e3e3c", "#5a4a3c", "#6b5a45"][sr.randi() % 4]))
 	else:
-		_box("paint", Vector3(w + 0.4, 0.5, 2.6), Vector3(0, 3.65, zf - 1.3), wall.lightened(0.1))
+		_box("eifs" if style == "towers" else "paint", Vector3(w + 0.4, 0.5, 2.6), Vector3(0, 3.65, zf - 1.3), wall.lightened(0.1))
 		_quad("paint", Vector3(-w * 0.5 - 0.2, 3.39, zf - 2.6), Vector3(w * 0.5 + 0.2, 3.39, zf - 2.6),
 			Vector3(w * 0.5 + 0.2, 3.39, zf), Vector3(-w * 0.5 - 0.2, 3.39, zf), SOFFIT, [], Vector3.DOWN)
 	var pier := Color(["#9c8f7a", "#b3a58c", "#8a7f70"][sr.randi() % 3])
 	var x := -w * 0.5
 	while x <= x1 + 0.01:
 		var px := clampf(x, -w * 0.5 + 0.3, w * 0.5 - 0.3)
-		_box(mat, Vector3(0.45, 3.0, 0.45), Vector3(px, 1.9, zf - 2.3), wall.lightened(0.1) if mat == "paint" else wall)
+		_box(mat, Vector3(0.45, 3.0, 0.45), Vector3(px, 1.9, zf - 2.3), wall if mat == "brick" else wall.lightened(0.1))
 		if style == "towers":
 			_box("paint", Vector3(0.65, 1.1, 0.65), Vector3(px, 0.55, zf - 2.3), pier)  # cultured stone
 		x += bay
@@ -981,10 +982,13 @@ func _strip_center(to_curb: float, anchor := false) -> void:
 	elif style == "flat":
 		# A raised false front over the end store, and over the middle on a
 		# long centre: what a strip centre's parapet does to break up its length.
-		_raised_front(-w * 0.5 + bay * 0.5, bay, zf, h + 1.2, wall, "paint")
+		_raised_front(-w * 0.5 + bay * 0.5, bay, zf, h + 1.2, wall, mat)
 		if n >= 5:
-			_raised_front(-w * 0.5 + (n / 2 + 0.5) * bay, bay, zf, h + 1.2, wall, "paint")
+			_raised_front(-w * 0.5 + (n / 2 + 0.5) * bay, bay, zf, h + 1.2, wall, mat)
 	_shop_parking(to_curb, w, zf - 2.6, 0.0)
+	# The walk carries on under the canopy to the shop doors (concrete from
+	# curb to storefront, as at every strip centre), not grass.
+	_flat_rect("drive", -w * 0.5 - 0.5, w * 0.5 + 0.5, zf - 2.6, zf, 0.08)
 	if fine_parts:
 		_strip_lot_dress(to_curb, zf - 4.6, n, wall)
 
@@ -1025,9 +1029,9 @@ func _strip_towers(w: float, bay: float, n: int, stop: float, zf: float, top: fl
 		var fw := bay * sr.randf_range(0.55, 0.85)
 		var rise := sr.randf_range(1.4, 3.2)
 		var tint := wall.lightened(sr.randf_range(-0.08, 0.1))
-		_box("paint", Vector3(fw, rise + 0.6, 1.0), Vector3(cx, top + rise * 0.5 - 0.3, zf - 0.4), tint)
-		_box("paint", Vector3(fw + 0.5, 0.35, 1.4), Vector3(cx, top + rise + 0.12, zf - 0.4), cap)
-		_box("paint", Vector3(fw + 0.2, 0.2, 1.15), Vector3(cx, top + rise - 0.6, zf - 0.4), cap)
+		_box("eifs", Vector3(fw, rise + 0.6, 1.0), Vector3(cx, top + rise * 0.5 - 0.3, zf - 0.4), tint)
+		_box("eifs", Vector3(fw + 0.5, 0.35, 1.4), Vector3(cx, top + rise + 0.12, zf - 0.4), cap)
+		_box("eifs", Vector3(fw + 0.2, 0.2, 1.15), Vector3(cx, top + rise - 0.6, zf - 0.4), cap)
 		if sr.randf() < 0.4:
 			var y := top + rise + 0.3
 			var hx := fw * 0.5 + 0.2
@@ -1505,10 +1509,9 @@ func _cc_parking(to_curb: float, w: float, zw: float, xg0: float, cr: RandomNumb
 	var pad := Rect2(lot1 - 20.0, 2.0, 19.0, 15.0)
 	var pc := pad.get_center()
 	var brick := Color(FACADE_BRICK[cr.randi() % FACADE_BRICK.size()])
-	# EIFS over a brick wainscot, the 1990s pad restaurant's dress (painted,
-	# so its far version takes the center's own wall colour).
-	_box("paint", Vector3(12.0, 4.2, 9.0), Vector3(pc.x, 2.1, pc.y + 1.0), Color(["#d9c7a6", "#cbb894", "#e2d6bd"][cr.randi() % 3]))
-	_box("paint", Vector3(12.06, 1.1, 9.06), Vector3(pc.x, 0.55, pc.y + 1.0), brick)
+	# EIFS over a brick wainscot, the 1990s pad restaurant's dress.
+	_box("eifs", Vector3(12.0, 4.2, 9.0), Vector3(pc.x, 2.1, pc.y + 1.0), Color(["#d9c7a6", "#cbb894", "#e2d6bd"][cr.randi() % 3]))
+	_box("brick", Vector3(12.06, 1.1, 9.06), Vector3(pc.x, 0.55, pc.y + 1.0), brick)
 	_quad("membrane", Vector3(pc.x - 6.0, 4.22, pc.y - 3.5), Vector3(pc.x + 6.0, 4.22, pc.y - 3.5),
 		Vector3(pc.x + 6.0, 4.22, pc.y + 5.5), Vector3(pc.x - 6.0, 4.22, pc.y + 5.5), Color("#9a9790"), [], Vector3.UP)
 	var accent := Color(AWNING[cr.randi() % AWNING.size()])
@@ -1781,7 +1784,7 @@ func _shop_gas_station(to_curb: float) -> void:
 	var brand := Color(_pick(["#c8102e", "#00529b", "#007a33", "#f2a900", "#1d1d1d"]))
 	var wall := Color(_pick(BLOCK + ["#d8d2c2"]))
 	_box("paint", Vector3(sw + 0.1, 0.3, sd + 0.1), Vector3(0, 0.15, cz), FOUNDATION)
-	_flat_roofed("paint", sw, sd, cz, 4.2, 4.8, wall)
+	_flat_roofed("cmu", sw, sd, cz, 4.2, 4.8, wall)
 	_box("paint", Vector3(sw + 0.1, 0.7, 0.2), Vector3(0, 4.45, zf - 0.1), brand)
 	shopfront = fine_parts  # aisles of snacks and the cooler wall inside
 	allnight = true  # open late or all night, like any Indiana c-store
@@ -1951,7 +1954,9 @@ func _shop_diner(to_curb: float) -> void:
 	var band := Color(_pick(["#c8102e", "#1f3b6e", "#2a7a6e", "#d8d6cf"]))
 	var wall := Color(_pick(["#e9e6dc", "#d8d2c2", "#a8775c"]))
 	_box("paint", Vector3(w + 0.1, 0.3, d + 0.1), Vector3(0, 0.15, cz), FOUNDATION)
-	_flat_roofed("paint", w, d, cz, 4.0, 4.6, wall)
+	# Pale ones are EIFS (synthetic stucco), the brown one face brick:
+	# what freestanding family restaurants wear since the 1980s.
+	_flat_roofed("brick" if wall == Color("#a8775c") else "eifs", w, d, cz, 4.0, 4.6, wall)
 	_box("metal", Vector3(w + 0.1, 0.45, 0.12), Vector3(0, 1.0, zf - 0.06), Color("#c9cbc8"))
 	_box("paint", Vector3(w + 0.1, 0.55, 0.14), Vector3(0, 3.3, zf - 0.07), band)
 	var n := int((w - 3.0) / 1.5)
@@ -2019,10 +2024,14 @@ func _bank(to_curb: float) -> void:
 	var cz := zf + d * 0.5
 	var brick := Color(_pick(FACADE_BRICK))
 	var stone := Color("#d8d2c2")
-	_box("paint", Vector3(w + 0.1, 0.6, d + 0.1), Vector3(0, 0.3, cz), stone)
+	# Indiana limestone, dressed: the water table, frieze, cornice, quoins
+	# and door surround read as cut stone, not paint (Bedford stone fronts
+	# every county bank of the 1910s-20s).
+	var ashlar := _dressed(stone)
+	_box("brick", Vector3(w + 0.1, 0.6, d + 0.1), Vector3(0, 0.3, cz), ashlar)
 	_box("brick", Vector3(w, 6.6, d), Vector3(0, 3.9, cz), brick)
 	_hip_roof(0.0, cz, 7.2, w, d, 2.0, Color(_pick(ROOF)))
-	_box("paint", Vector3(w + 0.2, 0.3, d + 0.2), Vector3(0, 7.1, cz), stone)
+	_box("brick", Vector3(w + 0.2, 0.3, d + 0.2), Vector3(0, 7.1, cz), ashlar)
 	for i in 4:
 		var x := lerpf(-w * 0.5 + 1.6, w * 0.5 - 1.6, i / 3.0)
 		if i == 1 or i == 2:
@@ -2036,7 +2045,7 @@ func _bank(to_curb: float) -> void:
 		# A square plinth and a capital, as on every Colonial Revival bank.
 		_box("paint", Vector3(0.75, 0.3, 0.75), Vector3(-2.4 + k * 1.6, 0.77, zf - 2.5), stone)
 		_box("paint", Vector3(0.72, 0.22, 0.72), Vector3(-2.4 + k * 1.6, 5.86, zf - 2.5), stone)
-	_box("paint", Vector3(6.4, 0.8, 3.2), Vector3(0, 6.4, zf - 1.5), stone)
+	_box("brick", Vector3(6.4, 0.8, 3.2), Vector3(0, 6.4, zf - 1.5), ashlar)
 	# The cornice under the pediment, projecting past the frieze.
 	_box("paint", Vector3(6.8, 0.18, 3.5), Vector3(0, 6.86, zf - 1.6), stone.lightened(0.05))
 	if fine_parts:
@@ -2047,14 +2056,14 @@ func _bank(to_curb: float) -> void:
 		for sx in [-1.0, 1.0]:
 			for q in 9:
 				var qw := 0.7 if q % 2 == 0 else 0.45
-				_box("paint", Vector3(qw, 0.32, 0.08), Vector3(sx * (w * 0.5 - qw * 0.5 + 0.02), 1.0 + q * 0.68, zf - 0.05), stone)
+				_box("brick", Vector3(qw, 0.32, 0.08), Vector3(sx * (w * 0.5 - qw * 0.5 + 0.02), 1.0 + q * 0.68, zf - 0.05), ashlar)
 	_tri("paint", Vector3(-3.2, 6.8, zf - 3.1), Vector3(3.2, 6.8, zf - 3.1), Vector3(0, 8.0, zf - 3.1), stone, [], Vector3.FORWARD)
 	_quad("roof", Vector3(-3.3, 6.8, zf - 3.1), Vector3(0, 8.0, zf - 3.1), Vector3(0, 8.0, zf), Vector3(-3.3, 6.8, zf), Color(ROOF[0]), [], Vector3(-1, 3, 0))
 	_quad("roof", Vector3(3.3, 6.8, zf - 3.1), Vector3(0, 8.0, zf - 3.1), Vector3(0, 8.0, zf), Vector3(3.3, 6.8, zf), Color(ROOF[0]), [], Vector3(1, 3, 0))
 	# The front doors: a stone surround with a cornice, a pair of glass and
 	# bronze doors and a transom light over them.
-	_box("paint", Vector3(2.6, 3.5, 0.12), Vector3(0, 2.35, zf - 0.075), stone)
-	_box("paint", Vector3(3.0, 0.25, 0.3), Vector3(0, 4.2, zf - 0.15), stone)
+	_box("brick", Vector3(2.6, 3.5, 0.12), Vector3(0, 2.35, zf - 0.075), ashlar)
+	_box("brick", Vector3(3.0, 0.25, 0.3), Vector3(0, 4.2, zf - 0.15), ashlar)
 	_box("paint", Vector3(1.9, 2.95, 0.06), Vector3(0, 2.07, zf - 0.13), Color("#3a3530"))
 	for sx in [-0.45, 0.45]:
 		_glass(Vector3(sx, 1.9, zf - 0.17), Vector3(-1, 0, 0), 0.7, 2.0, 0.0)

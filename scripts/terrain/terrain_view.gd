@@ -455,6 +455,18 @@ void fragment() {
 	// hardwoods show.
 	vec3 shade_grass = col * vec3(0.62, 0.7, 0.55);
 	vec3 litter_floor = mix(shade_grass, litter.rgb * (0.8 + 0.4 * clump), 0.25 + 0.5 * smoothstep(0.55, 0.95, cover.r));
+#ifdef DESKTOP_DETAIL
+	// Once the leaves are down (November to April) a hardwood floor is a
+	// carpet of them, wall to wall: fresh fallen oak and maple a warm tan
+	// in November, packed and grey-brown by March; only at the very edge
+	// does the grass come through. The green floor stays for the summer,
+	// when mayapple, jewelweed and the like cover it.
+	float fallen = max(season_look.y, season_look.x * 0.55);
+	vec3 carpet = mix(vec3(0.26, 0.19, 0.11), vec3(0.36, 0.22, 0.10), season_look.x);
+	carpet = mix(carpet, vec3(0.24, 0.20, 0.15), season_look.y * (1.0 - season_look.x) * (1.0 - season_look.w * 0.4));
+	carpet *= 0.82 + 0.36 * clump;
+	litter_floor = mix(litter_floor, mix(litter_floor, carpet, 0.35 + 0.6 * smoothstep(0.4, 0.8, cover.r)), fallen);
+#endif
 	vec3 yard_floor = mix(litter_floor, col * vec3(0.82, 0.86, 0.76), yard);
 	vec3 woods = mix(yard_floor, tops, painted);
 	// A ragged edge, as real woods have, not the straight line between samples.
