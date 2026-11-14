@@ -54,6 +54,7 @@ static func _draw(b: DenseBuilder, to_curb: float, level: int) -> void:
 
 static func _highway(b: DenseBuilder, to_curb: float, w: float, upper: Color, base: Color, accent: Color,
 		side: float, r: RandomNumberGenerator) -> void:
+	b.sign_words = CommercialBuilder.HOTEL_WORDS
 	# On a strip of road frontage too shallow for a drop-off out front and
 	# two rows of parking (most lots along an Indiana bypass), the bar is a
 	# little slimmer (16.5 m), the canopy goes on the end, and the field
@@ -127,6 +128,7 @@ static func _highway(b: DenseBuilder, to_curb: float, w: float, upper: Color, ba
 
 static func _full_service(b: DenseBuilder, to_curb: float, w: float, upper: Color, base: Color, accent: Color,
 		side: float, r: RandomNumberGenerator) -> void:
+	b.sign_words = CommercialBuilder.HOTEL_WORDS
 	var ball := w >= 90.0
 	var bw := 30.0 if ball else 0.0
 	var l := clampf(w - bw - 24.0, 36.0, 72.0)
@@ -298,6 +300,7 @@ static func _porte_cochere(b: DenseBuilder, cx: float, zf: float, pz: float, cw:
 
 ## The brand's monument sign by the drive, on a stone base in a bed.
 static func _monument(b: DenseBuilder, x: float, accent: Color, base: Color) -> void:
+	b.sign_words = CommercialBuilder.HOTEL_WORDS
 	b._flat_rect("mulch", x - 3.0, x + 3.0, 0.8, 3.6, 0.075)
 	b._box("brick", Vector3(4.6, 1.0, 0.7), Vector3(x, 0.5, 2.2), base)
 	b._box("paint", Vector3(4.0, 1.6, 0.5), Vector3(x, 1.8, 2.2), accent)

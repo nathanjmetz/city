@@ -73,6 +73,7 @@ func _site(w: float, d: float, to_curb: float, drive_x: float, yard: String) -> 
 
 ## A one-storey brick office with a glass entry and a striped lot by the street.
 func _office(x: float, front: float, w: float, d: float, lot_w: float, to_curb: float) -> void:
+	sign_words = PLANT_WORDS
 	var zf := front + 16.0
 	_slab(x, w, zf, d)
 	_flat_roofed_at("brick", x, w, d, zf + d * 0.5, 3.8, 4.4, Color(_pick(BRICK)))
@@ -350,6 +351,7 @@ func _loadout(c: Vector3) -> void:
 # ---------------------------------------------------------------- meatpacker
 
 func _meatpacker(w: float, d: float, level: int, to_curb: float) -> void:
+	sign_words = [70]
 	var front := -d * 0.5
 	var drive_x := w * 0.38
 	_site(w, d, to_curb, drive_x, "gravel")

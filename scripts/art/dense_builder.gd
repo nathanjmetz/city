@@ -111,6 +111,7 @@ static func office_park_plan(seed: int, lot: Dictionary, level: int) -> Dictiona
 ## All from its own random numbers, so each phase keeps the last one's
 ## buildings where they stood.
 func _office_park(to_curb: float, width: float, level: int) -> void:
+	sign_words = OFFICE_WORDS
 	var r := RandomNumberGenerator.new()
 	r.seed = hash([rng.seed, "office park"])
 	var brick := r.randf() < 0.55
@@ -1421,6 +1422,7 @@ func _postwar_office(to_curb: float, width: float, storeys: int) -> void:
 ## two-storey glass entry bay under a flat canopy, flagpoles out front and
 ## the lot out back. Its own random numbers, so the builder's don't move.
 func _office_mirror(to_curb: float, width: float, storeys: int) -> void:
+	sign_words = OFFICE_WORDS
 	var r := RandomNumberGenerator.new()
 	r.seed = hash([rng.seed, "mirror office"])
 	var w := minf(width - 10.0, r.randf_range(30.0, 40.0))
@@ -1529,6 +1531,7 @@ func _office_mirror(to_curb: float, width: float, storeys: int) -> void:
 
 
 func _office(to_curb: float, width: float, storeys: int) -> void:
+	sign_words = OFFICE_WORDS
 	# Room down one side for the drive to the lot out back.
 	var w := minf(width - 10.0, rng.randf_range(22.0, 32.0))
 	var d := rng.randf_range(16.0, 22.0)
