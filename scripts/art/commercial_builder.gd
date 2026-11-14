@@ -699,6 +699,22 @@ func _civic_sign(c: Vector3, w: float, h: float, text: String, panel: String, le
 	sign_spec = was
 
 
+## A ground sign by an office's drive. Desktop: a monument sign, as
+## every office park and bank branch builds them: a dressed limestone
+## plinth with a projecting cap, the name panel set into its face, in a
+## mulched bed. Otherwise the plain panel on the lawn.
+func _monument_sign(c: Vector3, w: float, h: float) -> void:
+	if not fine_parts:
+		_sign(c, w, h)
+		return
+	var stone := _dressed(Color("#cfc6b0"))
+	_flat_rect("mulch", c.x - w * 0.5 - 0.9, c.x + w * 0.5 + 0.9, c.z - 0.8, c.z + 1.2, 0.075)
+	_box("brick", Vector3(w + 0.6, h + 0.75, 0.5), Vector3(c.x, (h + 0.75) * 0.5, c.z + 0.26), stone)
+	_box("brick", Vector3(w + 0.8, 0.14, 0.62), Vector3(c.x, h + 0.82, c.z + 0.26), stone)
+	_box("brick", Vector3(w + 0.7, 0.2, 0.56), Vector3(c.x, 0.1, c.z + 0.26), _dressed(Color("#b9b09a")))  # its base course
+	_sign(Vector3(c.x, 0.45, c.z - 0.005), w, h)
+
+
 func _sign(c: Vector3, w: float, h: float, word := -1) -> void:
 	var col := Color(_pick(SIGNS))
 	col.a = minf(w / 60.0, 0.49)
