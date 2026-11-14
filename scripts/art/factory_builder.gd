@@ -613,12 +613,15 @@ func _plastics(to_curb: float) -> void:
 	# Tank farm beside it, joined by a pipe rack.
 	var tx := minf(hx + hw * 0.5 + 8.0, half - 6.0)
 	var tanks := rng.randi_range(3, 5)
+	var farm := []
 	for i in tanks:
 		var c := Vector3(tx, 0, hz - 6.0 + i * 8.5)
 		if _in_lot(c, 4.0):
 			var h := rng.randf_range(8.0, 12.0)
 			_cylinder("paint", c, 3.4, h, TANK_WHITE, 18)
 			_cone_top(c + Vector3(0, h, 0), 3.5, 0.6, TANK_WHITE.darkened(0.06), "paint")
+			farm.append([c, h])
+	_tank_farm_kit(farm, 3.4)
 	var rz := hz - 6.0
 	var rx0 := hx + hw * 0.5
 	for k in 3:
@@ -632,6 +635,78 @@ func _plastics(to_curb: float) -> void:
 	for p in [Vector3(-3.6, 0, -2.6), Vector3(3.6, 0, -2.6), Vector3(-3.6, 0, 2.6), Vector3(3.6, 0, 2.6)]:
 		_box("paint", Vector3(0.3, 6.0, 0.3), Vector3(tx, 3.0, hz - 16.0) + p, PIPE)
 	_resin_yard(hx, hz + 11.0, hw)
+
+
+## What a real bulk liquid tank farm at a Midwest plant has, after
+## EPA SPCC rules and photos: a poured concrete containment dike round the
+## tanks (sized to hold the biggest one), a stair over the dike wall, and
+## on every tank a caged ladder to a railed top, a vent and a roof
+## manway, a float level gauge board down the side, a shell manway and
+## the bottom outlet with its valve, and a stencilled tank number.
+func _tank_farm_kit(farm: Array, rad: float) -> void:
+	if farm.is_empty():
+		return
+	var r := RandomNumberGenerator.new()
+	r.seed = hash([rng.seed, "tank_farm_kit"])
+	var dike := CONCRETE.darkened(0.06)
+	var rail := Color("#e0b81e") if r.randf() < 0.5 else PIPE.lightened(0.15)
+	var x: float = farm[0][0].x
+	var z0: float = farm[0][0].z - rad - 1.3
+	var z1: float = farm[-1][0].z + rad + 1.3
+	var hw := rad + 1.3
+	var wh := 1.2
+	_box("paint", Vector3(hw * 2.0, 0.08, z1 - z0), Vector3(x, 0.04, (z0 + z1) * 0.5), dike.lightened(0.05))
+	for e in [-1.0, 1.0]:
+		_box("paint", Vector3(0.3, wh, z1 - z0), Vector3(x + e * hw, wh * 0.5, (z0 + z1) * 0.5), dike)
+	for zz in [z0, z1]:
+		_box("paint", Vector3(hw * 2.0 + 0.3, wh, 0.3), Vector3(x, wh * 0.5, zz), dike)
+	# Step-over stair at the front wall.
+	for k in 4:
+		_box("paint", Vector3(1.0, 0.08, 0.3), Vector3(x - hw * 0.4, 0.3 + k * 0.3, z0 - 1.0 + k * 0.3), PIPE)
+		_box("paint", Vector3(1.0, 0.08, 0.3), Vector3(x - hw * 0.4, 0.3 + k * 0.3, z0 + 1.0 - k * 0.3), PIPE)
+	for i in farm.size():
+		var c: Vector3 = farm[i][0]
+		var h: float = farm[i][1]
+		# Caged ladder up the outer side (+x), with the cage hoops.
+		var lx := c.x + rad + 0.25
+		for e in [-1.0, 1.0]:
+			_box("paint", Vector3(0.06, h + 1.1, 0.06), Vector3(lx, (h + 1.1) * 0.5, c.z + e * 0.22), rail)
+			_box("paint", Vector3(0.04, h - 1.4, 0.04), Vector3(lx + 0.55, (h + 3.6) * 0.5, c.z + e * 0.38), rail)
+		_box("paint", Vector3(0.04, h - 1.4, 0.04), Vector3(lx + 0.75, (h + 3.6) * 0.5, c.z), rail)
+		var y := 2.3
+		while y < h + 1.0:
+			_box("paint", Vector3(0.04, 0.04, 0.44), Vector3(lx, y - 1.0, c.z), rail)
+			_box("paint", Vector3(0.04, 0.04, 0.8), Vector3(lx + 0.7, y, c.z), rail)
+			for e in [-1.0, 1.0]:
+				_box("paint", Vector3(0.7, 0.04, 0.04), Vector3(lx + 0.35, y, c.z + e * 0.4), rail)
+			y += 1.0
+		# Railing round the top: posts and a top rail on an octagon.
+		for k in 8:
+			var a0 := TAU * k / 8.0
+			var a1 := TAU * (k + 1) / 8.0
+			var p0 := c + Vector3(cos(a0) * (rad - 0.15), h, sin(a0) * (rad - 0.15))
+			var p1 := c + Vector3(cos(a1) * (rad - 0.15), h, sin(a1) * (rad - 0.15))
+			if cos((a0 + a1) * 0.5) < -0.3:
+				continue  # open on the far side, as most are
+			var mid := (p0 + p1) * 0.5
+			var seg := p0.distance_to(p1)
+			var b := Basis(Vector3.UP, -((a0 + a1) * 0.5) + PI * 0.5)
+			_box("paint", Vector3(seg, 0.05, 0.05), mid + Vector3(0, 1.05, 0), rail, b)
+			_box("paint", Vector3(0.05, 1.05, 0.05), p0 + Vector3(0, 0.52, 0), rail)
+		# Vent and roof manway.
+		_cylinder("paint", c + Vector3(-0.8, h + 0.3, 0.6), 0.18, 0.7, PIPE, 8)
+		_box("paint", Vector3(0.36, 0.08, 0.36), c + Vector3(-0.8, h + 1.04, 0.6), PIPE)
+		_cylinder("paint", c + Vector3(0.8, h + 0.3, -0.6), 0.35, 0.2, TANK_WHITE.darkened(0.12), 10)
+		# Float level gauge board down the front.
+		_box("paint", Vector3(0.12, h - 0.6, 0.12), c + Vector3(-rad * 0.5, h * 0.5, -rad * 0.87 - 0.12), PIPE)
+		_box("paint", Vector3(0.3, 0.4, 0.06), c + Vector3(-rad * 0.5, r.randf_range(1.5, h - 1.0), -rad * 0.87 - 0.2), Color("#d9d9d4"))
+		# Shell manway and bottom outlet with its valve toward the rack.
+		_cylinder("paint", c + Vector3(-rad - 0.05, 1.0, 0), 0.4, 0.06, TANK_WHITE.darkened(0.15), 12)
+		_box("paint", Vector3(0.3, 0.9, 0.9), c + Vector3(-rad - 0.12, 1.0, 0), TANK_WHITE.darkened(0.15))
+		_box("paint", Vector3(1.0, 0.22, 0.22), c + Vector3(-rad - 0.5, 0.45, 1.4), PIPE)
+		_box("paint", Vector3(0.3, 0.45, 0.35), c + Vector3(-rad - 0.9, 0.45, 1.4), Color("#3d5a7a"))
+		# Stencilled number band.
+		_box("paint", Vector3(0.06, 0.7, 1.4), c + Vector3(-rad - 0.02, h * 0.7, -1.6), Color("#2f3a44"))
 
 
 ## Behind a compounding plant: the resin silos (slender aluminium bins on
