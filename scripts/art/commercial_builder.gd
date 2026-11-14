@@ -43,6 +43,7 @@ var small_store := false
 ## any random trade (an office tower never reads SHOES).
 var sign_words := []
 var _slots := {}  # snapped x -> the stand-in word slot drawn there
+var _letters_at := {}  # snapped x -> the trade a tenant letters there
 ## The trade words a strip centre's tenants letter on its fascia, in order,
 ## for its pylon's panels.
 var _tenant_words := []
@@ -779,7 +780,8 @@ func _channel_letters(c: Vector3, w: float, h: float, named := "") -> void:
 	col.a = 1.0
 	var lh := h * r.randf_range(0.7, 0.95)
 	# A trade word (no names) in block capitals built up from strokes.
-	var wi := r.randi() % 50
+	r.randi()
+	var wi := _letters_word(c.x) if named == "" else 0
 	var word: String = TRADE_WORDS[wi] if named == "" else named
 	if named == "":
 		_tenant_words.append(wi)
@@ -802,11 +804,23 @@ func _letters_rng(x: float) -> RandomNumberGenerator:
 
 ## Which trade a tenant at `x` spells in channel letters (as _channel_letters
 ## draws it: a tint, a height, then the word).
+## A trade already lettered on this centre moves on to the next one (two
+## LOANS shops side by side read as a copy-paste).
 func _letters_word(x: float) -> int:
+	var k := snappedf(x, 0.1)
+	if _letters_at.has(k):
+		return _letters_at[k]
 	var r := _letters_rng(x)
 	r.randi()
 	r.randf()
-	return r.randi() % 50
+	var n := r.randi() % 50
+	var used := _letters_at.values()
+	for i in 50:
+		if not used.has(n):
+			break
+		n = (n + 1) % 50
+	_letters_at[k] = n
+	return n
 
 
 ## Block capitals from the 3x5 pixel font, centred on `cx`, facing the street
