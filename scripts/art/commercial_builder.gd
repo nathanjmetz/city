@@ -1864,7 +1864,28 @@ func _strip_lot_dress(to_curb: float, back: float, n: int, wall: Color) -> void:
 			_quad("sign", Vector3(sx - 1.15, y - ph * 0.5 + 0.04, pz), Vector3(sx + 1.15, y - ph * 0.5 + 0.04, pz),
 				Vector3(sx + 1.15, y + ph * 0.5 - 0.04, pz), Vector3(sx - 1.15, y + ph * 0.5 - 0.04, pz), col,
 				[Vector2(0, v0), Vector2(2.3, v0), Vector2(2.3, v0 + 1.0), Vector2(0, v0 + 1.0)], Vector3(0, 0, side))
-	_box("concrete", Vector3(4.2, 0.25, 1.2), Vector3(sx, 0.125, sz), FOUNDATION)
+	if fine_parts:
+		# Desktop: as built, the pylon stands in a planted bed: brick piers
+		# with precast caps and a brick base panel under the cabinet, a
+		# steel-edged mulch bed round it with clipped shrubs and junipers.
+		var brick := wall.darkened(0.25)
+		for s in [-1.0, 1.0]:
+			_box("concrete", Vector3(0.72, 0.1, 0.72), Vector3(sx + s * 1.5, base + cab_h + 0.45, sz), Color("#d2cbbb"))
+			_box("brick", Vector3(0.68, 0.2, 0.68), Vector3(sx + s * 1.5, 0.1, sz), brick.darkened(0.1))
+		_box("brick", Vector3(2.4, base - 0.1, 0.46), Vector3(sx, (base - 0.1) * 0.5, sz), brick)
+		_box("concrete", Vector3(2.5, 0.08, 0.5), Vector3(sx, base - 0.06, sz), Color("#d2cbbb"))
+		_flat_rect("mulch", sx - 3.0, sx + 3.0, sz - 1.4, sz + 1.4, 0.075)
+		for e in [-1.0, 1.0]:
+			_box("metal", Vector3(6.0, 0.08, 0.02), Vector3(sx, 0.07, sz + e * 1.4), Color("#2c2d2b"))
+			_box("metal", Vector3(0.02, 0.08, 2.8), Vector3(sx + e * 3.0, 0.07, sz), Color("#2c2d2b"))
+		var st := rng.state
+		for k in 4:
+			var kx := sx + (-2.3 if k < 2 else 2.3)
+			var kz := sz + (-0.75 if k % 2 == 0 else 0.75)
+			_shrub(Vector3(kx, 0.08, kz), 0.42 if k % 2 == 0 else 0.5, 0 if k % 2 == 0 else 2)
+		rng.state = st
+	else:
+		_box("concrete", Vector3(4.2, 0.25, 1.2), Vector3(sx, 0.125, sz), FOUNDATION)
 
 
 ## A gas station: a lit canopy over two or three pump islands, a
