@@ -2871,7 +2871,10 @@ func _combine() -> void:  # John Deere S790, header off for the road
 	else:
 		_box(Vector3(0, 4.0, 5.0), Vector3(2.6, 0.6, 3.6), PAINT)
 	_box(Vector3(0, 3.96, 1.4), Vector3(0.14, 0.12, 0.14), BEACON_AMBER)
-	_beam(Vector3(-1.2, 3.8, 3.6), Vector3(-1.4, 3.8, 8.6), 0.18, PAINT)
+	# Unloading auger folded forward along the left side, as it rides on
+	# the road: from its pivot at the tank's back corner to the cradle by
+	# the cab, spout forward.
+	_beam(Vector3(-1.45, 3.5, 6.6), Vector3(-1.55, 3.9, 1.0), 0.18, PAINT)
 	var rim := Color(0.95, 0.75, 0.05, 0.4)
 	if _hi:
 		_combine_hi(L, rim)
@@ -2880,7 +2883,8 @@ func _combine() -> void:  # John Deere S790, header off for the road
 		_wheel(Vector3(1.4, 0.0, 2.4), 0.95, 0.7, rim)
 		_wheel(Vector3(-1.2, 0.0, 7.0), 0.7, 0.45, rim)
 		_wheel(Vector3(1.2, 0.0, 7.0), 0.7, 0.45, rim)
-	_box(Vector3(0.5, 3.4, 0.45), Vector3(0.3, 0.12, 0.08), HEAD, true)
+	if not _hi:
+		_box(Vector3(0.5, 3.4, 0.45), Vector3(0.3, 0.12, 0.08), HEAD, true)
 
 
 ## Ultra: a combine close up (JD S790, Case IH Axial-Flow): lugged drive
@@ -2898,6 +2902,16 @@ func _combine_hi(L: float, rim: Color) -> void:
 		_box(Vector3(s * 1.08, 3.45, 0.7), Vector3(0.38, 0.04, 0.04), TRIM)
 		_box(Vector3(s * 1.28, 3.25, 0.7), Vector3(0.06, 0.4, 0.2), TRIM)
 		_box(Vector3(s * 1.0, 1.05, L - 0.2), Vector3(0.14, 0.18, 0.04), TAIL)
+	# Lamps in the roof cap's front edge, road lamps low on the cab's
+	# front rail, the auger's spout and its cradle beside the cab.
+	for x in [-0.75, -0.45, 0.45, 0.75]:
+		_box(Vector3(x, 3.8, 0.394), Vector3(0.18, 0.07, 0.012), HEAD)
+	for s2 in [-1.0, 1.0]:
+		_box(Vector3(s2 * 0.62, 2.18, 0.48), Vector3(0.22, 0.1, 0.06), HEAD)
+		_box(Vector3(s2 * 0.88, 2.18, 0.47), Vector3(0.06, 0.1, 0.06), BEACON_AMBER)
+	_box(Vector3(0, 2.26, 0.465), Vector3(1.6, 0.05, 0.05), TRIM)
+	_cyl(Vector3(-1.55, 3.9, 1.0), Vector3(-1.55, 3.55, 0.8), 0.14, PAINT, 8)
+	_beam(Vector3(-1.5, 2.3, 1.3), Vector3(-1.55, 3.72, 1.1), 0.06, TRIM)
 	# The stair: treads stepping up the left front, with its rail.
 	for i in 6:
 		_box(Vector3(-1.05, 0.55 + i * 0.32, 0.55 + i * 0.12), Vector3(0.5, 0.04, 0.25), STEEL)
