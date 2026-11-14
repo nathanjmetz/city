@@ -73,6 +73,15 @@ void fragment() {
 ## Modular brick: 2 2/3 in courses, running bond, light mortar.
 const BRICK := """
 uniform vec4 mortar : source_color = vec4(0.70, 0.68, 0.63, 1.0);
+// Desktop High and up with the free asset library: Poly Haven's photo of
+// red common brick (AssetLib "red_brick", CC0) in place of the drawn
+// courses, its colour taken as a ratio to its own average so every
+// building keeps its own brick colour (and painted brick stays paint).
+uniform float bp = 0.0;
+uniform float bp_size = 1.4;
+uniform sampler2D bp_albedo : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
+uniform sampler2D bp_normal : hint_normal, filter_linear_mipmap_anisotropic, repeat_enable;
+uniform sampler2D bp_arm : filter_linear_mipmap_anisotropic, repeat_enable;
 void fragment() {
 	float t = UV.y / 0.0677;
 	float row = floor(t);
@@ -85,6 +94,25 @@ void fragment() {
 	float tint = mix(0.84 + hash(vec2(row, floor(x))) * 0.3, 1.0, aa);
 	vec3 col = mix(vcol(COLOR.rgb) * tint, mortar.rgb, joint);
 	col *= 0.93 + texture(noise_grain, UV * 2.0).r * 0.14;
+	float rough = 0.85;
+	if (bp > 0.0) {
+		vec2 puv = UV / bp_size;
+		vec3 ph = texture(bp_albedo, puv).rgb;
+		vec3 mean = textureLod(bp_albedo, vec2(0.5), 12.0).rgb;
+		vec3 ratio = ph / max(mean, vec3(0.02));
+		// Light colours are painted brick: the paint hides the brick's
+		// own colours, only its shading and the joints come through.
+		float paint = smoothstep(0.3, 0.5, dot(vcol(COLOR.rgb), vec3(0.3, 0.59, 0.11)));
+		ratio = mix(ratio, vec3(dot(ratio, vec3(0.3, 0.59, 0.11))), paint * 0.85);
+		vec3 arm = texture(bp_arm, puv).rgb;
+		col = mix(col, vcol(COLOR.rgb) * ratio * mix(1.0, arm.r, 0.6), bp);
+		rough = mix(rough, arm.g, bp);
+		vec2 nb = (texture(bp_normal, puv).rg * 2.0 - 1.0) * bp;
+		vec3 n = normalize(world_normal);
+		vec3 across = normalize(cross(vec3(0.0, 1.0, 0.0), n) + vec3(1e-4, 0.0, 0.0));
+		vec3 upw = cross(n, across);
+		NORMAL = normalize((VIEW_MATRIX * vec4(normalize(n + across * nb.x + upw * nb.y), 0.0)).xyz);
+	}
 	// Weathering that still reads from across the street: soft patches of
 	// older and newer brick and repointing, and rain-washed streaks run
 	// down from sills and the coping (photos of 1890s Main Street walls).
@@ -92,7 +120,7 @@ void fragment() {
 	float streak = smoothstep(0.68, 0.9, texture(noise_soft, vec2((world_pos.x + world_pos.z) / 2.3, world_pos.y / 38.0)).r);
 	col *= (0.9 + patch * 0.2) * (1.0 - streak * 0.1);
 	ALBEDO = col;
-	ROUGHNESS = 0.85;
+	ROUGHNESS = rough;
 	SPECULAR = 0.25;
 }
 """
@@ -853,7 +881,7 @@ static func get_mat(key: String) -> Material:
 	var mat: Material
 	match key:
 		"siding": mat = _shader(SIDING)
-		"brick": mat = _shader(BRICK)
+		"brick": mat = _brick_photo(_shader(BRICK))
 		"roof": mat = _shader(ROOF)
 		"glass": mat = _shader(GLASS)
 		"yard": mat = _yard()
@@ -872,6 +900,27 @@ static func get_mat(key: String) -> Material:
 		_: mat = _plain(0.55)  # paint, shutters, trim
 	_cache[key] = mat
 	return mat
+
+
+## The brick's photo (AssetLib "red_brick") on the desktop's High tier and
+## up when the art is here (Surfaces.photo_level); the drawn courses
+## otherwise. Follows the quality setting as it changes.
+static func _brick_photo(mat: ShaderMaterial) -> ShaderMaterial:
+	_brick_apply(mat)
+	if GraphicsQuality.current:
+		GraphicsQuality.current.changed.connect(_brick_apply.bind(mat))
+	return mat
+
+
+static func _brick_apply(mat: ShaderMaterial) -> void:
+	var level := Surfaces.photo_level() if AssetLib.has("red_brick") else 0.0
+	if level > 0.0 and mat.get_shader_parameter("bp_albedo") == null:
+		var dir := str(AssetLib.info("red_brick").get("dir", ""))
+		mat.set_shader_parameter("bp_albedo", load(dir.path_join("albedo.jpg")))
+		mat.set_shader_parameter("bp_normal", load(dir.path_join("normal.jpg")))
+		mat.set_shader_parameter("bp_arm", load(dir.path_join("arm.jpg")))
+		mat.set_shader_parameter("bp_size", float(AssetLib.info("red_brick").get("size_m", [1.4])[0]))
+	mat.set_shader_parameter("bp", level if mat.get_shader_parameter("bp_albedo") != null else 0.0)
 
 
 ## The name a shared material was made under, or "" for one of its own.
