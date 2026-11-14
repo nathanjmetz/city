@@ -1832,6 +1832,18 @@ func _shop_gas_station(to_curb: float) -> void:
 	if white_fascia:
 		# Desktop: the brand band is lit from inside after dark.
 		_box("sign" if fine_parts else "paint", Vector3(cw + 0.04, 0.3, cd + 0.04), Vector3(0, 5.2, ccz), Color(brand, 0.0))
+	if fine_parts:
+		# Real canopy fascias are aluminium composite with formed coping on
+		# top and a drip edge under, and a backlit logo crown centred on the
+		# street and store faces, standing proud of the band.
+		for y in [5.71, 4.81]:
+			_box("metal", Vector3(cw + 0.08, 0.06, cd + 0.08), Vector3(0, y, ccz), Color("#9a9c9e"))
+		for f in [-1.0, 1.0]:
+			var fz: float = ccz + f * (cd * 0.5 + 0.07)
+			_box("sign", Vector3(2.8, 1.5, 0.14), Vector3(0, 5.45, fz), Color(brand, 0.0))
+			_box("metal", Vector3(2.9, 0.06, 0.2), Vector3(0, 6.22, fz), Color("#9a9c9e"))
+			_box("sign", Vector3(2.1, 1.0, 0.04), Vector3(0, 5.45, fz + f * 0.08), Color(1.0, 1.0, 1.0, 0.0))
+			_box("sign", Vector3(0.62, 0.62, 0.03), Vector3(0, 5.45, fz + f * 0.1), Color(brand, 0.0), Basis(Vector3(0, 0, 1), PI * 0.25))
 	_quad("paint", Vector3(-cw * 0.5, 4.79, ccz - cd * 0.5), Vector3(cw * 0.5, 4.79, ccz - cd * 0.5),
 		Vector3(cw * 0.5, 4.79, ccz + cd * 0.5), Vector3(-cw * 0.5, 4.79, ccz + cd * 0.5), Color("#e8e6df"), [], Vector3.DOWN)
 	if fine_parts:
