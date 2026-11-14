@@ -918,7 +918,7 @@ func _strip_center(to_curb: float, anchor := false) -> void:
 	var style: String = ["flat", "flat", "mansard", "mansard", "towers"][sr.randi() % 5]
 	if era == "recent":
 		style = ["mansard", "towers", "towers"][sr.randi() % 3]
-	var mat := "paint"
+	var mat := "cmu"  # painted block
 	if style == "mansard":
 		wall = Color(FACADE_BRICK[sr.randi() % FACADE_BRICK.size()])
 		mat = "brick"
@@ -982,9 +982,9 @@ func _strip_center(to_curb: float, anchor := false) -> void:
 	elif style == "flat":
 		# A raised false front over the end store, and over the middle on a
 		# long centre: what a strip centre's parapet does to break up its length.
-		_raised_front(-w * 0.5 + bay * 0.5, bay, zf, h + 1.2, wall, "paint")
+		_raised_front(-w * 0.5 + bay * 0.5, bay, zf, h + 1.2, wall, mat)
 		if n >= 5:
-			_raised_front(-w * 0.5 + (n / 2 + 0.5) * bay, bay, zf, h + 1.2, wall, "paint")
+			_raised_front(-w * 0.5 + (n / 2 + 0.5) * bay, bay, zf, h + 1.2, wall, mat)
 	_shop_parking(to_curb, w, zf - 2.6, 0.0)
 	# The walk carries on under the canopy to the shop doors (concrete from
 	# curb to storefront, as at every strip centre), not grass.
@@ -1785,7 +1785,7 @@ func _shop_gas_station(to_curb: float) -> void:
 	var brand := Color(_pick(["#c8102e", "#00529b", "#007a33", "#f2a900", "#1d1d1d"]))
 	var wall := Color(_pick(BLOCK + ["#d8d2c2"]))
 	_box("paint", Vector3(sw + 0.1, 0.3, sd + 0.1), Vector3(0, 0.15, cz), FOUNDATION)
-	_flat_roofed("paint", sw, sd, cz, 4.2, 4.8, wall)
+	_flat_roofed("cmu", sw, sd, cz, 4.2, 4.8, wall)
 	_box("paint", Vector3(sw + 0.1, 0.7, 0.2), Vector3(0, 4.45, zf - 0.1), brand)
 	shopfront = fine_parts  # aisles of snacks and the cooler wall inside
 	allnight = true  # open late or all night, like any Indiana c-store

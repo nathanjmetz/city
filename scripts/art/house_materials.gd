@@ -818,6 +818,7 @@ void fragment() {
 const EIFS := """
 uniform float ep = 0.0;
 uniform float ep_size = 3.0;
+uniform float ep_mix = 1.0;  // how much of the photo's shading (paint evens it)
 uniform sampler2D ep_albedo : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
 uniform sampler2D ep_normal : hint_normal, filter_linear_mipmap_anisotropic, repeat_enable;
 uniform sampler2D ep_arm : filter_linear_mipmap_anisotropic, repeat_enable;
@@ -832,7 +833,7 @@ void fragment() {
 		uv /= ep_size;
 		vec3 lw = vec3(0.3, 0.59, 0.11);
 		float shade = dot(texture(ep_albedo, uv).rgb, lw) / max(dot(textureLod(ep_albedo, vec2(0.5), 12.0).rgb, lw), 0.02);
-		col *= mix(1.0, shade, ep);
+		col *= mix(1.0, shade, ep * ep_mix);
 		rough = mix(rough, texture(ep_arm, uv).g, ep);
 		vec2 nb = (texture(ep_normal, uv).rg * 2.0 - 1.0) * ep * 0.6;
 		vec3 across = normalize(cross(vec3(0.0, 1.0, 0.0), n) + vec3(1e-4, 0.0, 0.0));
@@ -973,6 +974,11 @@ static func get_mat(key: String) -> Material:
 		"membrane": mat = _photo_on(_shader(MEMBRANE), "bitumen", "rp", 5.0)
 		"slipform": mat = _shader(SLIPFORM)
 		"eifs": mat = _photo_on(_shader(EIFS), "beige_wall_001", "ep")
+		# Painted concrete block (c-stores, 1960s strips): the same wall
+		# shader with Poly Haven's block wall photo (CC0).
+		"cmu":
+			mat = _photo_on(_shader(EIFS), "concrete_block_wall", "ep")
+			mat.set_shader_parameter("ep_mix", 0.5)
 		"bin": mat = _shader(BIN)
 		"farm_gravel": mat = _gravel()
 		"pool": mat = _pool()
