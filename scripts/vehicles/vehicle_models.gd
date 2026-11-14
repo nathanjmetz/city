@@ -1148,6 +1148,16 @@ func _truck(L: float, cab_end: float, wb: Array, work: bool, W := 2.03, H := 1.9
 				_box(Vector3(x, (c + belt) * 0.5 + 0.12, z), Vector3(0.004, belt - c - 0.2, 0.012), seam)
 			for i in doors.size() - 1:
 				_box(Vector3(s * (hw + 0.012), belt - 0.15, doors[i + 1] - 0.25), Vector3(0.02, 0.035, 0.16), CHROME)
+		# The cab's back: a three-pane sliding rear window in a black frame
+		# and the high-mounted brake lamp over it (FMVSS 108 CHMSL).
+		var zb := cab_end + 0.006
+		var wy := (belt + 0.1 + H - 0.14) * 0.5
+		var wh := H - 0.14 - belt - 0.1
+		_box(Vector3(0, wy, zb), Vector3(1.36, wh + 0.06, 0.006), TRIM)
+		_box(Vector3(0, wy, zb + 0.006), Vector3(1.28, wh, 0.006), GLASS)
+		for x in [-0.22, 0.22]:
+			_box(Vector3(x, wy, zb + 0.012), Vector3(0.03, wh, 0.006), TRIM)
+		_box(Vector3(0, H - 0.07, zb), Vector3(0.3, 0.04, 0.012), TAIL)
 		if not chassis:
 			_box(Vector3(0, belt - 0.1, L + 0.004), Vector3(W - 0.3, 0.012, 0.004), seam)
 			_box(Vector3(0, 0.62, L + 0.005), Vector3(0.3, 0.15, 0.02), WHITE)
