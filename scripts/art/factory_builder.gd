@@ -384,6 +384,9 @@ func _tank_coil(p: Vector3) -> void:
 func _door(x: float, z: float, w := 3.7, h := 4.3) -> void:
 	_box("siding", Vector3(w, h, 0.08), Vector3(x, 0.3 + h * 0.5, z - 0.03), Color(TRIM, 0.0))
 	DoorLog.add(self, "bay", Vector3(x, 0.3 + h * 0.5, z - 0.07), Vector3(0, 0, -1), w, h, TRIM)
+	# A dusk-to-dawn wall pack over the door, as on every Midwest plant.
+	if not _wall_light(Vector3(x, 0.3 + h + 0.9, z), Vector3(0, 0, -1)):
+		_dr_wallpack(Vector3(x, 0.3 + h + 0.7, z - 0.18), Vector3(0, 0, -1))
 
 
 ## A cone roof (bins, piles) from a base circle up to a point.
@@ -850,6 +853,10 @@ func _metal_works(to_curb: float) -> void:
 	var yz := hz + hd * 0.5 + 9.0
 	if yz + 6.0 < depth:
 		_gantry(Vector3(hx, 0, yz), 24.0, 9.6)
+		# Wall floods high on the back wall light the crane yard for the night shift.
+		for e in [-1.0, 1.0]:
+			PropLog.place(self, "flood_lights", Transform3D(Basis().scaled(Vector3.ONE * 2.4),
+				Vector3(hx + e * 7.0, 7.5, hz + hd * 0.5 + 0.02)), ["*wall_*"])
 		for i in 8:
 			for j in 2:
 				_cylinder("metal", Vector3(hx - 9.0 + i * 2.5, 0, yz - 2.0 + j * 4.0), 0.9, 1.5, COIL, 12)
