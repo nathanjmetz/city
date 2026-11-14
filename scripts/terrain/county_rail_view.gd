@@ -67,6 +67,7 @@ const ROCK_SHADER := """
 shader_type spatial;
 render_mode cull_disabled;
 PHOTO
+global uniform float snow;
 varying vec3 world_pos;
 
 void vertex() {
@@ -85,8 +86,13 @@ void fragment() {
 		col *= mix(1.0, max(1.0 + (l - 1.0) * 1.8, 0.2), pk);
 		n = ph_lean(n, ph_gravel_s(p), pk * 0.8);
 	}
+	// Snow lies on the bed and its shoulders as on the fields round it,
+	// thinner on the steep fill slopes; the ties and rails stand out dark
+	// (photos of Indiana main lines in January).
+	float lies = smoothstep(0.15, 0.6, snow) * smoothstep(0.55, 0.9, n.y);
+	col = mix(col, vec3(0.80, 0.83, 0.88), lies * 0.92);
 	ALBEDO = col;
-	ROUGHNESS = 0.95;
+	ROUGHNESS = mix(0.95, 0.8, lies);
 	NORMAL = normalize((VIEW_MATRIX * vec4(n, 0.0)).xyz);
 }
 """
