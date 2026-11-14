@@ -205,9 +205,12 @@ func _wall_life(cx: float, bw: float, zf: float, bd: float, h: float, wall: Colo
 		var k := maxi(1, int(bd / 23.0))
 		for i in k:
 			var z := zf + (i + 0.5) * bd / k
-			_box("paint", Vector3(0.28, 0.35, 0.45), Vector3(cx + e * (bw * 0.5 + 0.14), h - 1.6, z), dark)
+			if not _wall_light(Vector3(cx + e * bw * 0.5, h - 1.6, z), Vector3(e, 0, 0)):
+				_box("paint", Vector3(0.28, 0.35, 0.45), Vector3(cx + e * (bw * 0.5 + 0.14), h - 1.6, z), dark)
 	for i in maxi(1, int(bw / 23.0)):
-		_box("paint", Vector3(0.45, 0.35, 0.28), Vector3(xl + (i + 0.5) * bw / maxi(1, int(bw / 23.0)), h - 1.6, zb + 0.14), dark)
+		var px := xl + (i + 0.5) * bw / maxi(1, int(bw / 23.0))
+		if not _wall_light(Vector3(px, h - 1.6, zb), Vector3(0, 0, 1)):
+			_box("paint", Vector3(0.45, 0.35, 0.28), Vector3(px, h - 1.6, zb + 0.14), dark)
 	# Exit doors with stoops: drive side and back, about every 45 m.
 	var doors := maxi(1, int(bd / 45.0))
 	for i in doors:
@@ -219,7 +222,21 @@ func _wall_life(cx: float, bw: float, zf: float, bd: float, h: float, wall: Colo
 		var x := xl + bw * (i + 0.5) / maxi(1, int(bw / 45.0)) + g.randf_range(-3.0, 3.0)
 		_box("paint", Vector3(1.0, 2.15, 0.06), Vector3(x, 1.08, zb + 0.03), Color("#7a7f82"))
 		_box("paint", Vector3(1.6, 0.18, 1.2), Vector3(x, 0.09, zb + 0.6), CONCRETE)
-		_box("paint", Vector3(0.35, 0.25, 0.2), Vector3(x, 2.6, zb + 0.12), dark)
+		if not _wall_light(Vector3(x, 2.9, zb), Vector3(0, 0, 1)):
+			_box("paint", Vector3(0.35, 0.25, 0.2), Vector3(x, 2.6, zb + 0.12), dark)
+		# What collects by a warehouse's back door: a hand truck against the
+		# wall, a few boxes and a stack of returnable crates (scans only; their
+		# own rng, so the building is the same with or without them).
+		var pr := RandomNumberGenerator.new()
+		pr.seed = hash([rng.seed, "back_door_props", i])
+		var yaw := pr.randf_range(-0.2, 0.2)
+		if PropLog.place(self, "hand_truck", Transform3D(Basis(Vector3.UP, PI + yaw), Vector3(x + 1.0, 0.0, zb + 0.45))):
+			for k in pr.randi_range(1, 3):
+				PropLog.place(self, "cardboard_box_01", Transform3D(Basis(Vector3.UP, pr.randf_range(-0.3, 0.3)),
+					Vector3(x - 1.2 - (k % 2) * 0.55, 0.0 if k < 2 else 0.34, zb + 0.45)))
+			for k in pr.randi_range(2, 4):
+				PropLog.place(self, "plastic_crate_03", Transform3D(Basis(Vector3.UP, pr.randf_range(-0.08, 0.08)),
+					Vector3(x + 1.9, k * 0.27, zb + 0.3)))
 	# Riser room door, FDC, Knox box and the meter bank near the front of
 	# the drive side (clear of the drive-in door at zf + 6).
 	var rz := zf + 10.5 + g.randf_range(0.0, 2.0)

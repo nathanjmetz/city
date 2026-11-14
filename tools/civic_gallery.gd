@@ -61,6 +61,7 @@ func _init() -> void:
 			view = [float(v[0]), float(v[1]), float(v[2]) if v.size() > 2 else 0.0,
 				float(v[3]) if v.size() > 4 else 0.0, float(v[4]) if v.size() > 4 else 0.0]
 		var built := []
+		PropLog.drawn = []  # the scans each site stands (shown below, as the game does)
 		var size := Vector2(30, 30)
 		if SVC.has(name):
 			size = Services.KINDS[SVC[name]].size
@@ -168,6 +169,13 @@ func _init() -> void:
 			mi.mesh = built[i]
 			mi.position = at
 			world.add_child(mi)
+		var props: Array = PropLog.drawn
+		PropLog.drawn = null
+		for pr in props:
+			var pi := MeshInstance3D.new()
+			pi.mesh = PropLog.mesh_of(pr[0])
+			pi.transform = Transform3D(Basis(), at) * (pr[1] as Transform3D)
+			world.add_child(pi)
 		if built.size() > 3 and built[3] is Array and not built[3].is_empty():
 			var signs := Node3D.new()
 			signs.position = at

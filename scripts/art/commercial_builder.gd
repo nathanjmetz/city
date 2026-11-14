@@ -684,6 +684,14 @@ func _coping(w: float, d: float, cz: float, top: float, old := false) -> void:
 ## A sign that says what the place is (a civic building, a utility, a
 ## company's office): what it is, lettered (a station sign or
 ## cast letters on a panel), never a shop's stand-in trade word.
+## A dusk-to-dawn yard light (the scanned one: a globe hanging from an arm
+## that points +x) on a wall whose outward normal is `n`, its arm meeting
+## the wall at `p`. False: draw the code-built one.
+func _wall_light(p: Vector3, n: Vector3) -> bool:
+	return PropLog.place(self, "security_light",
+		Transform3D(Basis(Vector3.UP, atan2(n.z, -n.x)), p + n * 0.17 - Vector3(0, 0.42, 0)))
+
+
 func _civic_sign(c: Vector3, w: float, h: float, text: String, panel: String, letter: String, style: String) -> void:
 	var was := sign_spec
 	sign_spec = {"text": text, "style": style, "panel": Color(panel), "letter": Color(letter)}
