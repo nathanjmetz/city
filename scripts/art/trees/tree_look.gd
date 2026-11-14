@@ -339,6 +339,9 @@ varying vec3 leaf_pos;
 varying float species;
 varying float tree_rand;
 varying float far_card;
+// Wild brush (sumac, dogwood, honeysuckle, plum): a shrub that never grows
+// up close (TreeField.custom_of's flag), not a planted crabapple.
+varying float brush;
 varying float fleck_fade;
 varying vec2 sun_xy;
 varying vec2 keep;
@@ -360,6 +363,7 @@ void vertex() {
 	vec3 origin = (MODEL_MATRIX * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
 	float code = floor(custom.a * 32.0);
 	species = mod(code, 16.0);
+	brush = step(15.5, code);
 	keep = band_keep(origin, code < 15.5, PROJECTION_MATRIX[3][3] > 0.5);
 #ifdef FAR_WOODS
 	// One quad facing the camera, the size of the crown (UV2 is its corner,
@@ -489,6 +493,17 @@ void fragment() {
 		// New leaves are a pale yellow-green; crabapples bloom pink first.
 		vec3 fresh = leaf * vec3(1.55, 1.45, 0.45);
 		if (kind_seasons && kind_bloom[sp].a > 0.5) fresh = kind_bloom[sp].rgb;
+#ifdef DESKTOP_DETAIL
+		// Wild brush isn't a planted crabapple: in an Indiana fencerow or
+		// woods edge in spring most of it just leafs out, some blooms white
+		// (wild plum, hawthorn, dogwood, honeysuckle) and the odd redbud
+		// purple-pink, never a hedge of pink.
+		if (brush > 0.5) {
+			fresh = leaf * vec3(1.55, 1.45, 0.45);
+			if (tree_rand < 0.22) fresh = mix(leaf * vec3(1.55, 1.45, 0.45), vec3(0.74, 0.73, 0.64), 0.8);
+			else if (tree_rand > 0.93) fresh = vec3(0.52, 0.2, 0.42);
+		}
+#endif
 		leaf = mix(leaf, fresh, look.z);
 		// Leaves fall and the crown becomes a lace of fine grey-brown twigs:
 		// each card switches to a branching twig texture. Up close it reads
