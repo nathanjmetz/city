@@ -2024,10 +2024,14 @@ func _bank(to_curb: float) -> void:
 	var cz := zf + d * 0.5
 	var brick := Color(_pick(FACADE_BRICK))
 	var stone := Color("#d8d2c2")
-	_box("paint", Vector3(w + 0.1, 0.6, d + 0.1), Vector3(0, 0.3, cz), stone)
+	# Indiana limestone, dressed: the water table, frieze, cornice, quoins
+	# and door surround read as cut stone, not paint (Bedford stone fronts
+	# every county bank of the 1910s-20s).
+	var ashlar := _dressed(stone)
+	_box("brick", Vector3(w + 0.1, 0.6, d + 0.1), Vector3(0, 0.3, cz), ashlar)
 	_box("brick", Vector3(w, 6.6, d), Vector3(0, 3.9, cz), brick)
 	_hip_roof(0.0, cz, 7.2, w, d, 2.0, Color(_pick(ROOF)))
-	_box("paint", Vector3(w + 0.2, 0.3, d + 0.2), Vector3(0, 7.1, cz), stone)
+	_box("brick", Vector3(w + 0.2, 0.3, d + 0.2), Vector3(0, 7.1, cz), ashlar)
 	for i in 4:
 		var x := lerpf(-w * 0.5 + 1.6, w * 0.5 - 1.6, i / 3.0)
 		if i == 1 or i == 2:
@@ -2041,7 +2045,7 @@ func _bank(to_curb: float) -> void:
 		# A square plinth and a capital, as on every Colonial Revival bank.
 		_box("paint", Vector3(0.75, 0.3, 0.75), Vector3(-2.4 + k * 1.6, 0.77, zf - 2.5), stone)
 		_box("paint", Vector3(0.72, 0.22, 0.72), Vector3(-2.4 + k * 1.6, 5.86, zf - 2.5), stone)
-	_box("paint", Vector3(6.4, 0.8, 3.2), Vector3(0, 6.4, zf - 1.5), stone)
+	_box("brick", Vector3(6.4, 0.8, 3.2), Vector3(0, 6.4, zf - 1.5), ashlar)
 	# The cornice under the pediment, projecting past the frieze.
 	_box("paint", Vector3(6.8, 0.18, 3.5), Vector3(0, 6.86, zf - 1.6), stone.lightened(0.05))
 	if fine_parts:
@@ -2052,14 +2056,14 @@ func _bank(to_curb: float) -> void:
 		for sx in [-1.0, 1.0]:
 			for q in 9:
 				var qw := 0.7 if q % 2 == 0 else 0.45
-				_box("paint", Vector3(qw, 0.32, 0.08), Vector3(sx * (w * 0.5 - qw * 0.5 + 0.02), 1.0 + q * 0.68, zf - 0.05), stone)
+				_box("brick", Vector3(qw, 0.32, 0.08), Vector3(sx * (w * 0.5 - qw * 0.5 + 0.02), 1.0 + q * 0.68, zf - 0.05), ashlar)
 	_tri("paint", Vector3(-3.2, 6.8, zf - 3.1), Vector3(3.2, 6.8, zf - 3.1), Vector3(0, 8.0, zf - 3.1), stone, [], Vector3.FORWARD)
 	_quad("roof", Vector3(-3.3, 6.8, zf - 3.1), Vector3(0, 8.0, zf - 3.1), Vector3(0, 8.0, zf), Vector3(-3.3, 6.8, zf), Color(ROOF[0]), [], Vector3(-1, 3, 0))
 	_quad("roof", Vector3(3.3, 6.8, zf - 3.1), Vector3(0, 8.0, zf - 3.1), Vector3(0, 8.0, zf), Vector3(3.3, 6.8, zf), Color(ROOF[0]), [], Vector3(1, 3, 0))
 	# The front doors: a stone surround with a cornice, a pair of glass and
 	# bronze doors and a transom light over them.
-	_box("paint", Vector3(2.6, 3.5, 0.12), Vector3(0, 2.35, zf - 0.075), stone)
-	_box("paint", Vector3(3.0, 0.25, 0.3), Vector3(0, 4.2, zf - 0.15), stone)
+	_box("brick", Vector3(2.6, 3.5, 0.12), Vector3(0, 2.35, zf - 0.075), ashlar)
+	_box("brick", Vector3(3.0, 0.25, 0.3), Vector3(0, 4.2, zf - 0.15), ashlar)
 	_box("paint", Vector3(1.9, 2.95, 0.06), Vector3(0, 2.07, zf - 0.13), Color("#3a3530"))
 	for sx in [-0.45, 0.45]:
 		_glass(Vector3(sx, 1.9, zf - 0.17), Vector3(-1, 0, 0), 0.7, 2.0, 0.0)
