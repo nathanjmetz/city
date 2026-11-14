@@ -264,6 +264,7 @@ func _skidder(p: Vector3, yaw: float) -> void:
 # ---------------------------------------------------------------- mill
 
 func _mill(size: Vector2) -> void:
+	sign_words = [68, 69]
 	var hx := size.x * 0.5
 	var hz := size.y * 0.5
 	# Gravel and bark yard over the whole site.

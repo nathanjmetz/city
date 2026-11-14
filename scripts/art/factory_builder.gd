@@ -60,6 +60,7 @@ static func build_chain(chain: String, seed: int, to_curb: float, lot := {}, spe
 ## The plant's front office: a small brick box with windows and a sign,
 ## its parking in front and the drive in from the street at `dx`.
 func _front(zf: float, x0: float, dx: float, to_curb: float) -> void:
+	sign_words = PLANT_WORDS
 	var ow := rng.randf_range(6.0, 8.0)
 	var od := 6.0
 	var ox := x0 + ow * 0.5
