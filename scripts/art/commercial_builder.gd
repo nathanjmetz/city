@@ -1017,6 +1017,51 @@ func _strip_center(to_curb: float, anchor := false) -> void:
 	_flat_rect("drive", -w * 0.5 - 0.5, w * 0.5 + 0.5, zf - 2.6, zf, 0.08)
 	if fine_parts:
 		_strip_lot_dress(to_curb, zf - 4.6, n, wall)
+		_strip_rear(w, n, bay, aw, zf + d, h + 1.2, wall)
+
+
+## Desktop: a strip centre's back as built. Every tenant has its own
+## steel service door with a wall pack over it (fire code wants an exit
+## from each space), the utilities come in at one end as a bank of
+## electric meters and a gas meter manifold, downspouts drop from the
+## roof scuppers every other bay onto splash blocks, and an asphalt
+## service drive runs along the back for deliveries and trash pickup.
+func _strip_rear(w: float, n: int, bay: float, aw: float, back: float, top: float, wall: Color) -> void:
+	var ax0 := w * 0.5 - aw
+	if depth - back > 4.0:
+		_flat_rect("asphalt", -w * 0.5 - 0.5, w * 0.5 + 0.5, back, minf(back + 7.0, depth - 0.5), 0.07)
+	var tenants := 0
+	for i in n:
+		var x := -w * 0.5 + (i + 0.5) * bay
+		if aw > 0.0 and x > ax0:
+			continue
+		tenants += 1
+		var dx := x + bay * 0.25 * (1.0 if posmod(hash([rng.seed, i, 73]), 2) == 0 else -1.0)
+		_steel_door(Vector3(dx, 1.35, back + 0.03), 1.0)
+		if i % 2 == 1:
+			var sx := -w * 0.5 + i * bay
+			_box("metal", Vector3(0.16, top - 0.2, 0.12), Vector3(sx, (top - 0.2) * 0.5, back + 0.09), wall.darkened(0.15))
+			_box("metal", Vector3(0.3, 0.2, 0.2), Vector3(sx, top - 0.35, back + 0.12), wall.darkened(0.2))
+			_box("concrete", Vector3(0.35, 0.06, 0.7), Vector3(sx, 0.1, back + 0.45), Color("#bdb9ae"))
+	# The utility end: one meter per tenant on a common panel, gas beside it.
+	var mx := -w * 0.5 + 1.2
+	var cols := mini(tenants, 6)
+	var rows := int(ceil(float(tenants) / float(maxi(cols, 1))))
+	var pw := cols * 0.42 + 0.2
+	_box("metal", Vector3(pw, rows * 0.55 + 0.3, 0.2), Vector3(mx + pw * 0.5, 1.2 + rows * 0.27, back + 0.1), Color("#8e9294"))
+	for k in tenants:
+		var c := k % cols
+		var rw := k / cols
+		var cx := mx + 0.31 + c * 0.42
+		var cy := 1.35 + rw * 0.55
+		_box("metal", Vector3(0.32, 0.4, 0.06), Vector3(cx, cy, back + 0.23), Color("#a3a7a9"))
+		_cylinder("paint", Vector3(cx, cy - 0.05, back + 0.26), 0.09, 0.08, Color("#dfe6e8"), 10)
+	var gx := mx + pw + 0.5
+	_box("paint", Vector3(0.06, 0.06, 0.4), Vector3(gx, 0.5, back + 0.2), Color("#e2b100"))
+	_box("paint", Vector3(0.06, 0.9, 0.06), Vector3(gx, 0.85, back + 0.38), Color("#e2b100"))
+	_box("paint", Vector3(mini(tenants, 4) * 0.35 + 0.1, 0.06, 0.06), Vector3(gx + mini(tenants, 4) * 0.175, 1.3, back + 0.38), Color("#e2b100"))
+	for k in mini(tenants, 4):
+		_box("metal", Vector3(0.28, 0.34, 0.2), Vector3(gx + 0.2 + k * 0.35, 1.05, back + 0.38), Color("#9a9c9a"))
 
 
 ## A 1970s-80s strip's mansard: a steep slope of asphalt shingles from the
