@@ -75,6 +75,8 @@ static func _mi_midcentury(b: DenseBuilder, r: RandomNumberGenerator, to_curb: f
 		b._box("paint", Vector3(sw, 0.5, 0.12), Vector3(fx, 0.25, zf - 0.06), stone)
 		var lights := maxi(3, roundi(sw / 1.6))
 		var lw := sw / lights
+		# A shop whose sign says it serves food shows its booths and counter.
+		var eats := DenseBuilder.fine and b.sign_spec.is_empty() and int(b._word_slot(fx) * 0.5) - 1 in CommercialBuilder.EATERIES
 		for i in lights:
 			var x := fx - sw * 0.5 + (i + 0.5) * lw
 			if i == lights / 2:
@@ -85,8 +87,10 @@ static func _mi_midcentury(b: DenseBuilder, r: RandomNumberGenerator, to_curb: f
 				b._box("metal", Vector3(0.06, 2.5, 0.1), Vector3(x - lw * 0.5, 1.75, zf - 0.06), ALUMINIUM)
 				continue
 			b.shopfront = DenseBuilder.fine
+			b.diner_room = 7.0 if eats else 0.0
 			b._glass(Vector3(x, 1.75, zf - 0.03), Vector3(-1, 0, 0), lw - 0.06, 2.5, r.randf_range(0.0, 0.15))
 			b.shopfront = false
+			b.diner_room = 0.0
 			b._box("metal", Vector3(0.06, 2.5, 0.1), Vector3(x - lw * 0.5, 1.75, zf - 0.06), ALUMINIUM)
 		b._box("metal", Vector3(0.06, 2.5, 0.1), Vector3(fx + sw * 0.5, 1.75, zf - 0.06), ALUMINIUM)
 		b._box("metal", Vector3(sw, 0.06, 0.1), Vector3(fx, 3.0, zf - 0.06), ALUMINIUM)
@@ -150,6 +154,7 @@ static func _mi_newbuild(b: DenseBuilder, r: RandomNumberGenerator, to_curb: flo
 		var sw := bw - 0.8
 		var lights := maxi(2, roundi(sw / 1.8))
 		var lw := sw / lights
+		var eats := DenseBuilder.fine and b.sign_spec.is_empty() and int(b._word_slot(bx) * 0.5) - 1 in CommercialBuilder.EATERIES
 		b._box("paint", Vector3(sw, 0.45, 0.1), Vector3(bx, 0.22, zf - 0.05), stone)
 		for i in lights:
 			var x := bx - sw * 0.5 + (i + 0.5) * lw
@@ -158,8 +163,10 @@ static func _mi_newbuild(b: DenseBuilder, r: RandomNumberGenerator, to_curb: flo
 				b._glass(Vector3(x, 1.25, zf - 0.07), Vector3(-1, 0, 0), 0.8, 2.2, 0.0)
 			else:
 				b.shopfront = DenseBuilder.fine
+				b.diner_room = 7.0 if eats else 0.0
 				b._glass(Vector3(x, 1.85, zf - 0.03), Vector3(-1, 0, 0), lw - 0.08, 2.8, r.randf_range(0.0, 0.15))
 				b.shopfront = false
+				b.diner_room = 0.0
 			b._glass(Vector3(x, 3.75, zf - 0.03), Vector3(-1, 0, 0), lw - 0.08, 0.7, 0.0)
 			b._box("metal", Vector3(0.07, 3.8, 0.1), Vector3(x - lw * 0.5, 2.05, zf - 0.06), BLACK)
 		b._box("metal", Vector3(0.07, 3.8, 0.1), Vector3(bx + sw * 0.5, 2.05, zf - 0.06), BLACK)
