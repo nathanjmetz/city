@@ -188,6 +188,17 @@ func _car(p: Dictionary) -> void:
 	if _lo:
 		body.remove_at(4)
 		body.remove_at(1)
+	if _hi:
+		_car_skin(p)
+	else:
+		_car_shell(p, body)
+	_car_dress(p)
+
+
+## The car's body and greenhouse as two lofts (Low and High).
+func _car_shell(p: Dictionary, body: Array) -> void:
+	var hw: float = p.W * 0.5
+	var belt: float = p.belt
 	_loft(body, [_edges(PAINT, TRIM)], PAINT, PAINT)
 	# Greenhouse: windshield, roof (painted top, glass sides with a B pillar),
 	# rear glass. Side edges of the windshield and rear glass are pillars.
@@ -214,6 +225,16 @@ func _car(p: Dictionary) -> void:
 		gh = [gh[0], gh[1], gh[4], gh[5]]
 		codes = [codes[0], _edges(GLASS, PAINT, GLASS, PAINT), codes[4]]
 	_loft(gh, codes, PAINT, PAINT)
+
+
+## Wheels, lamps, bumpers, mirrors and plate on any car body.
+func _car_dress(p: Dictionary) -> void:
+	var L: float = p.L
+	var hw: float = p.W * 0.5
+	var c: float = p.clear
+	var hood: float = p.hood
+	var belt: float = p.belt
+	var tail: float = p.tail
 	_wheels(p.axles, p.wr, hw, 0.24)
 	# Lights, grille, bumpers, mirrors, plate.
 	if _hi:
@@ -232,6 +253,77 @@ func _car(p: Dictionary) -> void:
 	_box(Vector3(hw + 0.07, belt + 0.07, p.a + 0.2), Vector3(0.14, 0.11, 0.08), PAINT, true)
 	if _hi:
 		_car_detail(p)
+
+
+## Ultra: any car's body as one smooth skin, the way the Camry is lofted
+## from its blueprints, with curves drawn through the same measurements
+## the box body used (hood, belt, pillars, tail): the nose and tail round
+## over, the hood crowns, the sides bulge and tuck under, the greenhouse
+## tumbles in to the roof and the arches are cut round the tyres. Sides
+## stay near the old flat ones so seams, cladding and liveries still sit.
+func _car_skin(p: Dictionary) -> void:
+	var L: float = p.L
+	var hw: float = p.W * 0.5
+	var c: float = p.clear
+	var hood: float = p.hood
+	var belt: float = p.belt
+	var tail: float = p.tail
+	var H: float = p.H
+	var a: float = p.a
+	var b: float = p.b
+	var cc: float = p.c
+	var e: float = p.e
+	var tl := maxf(tail, belt - 0.02)
+	var top := _knots([[0.0, hood - 0.035], [0.2, hood], [a, belt + 0.01], [lerpf(a, b, 0.5), lerpf(belt, H, 0.72)],
+		[b, H - 0.005], [(b + cc) * 0.5, H], [cc, H - 0.005], [lerpf(cc, e, 0.5), lerpf(tl, H, 0.62)],
+		[e, tl + 0.01], [L - 0.2, tail], [L, tail - 0.03]])
+	# Belt high at the very nose and tail, so the lamps sit on the flat
+	# of the face, not out past its rounded top corners.
+	var bl := _knots([[0.0, hood - 0.09], [0.2, hood - 0.05], [a, belt - 0.01], [e, belt],
+		[L - 0.2, tail - 0.05], [L, tail - 0.07]])
+	var rk := _knots([[0.0, c + 0.12], [0.25, c + 0.03], [0.6, c], [L - 0.6, c], [L - 0.2, c + 0.02], [L, c + 0.14]])
+	var wd := _knots([[0.0, hw - 0.05], [0.2, hw - 0.005], [0.6, hw], [L - 0.6, hw], [L - 0.2, hw - 0.005], [L, hw - 0.05]])
+	var rw := _knots([[a, hw - 0.08], [b, hw - 0.22], [(b + cc) * 0.5, hw - 0.24], [cc, hw - 0.22], [e, hw - 0.08]])
+	var P := {"top": top, "belt": bl, "rocker": rk, "width": wd, "roof_w": rw,
+		"tyre": p.wr, "floor": c, "bulge": 0.008}
+	var zs := []
+	var z := 0.0
+	while z < L:
+		zs.append(z)
+		z += 0.05
+	zs.append(L)
+	var rings := []
+	for zz in zs:
+		rings.append(_camry_ring(zz, p.axles, P))
+	var m: int = rings[0].size()
+	var codes := []
+	var c_pillar: bool = p.get("c_pillar", true)
+	var g0 := lerpf(a, b, 0.45)
+	var g1: float = cc if c_pillar else e - 0.06
+	var bp := (b + cc) * 0.5
+	for i in zs.size() - 1:
+		var zm: float = 0.5 * (zs[i] + zs[i + 1])
+		var side := [TRIM, TRIM, PAINT, PAINT, PAINT, PAINT, PAINT, PAINT]
+		if zm > g0 and zm < g1 and absf(zm - bp) > 0.06:
+			side[5] = GLASS
+		if zm > a + 0.04 and zm < b - 0.04 or zm > cc + 0.04 and zm < e - 0.03:
+			side[7] = GLASS
+		var row := []
+		for k in m:
+			row.append(side[k] if k < 8 else side[m - 1 - k])
+		codes.append(row)
+	_skin(rings, codes)
+	_cap(rings[0], PAINT, Vector3(0, 0, 1))
+	_cap(rings[rings.size() - 1], PAINT, Vector3(0, 0, -1))
+
+
+## Curve knots with any that do not move forward dropped.
+static func _knots(pts: Array) -> Array:
+	var out := [pts[0]]
+	for k in range(1, pts.size()):
+		if pts[k][0] > out[out.size() - 1][0] + 0.01:
+			out.append(pts[k])
+	return out
 
 
 ## Ultra: a modern car's face on the nose itself, not tucked behind it:
@@ -565,8 +657,9 @@ static func _camry_ring(z: float, axles: Array, P: Dictionary = {}) -> Array:
 	var hood := [Vector2(w - 0.08, belt + 0.01), Vector2(w * 0.72, lerpf(belt, top, 0.65)),
 		Vector2(w * 0.38, top - 0.004)]
 	var glass := [Vector2(w - 0.07, belt + 0.02), Vector2(wr + 0.05, top - 0.07), Vector2(wr - 0.1, top - 0.006)]
-	var right := [Vector2(0.0, floor_y), Vector2(w - 0.25, floor_y), Vector2(w - 0.03, yb),
-		Vector2(w, yb + 0.45 * (belt - yb)), Vector2(w - 0.025, belt)]
+	var bulge: float = P.get("bulge", 0.03)
+	var right := [Vector2(0.0, floor_y), Vector2(w - 0.25, floor_y), Vector2(w - bulge, yb),
+		Vector2(w, yb + 0.45 * (belt - yb)), Vector2(w - bulge * 0.8, belt)]
 	for k in 3:
 		right.append((hood[k] as Vector2).lerp(glass[k], g))
 	right.append(Vector2(0.0, top))
