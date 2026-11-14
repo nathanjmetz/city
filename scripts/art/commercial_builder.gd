@@ -1924,7 +1924,25 @@ func _shop_gas_station(to_curb: float) -> void:
 	# By the front door: the ice chest and the propane exchange cage.
 	_box("paint", Vector3(1.8, 1.7, 0.8), Vector3(sw * 0.5 - 1.4, 1.15, zf - 0.6), Color("#eef2f4"))
 	_box("paint", Vector3(1.82, 0.35, 0.82), Vector3(sw * 0.5 - 1.4, 1.75, zf - 0.6), Color("#1e5aa8"))
-	_box("metal", Vector3(1.5, 1.6, 0.8), Vector3(sw * 0.5 - 3.4, 1.1, zf - 0.6), Color("#8d9093"))
+	if fine_parts:
+		# Real ones: a merchandiser's twin lids show as a seam and two
+		# handles; the exchange cage is welded steel mesh round three
+		# shelves of 20 lb cylinders, padlocked, on a steel base.
+		var ix := sw * 0.5 - 1.4
+		_box("paint", Vector3(0.02, 1.2, 0.02), Vector3(ix, 1.0, zf - 1.01), Color("#b9c0c4"))
+		for s in [-1.0, 1.0]:
+			_box("metal", Vector3(0.05, 0.4, 0.05), Vector3(ix + s * 0.18, 1.1, zf - 1.03), Color("#9aa0a4"))
+		var gx := sw * 0.5 - 3.4
+		_box("metal", Vector3(1.5, 0.3, 0.8), Vector3(gx, 0.45, zf - 0.6), Color("#2f4f7a"))
+		_box("chain", Vector3(1.5, 1.3, 0.8), Vector3(gx, 1.25, zf - 0.6), Color("#c9ccce"))
+		_box("metal", Vector3(1.56, 0.06, 0.86), Vector3(gx, 1.93, zf - 0.6), Color("#2f4f7a"))
+		for row in 2:
+			_box("metal", Vector3(1.44, 0.03, 0.74), Vector3(gx, 0.62 + row * 0.66, zf - 0.6), Color("#7d8285"))
+			for k in 3:
+				_cylinder("paint", Vector3(gx - 0.45 + k * 0.45, 0.64 + row * 0.66, zf - 0.6), 0.15, 0.46, Color("#e9ecee") if (k + row) % 3 else Color("#3a6aa8"), 10)
+		_box("metal", Vector3(0.08, 0.1, 0.04), Vector3(gx + 0.3, 1.3, zf - 1.02), Color("#b08a3a"))
+	else:
+		_box("metal", Vector3(1.5, 1.6, 0.8), Vector3(sw * 0.5 - 3.4, 1.1, zf - 0.6), Color("#8d9093"))
 	# Cars pull up beside the pumps, one each side of an island, and the
 	# driver walks in to pay.
 	if not small_store:
