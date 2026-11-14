@@ -639,19 +639,66 @@ func _police() -> void:  # Ford Explorer Police Interceptor Utility
 	_box(Vector3(0, 1.8, 2.5), Vector3(1.2, 0.06, 0.3), TRIM)
 	_box(Vector3(-0.32, 1.86, 2.5), Vector3(0.55, 0.08, 0.26), BEACON_RED)
 	_box(Vector3(0.32, 1.86, 2.5), Vector3(0.55, 0.08, 0.26), BEACON_BLUE)
-	if not _lo:
+	if _hi:
+		_patrol_livery(2.0, 0.72, 2.6, 0.6, "POLICE", 1.1)
+	elif not _lo:
 		_box(Vector3(0, 0.6, -0.08), Vector3(1.1, 0.5, 0.08), TRIM)
 
 
 ## Police light bar and push bumper, shared by the patrol cars.
-func _patrol_gear(W: float, roof: float, z: float, doors: Array) -> void:
+func _patrol_gear(W: float, roof: float, z: float, doors: Array, text := "POLICE") -> void:
 	for s in [-1.0, 1.0]:
 		_box(Vector3(s * (W * 0.5 + 0.002), doors[0], doors[1]), Vector3(0.004, doors[2], doors[3]), WHITE)
 	_box(Vector3(0, roof + 0.02, z), Vector3(1.2, 0.06, 0.3), TRIM)
 	_box(Vector3(-0.32, roof + 0.08, z), Vector3(0.55, 0.08, 0.26), BEACON_RED)
 	_box(Vector3(0.32, roof + 0.08, z), Vector3(0.55, 0.08, 0.26), BEACON_BLUE)
-	if not _lo:
+	if _hi:
+		_patrol_livery(W, doors[0], doors[1], doors[2], text, 1.0)
+	elif not _lo:
 		_box(Vector3(0, 0.55, -0.08), Vector3(1.1, 0.45, 0.08), TRIM)
+
+
+## Ultra: a patrol car's markings and push bumper (Setina style). Block
+## letters across the white door panel (centred at y, z, panel h tall) in
+## department navy over a blue reflective stripe, the word on the trunk
+## too, and the bumper's tubular frame instead of a black slab.
+func _patrol_livery(W: float, y: float, z: float, h: float, text: String, push_h: float) -> void:
+	var navy := Color(0.06, 0.1, 0.3, 0.4)
+	var hw := W * 0.5
+	for s in [-1.0, 1.0]:
+		_box(Vector3(s * (hw + 0.01), y - h * 0.5 + 0.08, z), Vector3(0.004, 0.06, h * 3.0), Color(0.1, 0.3, 0.75, 0.4))
+		_letters(text, s, hw + 0.01, y + 0.03, z, 0.034, navy)
+	var c := Color(0.04, 0.04, 0.04, 0.3)
+	for x in [-0.32, 0.32]:
+		_box(Vector3(x, 0.25 + push_h * 0.3, -0.12), Vector3(0.07, push_h * 0.6, 0.06), c)
+		_beam(Vector3(x, 0.4, -0.1), Vector3(x, 0.4, 0.15), 0.05, c)
+	for yy in [0.38, 0.25 + push_h * 0.55]:
+		_box(Vector3(0, yy, -0.15), Vector3(0.9, 0.05, 0.05), c)
+
+
+## Block letters, 3 by 5 squares of px each, standing on the car's side at
+## x = side * x (6 mm proud of the panel beneath), reading left to right
+## for someone on that side: from the back toward the front on the right,
+## from the front toward the back on the left.
+const GLYPHS := {
+	"P": ["111", "101", "111", "100", "100"], "O": ["111", "101", "101", "101", "111"],
+	"L": ["100", "100", "100", "100", "111"], "I": ["111", "010", "010", "010", "111"],
+	"C": ["111", "100", "100", "100", "111"], "E": ["111", "100", "110", "100", "111"],
+	"S": ["111", "100", "111", "001", "111"], "H": ["101", "101", "111", "101", "101"],
+	"R": ["110", "101", "110", "101", "101"], "F": ["111", "100", "110", "100", "100"],
+}
+func _letters(text: String, side: float, x: float, y: float, z: float, px: float, col: Color) -> void:
+	var step := px * 4.0
+	var dir := -1.0 if side > 0.0 else 1.0  # +z on the left side, -z on the right
+	var start := z - dir * (text.length() * step - px) * 0.5
+	for i in text.length():
+		var g: Array = GLYPHS.get(text[i], [])
+		for row in g.size():
+			for col_i in 3:
+				if (g[row] as String)[col_i] != "1":
+					continue
+				var zz := start + dir * (i * step + (col_i + 0.5) * px)
+				_box(Vector3(side * x, y + (2 - row) * px, zz), Vector3(0.004, px, px), col)
 
 
 func _police_charger() -> void:  # Dodge Charger Pursuit
@@ -663,7 +710,7 @@ func _police_charger() -> void:  # Dodge Charger Pursuit
 func _police_tahoe() -> void:  # Chevrolet Tahoe PPV, the county sheriff's usual
 	_car({"L": 5.35, "W": 2.06, "H": 1.93, "clear": 0.26, "hood": 1.2, "belt": 1.3, "a": 1.45,
 		"b": 2.15, "c": 4.95, "e": 5.2, "tail": 1.3, "wr": 0.4, "axles": [1.05, 4.15], "c_pillar": false})
-	_patrol_gear(2.06, 1.93, 2.6, [0.85, 2.7, 0.65, 2.0])
+	_patrol_gear(2.06, 1.93, 2.6, [0.85, 2.7, 0.65, 2.0], "SHERIFF")
 
 
 ## Ultra close-up detail on a car body: door seams and handles, mirror
