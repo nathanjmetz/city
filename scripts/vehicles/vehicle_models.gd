@@ -2444,6 +2444,18 @@ func _buggy() -> void:
 	var bay := Color(0.48, 0.29, 0.15, 0.4)
 	var dark := Color(0.08, 0.06, 0.05, 0.4)
 	# Horse: barrel, chest, neck and head, legs mid-trot, tail.
+	if _hi:
+		_standardbred(bay, dark)
+	else:
+		_horse_simple(bay, dark)
+	# Shafts and harness.
+	for s in [-1.0, 1.0]:
+		_beam(Vector3(s * 0.42, 1.15, 0.9), Vector3(s * 0.5, 0.95, 3.4), 0.05, TRIM)
+	_box(Vector3(0, 1.4, 1.25), Vector3(0.7, 0.08, 0.12), TRIM)
+	_buggy_body(dark)
+
+
+func _horse_simple(bay: Color, dark: Color) -> void:
 	_loft([
 		[0.75, 1.0, 1.35, 1.55, 0.2, 0.28, 0.18],
 		[1.1, 0.95, 1.35, 1.6, 0.26, 0.32, 0.22],
@@ -2459,10 +2471,67 @@ func _buggy() -> void:
 		var z: float = legs[i][0]
 		_beam(Vector3(s * 0.15, 1.0, z), Vector3(s * 0.15, 0.0, z + legs[i][1]), 0.1, dark if _lo else bay)
 	_beam(Vector3(0, 1.45, 2.4), Vector3(0, 0.75, 2.65), 0.1, dark)
-	# Shafts and harness.
+
+
+## Ultra: the Standardbred in the shafts, rounded instead of square beams:
+## a barrel with chest, withers and a wider croup, the neck rising to a
+## tapered head with ears and a dark muzzle, jointed legs mid-trot (knee,
+## cannon, dark hoof) in diagonal pairs, a full dark tail and mane, and
+## the black harness: collar, saddle pad, breeching, bridle and reins
+## back to the driver's hands.
+func _standardbred(bay: Color, dark: Color) -> void:
+	_loft([
+		[0.7, 1.08, 1.3, 1.45, 0.12, 0.2, 0.1],
+		[0.85, 0.98, 1.36, 1.58, 0.22, 0.29, 0.15],
+		[1.2, 0.93, 1.36, 1.6, 0.27, 0.33, 0.19],
+		[1.8, 0.95, 1.36, 1.57, 0.28, 0.34, 0.21],
+		[2.2, 1.0, 1.38, 1.6, 0.25, 0.33, 0.24],
+		[2.45, 1.1, 1.38, 1.53, 0.16, 0.25, 0.16],
+		[2.56, 1.22, 1.38, 1.46, 0.06, 0.12, 0.06],
+	], [_edges(bay, bay)], bay, bay)
+	# Neck in two tapering pieces, then the head down to the muzzle.
+	_cyl(Vector3(0, 1.4, 0.95), Vector3(0, 1.8, 0.62), 0.19, bay, 10)
+	_cyl(Vector3(0, 1.78, 0.64), Vector3(0, 2.0, 0.46), 0.14, bay, 10)
+	_cyl(Vector3(0, 2.04, 0.5), Vector3(0, 1.74, 0.16), 0.105, bay, 10)
+	_cyl(Vector3(0, 1.76, 0.18), Vector3(0, 1.64, 0.04), 0.08, Color(0.2, 0.13, 0.08, 0.4), 10)
 	for s in [-1.0, 1.0]:
-		_beam(Vector3(s * 0.42, 1.15, 0.9), Vector3(s * 0.5, 0.95, 3.4), 0.05, TRIM)
-	_box(Vector3(0, 1.4, 1.25), Vector3(0.7, 0.08, 0.12), TRIM)
+		_beam(Vector3(s * 0.06, 2.06, 0.52), Vector3(s * 0.08, 2.2, 0.56), 0.035, bay)
+		_box(Vector3(s * 0.1, 1.97, 0.4), Vector3(0.01, 0.03, 0.04), Color(0.02, 0.02, 0.02, 0.4))
+	_box(Vector3(0, 1.82, 0.86), Vector3(0.05, 0.12, 0.62), dark)  # mane
+	_cyl(Vector3(0, 2.06, 0.6), Vector3(0, 1.9, 0.82), 0.04, dark, 6)
+	# Legs mid-trot: near fore with off hind forward, the others back.
+	var legs := [[-1.0, 0.95, 0.18], [1.0, 1.0, -0.16], [-1.0, 2.2, -0.14], [1.0, 2.25, 0.2]]
+	for l in legs:
+		var sx: float = l[0]
+		var z: float = l[1]
+		var swing: float = l[2]
+		var top := Vector3(sx * 0.16, 1.05, z)
+		var knee := Vector3(sx * 0.16, 0.55, z + swing * 0.6)
+		var fet := Vector3(sx * 0.16, 0.12, z + swing)
+		_cyl(top, knee, 0.075, bay, 8)
+		_cyl(knee, fet, 0.042, dark, 8)
+		_cyl(fet, fet - Vector3(0, 0.12, -0.02), 0.06, Color(0.05, 0.04, 0.03, 0.4), 8)
+	# Tail.
+	_cyl(Vector3(0, 1.46, 2.56), Vector3(0, 1.1, 2.68), 0.07, dark, 8)
+	_cyl(Vector3(0, 1.12, 2.67), Vector3(0, 0.6, 2.7), 0.09, dark, 8)
+	# Harness: collar, saddle pad, breeching round the rump, bridle, reins.
+	var black := Color(0.03, 0.03, 0.03, 0.4)
+	for i in 10:
+		var a0 := TAU * i / 10.0
+		var a1 := TAU * (i + 1) / 10.0
+		var c := Vector3(0, 1.5, 0.92)
+		_beam(c + Vector3(cos(a0) * 0.27, sin(a0) * 0.27, 0), c + Vector3(cos(a1) * 0.27, sin(a1) * 0.27, 0), 0.06, black)
+	_box(Vector3(0, 1.61, 1.3), Vector3(0.3, 0.05, 0.3), black)
+	for s in [-1.0, 1.0]:
+		_beam(Vector3(s * 0.3, 1.4, 0.95), Vector3(s * 0.33, 1.3, 2.3), 0.03, black)
+		_beam(Vector3(s * 0.33, 1.3, 2.3), Vector3(s * 0.26, 1.1, 2.5), 0.03, black)
+		_beam(Vector3(s * 0.11, 1.85, 0.28), Vector3(s * 0.32, 1.6, 1.3), 0.012, black)
+		_beam(Vector3(s * 0.32, 1.6, 1.3), Vector3(0.18 + s * 0.08, 1.5, 3.85), 0.012, black)
+	_beam(Vector3(-0.11, 1.9, 0.38), Vector3(0.11, 1.9, 0.38), 0.025, black)
+
+
+## The buggy itself, behind the horse.
+func _buggy_body(dark: Color) -> void:
 	# Buggy: box seat body, black top, open front with the driver.
 	_box(Vector3(0, 0.95, 4.3), Vector3(1.3, 0.5, 1.9), PAINT)
 	_loft([
