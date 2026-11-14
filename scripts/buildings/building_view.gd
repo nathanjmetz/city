@@ -34,7 +34,7 @@ static var _footing_mat: Material
 const FAR_CHUNK := 128.0
 ## The parts of a close-up drawing its far version keeps: walls, roofs and
 ## windows (and a factory's metal cladding). Everything else is small.
-const FAR_KEEP := ["siding", "brick", "roof", "membrane", "glass"]
+const FAR_KEEP := ["siding", "brick", "eifs", "cmu", "roof", "membrane", "glass"]
 static var _far_kinds := {}  # Material -> its HouseMaterials name
 
 ## The town changes many times a second while it grows, so a change only

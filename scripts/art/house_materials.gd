@@ -92,6 +92,15 @@ uniform float pp_size = 1.8;
 uniform sampler2D pp_albedo : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
 uniform sampler2D pp_normal : hint_normal, filter_linear_mipmap_anisotropic, repeat_enable;
 uniform sampler2D pp_arm : filter_linear_mipmap_anisotropic, repeat_enable;
+// And dressed stone (vertex alpha 0.8: limestone bases, belt courses and
+// cornices) takes Poly Haven's ashlar photo (AssetLib
+// "large_sandstone_blocks", CC0) in the stone's own colour: sawn Bedford
+// limestone, as on every Indiana courthouse-square bank.
+uniform float sp = 0.0;
+uniform float sp_size = 3.0;
+uniform sampler2D sp_albedo : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
+uniform sampler2D sp_normal : hint_normal, filter_linear_mipmap_anisotropic, repeat_enable;
+uniform sampler2D sp_arm : filter_linear_mipmap_anisotropic, repeat_enable;
 void fragment() {
 	float t = UV.y / 0.0677;
 	float row = floor(t);
@@ -118,7 +127,8 @@ void fragment() {
 		vec2 nb = texture(bp_normal, puv).rg * 2.0 - 1.0;
 		// Vertex alpha under 1 marks a wall painted over (buff brick is
 		// light too, but its own brick).
-		float coat = 1.0 - step(0.99, COLOR.a);
+		float coat = step(0.4, COLOR.a) * (1.0 - step(0.6, COLOR.a));
+		float dressed = step(0.7, COLOR.a) * (1.0 - step(0.9, COLOR.a));
 		if (pp > 0.0 && coat > 0.0) {
 			vec2 quv = UV / pp_size;
 			vec3 lw = vec3(0.3, 0.59, 0.11);
@@ -127,6 +137,14 @@ void fragment() {
 			ratio = mix(ratio, vec3(pr), k);
 			arm = mix(arm, texture(pp_arm, quv).rgb, k);
 			nb = mix(nb, texture(pp_normal, quv).rg * 2.0 - 1.0, k);
+		}
+		if (sp > 0.0 && dressed > 0.0) {
+			vec2 suv = UV / sp_size;
+			vec3 lw = vec3(0.3, 0.59, 0.11);
+			float sr = dot(texture(sp_albedo, suv).rgb, lw) / max(dot(textureLod(sp_albedo, vec2(0.5), 12.0).rgb, lw), 0.02);
+			ratio = vec3(mix(1.0, sr, 0.45 * sp));  // sawn stone is cleaner than the photo
+			arm = texture(sp_arm, suv).rgb;
+			nb = texture(sp_normal, suv).rg * 2.0 - 1.0;
 		}
 		col = mix(col, vcol(COLOR.rgb) * ratio * mix(1.0, arm.r, 0.6), bp);
 		rough = mix(rough, arm.g, bp);
@@ -419,12 +437,24 @@ void fragment() {
 	vec3 drape = mix(vec3(0.62, 0.58, 0.50), vec3(0.75, 0.74, 0.70), hash(wcell + 2.7));
 	drape = mix(drape, vec3(0.30, 0.34, 0.42), step(0.85, hash(wcell + 5.1)));
 	float side = max(1.0 - smoothstep(0.17, 0.24, ux), smoothstep(0.76, 0.83, ux));
-	col = mix(col, lin(drape) * 0.55, side * step(h1, 0.6) * (1.0 - blinds * 0.7));
+	col = mix(col, lin(drape) * 0.55, side * step(h1, 0.6) * (1.0 - blinds * 0.7) * (1.0 - office));
 	col += vec3(0.022, 0.02, 0.017) * (1.0 - UV.y) * (1.0 - blinds);
 	float fres = pow(1.0 - clamp(dot(NORMAL, VIEW), 0.0, 1.0), 4.0);
 	vec3 sky = mix(vec3(0.20, 0.26, 0.34), vec3(0.45, 0.52, 0.60), UV.y);
 	sky *= 1.0 - night * 0.85;
 	ALBEDO = mix(col, sky, 0.18 + 0.5 * fres);
+	if (office > 0.5) {
+		// Tinted low-e office glass by day: mostly the sky it faces, each
+		// pane's reflection a touch off its neighbour's (no two lites sit
+		// quite flat), and only the ceiling's pale band showing through.
+		float hx = world_pos.x + world_pos.z;
+		float pane = hash(vec2(floor(hx / 1.5), floor(world_pos.y / 3.6)) + 31.7);
+		vec3 tint = vec3(0.72, 0.84, 0.86);
+		vec3 deep = mix(room, vcol(COLOR.rgb) * 0.3 * slat, blinds);
+		deep += vec3(0.03, 0.032, 0.034) * smoothstep(0.8, 0.95, UV.y) * (1.0 - blinds);
+		vec3 refl = sky * (0.9 + 0.2 * pane) * mix(0.85, 1.05, UV.y);
+		ALBEDO = mix(deep, refl, 0.38 + 0.45 * fres) * tint;
+	}
 	ROUGHNESS = 0.08;
 	SPECULAR = 0.6;
 	// After dark some rooms have a light on: one pick per window-sized patch
@@ -446,7 +476,14 @@ void fragment() {
 		float floor_on = step(hash(vec2(fl * 1.7, bld * 53.0)), 0.2);
 		float lit = mix(step(0.96, hash(cell + 9.1)), step(hash(cell + 4.4), 0.88), floor_on);
 		lit *= smoothstep(0.2, 0.6, night);
-		EMISSION = vec3(0.82, 0.9, 1.0) * lit * mix(1.8, 1.0, blinds) * (0.85 + 0.3 * UV.y);
+		// Not a flat white sheet: the ceiling's 2x4 troffers in a row near
+		// the top of the glass, the lit room under them dimmer, and the
+		// workstation partitions a darker band along the bottom.
+		float hx = world_pos.x + world_pos.z;
+		float troffer = step(0.5, fract(hx / 1.2)) * smoothstep(0.8, 0.84, UV.y) * (1.0 - smoothstep(0.93, 0.97, UV.y));
+		float parts = mix(0.35, 1.0, smoothstep(0.3, 0.36, UV.y));
+		float room_lit = 0.5 + 0.12 * hash(cell + 2.2);
+		EMISSION = vec3(0.82, 0.9, 1.0) * lit * (room_lit * parts + 1.3 * troffer) * mix(1.0, 0.65, blinds);
 	}
 	}
 }
@@ -810,6 +847,46 @@ void fragment() {
 }
 """
 
+## EIFS (synthetic stucco over foam board), the 1990s-2010s strip centre's
+## and pad restaurant's dress: the wall's own colour, and on desktop High
+## and up with the free asset library Poly Haven's sand-finish plaster
+## photo (AssetLib "beige_wall_001", CC0) laid on the wall in world space,
+## its shading only. Benchmark: Indiana strip centres from the 2000s.
+const EIFS := """
+uniform float ep = 0.0;
+uniform float ep_size = 3.0;
+uniform float ep_mix = 1.0;  // how much of the photo's shading (paint evens it)
+uniform sampler2D ep_albedo : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
+uniform sampler2D ep_normal : hint_normal, filter_linear_mipmap_anisotropic, repeat_enable;
+uniform sampler2D ep_arm : filter_linear_mipmap_anisotropic, repeat_enable;
+void fragment() {
+	vec3 n = normalize(world_normal);
+	vec3 col = vcol(COLOR.rgb);
+	float rough = 0.85;
+	if (ep > 0.0) {
+		// Laid on whichever plane the face is most nearly in.
+		vec2 uv = abs(n.x) > abs(n.z) ? world_pos.zy : world_pos.xy;
+		uv = abs(n.y) > 0.7 ? world_pos.xz : uv;
+		uv /= ep_size;
+		vec3 lw = vec3(0.3, 0.59, 0.11);
+		float shade = dot(texture(ep_albedo, uv).rgb, lw) / max(dot(textureLod(ep_albedo, vec2(0.5), 12.0).rgb, lw), 0.02);
+		col *= mix(1.0, shade, ep * ep_mix);
+		rough = mix(rough, texture(ep_arm, uv).g, ep);
+		vec2 nb = (texture(ep_normal, uv).rg * 2.0 - 1.0) * ep * 0.6;
+		vec3 across = normalize(cross(vec3(0.0, 1.0, 0.0), n) + vec3(1e-4, 0.0, 0.0));
+		vec3 upw = cross(n, across);
+		NORMAL = normalize((VIEW_MATRIX * vec4(normalize(n + across * nb.x + upw * nb.y), 0.0)).xyz);
+	}
+	// Rain-washed streaks down from the coping, as EIFS gets.
+	float streak = smoothstep(0.7, 0.92, texture(noise_soft, vec2((world_pos.x + world_pos.z) / 2.0, world_pos.y / 30.0)).r);
+	col *= 1.0 - streak * 0.06;
+	float cover = snow_cover(0.88, 0.97);
+	ALBEDO = mix(col, vec3(0.86, 0.88, 0.92), cover);
+	ROUGHNESS = mix(rough, 0.7, cover);
+	SPECULAR = 0.3;
+}
+"""
+
 ## Reclaimed pasture and hay ground laid as a flat (strip mine grading):
 ## vertex colour as the grass, with the lawn's seasons and snow, no sheen.
 ## Low-slope commercial roofs (alpha picks the kind): single-ply membrane
@@ -922,7 +999,7 @@ static func get_mat(key: String) -> Material:
 	var mat: Material
 	match key:
 		"siding": mat = _shader(SIDING)
-		"brick": mat = _photo_on(_photo_on(_shader(BRICK), "red_brick", "bp"), "painted_brick", "pp")
+		"brick": mat = _photo_on(_photo_on(_photo_on(_shader(BRICK), "red_brick", "bp"), "painted_brick", "pp"), "large_sandstone_blocks", "sp")
 		"roof": mat = _shader(ROOF)
 		"glass": mat = _shader(GLASS)
 		"yard": mat = _yard()
@@ -933,6 +1010,12 @@ static func get_mat(key: String) -> Material:
 		"far": mat = _shader(FAR)
 		"membrane": mat = _photo_on(_shader(MEMBRANE), "bitumen", "rp", 5.0)
 		"slipform": mat = _shader(SLIPFORM)
+		"eifs": mat = _photo_on(_shader(EIFS), "beige_wall_001", "ep")
+		# Painted concrete block (c-stores, 1960s strips): the same wall
+		# shader with Poly Haven's block wall photo (CC0).
+		"cmu":
+			mat = _photo_on(_shader(EIFS), "concrete_block_wall", "ep")
+			mat.set_shader_parameter("ep_mix", 0.5)
 		"bin": mat = _shader(BIN)
 		"farm_gravel": mat = _gravel()
 		"pool": mat = _pool()

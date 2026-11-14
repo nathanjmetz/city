@@ -100,6 +100,10 @@ func _ready() -> void:
 	var county_rail := CountyRailView.new()
 	add_child(county_rail)
 	county_rail.setup(sim)
+	# Fallen logs, stumps, fieldstone piles: scanned props near the camera.
+	var props := CountryProps.new()
+	add_child(props)
+	props.setup(sim)
 	# Its through freights.
 	var county_trains := CountyTrainView.new()
 	add_child(county_trains)

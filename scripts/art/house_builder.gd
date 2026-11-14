@@ -2933,6 +2933,12 @@ func _tool(mat: String) -> SurfaceTool:
 	return _st[mat]
 
 
+
+## A stone colour for the "brick" surface: vertex alpha 0.8 marks dressed
+## stone, which the brick shader draws as ashlar on desktop High+.
+static func _dressed(c: Color) -> Color:
+	return Color(c, 0.8)
+
 func _box(mat: String, size: Vector3, center: Vector3, col: Color, basis := Basis.IDENTITY) -> void:
 	var h := size * 0.5
 	var reach := center.z + (h.z if basis == Basis.IDENTITY else h.length())
