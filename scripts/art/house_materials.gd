@@ -795,9 +795,18 @@ void fragment() {
 ## Dirt and ponding stains, and snow in winter. Benchmark: aerial photos
 ## of Indiana Main Street blocks and strip centres.
 const MEMBRANE := """
+// Desktop High and up with the free asset library: dark roofs (built-up
+// tar and modified bitumen, by far the commonest on old Main Street
+// blocks) take Poly Haven's bitumen photo (AssetLib "bitumen", CC0), its
+// rolled strips about a metre wide, scaled by the roof's own colour.
+uniform float rp = 0.0;
+uniform float rp_size = 5.0;
+uniform sampler2D rp_albedo : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
+uniform sampler2D rp_arm : filter_linear_mipmap_anisotropic, repeat_enable;
 void fragment() {
 	vec2 p = world_pos.xz;
 	vec3 col = vcol(COLOR.rgb);
+	float rough = 0.85;
 	float big = texture(noise_soft, p / 18.0).r;
 	float spot = texture(noise_soft, p / 4.0 + 0.37).r;
 	float grain = texture(noise_grain, p / 0.6).r;
@@ -808,8 +817,17 @@ void fragment() {
 		float seam = 1.0 - smoothstep(0.0, 0.03, min(sx, 1.0 - sx));
 		seam *= 1.0 - smoothstep(0.3, 0.8, fwidth(p.x / 3.05) * 15.0);
 		float dark = step(dot(col, vec3(0.33)), 0.1);
-		col *= 1.0 + seam * mix(-0.12, 0.35, dark);
-		col *= 0.92 + grain * 0.08;
+		if (rp > 0.0 && dark > 0.5) {
+			vec3 ph = texture(rp_albedo, p / rp_size).rgb;
+			vec3 mean = textureLod(rp_albedo, vec2(0.5), 12.0).rgb;
+			// Luminance only: the photo's warm cast would brown the rubber.
+			float shade = dot(ph, vec3(0.3, 0.59, 0.11)) / max(dot(mean, vec3(0.3, 0.59, 0.11)), 0.01);
+			col *= mix(1.0, shade, rp);
+			rough = mix(rough, texture(rp_arm, p / rp_size).g, rp);
+		} else {
+			col *= 1.0 + seam * mix(-0.12, 0.35, dark);
+			col *= 0.92 + grain * 0.08;
+		}
 	} else {
 		// Gravel ballast: speckled stone.
 		col *= 0.75 + grain * 0.5;
@@ -820,7 +838,7 @@ void fragment() {
 	float cover = snow_cover(0.8, 0.95);
 	col = mix(col, vec3(0.86, 0.88, 0.92), cover);
 	ALBEDO = col;
-	ROUGHNESS = mix(0.85, 0.7, cover);
+	ROUGHNESS = mix(rough, 0.7, cover);
 	SPECULAR = 0.25;
 }
 """
@@ -881,7 +899,7 @@ static func get_mat(key: String) -> Material:
 	var mat: Material
 	match key:
 		"siding": mat = _shader(SIDING)
-		"brick": mat = _brick_photo(_shader(BRICK))
+		"brick": mat = _photo_on(_shader(BRICK), "red_brick", "bp")
 		"roof": mat = _shader(ROOF)
 		"glass": mat = _shader(GLASS)
 		"yard": mat = _yard()
@@ -890,7 +908,7 @@ static func get_mat(key: String) -> Material:
 		"chain": mat = _shader(CHAIN)
 		"pasture": mat = _shader(PASTURE)
 		"far": mat = _shader(FAR)
-		"membrane": mat = _shader(MEMBRANE)
+		"membrane": mat = _photo_on(_shader(MEMBRANE), "bitumen", "rp", 5.0)
 		"slipform": mat = _shader(SLIPFORM)
 		"bin": mat = _shader(BIN)
 		"farm_gravel": mat = _gravel()
@@ -902,25 +920,43 @@ static func get_mat(key: String) -> Material:
 	return mat
 
 
-## The brick's photo (AssetLib "red_brick") on the desktop's High tier and
-## up when the art is here (Surfaces.photo_level); the drawn courses
-## otherwise. Follows the quality setting as it changes.
-static func _brick_photo(mat: ShaderMaterial) -> ShaderMaterial:
-	_brick_apply(mat)
-	if GraphicsQuality.current:
-		GraphicsQuality.current.changed.connect(_brick_apply.bind(mat))
+## A free-library photo surface (AssetLib texture `id`) in a shared
+## shader under uniform prefix `pre` (pre, pre_size, pre_albedo,
+## pre_normal, pre_arm), on the desktop's High tier and up when the art is
+## here (Surfaces.photo_level); the drawn pattern otherwise. `size` (m)
+## overrides the catalog's tile size. Follows the quality as it changes.
+static func _photo_on(mat: ShaderMaterial, id: String, pre: String, size := 0.0) -> ShaderMaterial:
+	_photo_apply(mat, id, pre, size)
+	_photo_follow(mat, id, pre, size)
 	return mat
 
 
-static func _brick_apply(mat: ShaderMaterial) -> void:
-	var level := Surfaces.photo_level() if AssetLib.has("red_brick") else 0.0
-	if level > 0.0 and mat.get_shader_parameter("bp_albedo") == null:
-		var dir := str(AssetLib.info("red_brick").get("dir", ""))
-		mat.set_shader_parameter("bp_albedo", load(dir.path_join("albedo.jpg")))
-		mat.set_shader_parameter("bp_normal", load(dir.path_join("normal.jpg")))
-		mat.set_shader_parameter("bp_arm", load(dir.path_join("arm.jpg")))
-		mat.set_shader_parameter("bp_size", float(AssetLib.info("red_brick").get("size_m", [1.4])[0]))
-	mat.set_shader_parameter("bp", level if mat.get_shader_parameter("bp_albedo") != null else 0.0)
+## Re-applies when the quality changes. A material made before the
+## Quality autoload is ready (a tool drawing in _initialize) waits a frame.
+static func _photo_follow(mat: ShaderMaterial, id: String, pre: String, size: float) -> void:
+	if GraphicsQuality.current:
+		GraphicsQuality.current.changed.connect(_photo_apply.bind(mat, id, pre, size))
+		return
+	var again := func():
+		_photo_apply(mat, id, pre, size)
+		_photo_follow(mat, id, pre, size)
+	var tree := Engine.get_main_loop() as SceneTree
+	if tree:
+		tree.process_frame.connect(again, CONNECT_ONE_SHOT)
+	else:
+		# Still making the main loop (its _init): once it runs.
+		(func(): (Engine.get_main_loop() as SceneTree).process_frame.connect(again, CONNECT_ONE_SHOT)).call_deferred()
+
+
+static func _photo_apply(mat: ShaderMaterial, id: String, pre: String, size: float) -> void:
+	var level := Surfaces.photo_level() if AssetLib.has(id) else 0.0
+	if level > 0.0 and mat.get_shader_parameter(pre + "_albedo") == null:
+		var dir := str(AssetLib.info(id).get("dir", ""))
+		mat.set_shader_parameter(pre + "_albedo", load(dir.path_join("albedo.jpg")))
+		mat.set_shader_parameter(pre + "_normal", load(dir.path_join("normal.jpg")))
+		mat.set_shader_parameter(pre + "_arm", load(dir.path_join("arm.jpg")))
+		mat.set_shader_parameter(pre + "_size", size if size > 0.0 else float(AssetLib.info(id).get("size_m", [1.0])[0]))
+	mat.set_shader_parameter(pre, level if mat.get_shader_parameter(pre + "_albedo") != null else 0.0)
 
 
 ## The name a shared material was made under, or "" for one of its own.
