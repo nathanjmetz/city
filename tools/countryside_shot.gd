@@ -19,6 +19,8 @@ const VIEWS := [
 	["rail_mid", "rail", 60.0, 30.0, 260.0],
 	["rail_low", "rail", 75.0, 9.0, 30.0],
 	["creek_close", "creek", 150.0, 22.0, 70.0],
+	["woods_floor", "woods_in", 120.0, 38.0, 32.0],
+	["prop_close", "prop", 140.0, 30.0, 9.0],
 ]
 
 var _view := -1
@@ -64,9 +66,31 @@ func _process(delta: float) -> bool:
 		var out: String = OS.get_cmdline_user_args()[0].path_join(_views[_view][0] + ".png")
 		root.get_viewport().get_texture().get_image().save_png(out)
 		print("saved ", out, "  draw calls ", Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME),
-			"  primitives ", Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME))
+			"  primitives ", Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME),
+			"  props ", _props())
 		_next()
 	return false
+
+
+## Scanned props drawn near the camera (CountryProps), for the log.
+func _props() -> int:
+	var n := 0
+	for c in _main.get_children():
+		if c is CountryProps:
+			for mi in c.get_children():
+				n += (mi as MultiMeshInstance3D).multimesh.instance_count
+	return n
+
+
+## Where the first scanned prop near the camera lies (the woods if none).
+func _prop_spot() -> Vector3:
+	for c in _main.get_children():
+		if c is CountryProps:
+			for mi in c.get_children():
+				var mm: MultiMesh = (mi as MultiMeshInstance3D).multimesh
+				if mm.instance_count > 0:
+					return (mi as Node3D).position + mm.get_instance_transform(0).origin
+	return _aims.woods
 
 
 func _next() -> void:
@@ -76,6 +100,8 @@ func _next() -> void:
 		quit()
 		return
 	var v: Array = _views[_view]
+	if v[1] == "prop":
+		_aims.prop = _prop_spot()
 	_cam.look_at_point(_aims[v[1]])
 	_cam.set_view(deg_to_rad(v[2]), deg_to_rad(v[3]), v[4])
 
@@ -89,6 +115,7 @@ func _find_aims() -> void:
 	var best_t := INF
 	_aims.pond = Vector3(-250, 0, 400)
 	_aims.woods = Vector3(-500, 0, 100)
+	_aims.woods_in = Vector3(-500, 0, 50)
 	for x in range(-4000, 4001, 40):
 		for z in range(-4000, 4001, 40):
 			var d := Vector2(x + 250, z - 200).length()
@@ -103,6 +130,8 @@ func _find_aims() -> void:
 					and Terrain.water(x + o.x, z + 40 + o.y) < 0.1:
 				best_t = d
 				_aims.woods = Vector3(x, 0, z + 20)
+				# 30 m into the woods from that edge: the woods floor.
+				_aims.woods_in = Vector3(x, 0, z - 30)
 	# A creek: a thin wet line, not a pond (pond water reads 0.6 and up).
 	_aims.creek = _aims.pond
 	var best_c := INF
