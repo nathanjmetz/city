@@ -412,6 +412,11 @@
    "use": "ashlar stone on courthouses, banks, churches, post offices",
    "real": "stand-in for Indiana (Bedford) oolitic limestone ashlar",
    "check": "compare to Grant County Courthouse limestone; tint toward grey-buff"
+  },
+  "beige_wall_001": {
+   "loop": "downtown",
+   "use": "EIFS fronts and tenant towers of 1990s-2010s strip centres (tinted to the wall colour)",
+   "real": "exterior insulation and finish system: fine sand-finish acrylic stucco over foam, the dress of every 1990s-2010s Indiana strip centre and pad restaurant"
   }
  },
  "hdris": {
