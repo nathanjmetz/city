@@ -634,6 +634,10 @@ func _mixed(to_curb: float, width: float, storeys: int) -> void:
 		# under the sign board.
 		# A shop whose sign says it serves food shows its booths and counter.
 		var eats := fine and (sign_spec.is_empty() or k != fronts / 2) and int(_word_slot(fx) * 0.5) - 1 in EATERIES
+		if fine:
+			# After dark the lit display windows throw their light out
+			# across the sidewalk, brightest at the glass.
+			_light_pool(Vector3(fx, 0.1, zf - 0.2), sw * 1.4, 4.4, Color(0.78, 0.7, 0.58))
 		for i in bays:
 			var x := fx - sw * 0.5 + (i + 0.5) * bw
 			if i == bays / 2 and bw > 1.5:

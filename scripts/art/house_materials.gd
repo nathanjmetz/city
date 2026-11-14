@@ -464,7 +464,14 @@ void fragment() {
 		float floor_on = step(hash(vec2(fl * 1.7, bld * 53.0)), 0.2);
 		float lit = mix(step(0.96, hash(cell + 9.1)), step(hash(cell + 4.4), 0.88), floor_on);
 		lit *= smoothstep(0.2, 0.6, night);
-		EMISSION = vec3(0.82, 0.9, 1.0) * lit * mix(1.8, 1.0, blinds) * (0.85 + 0.3 * UV.y);
+		// Not a flat white sheet: the ceiling's 2x4 troffers in a row near
+		// the top of the glass, the lit room under them dimmer, and the
+		// workstation partitions a darker band along the bottom.
+		float hx = world_pos.x + world_pos.z;
+		float troffer = step(0.5, fract(hx / 1.2)) * smoothstep(0.8, 0.84, UV.y) * (1.0 - smoothstep(0.93, 0.97, UV.y));
+		float parts = mix(0.35, 1.0, smoothstep(0.3, 0.36, UV.y));
+		float room_lit = 0.5 + 0.12 * hash(cell + 2.2);
+		EMISSION = vec3(0.82, 0.9, 1.0) * lit * (room_lit * parts + 1.3 * troffer) * mix(1.0, 0.65, blinds);
 	}
 	}
 }
