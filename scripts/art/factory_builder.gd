@@ -30,9 +30,16 @@ const CRANE := Color("#d9a521")
 const COIL := Color("#8f9397")
 
 
+## The trade a plant's office sign names when no business family owns it
+## yet (a feed mill never says MACHINE).
+const CHAIN_SIGNS := {"mill": "FEED & GRAIN", "sawmill": "SAWMILL", "refinery": "PLASTICS", "metal": "STEEL FAB"}
+var trade_chain := ""
+
+
 static func build_chain(chain: String, seed: int, to_curb: float, lot := {}, spec := {}) -> Array:
 	var b := FactoryBuilder.new()
 	b.sign_spec = spec
+	b.trade_chain = chain
 	b.rng = RandomNumberGenerator.new()
 	b.rng.seed = seed
 	b._fit(lot)
@@ -69,7 +76,11 @@ func _front(zf: float, x0: float, dx: float, to_curb: float) -> void:
 	_box("paint", Vector3(ow + 0.15, 0.12, od + 0.15), Vector3(ox, 3.44, zf - od * 0.5), Color("#cfcbc2"))
 	for i in 2:
 		_glass(Vector3(ox - ow * 0.25 + i * ow * 0.5, 1.75, zf - od - 0.02), Vector3(-1, 0, 0), ow * 0.4, 1.5, 0.3)
-	_sign(Vector3(ox, 2.6, zf - od - 0.05), ow * 0.7, 0.55)
+	var trade: String = CHAIN_SIGNS.get(trade_chain, "")
+	if sign_spec.is_empty() and trade != "":
+		_civic_sign(Vector3(ox, 2.6, zf - od - 0.05), ow * 0.7, 0.55, trade, "#1f3b6e", "#f2efe6", "franklin")
+	else:
+		_sign(Vector3(ox, 2.6, zf - od - 0.05), ow * 0.7, 0.55)
 	_flat_rect("asphalt", x0, x0 + ow + 6.0, 0.0, zf - od - 0.5, 0.06)
 	var x := x0 + 0.2
 	while x <= x0 + ow + 6.0:
