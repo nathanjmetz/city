@@ -263,6 +263,13 @@ func _building(v: PackedVector3Array, nrm: PackedVector3Array, col: PackedColorA
 	wall.a = 1.0
 	if not house:
 		var flat: Color = FLAT_ROOFS[(pick / 7) % FLAT_ROOFS.size()]
+		if _trees > 0.0:
+			# Desktop: a white membrane weathers to a dirty light grey within a
+			# few years (aged TPO reflects about 0.6-0.7, fresh about 0.8), each
+			# roof its own age; and the roof carries its heating and cooling.
+			if flat.r > 0.7:
+				flat = Color(0.80, 0.81, 0.80).lerp(Color(0.60, 0.60, 0.58), 0.45 + 0.4 * float(pick % 11) / 10.0)
+			_roof_units(v, nrm, col, pts, y1, area, pick)
 		_quad(v, nrm, col, Vector3(pts[0].x, y1, pts[0].y), Vector3(pts[3].x, y1, pts[3].y),
 			Vector3(pts[2].x, y1, pts[2].y), Vector3(pts[1].x, y1, pts[1].y), flat)
 		return
@@ -292,6 +299,62 @@ func _building(v: PackedVector3Array, nrm: PackedVector3Array, col: PackedColorA
 	var e1 := r1 - mid
 	_tri(v, nrm, col, Vector3(p3.x, y1, p3.y), Vector3(p0.x, y1, p0.y), R0, wall, Vector3(e0.x, 0.0, e0.y))
 	_tri(v, nrm, col, Vector3(p1.x, y1, p1.y), Vector3(p2.x, y1, p2.y), R1, wall, Vector3(e1.x, 0.0, e1.y))
+
+
+## Packaged rooftop units on a flat-roofed store, office or plant
+## (desktop): a commercial building is heated and cooled by boxes about
+## 3 x 2 m and 1.4 m tall, roughly one per 450 m² of floor (aerial
+## photos of Midwest big-box stores show 30-50 units on 15,000-20,000 m²
+## of roof), galvanised or beige and darker than the membrane, set in rows
+## down the middle of the roof with walkway room to the edge. From the
+## backdrop's 450 m they read as rows of light dots with short shadows,
+## the way every big-box roof does from the air.
+func _roof_units(v: PackedVector3Array, nrm: PackedVector3Array, col: PackedColorArray,
+		pts: Array, y1: float, area: float, pick: int) -> void:
+	if area < 450.0:
+		return
+	var a: Vector2 = pts[0]
+	var du: Vector2 = pts[1] - pts[0]
+	var dw: Vector2 = pts[3] - pts[0]
+	if du.length() < dw.length():
+		var t := du
+		du = dw
+		dw = t
+	var lu := du.length()
+	var lw := dw.length()
+	if lu < 14.0 or lw < 10.0:
+		return
+	var n := clampi(int(area / 450.0 + 0.5), 1, 60)
+	var rows := clampi(int(round(sqrt(float(n) * lw / lu))), 1, 6)
+	var per := ceili(float(n) / rows)
+	var eu := du / lu
+	var ew := dw / lw
+	var grey := Color(0.56, 0.56, 0.53).lerp(Color(0.46, 0.47, 0.46), float(pick % 5) / 4.0)
+	var side := grey.darkened(0.2)
+	var k := 0
+	for r in rows:
+		var fw := (r + 1.0) / (rows + 1.0)
+		for i in per:
+			if k >= n:
+				return
+			k += 1
+			var fu := (i + 1.0) / (per + 1.0)
+			# A little scatter: units go where the ducts below need them.
+			var h := absi(hash(Vector3i(pick, r, i)))
+			fu += (float(h % 7) - 3.0) / 7.0 * 0.4 / (per + 1.0)
+			var c := a + du * fu + dw * fw
+			var hu := eu * (1.5 if h % 3 else 1.0)
+			var hw := ew * 1.0
+			var q := [c - hu - hw, c + hu - hw, c + hu + hw, c - hu + hw]
+			var top := y1 + 1.4
+			_quad(v, nrm, col, Vector3(q[0].x, top, q[0].y), Vector3(q[1].x, top, q[1].y),
+				Vector3(q[2].x, top, q[2].y), Vector3(q[3].x, top, q[3].y), grey)
+			for s in 4:
+				var p0: Vector2 = q[s]
+				var p1: Vector2 = q[(s + 1) % 4]
+				var away := (p0 + p1) * 0.5 - c
+				_quad(v, nrm, col, Vector3(p0.x, y1, p0.y), Vector3(p1.x, y1, p1.y),
+					Vector3(p1.x, top, p1.y), Vector3(p0.x, top, p0.y), side, Vector3(away.x, 0.0, away.y))
 
 
 ## A house's yard trees (_trees per house on average): crowns in the front
@@ -364,6 +427,82 @@ func _lot(v: PackedVector3Array, nrm: PackedVector3Array, col: PackedColorArray,
 	for c in q:
 		p.append(Vector3(c.x - o.x, Terrain.height(c.x, c.y) + 0.15, c.y - o.y))
 	_quad(v, nrm, col, p[0], p[1], p[2], p[3], LOT_ASPHALT)
+	if _trees > 0.0 and m > 12.0:
+		_parked(v, nrm, col, centre, u, w, m, o)
+
+
+## Cars parked in a store's lot (desktop): 90-degree stalls 2.75 m wide
+## and 5.5 m deep in double-loaded bays with 7.3 m aisles (ITE / ULI
+## parking design norms), starting past a 7 m sidewalk and fire lane.
+## Daytime lots run about half full, fullest near the doors, the back lot
+## mostly staff. Colours in the real US mix (white, black, grey and silver
+## about three in four cars; then blue, red, the odd brown or green).
+func _parked(v: PackedVector3Array, nrm: PackedVector3Array, col: PackedColorArray,
+		centre: Vector2, u: Vector2, w: Vector2, m: float, o: Vector2) -> void:
+	var a := u
+	var b := w
+	if a.length() < b.length():
+		a = w
+		b = u
+	var la := a.length()
+	var lb := b.length()
+	var ea := a / la
+	var eb := b / lb
+	var seed := absi(hash(Vector2i(int(centre.x), int(centre.y))))
+	for side in [-1.0, 1.0]:
+		var fill := 0.6 if side < 0.0 else 0.25
+		var rows := []
+		var d := 7.0
+		while d + 5.5 <= m - 1.0:
+			rows.append(d)
+			if rows.size() % 2 == 1:
+				d += 5.5 + 7.3
+			else:
+				d += 5.5
+		for ri in rows.size():
+			var near: float = 1.0 - 0.6 * float(ri) / maxf(rows.size(), 1.0)
+			var x := -la + 2.0
+			var k := 0
+			while x <= la - 2.0:
+				k += 1
+				var h := absi(hash(Vector3i(seed, ri * 2 + int(side > 0.0), k)))
+				if float(h % 1000) / 1000.0 < fill * near:
+					var c: Vector2 = centre + ea * x + eb * side * (lb + rows[ri] + 2.75)
+					_car(v, nrm, col, c, ea, eb, h, o)
+				x += 2.75
+
+
+const CAR_COLOURS := [Color(0.82, 0.82, 0.80), Color(0.82, 0.82, 0.80), Color(0.06, 0.06, 0.07),
+	Color(0.06, 0.06, 0.07), Color(0.36, 0.37, 0.38), Color(0.36, 0.37, 0.38), Color(0.62, 0.63, 0.64),
+	Color(0.14, 0.22, 0.40), Color(0.50, 0.08, 0.07), Color(0.30, 0.24, 0.18), Color(0.16, 0.24, 0.17),
+	Color(0.82, 0.82, 0.80)]
+
+
+## One parked car or pickup as a low box nose to the aisle, 4.7 x 1.85 m
+## and 1.5 m tall (a pickup 5.8 m and 1.9 m).
+func _car(v: PackedVector3Array, nrm: PackedVector3Array, col: PackedColorArray,
+		c: Vector2, along: Vector2, across: Vector2, h: int, o: Vector2) -> void:
+	var truck := h % 5 == 0
+	var half_l := (2.9 if truck else 2.35)
+	var half_w := 0.93
+	var top := Terrain.height(c.x, c.y) + (1.9 if truck else 1.5)
+	var body: Color = CAR_COLOURS[(h / 7) % CAR_COLOURS.size()]
+	var side := body.darkened(0.25)
+	var q := [c - across * half_l - along * half_w, c + across * half_l - along * half_w,
+		c + across * half_l + along * half_w, c - across * half_l + along * half_w]
+	var lo := top - (1.9 if truck else 1.5) + 0.15
+	var pts := []
+	for p in q:
+		pts.append(Vector2(p.x - o.x, p.y - o.y))
+	var mid := Vector2(c.x - o.x, c.y - o.y)
+	_quad(v, nrm, col, Vector3(pts[0].x, top, pts[0].y), Vector3(pts[1].x, top, pts[1].y),
+		Vector3(pts[2].x, top, pts[2].y), Vector3(pts[3].x, top, pts[3].y), body)
+	for s in 4:
+		var p0: Vector2 = pts[s]
+		var p1: Vector2 = pts[(s + 1) % 4]
+		var away := (p0 + p1) * 0.5 - mid
+		_quad(v, nrm, col, Vector3(p0.x, lo, p0.y), Vector3(p1.x, lo, p1.y),
+			Vector3(p1.x, top, p1.y), Vector3(p0.x, top, p0.y), side, Vector3(away.x, 0.0, away.y))
 
 
 ## Two triangles, a b c d round the face's edge; the face looks toward `out`.
