@@ -250,7 +250,14 @@ func _car_dress(p: Dictionary) -> void:
 	_box(Vector3(0, c + 0.1, 0.1), Vector3(p.W - 0.3, 0.14, 0.16), TRIM)
 	_box(Vector3(0, c + 0.12, L - 0.1), Vector3(p.W - 0.3, 0.14, 0.16), TRIM)
 	_box(Vector3(0, tail - 0.3, L + 0.005), Vector3(0.3, 0.15, 0.02), WHITE)
-	_box(Vector3(hw + 0.07, belt + 0.07, p.a + 0.2), Vector3(0.14, 0.11, 0.08), PAINT, true)
+	if _hi:
+		# Ultra: the mirror sits on the door at the A-pillar's foot on a
+		# dark stalk, its housing tucked against the glass (the smooth
+		# skin's greenhouse leans in, so the old spot left it floating).
+		_box(Vector3(hw + 0.035, belt + 0.08, p.a + 0.24), Vector3(0.15, 0.1, 0.08), PAINT, true)
+		_box(Vector3(hw - 0.03, belt + 0.035, p.a + 0.24), Vector3(0.1, 0.035, 0.05), TRIM, true)
+	else:
+		_box(Vector3(hw + 0.07, belt + 0.07, p.a + 0.2), Vector3(0.14, 0.11, 0.08), PAINT, true)
 	if _hi:
 		_car_detail(p)
 
@@ -1039,7 +1046,7 @@ func _car_detail(p: Dictionary) -> void:
 			Vector3(0.004, 0.012, doors[doors.size() - 1] - doors[0]), seam)
 		for i in doors.size() - 1:
 			_box(Vector3(s * (hw + 0.012), belt - 0.12, doors[i + 1] - 0.25), Vector3(0.02, 0.035, 0.16), CHROME)
-		_box(Vector3(s * (hw + 0.115), belt + 0.07, p.a + 0.2), Vector3(0.006, 0.08, 0.06), GLASS)
+		_box(Vector3(s * (hw + 0.04), belt + 0.08, p.a + 0.286), Vector3(0.12, 0.075, 0.006), GLASS)
 		_box(Vector3(s * (hw - 0.02), p.hood - 0.15, 0.35), Vector3(0.02, 0.04, 0.1), Color(0.95, 0.55, 0.05, 0.5))
 		_box(Vector3(s * (hw - 0.02), p.tail - 0.15, p.L - 0.35), Vector3(0.02, 0.04, 0.1), TAIL)
 	# Wipers parked at the foot of the windshield.
