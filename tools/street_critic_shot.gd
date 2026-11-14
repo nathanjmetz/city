@@ -17,6 +17,8 @@ const SPOTS := [
 	["curb_low", Vector3(170, 0, 100), 300.0, 12.0, 30.0],
 	["homes_40", Vector3(126, 0, 210), 150.0, 30.0, 40.0],
 	["homes_low", Vector3(84, 0, 250), 20.0, 14.0, 42.0],
+	["pole_close", Vector3(84, 0, 250), 30.0, 14.0, 18.0],
+	["lid_close", Vector3(84, 0, 250), 20.0, 45.0, 5.0],
 	["homes_100", Vector3(200, 0, 240), 230.0, 35.0, 100.0],
 	["junction_top", Vector3(84, 0, 0), 180.0, 89.0, 40.0],
 	["shop_cut", Vector3(-39, 0, 128), 200.0, 24.0, 40.0],
@@ -88,7 +90,47 @@ func _process(_delta: float) -> bool:
 			return false
 		var t: Array = _todo[_spot]
 		var p: Vector3 = t[1]
+		# Close-ups find the nearest wooden lamp pole or manhole lid to the
+		# spot (the camera's own floor is off for them).
+		_cam.ignore_floor = str(t[0]).ends_with("_close")
+		if t[0] == "pole_close":
+			p = _nearest(p, "StreetLights", "wood")
+		elif t[0] == "lid_close":
+			p = _nearest(p, "RoadView", "Lids")
+		print("spot ", t[0], " at ", p)
 		_cam.look_at_point(Vector3(p.x, Terrain.ground_y(p.x, p.z), p.z))
 		_cam.set_view(deg_to_rad(t[2]), deg_to_rad(t[3]), t[4])
 		_at = _frames + 25
 	return false
+
+
+## The nearest instance to `p` (on the ground) in `kind`'s MultiMeshes whose
+## node or key name holds `part`, or `p` itself when there is none.
+func _nearest(p: Vector3, kind: String, part: String) -> Vector3:
+	var best := p
+	var bd := INF
+	for n in _main.find_children("*", "MultiMeshInstance3D", true, false):
+		var up: Node = n.get_parent()
+		var owned := false
+		while up != null:
+			if up.get_script() != null and up.get_script().get_global_name() == kind:
+				owned = true
+				break
+			up = up.get_parent()
+		if not owned:
+			continue
+		var name_ok: bool = str(n.name).contains(part)
+		if not name_ok and up.get("_multis") is Dictionary:
+			for k in up._multis:
+				if up._multis[k] == n and str(k).contains(part):
+					name_ok = true
+		var mm: MultiMesh = n.multimesh
+		if not name_ok or mm == null:
+			continue
+		for i in mm.instance_count:
+			var g: Vector3 = n.global_transform * mm.get_instance_transform(i).origin
+			var d := Vector2(g.x - p.x, g.z - p.z).length()
+			if d < bd:
+				bd = d
+				best = g
+	return best
