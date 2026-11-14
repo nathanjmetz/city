@@ -118,6 +118,44 @@ func _fire(front: float, to_curb: float) -> void:
 	_parking(ox - ow * 0.5 + 0.3, ox + ow * 0.5 - 0.3, front + 0.3, oz - 2.0, to_curb, ox)
 	_flagpole(Vector3(ox - ow * 0.5 + 1.2, 0, front + 1.5))
 	_flat_rect("drive", ax - aw * 0.5, ax + aw * 0.5, zf + ad, front + FIRST_D, 0.08)
+	_fire_life(ax, aw, zf, ad, bays, bay_w, ox, ow, oz, od, front, brick, trim)
+
+
+## What a real Indiana volunteer station has round its bays: concrete-filled
+## yellow pipe bollards at every door jamb front and back, a painted stop
+## bar across each bay's apron, the town's old fire bell on a brick pedestal
+## by the front door, a Knox box at the door, and the outdoor warning siren on its tall
+## wood pole out back (the siren still sounds for storms and noon tests).
+func _fire_life(ax: float, aw: float, zf: float, ad: float, bays: int, bay_w: float, ox: float, ow: float,
+		oz: float, od: float, front: float, brick: Color, trim: Color) -> void:
+	var r := RandomNumberGenerator.new()
+	r.seed = hash([rng.seed, "fire_life"])
+	var yellow := Color("#e0b81e")
+	for i in bays:
+		var x := ax - aw * 0.5 + 0.8 + (i + 0.5) * bay_w
+		for e in [-1.0, 1.0]:
+			_dr_bollard(Vector3(x + e * 2.25, 0.0, zf - 0.45))
+			_dr_bollard(Vector3(x + e * 2.25, 0.0, zf + ad + 0.45))
+		_flat_rect("line", x - 2.3, x + 2.3, zf - 7.0, zf - 6.7, 0.1, yellow)
+	# The old fire bell on a brick pedestal by the front door.
+	var b := Vector3(ox + ow * 0.25 - 2.8, 0.0, oz - 1.0)
+	_box("brick", Vector3(1.0, 1.1, 1.0), b + Vector3(0, 0.55, 0), brick)
+	_box("paint", Vector3(1.15, 0.12, 1.15), b + Vector3(0, 1.16, 0), trim)
+	for e in [-1.0, 1.0]:
+		_box("paint", Vector3(0.1, 1.0, 0.1), b + Vector3(e * 0.38, 1.7, 0), Color("#2b2b2b"))
+	_box("paint", Vector3(0.86, 0.1, 0.12), b + Vector3(0, 2.2, 0), Color("#2b2b2b"))
+	for k in 3:  # the bell, flaring to its lip
+		_cylinder("paint", b + Vector3(0, 1.45 + k * 0.2, 0), 0.34 - k * 0.07, 0.22, Color("#9a7a3a"), 12)
+	_box("paint", Vector3(0.6, 0.06, 0.25), b + Vector3(0, 0.7, -0.51), Color("#9a7a3a"))  # plaque
+	# Knox box beside the office door.
+	_box("paint", Vector3(0.2, 0.25, 0.1), Vector3(ox + ow * 0.25 + 1.6, 1.6, oz - 0.06), Color("#8a1f1a"))
+	# Outdoor warning siren on a wood pole behind the office.
+	var sp := Vector3(ox - ow * 0.5 + 1.5, 0.0, oz + od + 2.5 + r.randf_range(0.0, 1.5))
+	_cyl_y(sp + Vector3(0, 7.5, 0), 0.16, 15.0, POLE)
+	_box("paint", Vector3(0.8, 0.9, 0.8), sp + Vector3(0, 15.2, 0), Color("#d8d6cf"))  # rotator
+	_box("paint", Vector3(0.5, 0.5, 1.6), sp + Vector3(0, 15.6, -0.6), Color("#d8d6cf"))  # horn
+	_box("paint", Vector3(0.7, 0.7, 0.06), sp + Vector3(0, 15.6, -1.42), Color("#5a5a56"))
+	_box("paint", Vector3(0.5, 0.7, 0.3), sp + Vector3(0, 2.0, -0.25), Color("#9da3a6"))  # control box
 
 
 # ---------------------------------------------------------------- police
