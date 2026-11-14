@@ -73,6 +73,7 @@ func _warehouse(w: Dictionary, to_curb: float) -> void:
 		for e in [-1.0, 1.0]:
 			_box("paint", Vector3(0.06, 0.7, bd + 0.08), Vector3(cx + e * (bw * 0.5 + 0.03), h - 0.2, zf + bd * 0.5), accent)
 	_skylights(cx, bw, zf, bd, h)
+	_wall_life(cx, bw, zf, bd, h, wall)
 	_rooftop_units(cx, bw, zf, bd, h, maxi(1, int(bw * bd / 1500.0)))
 	# Office at the front corner: glazed, two storeys on the bigger ones.
 	var ow := clampf(bw * 0.22, 8.0, 24.0)
@@ -160,6 +161,77 @@ func _automation(built: Array, cx: float, bw: float, zf: float, bd: float, h: fl
 		_box("paint", Vector3(2.2, 2.6, 2.2), g + Vector3(0, 1.5, 0), Color("#d8d6cf"))
 		_box("paint", Vector3(2.3, 0.9, 2.3), g + Vector3(0, 2.0, 0), Color(0.55, 0.65, 0.7))
 		_box("paint", Vector3(2.6, 0.2, 2.6), g + Vector3(0, 2.9, 0), Color("#3a3734"))
+
+
+## The walls of a real tilt-up warehouse away from the docks, from Midwest
+## industrial-park photos: two horizontal reveals across every panel, a
+## scupper and collector head over a downspout every second panel on the
+## sides and back, LED wall packs high up for the night lot, steel exit
+## doors with concrete stoops on the drive side and back (spaced for the
+## code's exit travel distance), and at the front corner of the drive side
+## the sprinkler riser door with the red fire department connection, a Knox
+## box and the meter bank.
+func _wall_life(cx: float, bw: float, zf: float, bd: float, h: float, wall: Color) -> void:
+	var g := RandomNumberGenerator.new()
+	g.seed = hash([rng.seed, "warehouse_wall_life"])
+	var reveal := wall.darkened(0.3)
+	var spout := wall.darkened(0.12)
+	var dark := Color("#2e3032")
+	var xl := cx - bw * 0.5
+	var xr := cx + bw * 0.5
+	var zb := zf + bd
+	var zc := zf + bd * 0.5
+	for y in [h * 0.33, h * 0.66]:
+		_box("paint", Vector3(bw + 0.03, 0.06, 0.05), Vector3(cx, y, zf - 0.035), reveal)
+		_box("paint", Vector3(bw + 0.03, 0.06, 0.05), Vector3(cx, y, zb + 0.035), reveal)
+		for x in [xl - 0.035, xr + 0.035]:
+			_box("paint", Vector3(0.05, 0.06, bd + 0.03), Vector3(x, y, zc), reveal)
+	# Downspouts every second panel, sides and back.
+	var m := int(bd / 7.6)
+	for e in [-1.0, 1.0]:
+		var x: float = cx + e * (bw * 0.5 + 0.12)
+		for i in range(1, m, 2):
+			var z := zf + i * bd / m + 0.5
+			_box("paint", Vector3(0.16, h, 0.16), Vector3(x, h * 0.5, z), spout)
+			_box("paint", Vector3(0.35, 0.45, 0.4), Vector3(x + e * 0.06, h - 0.3, z), spout)
+			_box("paint", Vector3(0.3, 0.12, 0.45), Vector3(x + e * 0.1, 0.06, z), CONCRETE)  # splash block
+	var n := int(bw / 7.6)
+	for i in range(1, n, 2):
+		var x := xl + i * bw / n + 0.5
+		_box("paint", Vector3(0.16, h, 0.16), Vector3(x, h * 0.5, zb + 0.12), spout)
+		_box("paint", Vector3(0.4, 0.45, 0.35), Vector3(x, h - 0.3, zb + 0.18), spout)
+	# Wall packs high on the sides and back, about every 23 m.
+	for e in [-1.0, 1.0]:
+		var k := maxi(1, int(bd / 23.0))
+		for i in k:
+			var z := zf + (i + 0.5) * bd / k
+			_box("paint", Vector3(0.28, 0.35, 0.45), Vector3(cx + e * (bw * 0.5 + 0.14), h - 1.6, z), dark)
+	for i in maxi(1, int(bw / 23.0)):
+		_box("paint", Vector3(0.45, 0.35, 0.28), Vector3(xl + (i + 0.5) * bw / maxi(1, int(bw / 23.0)), h - 1.6, zb + 0.14), dark)
+	# Exit doors with stoops: drive side and back, about every 45 m.
+	var doors := maxi(1, int(bd / 45.0))
+	for i in doors:
+		var z := zf + bd * (i + 0.75) / (doors + 0.25)
+		_box("paint", Vector3(0.06, 2.15, 1.0), Vector3(xr + 0.03, 1.08, z), Color("#7a7f82"))
+		_box("paint", Vector3(1.2, 0.18, 1.6), Vector3(xr + 0.6, 0.09, z), CONCRETE)
+		_box("paint", Vector3(0.2, 0.25, 0.35), Vector3(xr + 0.12, 2.6, z), dark)
+	for i in maxi(1, int(bw / 45.0)):
+		var x := xl + bw * (i + 0.5) / maxi(1, int(bw / 45.0)) + g.randf_range(-3.0, 3.0)
+		_box("paint", Vector3(1.0, 2.15, 0.06), Vector3(x, 1.08, zb + 0.03), Color("#7a7f82"))
+		_box("paint", Vector3(1.6, 0.18, 1.2), Vector3(x, 0.09, zb + 0.6), CONCRETE)
+		_box("paint", Vector3(0.35, 0.25, 0.2), Vector3(x, 2.6, zb + 0.12), dark)
+	# Riser room door, FDC, Knox box and the meter bank near the front of
+	# the drive side (clear of the drive-in door at zf + 6).
+	var rz := zf + 10.5 + g.randf_range(0.0, 2.0)
+	if rz + 4.0 < zb:
+		_box("paint", Vector3(0.06, 2.15, 1.0), Vector3(xr + 0.03, 1.08, rz), Color("#7a7f82"))
+		_box("paint", Vector3(0.05, 0.3, 0.6), Vector3(xr + 0.04, 2.45, rz), Color("#c42a20"))  # FIRE RISER sign
+		_box("paint", Vector3(0.25, 0.25, 0.5), Vector3(xr + 0.14, 0.9, rz + 1.2), Color("#c9a227"))  # FDC (brass)
+		_box("paint", Vector3(0.08, 0.6, 0.6), Vector3(xr + 0.05, 0.9, rz + 1.2), Color("#c42a20"))
+		_box("paint", Vector3(0.12, 0.2, 0.15), Vector3(xr + 0.08, 1.8, rz - 0.8), Color("#8a1f1a"))  # Knox box
+		for k in 3:
+			_box("paint", Vector3(0.2, 0.55, 0.35), Vector3(xr + 0.1, 1.4, rz + 2.3 + k * 0.45), Color("#9da3a6"))
+		_box("paint", Vector3(0.12, 1.2, 1.4), Vector3(xr + 0.07, 1.3, rz + 3.2), Color("#a7acae"))  # disconnect
 
 
 ## Reveal joints between tilt-up panels, front and sides.
