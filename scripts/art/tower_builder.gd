@@ -286,7 +286,20 @@ func _tw_chicago(to_curb: float, width: float, storeys: int, roof := true) -> vo
 		if fine_parts:
 			_tw_storefront(Vector3(x, 0.4 + 1.9, zf - 0.03), Vector3(-1, 0, 0), bw - 1.4, 3.6, Color("#2c2a28"))
 		if base_floors > 1:
-			_glass(Vector3(x, ground_h + 1.7, zf - 0.03), Vector3(-1, 0, 0), bw - 1.6, 2.4, rng.randf_range(0.0, 0.4))
+			var bl2 := rng.randf_range(0.0, 0.4)
+			if fine_parts:
+				# The mezzanine gets the same Chicago window as the shaft: a
+				# wide fixed pane between narrow sashes, stone mullions
+				# between, on a projecting stone sill (Reliance, Fisher).
+				var c2 := Vector3(x, ground_h + 1.7, zf - 0.03)
+				var g2 := bw - 1.6
+				_glass(c2, Vector3(-1, 0, 0), g2 * 0.54, 2.4, bl2)
+				for k in [-1.0, 1.0]:
+					_glass(c2 + Vector3(-k * g2 * 0.385, 0, 0), Vector3(-1, 0, 0), g2 * 0.19, 2.4, minf(bl2 + 0.25 * (k + 1.0), 0.6))
+				_box("paint", Vector3(g2 + 0.4, 0.14, 0.24), Vector3(x, ground_h + 0.43, zf - 0.12), stone.lightened(0.06))  # sill
+				_box("paint", Vector3(g2 + 0.2, 0.1, 0.1), Vector3(x, ground_h + 2.95, zf - 0.06), stone.darkened(0.08))  # lintel
+			else:
+				_glass(Vector3(x, ground_h + 1.7, zf - 0.03), Vector3(-1, 0, 0), bw - 1.6, 2.4, bl2)
 	var door_x := -w * 0.5 + (floori(bays * 0.5) + 0.5) * bw
 	_box("paint", Vector3(2.4, 2.8, 0.1), Vector3(door_x, 1.4, zf - 0.06), Color("#2c2620"))
 	_box("paint", Vector3(bw - 0.6, 0.5, 1.6), Vector3(door_x, 4.3, zf - 0.8), Color("#2a2a2a"))  # marquee
