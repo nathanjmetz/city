@@ -1,0 +1,366 @@
+{
+ "fusion": {
+  "kind": "sedan",
+  "length": 4.87
+ },
+ "2004-dodge-stratus": {
+  "kind": "sedan",
+  "length": 4.86
+ },
+ "1993-mercury-sable": {
+  "kind": "sedan",
+  "length": 4.92
+ },
+ "2010-dodge-avenger": {
+  "kind": "sedan",
+  "length": 4.85
+ },
+ "1997-lexus-es-300": {
+  "kind": "sedan",
+  "length": 4.83
+ },
+ "2009-toyota-camry": {
+  "kind": "sedan",
+  "length": 4.81
+ },
+ "2002-honda-accord": {
+  "kind": "sedan",
+  "length": 4.81
+ },
+ "1994-oldsmobile-98": {
+  "kind": "sedan",
+  "length": 5.18
+ },
+ "2006-dodge-charger": {
+  "kind": "sedan",
+  "length": 5.08
+ },
+ "2006-dodge-charger-c0d3": {
+  "kind": "sedan",
+  "length": 5.08
+ },
+ "2005-saturn-ion-sedan": {
+  "kind": "sedan",
+  "length": 4.69
+ },
+ "1993-chevrolet-corsica": {
+  "kind": "sedan",
+  "length": 4.62
+ },
+ "2016-subaru-legacy": {
+  "kind": "sedan",
+  "length": 4.8
+ },
+ "2008-toyota-corolla": {
+  "kind": "sedan",
+  "length": 4.54
+ },
+ "1987-cadillac-brougham": {
+  "kind": "sedan",
+  "length": 5.61
+ },
+ "2002-saturn-sl2": {
+  "kind": "sedan",
+  "length": 4.53
+ },
+ "2015-dodge-dart": {
+  "kind": "sedan",
+  "length": 4.67
+ },
+ "2002-lincoln-ls": {
+  "kind": "sedan",
+  "length": 4.93
+ },
+ "2009-chevrolet-malibu": {
+  "kind": "sedan",
+  "length": 4.87
+ },
+ "2014-ford-focus-sedan": {
+  "kind": "sedan",
+  "length": 4.54
+ },
+ "volkswagen-passat-se": {
+  "kind": "sedan",
+  "length": 4.87
+ },
+ "saturn-aura": {
+  "kind": "sedan",
+  "length": 4.85
+ },
+ "saab-9-5-hirsch": {
+  "kind": "sedan",
+  "length": 4.84
+ },
+ "bmw-3-series-e46": {
+  "kind": "sedan",
+  "length": 4.47
+ },
+ "oldsmobile-intrigue": {
+  "kind": "sedan",
+  "length": 4.98
+ },
+ "volkswagen-jetta": {
+  "kind": "sedan",
+  "length": 4.64
+ },
+ "honda-accord": {
+  "kind": "sedan",
+  "length": 4.86
+ },
+ "acura-tl": {
+  "kind": "sedan",
+  "length": 4.85
+ },
+ "volkswagen-jetta-gli": {
+  "kind": "sedan",
+  "length": 4.64
+ },
+ "mercury-milan": {
+  "kind": "sedan",
+  "length": 4.84
+ },
+ "mercury-milan-62d4": {
+  "kind": "sedan",
+  "length": 4.84
+ },
+ "chevrolet-cruze": {
+  "kind": "sedan",
+  "length": 4.6
+ },
+ "hyundai-sonata": {
+  "kind": "sedan",
+  "length": 4.82
+ },
+ "chrysler-300m": {
+  "kind": "sedan",
+  "length": 5.02
+ },
+ "pontiac-grand-prix": {
+  "kind": "sedan",
+  "length": 5.04
+ },
+ "1993-subaru-legacy-sedan": {
+  "kind": "sedan",
+  "length": 4.6
+ },
+ "2003-dodge-neon-srt4": {
+  "kind": "sedan",
+  "length": 4.43
+ },
+ "2001-saturn-sc2": {
+  "kind": "sedan",
+  "length": 4.55
+ },
+ "2014-scion-tc": {
+  "kind": "sports",
+  "length": 4.42
+ },
+ "cadillac-elr": {
+  "kind": "sports",
+  "length": 4.72
+ },
+ "fisker-karma-revero": {
+  "kind": "sports",
+  "length": 4.99
+ },
+ "1990-honda-cr-x": {
+  "kind": "hatchback",
+  "length": 3.76
+ },
+ "2004-honda-insight": {
+  "kind": "hatchback",
+  "length": 3.94
+ },
+ "volkswagen-golf": {
+  "kind": "hatchback",
+  "length": 4.26
+ },
+ "volkswagen-golf-gti": {
+  "kind": "hatchback",
+  "length": 4.27
+ },
+ "smart-fortwo": {
+  "kind": "hatchback",
+  "length": 2.69
+ },
+ "pontiac-vibe": {
+  "kind": "hatchback",
+  "length": 4.37
+ },
+ "2006-chevrolet-hhr": {
+  "kind": "hatchback",
+  "length": 4.47
+ },
+ "2015-buick-encore": {
+  "kind": "crossover",
+  "length": 4.28
+ },
+ "1993-subaru-legacy-wagon": {
+  "kind": "crossover",
+  "length": 4.67
+ },
+ "2016-ford-edge-titanium": {
+  "kind": "crossover",
+  "length": 4.78
+ },
+ "2016-ford-edge-se": {
+  "kind": "crossover",
+  "length": 4.78
+ },
+ "2016-ford-edge-se-36ee": {
+  "kind": "crossover",
+  "length": 4.78
+ },
+ "2004-saturn-vue": {
+  "kind": "crossover",
+  "length": 4.57
+ },
+ "2001-saturn-sw2": {
+  "kind": "crossover",
+  "length": 4.52
+ },
+ "2016-chevrolet-trax": {
+  "kind": "crossover",
+  "length": 4.25
+ },
+ "2026-chevrolet-equinox": {
+  "kind": "crossover",
+  "length": 4.7
+ },
+ "2018-ford-ecosport": {
+  "kind": "crossover",
+  "length": 4.1
+ },
+ "volkswagen-golf-alltrack": {
+  "kind": "crossover",
+  "length": 4.58
+ },
+ "lexus-rx330": {
+  "kind": "crossover",
+  "length": 4.73
+ },
+ "subaru-forester": {
+  "kind": "crossover",
+  "length": 4.6
+ },
+ "saab-9-4x": {
+  "kind": "crossover",
+  "length": 4.83
+ },
+ "buick-envista": {
+  "kind": "crossover",
+  "length": 4.64
+ },
+ "pontiac-torrent": {
+  "kind": "crossover",
+  "length": 4.8
+ },
+ "subaru-outback": {
+  "kind": "crossover",
+  "length": 4.82
+ },
+ "subaru-legacy-outback": {
+  "kind": "crossover",
+  "length": 4.73
+ },
+ "volvo-v70r": {
+  "kind": "crossover",
+  "length": 4.71
+ },
+ "mitsubishi-outlander-sport": {
+  "kind": "crossover",
+  "length": 4.3
+ },
+ "subaru-crosstrek-xv": {
+  "kind": "crossover",
+  "length": 4.45
+ },
+ "toyota-highlander": {
+  "kind": "crossover",
+  "length": 4.86
+ },
+ "2015-jeep-grand-cherokee": {
+  "kind": "suv",
+  "length": 4.82
+ },
+ "2025-chevrolet-traverse": {
+  "kind": "suv",
+  "length": 5.19
+ },
+ "2006-jeep-commander": {
+  "kind": "suv",
+  "length": 4.79
+ },
+ "2000-ford-explorer": {
+  "kind": "suv",
+  "length": 4.82
+ },
+ "2005-honda-pilot": {
+  "kind": "suv",
+  "length": 4.78
+ },
+ "2007-chevrolet-trailblazer": {
+  "kind": "suv",
+  "length": 4.87
+ },
+ "2008-toyota-fj-cruiser": {
+  "kind": "suv",
+  "length": 4.67
+ },
+ "2007-gmc-yukon-xl": {
+  "kind": "suv",
+  "length": 5.65
+ },
+ "2005-ford-explorer": {
+  "kind": "suv",
+  "length": 4.81
+ },
+ "2004-toyota-4runner-sr5": {
+  "kind": "suv",
+  "length": 4.8
+ },
+ "2013-dodge-durango": {
+  "kind": "suv",
+  "length": 5.08
+ },
+ "nissan-xterra": {
+  "kind": "suv",
+  "length": 4.54
+ },
+ "volvo-xc90": {
+  "kind": "suv",
+  "length": 4.8
+ },
+ "isuzu-vehicross": {
+  "kind": "suv",
+  "length": 4.13
+ },
+ "pontiac-montana": {
+  "kind": "minivan",
+  "length": 5.11
+ },
+ "dodge-grand-caravan": {
+  "kind": "minivan",
+  "length": 5.15
+ },
+ "toyota-sienna": {
+  "kind": "minivan",
+  "length": 5.09
+ },
+ "ford-transit-connect": {
+  "kind": "van",
+  "length": 4.43
+ },
+ "1994-grumman-llv": {
+  "kind": "mail_truck",
+  "length": 4.47
+ },
+ "pickup-silverado-2019": {
+  "kind": "pickup",
+  "length": 5.89
+ },
+ "school-bus-scan": {
+  "kind": "school_bus",
+  "length": 12.2
+ }
+}
