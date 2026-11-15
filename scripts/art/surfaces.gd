@@ -173,11 +173,13 @@ void fragment() {
 	float th = fract(sin(tcell * 41.37 + block.x * 7.13 + block.y * 3.71) * 43758.5453);
 	float th2 = fract(th * 57.3);
 	// One soft bend over the lane plus a few small kinks: a sealed crack
-	// meanders, it doesn't zigzag (the soft noise is ~80 px a feature on a
-	// 512 px tile, so across * 0.7 made a 25 cm sawtooth).
+	// meanders, it doesn't zigzag. The soft noise is ~80 px a feature on a
+	// 512 px tile and reads as straight segments once stretched, so a
+	// feature has to be metres long: across * 0.25 (65 cm, 35 cm swing)
+	// drew a sawtooth. Fine jaggedness comes from the grain alone.
 	float wob = (texture(noise_soft, vec2(across * 0.03, tcell * 0.37)).r - 0.5) * 1.4
-		+ (texture(noise_soft, vec2(across * 0.25, tcell * 0.53 + 0.3)).r - 0.5) * 0.7
-		+ (texture(noise_grain, p / 2.2).r - 0.5) * 0.1;
+		+ (texture(noise_soft, vec2(across * 0.06, tcell * 0.53 + 0.3)).r - 0.5) * 0.4
+		+ (texture(noise_grain, p / 2.2).r - 0.5) * 0.12;
 	float dt = abs(along - tcell * 11.0 - 2.0 - th * 7.0 - wob);
 	float from = th2 * 0.5;
 	float span = step(0.3, th) * smoothstep(from - 0.03, from, across) * smoothstep(from + 0.5 + th * 0.5, from + 0.47 + th * 0.5, across);
