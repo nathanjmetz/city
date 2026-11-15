@@ -1769,6 +1769,20 @@ func _power_center(to_curb: float) -> void:
 	boxes.append([xd0, w * 0.5, dh])
 	sign_spec = spec
 	site.door = Vector2(hx + 6.0, zf - 4.5)
+	if fine_parts:
+		# Desktop: dark-sky sconces along every box front, one per 30 ft
+		# bay at 5 m, each washing the wall below it and lighting the walk
+		# (IES RP-20's storefront walk, brighter than the lot), dusk to dawn.
+		for bx in boxes:
+			var fz: float = zf + 1.0 if bx.size() > 3 else zf
+			var bw: float = float(bx[1]) - float(bx[0])
+			var nb := maxi(1, int(bw / 9.1))
+			for i in nb:
+				var sx: float = float(bx[0]) + (i + 0.5) * bw / nb
+				_box("metal", Vector3(0.5, 0.28, 0.32), Vector3(sx, 5.2, fz - 0.16), Color("#2e3032"))
+				_box("sign", Vector3(0.44, 0.02, 0.26), Vector3(sx, 5.05, fz - 0.17), Color(1.0, 0.94, 0.84, 1.0))
+				_light_pool(Vector3(sx, 3.3, fz - 0.06), 6.5, 6.0, Color(0.85, 0.78, 0.68), Vector3.FORWARD)
+				_light_pool(Vector3(sx, 0.125, fz - 2.6), 9.0, 6.0, Color(0.9, 0.84, 0.74))
 	# The truck court: each box's docks, a trailer at some.
 	var dz := zf + dd
 	if depth - dz > 5.0:
