@@ -655,8 +655,15 @@ func _mixed(to_curb: float, width: float, storeys: int) -> void:
 					# Raised panels on the bulkhead.
 					_box("paint", Vector3(bw * 0.38, 0.32, 0.04), Vector3(x - bw * 0.22, 0.4, zf - 0.17), trim.darkened(0.1))
 					_box("paint", Vector3(bw * 0.38, 0.32, 0.04), Vector3(x + bw * 0.22, 0.4, zf - 0.17), trim.darkened(0.1))
-			# Transom lights, divided into small panes.
+			# Transom lights, divided into small panes. On desktop they look
+			# into the shop's own room (its ceiling and lights), so they go
+			# dark with the display windows when the shop closes, not lit at
+			# random like an upstairs flat's.
+			shopfront = fine
+			diner_room = 7.0 if eats else 0.0
 			_glass(Vector3(x, 2.93, zf - 0.03), Vector3(-1, 0, 0), bw - 0.12, 0.46, 0.0)
+			shopfront = false
+			diner_room = 0.0
 			if fine:
 				var panes := maxi(2, roundi(bw / 0.45))
 				for q in range(1, panes):

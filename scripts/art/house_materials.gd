@@ -242,7 +242,9 @@ bool shop_room(vec2 uv, vec3 vw, bool diner, bool aisles, float sill, int kind, 
 	float xl = min(a, a + sx) - 1.2;
 	float xr = max(a, a + sx) + 1.2;
 	float yb = world_pos.y - uv.y * sy;
-	float yf = yb - sill;
+	// A short light (a transom band over the display windows) looks into
+	// the same room from up near its ceiling: the floor is well below it.
+	float yf = yb - (abs(sy) < 0.6 ? 2.6 : sill);
 	float yc = yb + abs(sy) + 0.5;
 	vec3 rd = vec3(dot(vw, rt), vw.y, max(dot(vw, inw), 0.02));
 	float tx = abs(rd.x) < 1e-4 ? 1e9 : ((rd.x > 0.0 ? xr : xl) - px) / rd.x;
