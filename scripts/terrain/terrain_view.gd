@@ -633,10 +633,13 @@ varying vec3 world_pos;
 // 1 - that in UV2.x (not a colour, which the browser converts), so a sheet
 // with no UV2 (a strip mine's pit pond) reads as deep.
 varying float depth3;
+// 1 on a river channel, 0 on still water (desktop only; UV2.y).
+varying float flow;
 
 void vertex() {
 	world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 	depth3 = 1.0 - UV2.x;
+	flow = UV2.y;
 }
 
 void fragment() {
@@ -691,6 +694,22 @@ void fragment() {
 	ROUGHNESS = mix(ROUGHNESS, 0.92, reeds);
 	SPECULAR = mix(SPECULAR, 0.08, reeds);
 	ALPHA = mix(smoothstep(0.04, 0.3, metres + (a - 0.5) * 0.16 + (c - 0.5) * 0.1), 1.0, ice);
+	// The Mississinewa and the big creeks have no cattail ring: the current
+	// keeps the banks bare, and at summer low water the shallows are bars of
+	// tan-grey limestone gravel and silt (point bars on the inside of the
+	// bends, riffles over them), dry on top, wet and darker at the edge.
+	float fl = smoothstep(0.3, 0.8, flow);
+	ALBEDO = mix(ALBEDO, mix(col, vec3(0.047, 0.051, 0.025), hand * 0.6), reeds * 0.9 * fl);
+	ROUGHNESS = mix(ROUGHNESS, mix(0.3, 0.16, smoothstep(0.1, 0.8, d)), reeds * fl);
+	SPECULAR = mix(SPECULAR, 0.25, reeds * fl);
+	float pebble = texture(noise_soft, p / 1.7).r;
+	float bar = (1.0 - smoothstep(0.15, 0.45, metres + (b - 0.5) * 0.3 + (c - 0.5) * 0.3)) * fl * (1.0 - ice);
+	float dry = 1.0 - smoothstep(0.02, 0.2, metres + (a - 0.5) * 0.1);
+	vec3 gravel = mix(vec3(0.120, 0.100, 0.072), vec3(0.230, 0.205, 0.160), dry) * (0.75 + 0.5 * pebble);
+	ALBEDO = mix(ALBEDO, gravel, bar);
+	ROUGHNESS = mix(ROUGHNESS, mix(0.35, 0.9, dry), bar);
+	SPECULAR = mix(SPECULAR, mix(0.3, 0.1, dry), bar);
+	ALPHA = mix(ALPHA, 1.0, bar);
 #endif
 }
 """
@@ -1487,6 +1506,8 @@ static func _water_mesh(d: Dictionary) -> ArrayMesh:
 	var wdepth := PackedVector2Array()
 	var widx := PackedInt32Array()
 	var index := {}
+	var flows := {}
+	var desk := PhotoGround.drawable()
 	for j in n:
 		for i in n:
 			var a := j * (n + 1) + i
@@ -1516,7 +1537,14 @@ static func _water_mesh(d: Dictionary) -> ArrayMesh:
 					at = index[c]
 				wverts.append(Vector3(verts[c].x, at, verts[c].z))
 				# How deep the water is here, for the shore's shading.
-				wdepth.append(Vector2(1.0 - clampf((at - verts[c].y) / 3.0, 0.0, 1.0), 0.0))
+				# How deep the water is here, for the shore's shading; and on
+				# the desktop whether it's a river channel (UV2.y).
+				var fl := 0.0
+				if desk:
+					if not flows.has(c):
+						flows[c] = _river_channel(verts[c].x + Terrain.view_origin.x, verts[c].z + Terrain.view_origin.y)
+					fl = flows[c]
+				wdepth.append(Vector2(1.0 - clampf((at - verts[c].y) / 3.0, 0.0, 1.0), fl))
 			widx.append_array([base, base + 1, base + 2, base, base + 2, base + 3])
 	if widx.is_empty():
 		return null
@@ -1532,6 +1560,26 @@ static func _water_mesh(d: Dictionary) -> ArrayMesh:
 	var water := ArrayMesh.new()
 	water.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, warrays)
 	return water
+
+
+## 1 where the water at a region point is a river channel (the
+## Mississinewa, the bigger creeks), 0 in a pond, pit lake or reservoir: on
+## rings 120 and 250 m out, a channel is wet only where it comes in and goes
+## out, a pond's rings are dry and a lake's mostly wet.
+static func _river_channel(x: float, z: float) -> float:
+	var near := 0
+	for k in 12:
+		var ang := k * TAU / 12.0
+		if Terrain.water(x + cos(ang) * 120.0, z + sin(ang) * 120.0) > 0.4:
+			near += 1
+	if near < 1 or near > 4:
+		return 0.0
+	var far := 0
+	for k in 20:
+		var ang := k * TAU / 20.0
+		if Terrain.water(x + cos(ang) * 250.0, z + sin(ang) * 250.0) > 0.4:
+			far += 1
+	return 1.0 if far >= 2 and far <= 6 else 0.0
 
 
 # --- Grading under roads ----------------------------------------------------
