@@ -1230,6 +1230,21 @@ func _strip_towers(w: float, bay: float, n: int, stop: float, zf: float, top: fl
 		_box("eifs", Vector3(fw, rise + 0.6, 1.0), Vector3(cx, top + rise * 0.5 - 0.3, zf - 0.4), tint)
 		_box("eifs", Vector3(fw + 0.5, 0.35, 1.4), Vector3(cx, top + rise + 0.12, zf - 0.4), cap)
 		_box("eifs", Vector3(fw + 0.2, 0.2, 1.15), Vector3(cx, top + rise - 0.6, zf - 0.4), cap)
+		if fine_parts:
+			# Desktop: an EIFS tower is never a blank slab: a horizontal
+			# reveal just over the canopy roof, and a recessed field framed
+			# in a raised trim band under the cornice (the sign field a new
+			# tenant can take), as the 1990s-2010s strips in Indiana wear.
+			var fz := zf - 0.9
+			_box("paint", Vector3(fw + 0.01, 0.035, 0.02), Vector3(cx, top + 0.15, fz + 0.005), tint.darkened(0.35))
+			var y0 := top + 0.35
+			var y1 := top + rise - 0.85
+			if y1 - y0 > 0.5:
+				var fwf := fw * 0.62
+				_box("eifs", Vector3(fwf, y1 - y0, 0.01), Vector3(cx, (y0 + y1) * 0.5, fz - 0.003), tint.darkened(0.09))
+				for e in [-1.0, 1.0]:
+					_box("eifs", Vector3(0.12, y1 - y0 + 0.24, 0.05), Vector3(cx + e * (fwf * 0.5 + 0.06), (y0 + y1) * 0.5, fz - 0.025), cap)
+					_box("eifs", Vector3(fwf + 0.24, 0.12, 0.05), Vector3(cx, (y0 + y1) * 0.5 + e * ((y1 - y0) * 0.5 + 0.06), fz - 0.025), cap)
 		if sr.randf() < 0.4:
 			var y := top + rise + 0.3
 			var hx := fw * 0.5 + 0.2
