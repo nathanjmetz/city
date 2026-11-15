@@ -200,13 +200,29 @@ func _retail(to_curb: float) -> void:
 	# mounting heights apart (IES RP-20 parking lot spacing).
 	rng.randf()  # once the pole's side; kept so the rest of the lot stays as it was
 	var lx := lot1 - 0.5
-	_box("paint", Vector3(0.6, 0.5, 0.6), Vector3(lx, 0.25, 0.8), FOUNDATION)
-	_box("paint", Vector3(0.16, 7.5, 0.16), Vector3(lx, 4.0, 0.8), Color("#3a3c3e"))
-	_box("paint", Vector3(0.5, 0.18, 0.9), Vector3(lx, 7.7, 0.8 + 0.3), Color("#3a3c3e"))
-	if fine_parts:
+	if not fine_parts:
+		_box("paint", Vector3(0.6, 0.5, 0.6), Vector3(lx, 0.25, 0.8), FOUNDATION)
+		_box("paint", Vector3(0.16, 7.5, 0.16), Vector3(lx, 4.0, 0.8), Color("#3a3c3e"))
+		_box("paint", Vector3(0.5, 0.18, 0.9), Vector3(lx, 7.7, 0.8 + 0.3), Color("#3a3c3e"))
+	else:
+		# Desktop: as built, a 25 ft (7.6 m) square steel pole on its
+		# concrete pier and anchor-bolt base, a hand-hole cover near the
+		# foot, and a single LED area light on a short mast arm (a shoebox
+		# head, thin at the front, as on every Indiana store lot since the
+		# 2010s retrofits).
+		var pole := Color("#3a3c3e")
+		_pole_base(Vector3(lx, 0, 0.8), 0.5)
+		_box("paint", Vector3(0.13, 7.2, 0.13), Vector3(lx, 0.5 + 3.6, 0.8), pole)
+		_box("paint", Vector3(0.09, 0.2, 0.012), Vector3(lx, 1.15, 0.8 + 0.07), pole.lightened(0.06))  # hand hole
+		_box("paint", Vector3(0.17, 0.05, 0.17), Vector3(lx, 7.72, 0.8), pole)  # pole cap
+		_box("paint", Vector3(0.08, 0.08, 0.5), Vector3(lx, 7.55, 0.8 + 0.3), pole)  # mast arm
+		_box("paint", Vector3(0.48, 0.1, 0.62), Vector3(lx, 7.6, 0.8 + 0.85), pole)  # the head's housing
+		_box("paint", Vector3(0.44, 0.06, 0.2), Vector3(lx, 7.58, 0.8 + 1.25), pole)  # its thin front
+		for k in 4:
+			_box("paint", Vector3(0.02, 0.025, 0.5), Vector3(lx - 0.17 + k * 0.113, 7.665, 0.8 + 0.85), pole.darkened(0.2))  # cooling fins
 		# Its LED lens and light on the lot, and the accessible stall by the
 		# door that every lot needs (ADA 208: one for up to 25 stalls).
-		_box("sign", Vector3(0.4, 0.02, 0.7), Vector3(lx, 7.6, 1.1), Color(0.95, 0.96, 1.0, 1.0))
+		_box("sign", Vector3(0.4, 0.02, 0.62), Vector3(lx, 7.545, 0.8 + 0.95), Color(0.95, 0.96, 1.0, 1.0))
 		var lot_d := zf - 2.2 - 0.8
 		var pw := minf(18.0, lot1 - lot0)
 		_light_pool(Vector3(clampf(lx - 3.0, lot0 + pw * 0.5, lot1 - pw * 0.5), 0.13, 0.8 + lot_d * 0.5), pw, lot_d,
