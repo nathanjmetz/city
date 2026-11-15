@@ -331,6 +331,17 @@ static func _mi_newbuild(b: DenseBuilder, r: RandomNumberGenerator, to_curb: flo
 					b._glass(Vector3(x, y, zf - 0.02), Vector3(-1, 0, 0), 1.2, 1.9, r.randf_range(0.0, 0.6))
 					b._box("paint", Vector3(1.5, 0.12, 0.18), Vector3(x, y - 1.01, zf - 0.09), stone)
 					b._box("paint", Vector3(1.5, 0.22, 0.12), Vector3(x, y + 1.06, zf - 0.06), stone)
+					if DenseBuilder.fine:
+						# Desktop: the window set back in the brick, as built:
+						# brick returns at the jambs so it reads recessed a
+						# brick's depth, a dark aluminium frame and the
+						# single-hung sash's meeting rail.
+						for e in [-1.0, 1.0]:
+							b._box("brick", Vector3(0.1, 1.98, 0.11), Vector3(x + e * 0.66, y, zf - 0.055), brick)
+							b._box("metal", Vector3(0.06, 1.9, 0.05), Vector3(x + e * 0.585, y, zf - 0.035), BLACK)
+						for hy in [0.93, -0.93]:
+							b._box("metal", Vector3(1.2, 0.06, 0.05), Vector3(x, y + hy, zf - 0.035), BLACK)
+						b._box("metal", Vector3(1.12, 0.05, 0.06), Vector3(x, y + 0.08, zf - 0.04), BLACK)
 	b._box("brick", Vector3(0.8, shop_h, 0.2), Vector3(w * 0.5 - 0.4, shop_h * 0.5, zf - 0.1), brick.darkened(0.08))
 	b._box("paint", Vector3(w, 0.3, 0.2), Vector3(0, shop_h + 0.05, zf - 0.1), stone)
 	for i in r.randi_range(1, 3):
