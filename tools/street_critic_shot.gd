@@ -21,6 +21,8 @@ const SPOTS := [
 	["walk_close", Vector3(84, 0, 225), 200.0, 9.0, 22.0],
 	["corner_close", Vector3(84, 0, 205), 135.0, 18.0, 26.0],
 	["chip_close", Vector3(1560, 0, 330), 30.0, 16.0, 16.0],
+	["main_close", Vector3(-39, 0, 110), 160.0, 12.0, 28.0],
+	["lot_close", Vector3(-120, 0, 70), 140.0, 22.0, 30.0],
 	["lid_close", Vector3(84, 0, 250), 20.0, 45.0, 5.0],
 	["homes_100", Vector3(200, 0, 240), 230.0, 35.0, 100.0],
 	["junction_top", Vector3(84, 0, 0), 180.0, 89.0, 40.0],
