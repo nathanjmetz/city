@@ -1048,6 +1048,26 @@ func _strip_center(to_curb: float, anchor := false) -> void:
 		_box("eifs" if style == "towers" else "paint", Vector3(w + 0.4, 0.5, 2.6), Vector3(0, 3.65, zf - 1.3), wall.lightened(0.1))
 		_quad("paint", Vector3(-w * 0.5 - 0.2, 3.39, zf - 2.6), Vector3(w * 0.5 + 0.2, 3.39, zf - 2.6),
 			Vector3(w * 0.5 + 0.2, 3.39, zf), Vector3(-w * 0.5 - 0.2, 3.39, zf), SOFFIT, [], Vector3.DOWN)
+		if fine_parts:
+			# Desktop: the canopy as built, not a slab: a formed metal
+			# coping cap over the fascia's top, a drip edge along its foot,
+			# batten joints where the fascia panels meet (about every 3 m),
+			# and the roof's water down a downspout at each end pier onto a
+			# splash block, through a scupper and collector box.
+			var cap := mull.lerp(wall, 0.3)
+			_box("metal", Vector3(w + 0.52, 0.07, 2.72), Vector3(0, 3.93, zf - 1.3), cap)
+			_box("metal", Vector3(w + 0.52, 0.12, 0.03), Vector3(0, 3.88, zf - 2.665), cap)  # its face
+			_box("metal", Vector3(w + 0.46, 0.035, 0.05), Vector3(0, 3.41, zf - 2.625), cap)  # drip edge
+			var fx := -w * 0.5 - 0.2
+			var bays := maxi(1, int(round((w + 0.4) / 3.0)))
+			for k in range(1, bays):
+				_box("metal", Vector3(0.04, 0.42, 0.02), Vector3(fx + k * (w + 0.4) / bays, 3.65, zf - 2.61), cap)
+			for e in [-1.0, 1.0]:
+				var dx: float = e * (w * 0.5 - 0.3)
+				_box("metal", Vector3(0.18, 0.2, 0.14), Vector3(dx, 3.27, zf - 2.62), cap)  # collector box
+				_box("metal", Vector3(0.09, 3.05, 0.07), Vector3(dx, 1.72, zf - 2.58), cap)  # downspout
+				_box("metal", Vector3(0.09, 0.07, 0.25), Vector3(dx, 0.2, zf - 2.68), cap)  # its shoe
+				_box("concrete", Vector3(0.3, 0.05, 0.6), Vector3(dx, 0.105, zf - 2.95), Color("#bdb8ae"))  # splash block
 	if fine_parts:
 		# Desktop: a recessed can light in the soffit over the middle of
 		# each bay, lit dusk to dawn, and the walk bright under them, as

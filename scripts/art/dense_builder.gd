@@ -690,6 +690,8 @@ func _mixed(to_curb: float, width: float, storeys: int) -> void:
 		for i in ribs:
 			_box("metal", Vector3(0.05, ph, 0.06), Vector3(lerpf(-w * 0.5 + 0.3, w * 0.5 - 0.3, float(i) / (ribs - 1)),
 				shop_h + 0.2 + ph * 0.5, zf - 0.21), panel.darkened(0.12))
+		if fine:
+			_slipcover_trim(w, zf, shop_h + 0.2, ph, panel, mark, fronts, fw)
 	# Flats above: tall windows with sills and lintels.
 	var n := maxi(2, int(w / 2.6))
 	var uppers := []
@@ -2207,3 +2209,33 @@ func _parking(x0: float, x1: float, z0: float, z1: float, _width: float) -> void
 		if z1 - z0 > 16.0:
 			_flat_rect("line", x - 0.06, x + 0.06, z1 - 5.5, z1, 0.07, LINE)
 		x += 2.75
+
+
+## Desktop: a 1960s aluminium slipcover as hung: sheets about 2.4 m tall
+## with lapped horizontal joints, a formed cap over the old parapet, a
+## J-trim along the foot and closure angles at the ends, the store's name
+## in big pin-mounted letters (what the screen was put up to carry)
+## (Main Street fronts in Wabash, Marion and Elwood, Indiana).
+func _slipcover_trim(w: float, zf: float, y0: float, ph: float, panel: Color, mark: int, fronts: int, fw: float) -> void:
+	var edge := panel.darkened(0.2)
+	_box("metal", Vector3(w - 0.1, 0.12, 0.3), Vector3(0, y0 + ph + 0.04, zf - 0.17), edge)  # cap
+	_box("metal", Vector3(w - 0.1, 0.06, 0.2), Vector3(0, y0 + 0.03, zf - 0.2), edge)  # J-trim
+	for e in [-1.0, 1.0]:
+		_box("metal", Vector3(0.08, ph, 0.22), Vector3(e * (w * 0.5 - 0.14), y0 + ph * 0.5, zf - 0.17), edge)  # closures
+	var jy := y0 + 2.4
+	while jy < y0 + ph - 0.5:
+		_box("metal", Vector3(w - 0.3, 0.025, 0.012), Vector3(0, jy, zf - 0.186), edge)
+		jy += 2.4
+	if not sign_spec.is_empty():
+		return
+	# The middle store's name, as it was in 1962.
+	var fx := -w * 0.5 + (fronts / 2 + 0.5) * fw
+	var wi := int(_word_slot(fx) * 0.5) - 1
+	if wi < 0 or wi >= TRADE_WORDS.size():
+		return
+	var word: String = TRADE_WORDS[wi]
+	var px := minf(0.24, (w - 2.0) / (word.length() * 4.0 - 1.0))
+	var col := Color(["#7a1e1e", "#2a2a2c", "#1f3b6e", "#8a6a2a"][mark % 4])
+	_pixel_text(word, 0.0, y0 + ph * 0.55, zf - 0.3, px, 0.08, col, "paint")
+
+

@@ -70,8 +70,9 @@ func _init() -> void:
 				store += 0.628 * d * d * h
 		if p.kind == "grain":
 			grain += 1
-			# Enough for at least a third of a year's crop (118 bu an acre).
-			if store < p.acres * 118.0 * 0.33:
+			# Enough for at least a third of a year's crop (118 bu an acre),
+			# unless the railroad took some of the bins' room.
+			if store < p.acres * 118.0 * 0.33 and not p.get("by_rail", false):
 				short_store += 1
 		# The windbreak stands on the north or west of the yard.
 		var wb: Array = p.trees.filter(func(t): return t.size() > 4)
@@ -231,8 +232,9 @@ func _pinned(places: Array, plans: Array, kinds: Dictionary) -> void:
 		parts += p.parts.size()
 		trees += p.trees.size()
 	# 696 fewer trees since windbreaks keep out of ponds; then the places
-	# moved back off the county railroads (FarmsteadPlan.off_rail) grew anew.
-	_check(kinds == {"home": 3406, "hog": 130, "grain": 623, "retired": 929, "dairy": 10} and parts == 12282 and trees == 122052,
+	# moved back off the county railroads (FarmsteadPlan.off_rail) grew anew;
+	# then the buildings and trees on the railroad's land were left out.
+	_check(kinds == {"home": 3406, "hog": 130, "grain": 623, "retired": 929, "dairy": 10} and parts == 12212 and trees == 121352,
 		"and so do all %d together (%s, %d buildings, %d trees)" % [places.size(), kinds, parts, trees])
 	_check(CropCalendar.hash32(0, 0, 0) == 946720379 and CropCalendar.hash32(123, -456, 789) == 1989847715,
 		"the hash behind them is the crops' own")
