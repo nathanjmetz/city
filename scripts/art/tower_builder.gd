@@ -805,6 +805,21 @@ func _tw_deco(to_curb: float, width: float, storeys: int) -> void:
 		# From the last setback, where the floods stand, up the top tier.
 		var base_y := ground_h + floor_h * (int(tiers[-2][2]) - 1) + 0.6
 		_tw_washes(float(tiers[-1][0]), float(tiers[-1][1]), zf + d * 0.5, base_y, top, flood)
+		# The floods themselves: weatherproof metal-halide heads on yokes,
+		# about 1.5 m out on the setback roof and 5 m apart, tipped up at
+		# the wall (seen from the towers next door by day).
+		var roof_y := base_y - 0.6
+		for face in _tw_faces(float(tiers[-1][0]), float(tiers[-1][1]), zf + d * 0.5):
+			var along: Vector3 = face[1]
+			var out: Vector3 = along.cross(Vector3.UP)
+			var nf := maxi(2, roundi(float(face[2]) / 5.0))
+			for i in nf:
+				var p: Vector3 = face[0] + along * (-float(face[2]) * 0.5 + (i + 0.5) * float(face[2]) / nf) + out * 1.5
+				p.y = roof_y
+				_box("metal", Vector3(0.5, 0.12, 0.5), p + Vector3(0, 0.06, 0), Color("#4a4c4e"))  # base plate
+				_box("metal", Vector3(0.08, 0.45, 0.08), p + Vector3(0, 0.3, 0), Color("#4a4c4e"))
+				var tilt := Basis(along, -0.6) * _tw_yaw(along)
+				_box("metal", Vector3(0.55, 0.42, 0.32), p + Vector3(0, 0.62, 0) - out * 0.05, Color("#3a3c3e"), tilt)
 	for k in 2:
 		cw -= 4.0
 		cd -= 4.0
