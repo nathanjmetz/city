@@ -1022,6 +1022,7 @@ func _tw_glass_box(w: float, d: float, cz: float, ground_h: float, floor_h: floa
 	_tw_louvres(w, d, cz, top, mech)
 	_tw_roof(w, d, cz, top + mech)
 	_tw_rooftop(w, d, cz, top + mech, 0.0, true)
+	_tw_obstruction(w, d, cz, top + mech)
 	_tw_name(Vector3(0, top + mech * 0.2, cz - d * 0.5), w * 0.7, mech * 0.6)
 
 
@@ -1150,6 +1151,7 @@ func _tw_glass_shaped(w: float, d: float, cz: float, ground_h: float, floor_h: f
 	_box("metal", Vector3(tw - c * 1.2, mech, td - c * 1.2), Vector3(0, y1 + mech * 0.5, cz), Color("#2b2d2f"))
 	_tw_roof(tw - c * 1.2, td - c * 1.2, cz, y1 + mech)
 	_tw_rooftop(tw - c * 1.2, td - c * 1.2, cz, y1 + mech, 0.0, true)
+	_tw_obstruction(tw - c * 1.2, td - c * 1.2, cz, y1 + mech)
 	_tw_name(Vector3(0, y1 + mech * 0.2, cz - (td - c * 1.2) * 0.5), (tw - c * 1.2) * 0.75, mech * 0.6)
 
 
@@ -1843,6 +1845,21 @@ func _tw_pyramid(base: Vector3, w: float, d: float, h: float, col: Color) -> voi
 		var a: Vector3 = c[i]
 		var b: Vector3 = c[(i + 1) % 4]
 		_tri("roof", a, b, apex, col, [], (a + b) * 0.5 - base + Vector3(0, h * 0.3, 0))
+
+
+## Desktop: a tower over 200 ft (61 m) carries aircraft obstruction
+## lights (FAA AC 70/7460-1, L-810 steady red): a red globe on a short
+## stalk at each corner of the roof parapet, burning all night. Draws no
+## random numbers.
+func _tw_obstruction(w: float, d: float, cz: float, y: float) -> void:
+	if not fine_parts or y < 61.0:
+		return
+	for sx in [-1.0, 1.0]:
+		for sz in [-1.0, 1.0]:
+			var at := Vector3(sx * (w * 0.5 - 0.4), y, cz + sz * (d * 0.5 - 0.4))
+			_box("metal", Vector3(0.08, 0.7, 0.08), at + Vector3(0, 0.35, 0), TW_STEEL)
+			_box("paint", Vector3(0.24, 0.08, 0.24), at + Vector3(0, 0.72, 0), Color("#2a2b2c"))
+			_box("sign", Vector3(0.3, 0.32, 0.3), at + Vector3(0, 0.92, 0), Color(1.0, 0.1, 0.06, 1.0))
 
 
 ## A steel antenna mast with an aircraft warning light.
