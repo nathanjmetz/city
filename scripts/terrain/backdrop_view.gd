@@ -295,10 +295,12 @@ func _build(c: Vector2i) -> void:
 		_street(v, nrm, col, s[1], WIDTHS[s[0]], o)
 		if _trees > 0.0:
 			_pools(s[1], s[0], o)
+	var near := _street_grid(c) if _trees > 0.0 else {}
 	for b in sq[0]:
 		_building(v, nrm, col, uv, b, o)
 		if _trees > 0.0:
 			_yard_trees(blk[5], blk[6], blk[7], b, o)
+			_driveway(v, nrm, col, b, near, o)
 	blk[0] -= 1
 	if blk[0] > 0 or v.is_empty():
 		return
@@ -584,6 +586,87 @@ func _lot(v: PackedVector3Array, nrm: PackedVector3Array, col: PackedColorArray,
 			for i in n:
 				var t := -half + (i + 0.5) * half * 2.0 / n
 				_pool(centre + out + along * t, LOT_LIGHT, 1.5, o)
+
+
+## This square's and its neighbours' street segments, filed by 40 m cell:
+## cell -> [[a, b, half width], ...].
+func _street_grid(c: Vector2i) -> Dictionary:
+	var grid := {}
+	for dx in range(-1, 2):
+		for dz in range(-1, 2):
+			var sq: Array = _todo.get(c + Vector2i(dx, dz), [])
+			if sq.is_empty():
+				continue
+			for st in sq[1]:
+				var pts: PackedVector2Array = st[1]
+				var hw: float = WIDTHS[st[0]] * 0.5
+				for i in pts.size() - 1:
+					var a := pts[i]
+					var e := pts[i + 1]
+					var lo := (Vector2(minf(a.x, e.x), minf(a.y, e.y)) / DRIVE_CELL).floor()
+					var hi := (Vector2(maxf(a.x, e.x), maxf(a.y, e.y)) / DRIVE_CELL).floor()
+					for gx in range(int(lo.x), int(hi.x) + 1):
+						for gz in range(int(lo.y), int(hi.y) + 1):
+							var k := Vector2i(gx, gz)
+							if not grid.has(k):
+								grid[k] = []
+							grid[k].append([a, e, hw])
+	return grid
+
+
+## A house's driveway (desktop): nearly every Marion house has one, a
+## strip of pale concrete or asphalt about 3 m wide from beside the house
+## (the garage end) straight to the street, the way it reads from the air.
+const DRIVE_CELL := 40.0
+const DRIVE_WIDTH := 3.2
+const DRIVE_COLOURS := [Color(0.60, 0.59, 0.56), Color(0.55, 0.54, 0.52), Color(0.36, 0.36, 0.36)]
+
+
+func _driveway(v: PackedVector3Array, nrm: PackedVector3Array, col: PackedColorArray,
+		b: Array, grid: Dictionary, o: Vector2) -> void:
+	if b[2] * b[3] >= HOUSE_AREA or b[4] >= HOUSE_HEIGHT:
+		return
+	var c := Vector2(b[0], b[1])
+	var cell := (c / DRIVE_CELL).floor()
+	var best := INF
+	var bp := Vector2.ZERO
+	var bhw := 0.0
+	for gx in range(int(cell.x) - 1, int(cell.x) + 2):
+		for gz in range(int(cell.y) - 1, int(cell.y) + 2):
+			for seg in grid.get(Vector2i(gx, gz), []):
+				var p := Geometry2D.get_closest_point_to_segment(c, seg[0], seg[1])
+				var d := p.distance_squared_to(c)
+				if d < best:
+					best = d
+					bp = p
+					bhw = seg[2]
+	if best > 45.0 * 45.0:
+		return
+	var ang := deg_to_rad(b[5])
+	var u := Vector2(cos(ang), sin(ang))
+	var w := Vector2(-sin(ang), cos(ang))
+	var to := bp - c
+	# The wall that faces the street, and the axis along it.
+	var n := u if absf(to.dot(u)) > absf(to.dot(w)) else w
+	if to.dot(n) < 0.0:
+		n = -n
+	var along := w if n.is_equal_approx(u) or n.is_equal_approx(-u) else u
+	var depth: float = (b[2] if along.is_equal_approx(w) or along.is_equal_approx(-w) else b[3]) * 0.5
+	var length: float = (b[3] if along.is_equal_approx(w) or along.is_equal_approx(-w) else b[2]) * 0.5
+	var pick := absi(hash(Vector2i(int(b[0] * 7.0), int(b[1] * 3.0))))
+	var side := 1.0 if pick % 2 == 0 else -1.0
+	# Beside the house at its garage end: just past the end wall.
+	var start := c + along * side * (length + DRIVE_WIDTH * 0.5 + 0.5) + n * (depth - 6.0)
+	var reach := (bp - start).dot(n) - bhw + 0.5
+	if reach < 3.0 or reach > 35.0:
+		return
+	var tint: Color = DRIVE_COLOURS[pick % DRIVE_COLOURS.size()]
+	var hw := along * DRIVE_WIDTH * 0.5
+	var q := [start - hw, start + hw, start + hw + n * reach, start - hw + n * reach]
+	var p := []
+	for k in q:
+		p.append(Vector3(k.x - o.x, Terrain.height(k.x, k.y) + 0.12, k.y - o.y))
+	_quad(v, nrm, col, p[0], p[1], p[2], p[3], tint)
 
 
 ## Cars parked in a store's lot (desktop): 90-degree stalls 2.75 m wide
