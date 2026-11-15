@@ -140,6 +140,24 @@ static func _mi_midcentury(b: DenseBuilder, r: RandomNumberGenerator, to_curb: f
 		for i in n + 1:
 			b._box("metal", Vector3(0.05, 1.5, 0.08), Vector3(lerpf(-w * 0.5 + 0.8, w * 0.5 - 0.8, float(i) / n), y0 + 1.65, zf - 0.05),
 				Color("#3a3d3e"))
+		if DenseBuilder.fine:
+			# Desktop: steel projected windows, as the ribbon really was:
+			# a fixed light over a row of vents, the bar between them, and
+			# here and there a vent pushed open on its arms on a warm day
+			# (Truscon and Fenestra catalogues, 1950s Indiana offices).
+			var steel := Color("#3a3d3e")
+			b._box("metal", Vector3(w - 1.6, 0.05, 0.08), Vector3(0, y0 + 1.3, zf - 0.05), steel)
+			for i in n:
+				if posmod(hash([r.seed, f, i, 91]), 4) != 0:
+					continue
+				var x0 := lerpf(-w * 0.5 + 0.8, w * 0.5 - 0.8, float(i) / n)
+				var x1 := lerpf(-w * 0.5 + 0.8, w * 0.5 - 0.8, float(i + 1) / n)
+				var tilt := Basis(Vector3.RIGHT, deg_to_rad(28.0))
+				var hinge := Vector3((x0 + x1) * 0.5, y0 + 1.27, zf - 0.08)
+				var sash := hinge + tilt * Vector3(0, -0.19, 0)
+				b._box("metal", Vector3(x1 - x0 - 0.08, 0.38, 0.03), sash, steel, tilt)
+				b._box("paint", Vector3(x1 - x0 - 0.18, 0.28, 0.035), sash, Color("#56656e"), tilt)
+				b._box("metal", Vector3(0.02, 0.02, 0.2), Vector3(x1 - 0.12, y0 + 1.0, zf - 0.13), steel)  # the arm
 		b._box("paint", Vector3(w - 1.4, 0.08, 0.2), Vector3(0, y0 + 0.88, zf - 0.1), Color("#d9d3c3"))
 	b._box("metal", Vector3(w + 0.06, 0.14, 0.3), Vector3(0, top - 0.07, zf - 0.1), ALUMINIUM)
 	# A blade sign at one end (1950s porcelain-and-neon), the flats' door
