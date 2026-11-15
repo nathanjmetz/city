@@ -1802,6 +1802,23 @@ func _office(to_curb: float, width: float, storeys: int) -> void:
 		while x <= w * 0.5 - 0.7:
 			_box("paint", Vector3(0.08, gh, 0.1), Vector3(x, y, zf - 0.06), MULLION[0])
 			x += 1.5
+		if fine:
+			# Desktop: the sides and back are the same strip glazing as the
+			# front, not one unbroken sheet: mullions every 1.5 m, and an
+			# aluminium sill under each strip shedding water off the wall.
+			var by := y if f > 0 else 1.9
+			var bx := -w * 0.5 + 0.8
+			while bx <= w * 0.5 - 0.7:
+				_box("paint", Vector3(0.08, 1.7, 0.1), Vector3(bx, by, zf + d + 0.06), MULLION[0])
+				bx += 1.5
+			_box("metal", Vector3(w - 1.5, 0.05, 0.14), Vector3(0, by - 0.87, zf + d + 0.07), MULLION[0])
+			for sd in [-1.0, 1.0]:
+				var sz := cz - d * 0.5 + 0.8
+				while sz <= cz + d * 0.5 - 0.7:
+					_box("paint", Vector3(0.1, gh, 0.08), Vector3(sd * (w * 0.5 + 0.06), y, sz), MULLION[0])
+					sz += 1.5
+				_box("metal", Vector3(0.14, 0.05, d - 1.5), Vector3(sd * (w * 0.5 + 0.07), y - gh * 0.5 - 0.02, cz), MULLION[0])
+			_box("metal", Vector3(w - 1.5, 0.05, 0.14), Vector3(0, y - gh * 0.5 - 0.02, zf - 0.07), MULLION[0])
 	# Entrance canopy, a plaza walk with planters, and a parking lot at the side.
 	_box("paint", Vector3(6.0, 0.3, 2.4), Vector3(0, 3.6, zf - 1.2), Color("#3a3c3e"))
 	_flat_rect("drive", -4.0, 4.0, -0.3, zf, 0.07)
