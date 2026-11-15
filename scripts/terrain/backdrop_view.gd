@@ -170,7 +170,10 @@ const POOL_SPACING := [55.0, 45.0, 38.0]
 const POOL_RADIUS := 13.0
 const SODIUM := Color(1.0, 0.55, 0.2)
 const LED := Color(0.8, 0.78, 0.7)
+const LOT_LIGHT := Color(2.2, 2.15, 2.0)
 static var _pool_mat: ShaderMaterial
+## The block being built's light arrays (vertices, colours, uvs).
+var _lit: Array = []
 
 
 static func _pool_material() -> ShaderMaterial:
@@ -196,8 +199,24 @@ void fragment() {
 	return _pool_mat
 
 
-func _pools(v: PackedVector3Array, col: PackedColorArray, uv: PackedVector2Array,
-		pts: PackedVector2Array, kind: int, o: Vector2) -> void:
+## One light's pool and lamp at c (region metres), into this block's lights.
+func _pool(c: Vector2, tint: Color, scale: float, o: Vector2) -> void:
+	var v: PackedVector3Array = _lit[0]
+	var col: PackedColorArray = _lit[1]
+	var uv: PackedVector2Array = _lit[2]
+	var y := Terrain.height(c.x, c.y) + 0.5
+	var x0 := c.x - o.x
+	var z0 := c.y - o.y
+	var r := POOL_RADIUS * scale
+	var q := [Vector3(x0 - r, y, z0 - r), Vector3(x0 + r, y, z0 - r), Vector3(x0 + r, y, z0 + r), Vector3(x0 - r, y, z0 + r)]
+	var t := [Vector2(-1, -1), Vector2(1, -1), Vector2(1, 1), Vector2(-1, 1)]
+	for k in [0, 1, 2, 0, 2, 3]:
+		v.append(q[k])
+		uv.append(t[k])
+		col.append(tint)
+
+
+func _pools(pts: PackedVector2Array, kind: int, o: Vector2) -> void:
 	var gap: float = POOL_SPACING[clampi(kind, 0, POOL_SPACING.size() - 1)]
 	var next := gap * 0.5
 	var run := 0.0
@@ -208,17 +227,7 @@ func _pools(v: PackedVector3Array, col: PackedColorArray, uv: PackedVector2Array
 		while next <= run + l:
 			var c := a.lerp(b, (next - run) / maxf(l, 0.001))
 			var h := absi(hash(Vector2i(int(c.x), int(c.y))))
-			var tint: Color = SODIUM if h % 5 < 3 else LED
-			var y := Terrain.height(c.x, c.y) + 0.5
-			var x0 := c.x - o.x
-			var z0 := c.y - o.y
-			var r := POOL_RADIUS
-			var q := [Vector3(x0 - r, y, z0 - r), Vector3(x0 + r, y, z0 - r), Vector3(x0 + r, y, z0 + r), Vector3(x0 - r, y, z0 + r)]
-			var t := [Vector2(-1, -1), Vector2(1, -1), Vector2(1, 1), Vector2(-1, 1)]
-			for k in [0, 1, 2, 0, 2, 3]:
-				v.append(q[k])
-				uv.append(t[k])
-				col.append(tint)
+			_pool(c, SODIUM if h % 5 < 3 else LED, 1.0, o)
 			next += gap
 		run += l
 
@@ -236,10 +245,11 @@ func _build(c: Vector2i) -> void:
 	var col: PackedColorArray = blk[3]
 	var uv: PackedVector2Array = blk[4]
 	var o := _origin
+	_lit = [blk[8], blk[9], blk[10]]
 	for s in sq[1]:
 		_street(v, nrm, col, s[1], WIDTHS[s[0]], o)
 		if _trees > 0.0:
-			_pools(blk[8], blk[9], blk[10], s[1], s[0], o)
+			_pools(s[1], s[0], o)
 	for b in sq[0]:
 		_building(v, nrm, col, uv, b, o)
 		if _trees > 0.0:
@@ -506,6 +516,22 @@ func _lot(v: PackedVector3Array, nrm: PackedVector3Array, col: PackedColorArray,
 	_quad(v, nrm, col, p[0], p[1], p[2], p[3], LOT_ASPHALT)
 	if _trees > 0.0 and m > 12.0:
 		_parked(v, nrm, col, centre, u, w, m, o)
+	if _trees > 0.0:
+		# Lot lights: poles about 30 m apart round the store, brighter and
+		# whiter (LED or metal halide, 2-5 footcandles) than the street, so
+		# from the air at night the shopping strips are the brightest patches.
+		var e1 := u.normalized()
+		var e2 := w.normalized()
+		var hu := lu + m * 0.5
+		var hw := lw + m * 0.5
+		for side in 4:
+			var along := e1 if side % 2 == 0 else e2
+			var out := (e2 if side % 2 == 0 else e1) * (hw if side % 2 == 0 else hu) * (1.0 if side < 2 else -1.0)
+			var half := hu if side % 2 == 0 else hw
+			var n := maxi(1, int(half * 2.0 / 30.0))
+			for i in n:
+				var t := -half + (i + 0.5) * half * 2.0 / n
+				_pool(centre + out + along * t, LOT_LIGHT, 1.5, o)
 
 
 ## Cars parked in a store's lot (desktop): 90-degree stalls 2.75 m wide
