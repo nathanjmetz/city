@@ -1982,9 +1982,20 @@ func _office_front(w: float, zf: float, storeys: int, floor_h: float, band: Colo
 	var vd := 1.8
 	var vh := 2.9
 	var vz := zf - 0.06 - vd * 0.5
+	# Through the vestibule's clear glass you see the lobby beyond: its
+	# reception desk under the ceiling lights, lit all night (security
+	# desk, egress lighting), not a pale house window.
+	var lobby_keep := [shopfront, allnight, shop_kind]
+	shopfront = true
+	allnight = true
+	shop_kind = 4
 	_glass(Vector3(0, vh * 0.5 + 0.02, zf - 0.06 - vd), Vector3(-1, 0, 0), vw - 0.1, vh - 0.1, 0.0)
 	for s in [-1.0, 1.0]:
 		_glass(Vector3(s * vw * 0.5, vh * 0.5 + 0.02, vz), Vector3(0, 0, -s), vd - 0.1, vh - 0.1, 0.0)
+	shopfront = lobby_keep[0]
+	allnight = lobby_keep[1]
+	shop_kind = lobby_keep[2]
+	for s in [-1.0, 1.0]:
 		for zz in [zf - 0.06 - vd, zf - 0.08]:
 			_box("metal", Vector3(0.1, vh, 0.1), Vector3(s * vw * 0.5, vh * 0.5, zz), frame)  # corner posts
 		# A pair of doors either side of the centre mullion, with pulls.
