@@ -818,6 +818,11 @@ func _sign(c: Vector3, w: float, h: float, word := -1) -> void:
 	_box("paint", Vector3(w + 0.1, h + 0.1, 0.06), c + Vector3(0, h * 0.5, 0.04), col.darkened(0.3))
 
 
+## What a power center's junior boxes sell (ICSC: category killers;
+## Marion's Baldwin Avenue and Fort Wayne's Apple Glen rows).
+const JUNIOR_TRADES := ["SHOES", "BOOKS", "PETS", "SPORTS", "FURNITURE", "APPLIANCE", "FABRIC", "HOBBY", "TOYS", "OUTLET", "FITNESS"]
+
+
 ## Trades lettered on signs with no business name yet (the sign shader's
 ## stand-in words are the same list).
 const TRADE_WORDS := [
@@ -1473,19 +1478,19 @@ func _community_center(to_curb: float) -> void:
 			if fine_parts:
 				_channel_letters(Vector3(vx, th - 2.4, zf - 1.62), 6.5, 1.0, "GROCERY" if vx < ex else "PHARMACY")
 			else:
-				_sign(Vector3(vx, th - 2.4, zf - 1.62), 6.5, 1.0)  # "Grocery" / "Home & Pharmacy"
+				_sign(Vector3(vx, th - 2.4, zf - 1.62), 6.5, 1.0, TRADE_WORDS.find("GROCERY" if vx < ex else "PHARMACY"))
 		sign_spec = spec
 		if fine_parts and sign_spec.is_empty():
 			_channel_letters(Vector3(ex, hd - 2.6, zf - 0.33), minf(ew * 0.7, 16.0), 1.8, "SUPERCENTER")
 		else:
-			_sign(Vector3(ex, hd - 2.6, zf - 0.33), minf(ew * 0.7, 16.0), 1.8)
+			_sign(Vector3(ex, hd - 2.6, zf - 0.33), minf(ew * 0.7, 16.0), 1.8, TRADE_WORDS.find("SUPERCENTER"))
 	else:
 		_box("paint", Vector3(ew, eh, 1.4), Vector3(ex, eh * 0.5, zf - 0.7), wall.lightened(0.06))
 		_box("paint", Vector3(ew + 0.4, 0.4, 1.7), Vector3(ex, eh + 0.2, zf - 0.7), band)
 		if fine_parts and sign_spec.is_empty():
 			_channel_letters(Vector3(ex, eh - 2.3, zf - 1.42), ew * 0.75, 1.7, "DISCOUNT")
 		else:
-			_sign(Vector3(ex, eh - 2.3, zf - 1.42), ew * 0.75, 1.7)
+			_sign(Vector3(ex, eh - 2.3, zf - 1.42), ew * 0.75, 1.7, TRADE_WORDS.find("DISCOUNT"))
 	sign_spec = {}
 	for vx: float in vxs:
 		_box("paint", Vector3(5.0, 3.4, 3.0), Vector3(vx, 1.7, zf - 2.9), wall.lightened(0.03))  # vestibule
@@ -1602,7 +1607,10 @@ func _power_center(to_curb: float) -> void:
 	_box("paint", Vector3(20.0, th, 1.6), Vector3(hx, th * 0.5, zf - 0.8), hw.lightened(0.06))
 	_box("paint", Vector3(20.6, 0.6, 2.0), Vector3(hx, th + 0.1, zf - 0.8), hb)
 	sign_spec = spec
-	_sign(Vector3(hx, th - 2.8, zf - 1.62), 15.0, 2.0)
+	if fine_parts and sign_spec.is_empty():
+		_channel_letters(Vector3(hx, th - 2.8, zf - 1.62), 15.0, 2.0, "HARDWARE")
+	else:
+		_sign(Vector3(hx, th - 2.8, zf - 1.62), 15.0, 2.0, TRADE_WORDS.find("HARDWARE"))
 	sign_spec = {}
 	var doors := [hx - 6.0, hx + 6.0]
 	for vx: float in doors:
@@ -1690,6 +1698,7 @@ func _power_center(to_curb: float) -> void:
 	var jbands := ["#1f4e8a", "#b0262b", "#2f6a3e", "#e0a31f", "#5a3f7a", "#2a2c2e"]
 	var jc0 := cr.randi() % jcols.size()
 	var jb0 := cr.randi() % jbands.size()
+	var jt0 := posmod(hash([rng.seed, "junior"]), JUNIOR_TRADES.size())
 	for j in nj:
 		var x0 := xh1 + j * jw
 		var x1 := x0 + jw
@@ -1704,7 +1713,13 @@ func _power_center(to_curb: float) -> void:
 		var jt := jh + 1.8
 		_box("paint", Vector3(tw, jt, 1.2), Vector3(jx, jt * 0.5, zf + 0.4), jc.lightened(0.08))
 		_box("paint", Vector3(tw + 0.4, 0.45, 1.5), Vector3(jx, jt + 0.1, zf + 0.4), jb)
-		_sign(Vector3(jx, jt - 2.4, zf - 0.22), tw * 0.8, 1.3)
+		# A junior box letters a category killer's trade (shoes, books, pets,
+		# sporting goods...), never a diner's; no two alike.
+		var jword: String = JUNIOR_TRADES[(jt0 + j * 3) % JUNIOR_TRADES.size()]
+		if fine_parts:
+			_channel_letters(Vector3(jx, jt - 2.4, zf - 0.22), tw * 0.8, 1.3, jword)
+		else:
+			_sign(Vector3(jx, jt - 2.4, zf - 0.22), tw * 0.8, 1.3, TRADE_WORDS.find(jword))
 		_glass(Vector3(jx, 1.6, zf - 0.23), Vector3(-1, 0, 0), tw - 1.4, 2.8, 0.0)
 		_box("paint", Vector3(tw + 0.6, 0.25, 2.2), Vector3(jx, 3.3, zf - 1.1), jb)  # entry canopy
 		if fine_parts:
@@ -1728,7 +1743,11 @@ func _power_center(to_curb: float) -> void:
 	var ew := minf(wd * 0.5, 22.0)
 	_box("paint", Vector3(ew, dh + 2.4, 1.4), Vector3(ex, (dh + 2.4) * 0.5, zf - 0.7), dw.lightened(0.06))
 	_box("paint", Vector3(ew + 0.4, 0.4, 1.7), Vector3(ex, dh + 2.6, zf - 0.7), db)
-	_sign(Vector3(ex, dh + 0.1, zf - 1.42), ew * 0.75, 1.7)
+	var dword: String = ["DISCOUNT", "SUPERCENTER"][posmod(hash([rng.seed, "disc"]), 2)]
+	if fine_parts:
+		_channel_letters(Vector3(ex, dh + 0.1, zf - 1.42), ew * 0.75, 1.7, dword)
+	else:
+		_sign(Vector3(ex, dh + 0.1, zf - 1.42), ew * 0.75, 1.7, TRADE_WORDS.find(dword))
 	for vx: float in [ex - ew * 0.3, ex + ew * 0.3]:
 		_box("paint", Vector3(5.0, 3.4, 3.0), Vector3(vx, 1.7, zf - 2.9), dw.lightened(0.03))
 		_box("paint", Vector3(5.4, 0.3, 3.4), Vector3(vx, 3.5, zf - 2.9), db)
@@ -2080,7 +2099,7 @@ func _grocery_anchor(x0: float, x1: float, zf: float, cz: float, d: float, wall:
 		_channel_letters(Vector3(tx, th - 2.2, zfa - 1.25), tw * 0.8, 1.6,
 			["GROCERY", "FOODS", "MARKET"][posmod(hash([rng.seed, "grocer word"]), 3)])
 	else:
-		_sign(Vector3(tx, th - 2.2, zfa - 1.25), tw * 0.8, 1.6)
+		_sign(Vector3(tx, th - 2.2, zfa - 1.25), tw * 0.8, 1.6, TRADE_WORDS.find(["GROCERY", "FOODS", "MARKET"][posmod(hash([rng.seed, "grocer word"]), 3)]))
 	sign_spec = spec
 	# The vestibule: glass across the tower's foot, in and out doors.
 	_glass(Vector3(tx, 1.7, zfa - 1.23), Vector3(-1, 0, 0), tw - 1.2, 3.0, 0.0)
