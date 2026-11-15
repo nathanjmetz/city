@@ -1674,9 +1674,20 @@ func _office_mirror(to_curb: float, width: float, storeys: int) -> void:
 	if fine:
 		# Three flagpoles on the lawn (flag, state, company), as real
 		# office parks fly them.
+		_flat_rect("drive", -bw * 0.5 - 7.1, -bw * 0.5 - 1.9, zf - 7.3, zf - 5.6, 0.075)
 		for k in 3:
 			var fx := -bw * 0.5 - 3.0 - k * 1.6
-			_box("metal", Vector3(0.12, 10.0, 0.12), Vector3(fx, 5.0, zf - 6.5), Color("#c9cccd"))
+			# A round tapered aluminium pole (satin, about 4 in at the butt)
+			# set in a concrete collar with a flash collar, a gold ball on
+			# top, the halyard down its side to a cleat, and an uplight.
+			var pc := Color("#c9cccd")
+			_cylinder("metal", Vector3(fx, 0.0, zf - 6.5), 0.055, 5.0, pc, 10)
+			_cylinder("metal", Vector3(fx, 5.0, zf - 6.5), 0.04, 5.0, pc, 10)
+			_cylinder("metal", Vector3(fx, 10.0, zf - 6.5), 0.07, 0.12, Color("#c8a24a"), 10)
+			_cylinder("metal", Vector3(fx, 0.0, zf - 6.5), 0.09, 0.2, pc.darkened(0.1), 10)
+			_box("paint", Vector3(0.012, 9.6, 0.012), Vector3(fx + 0.07, 5.1, zf - 6.5), Color("#e8e6e0"))
+			_box("metal", Vector3(0.03, 0.16, 0.04), Vector3(fx + 0.065, 1.3, zf - 6.5), Color("#8a8c8e"))
+			_box("paint", Vector3(0.16, 0.12, 0.16), Vector3(fx, 0.1, zf - 5.75), Color("#2a2b2c"))
 			var flag: Color = [Color("#3c3b6e"), Color("#1f3a8a"), Color(_pick(SPANDREL)).darkened(0.3)][k]
 			var at := Vector3(fx - 0.06, 9.85, zf - 6.5)
 			if k == 0:
