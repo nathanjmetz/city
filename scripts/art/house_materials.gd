@@ -226,7 +226,7 @@ float box_t(vec3 o, vec3 rd, vec3 bmin, vec3 bmax, out float top) {
 	return (tin > 0.0 && tin < tout) ? tin : 1e9;
 }
 
-bool shop_room(vec2 uv, vec3 vw, bool diner, bool aisles, float sill, out vec3 col, out float glow) {
+bool shop_room(vec2 uv, vec3 vw, bool diner, bool aisles, float sill, int kind, out vec3 col, out float glow) {
 	vec3 n = normalize(world_normal);
 	vec3 inw = dot(vw, n) > 0.0 ? n : -n;
 	vec3 rt = normalize(cross(vec3(0.0, 1.0, 0.0), inw));
@@ -276,7 +276,18 @@ bool shop_room(vec2 uv, vec3 vw, bool diner, bool aisles, float sill, out vec3 c
 		// A wall: the back one (along x) or a side one (along depth).
 		float u = t == tz ? h.x : h.z;
 		col = wallc;
-		bool racks = !aisles && hash(vec2(sid, 3.0)) > 0.72;  // a c-store is all aisles
+		bool racks = !aisles && (kind == 1 || (kind == 0 && hash(vec2(sid, 3.0)) > 0.72));  // a c-store is all aisles
+		if (kind == 3) {
+			// A showroom: painted walls hung with framed prints over the
+			// floor sets, a picture rail, a lamp's glow here and there.
+			float fu = fract(u / 2.4);
+			float art = step(1.25, hy) * step(hy, 1.95) * step(0.3, fu) * step(fu, 0.7);
+			vec3 print = mix(vec3(0.55, 0.45, 0.3), vec3(0.3, 0.42, 0.5), hash(vec2(floor(u / 2.4), sid)));
+			col = mix(col, vec3(0.12, 0.1, 0.08), art);
+			col = mix(col, print, art * step(0.33, fu) * step(fu, 0.67) * step(1.29, hy) * step(hy, 1.91));
+			col = mix(col, vec3(0.32, 0.24, 0.16), step(abs(hy - 2.3), 0.03));
+			racks = false;
+		} else
 		if (diner) {
 			// The lunch counter along the back: formica front, a chrome
 			// edge, the pie case on it; a menu board on the wall above.
@@ -367,6 +378,49 @@ bool shop_room(vec2 uv, vec3 vw, bool diner, bool aisles, float sill, out vec3 c
 		col *= mix(1.0, 0.72, clamp(t * rd.z / 6.0, 0.0, 1.0));
 		return true;
 	}
+	if (kind == 3) {
+		// Room sets on the floor, as a furniture store shows them: a sofa
+		// facing the window (seat, back and arms), a coffee table and a
+		// rug in front of it, one set every 3.2 m along the window.
+		vec3 fabrics[4] = vec3[4](vec3(0.36, 0.33, 0.28), vec3(0.18, 0.22, 0.28), vec3(0.42, 0.3, 0.2), vec3(0.22, 0.26, 0.2));
+		float c0 = floor(px / 3.2);
+		float dir = rd.x >= 0.0 ? 1.0 : -1.0;
+		for (int k = 0; k < 4; k++) {
+			float xc = (c0 + dir * float(k) + 0.5) * 3.2;
+			if (xc < xl - 1.0 || xc > xr + 1.0) {
+				continue;
+			}
+			vec3 fab = fabrics[clamp(int(hash(vec2(xc, sid)) * 4.0), 0, 3)];
+			float top;
+			for (int b = 0; b < 6; b++) {
+				vec3 lo;
+				vec3 hi;
+				vec3 bc = fab;
+				if (b == 0) {
+					lo = vec3(xc - 1.0, yf, 3.0); hi = vec3(xc + 1.0, yf + 0.45, 3.9);
+				} else if (b == 1) {
+					lo = vec3(xc - 1.0, yf, 3.65); hi = vec3(xc + 1.0, yf + 0.85, 3.95);
+				} else if (b < 4) {
+					float sgn = b == 2 ? -1.0 : 1.0;
+					lo = vec3(xc + sgn * 1.0, yf, 3.0); hi = vec3(xc + sgn * 1.15, yf + 0.62, 3.95);
+				} else if (b == 4) {
+					lo = vec3(xc - 0.55, yf, 1.9); hi = vec3(xc + 0.55, yf + 0.42, 2.5);
+					bc = vec3(0.3, 0.2, 0.12);
+				} else {
+					lo = vec3(xc - 1.3, yf, 1.4); hi = vec3(xc + 1.3, yf + 0.012, 3.2);
+					bc = mix(vec3(0.5, 0.42, 0.34), vec3(0.3, 0.32, 0.36), hash(vec2(xc, sid + 4.0)));
+				}
+				float tb = box_t(o0, rd, min(lo, hi), max(lo, hi), top);
+				if (tb < t) {
+					t = tb;
+					glow = 0.0;
+					col = bc * mix(0.78, 1.12, top);
+				}
+			}
+		}
+		col *= mix(1.0, 0.72, clamp(t * rd.z / 6.0, 0.0, 1.0));
+		return true;
+	}
 	vec3 bmin = vec3((xl + xr) * 0.5 - 0.8, yf, 2.0);
 	vec3 bmax = vec3((xl + xr) * 0.5 + 0.8, yf + mix(0.8, 1.4, step(0.5, hash(vec2(sid, 4.0)))), 3.4);
 	vec3 inv = 1.0 / rd;
@@ -406,7 +460,10 @@ void fragment() {
 		vec3 inside;
 		float glow;
 		float low = step(7.0, UV.x);
-		if (shop_room(UV - vec2(diner ? 4.0 + low : (allnight ? 8.0 : 0.0), 0.0), vw, diner, allnight, diner ? 0.9 - 0.45 * low : 0.45, inside, glow)) {
+		// The trade's room rides in the vertex blue (HouseBuilder.shop_kind).
+		int kind = int(round((COLOR.b - 0.6) / 0.02));
+		kind = (COLOR.b < 0.59 || COLOR.b > 0.67) ? 0 : clamp(kind, 0, 3);
+		if (shop_room(UV - vec2(diner ? 4.0 + low : (allnight ? 8.0 : 0.0), 0.0), vw, diner, allnight, diner ? 0.9 - 0.45 * low : 0.45, kind, inside, glow)) {
 			float fres = pow(1.0 - clamp(dot(NORMAL, VIEW), 0.0, 1.0), 4.0);
 			vec3 sky = mix(vec3(0.20, 0.26, 0.34), vec3(0.45, 0.52, 0.60), UV.y) * (1.0 - night * 0.85);
 			float blinds = step(1.0 - COLOR.a, UV.y);

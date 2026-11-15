@@ -211,6 +211,10 @@ var office_glass := false
 ## Desktop: glass in front of a diner's booths and lunch counter: UV.x 6..7
 ## (a roadside diner's high windows) or 7..8 (a Main Street cafe's low ones).
 var diner_room := 0.0
+## What a desktop shop window shows inside (house_materials.gd's shop_room),
+## from its trade: 0 the shop's own pick, 1 racks of clothes, 2 shelves of
+## goods, 3 a furniture showroom floor. Rides in the glass's vertex blue.
+var shop_kind := 0
 ## A shopfront whose room stays lit all night (a gas station's store).
 var allnight := false
 
@@ -3137,7 +3141,8 @@ func _glass(c: Vector3, right: Vector3, w: float, h: float, blinds: float) -> vo
 		var out := right.cross(Vector3.UP).normalized()
 		_box("paint", Vector3(w + 0.12, h + 0.12, 0.05), c + out * 0.07, PLYWOOD, Basis(right.normalized(), Vector3.UP, out))
 	var o := diner_room if diner_room > 0.0 else (10.0 if shopfront and allnight else (2.0 if shopfront else (4.0 if office_glass else 0.0)))
-	_quad("glass", c - r - u, c + r - u, c + r + u, c - r + u, Color(0.85, 0.82, 0.74, blinds),
+	var kb := 0.74 if not shopfront or shop_kind == 0 else 0.6 + 0.02 * shop_kind
+	_quad("glass", c - r - u, c + r - u, c + r + u, c - r + u, Color(0.85, 0.82, kb, blinds),
 		[Vector2(o, 0), Vector2(o + 1, 0), Vector2(o + 1, 1), Vector2(o, 1)])
 
 
