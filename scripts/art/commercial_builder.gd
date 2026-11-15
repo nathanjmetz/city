@@ -818,6 +818,11 @@ func _sign(c: Vector3, w: float, h: float, word := -1) -> void:
 	_box("paint", Vector3(w + 0.1, h + 0.1, 0.06), c + Vector3(0, h * 0.5, 0.04), col.darkened(0.3))
 
 
+## What a power center's junior boxes sell (ICSC: category killers;
+## Marion's Baldwin Avenue and Fort Wayne's Apple Glen rows).
+const JUNIOR_TRADES := ["SHOES", "BOOKS", "PETS", "SPORTS", "FURNITURE", "APPLIANCE", "FABRIC", "HOBBY", "TOYS", "OUTLET", "FITNESS"]
+
+
 ## Trades lettered on signs with no business name yet (the sign shader's
 ## stand-in words are the same list).
 const TRADE_WORDS := [
@@ -1098,6 +1103,15 @@ func _strip_center(to_curb: float, anchor := false) -> void:
 			_box("metal", Vector3(0.04, 0.8, 0.05), Vector3(dcx - 0.34, 1.2, zf - 0.16), Color("#b9bcbe"))
 			_box("metal", Vector3(0.38, 0.05, 0.06), Vector3(dcx + 0.2, 2.47, zf - 0.15), Color("#4a4c4e"))
 			_box("metal", Vector3(1.0, 0.02, 0.18), Vector3(dcx, 0.31, zf - 0.1), Color("#b0b3b5"))
+			# Signs of a tenant in business: the store hours in white vinyl
+			# on the door's glass at eye level, and in some display windows
+			# a neon OPEN sign on its chains (lit after dark). Hash picks,
+			# so the builder's random numbers don't move.
+			_box("paint", Vector3(0.24, 0.3, 0.004), Vector3(dcx + 0.12, 1.55, zf - 0.055), Color("#eceae4"))
+			for k in 6:
+				_box("paint", Vector3(0.18, 0.012, 0.003), Vector3(dcx + 0.12, 1.66 - k * 0.04, zf - 0.058), Color("#3c3e40"))
+			if posmod(hash([rng.seed, i, 977]), 10) < 4:
+				_open_sign(Vector3(x - 0.4 + (sw - 1.4) * 0.25, 2.25, zf - 0.05))
 			# The display window in a real storefront frame (2 x 4.5 in
 			# aluminium, Kawneer 451-type): a jamb at the party pier,
 			# vertical mullions every 1.2-1.5 m, a sill on the bulkhead and a
@@ -1205,6 +1219,41 @@ func _strip_center(to_curb: float, anchor := false) -> void:
 	if fine_parts:
 		_strip_lot_dress(to_curb, zf - 4.6, n, wall)
 		_strip_rear(w, n, bay, aw, zf + d, h + 1.2, wall)
+
+
+## A shop's neon OPEN sign in the window: red tube letters in a blue tube
+## border, on a clear hanger. Glows after dark ("sign" alpha 1).
+func _open_sign(c: Vector3) -> void:
+	var red := Color("#ff3446")
+	var blue := Color("#3a7bff")
+	var t := 0.022
+	var w := 0.62
+	var h := 0.26
+	for e in [[Vector3(w, t, t), Vector3(0, h * 0.5, 0)], [Vector3(w, t, t), Vector3(0, -h * 0.5, 0)],
+			[Vector3(t, h, t), Vector3(-w * 0.5, 0, 0)], [Vector3(t, h, t), Vector3(w * 0.5, 0, 0)]]:
+		_box("sign", e[0], c + e[1], blue)
+	var lh := 0.15
+	var lw := 0.1
+	for i in 4:
+		var x := c.x + 0.21 - i * 0.14  # +x is the viewer's left
+		var lc := Vector3(x, c.y, c.z)
+		var strokes := []
+		match i:
+			0:  # O
+				strokes = [[lw, 0, 0, lh * 0.5], [lw, 0, 0, -lh * 0.5], [0, lh, -lw * 0.5, 0], [0, lh, lw * 0.5, 0]]
+			1:  # P
+				strokes = [[0, lh, -lw * 0.5, 0], [lw, 0, 0, lh * 0.5], [lw, 0, 0, 0], [0, lh * 0.5, lw * 0.5, lh * 0.25]]
+			2:  # E
+				strokes = [[0, lh, -lw * 0.5, 0], [lw, 0, 0, lh * 0.5], [lw * 0.8, 0, -lw * 0.1, 0], [lw, 0, 0, -lh * 0.5]]
+			3:  # N
+				strokes = [[0, lh, -lw * 0.5, 0], [0, lh, lw * 0.5, 0]]
+		for s in strokes:
+			_box("sign", Vector3(maxf(s[0], t), maxf(s[1], t), t), lc + Vector3(-s[2], s[3], 0), red)
+		if i == 3:
+			_box("sign", Vector3(t, Vector2(lw, lh).length(), t), lc, red, Basis(Vector3.BACK, -atan2(lw, lh)))
+	# The hanging chain.
+	for sx in [-0.25, 0.25]:
+		_box("metal", Vector3(0.008, 0.3, 0.008), c + Vector3(sx, h * 0.5 + 0.15, 0.01), Color("#9a9a9a"))
 
 
 ## Desktop: a strip centre's back as built. Every tenant has its own
@@ -1429,19 +1478,19 @@ func _community_center(to_curb: float) -> void:
 			if fine_parts:
 				_channel_letters(Vector3(vx, th - 2.4, zf - 1.62), 6.5, 1.0, "GROCERY" if vx < ex else "PHARMACY")
 			else:
-				_sign(Vector3(vx, th - 2.4, zf - 1.62), 6.5, 1.0)  # "Grocery" / "Home & Pharmacy"
+				_sign(Vector3(vx, th - 2.4, zf - 1.62), 6.5, 1.0, TRADE_WORDS.find("GROCERY" if vx < ex else "PHARMACY"))
 		sign_spec = spec
 		if fine_parts and sign_spec.is_empty():
 			_channel_letters(Vector3(ex, hd - 2.6, zf - 0.33), minf(ew * 0.7, 16.0), 1.8, "SUPERCENTER")
 		else:
-			_sign(Vector3(ex, hd - 2.6, zf - 0.33), minf(ew * 0.7, 16.0), 1.8)
+			_sign(Vector3(ex, hd - 2.6, zf - 0.33), minf(ew * 0.7, 16.0), 1.8, TRADE_WORDS.find("SUPERCENTER"))
 	else:
 		_box("paint", Vector3(ew, eh, 1.4), Vector3(ex, eh * 0.5, zf - 0.7), wall.lightened(0.06))
 		_box("paint", Vector3(ew + 0.4, 0.4, 1.7), Vector3(ex, eh + 0.2, zf - 0.7), band)
 		if fine_parts and sign_spec.is_empty():
 			_channel_letters(Vector3(ex, eh - 2.3, zf - 1.42), ew * 0.75, 1.7, "DISCOUNT")
 		else:
-			_sign(Vector3(ex, eh - 2.3, zf - 1.42), ew * 0.75, 1.7)
+			_sign(Vector3(ex, eh - 2.3, zf - 1.42), ew * 0.75, 1.7, TRADE_WORDS.find("DISCOUNT"))
 	sign_spec = {}
 	for vx: float in vxs:
 		_box("paint", Vector3(5.0, 3.4, 3.0), Vector3(vx, 1.7, zf - 2.9), wall.lightened(0.03))  # vestibule
@@ -1558,7 +1607,10 @@ func _power_center(to_curb: float) -> void:
 	_box("paint", Vector3(20.0, th, 1.6), Vector3(hx, th * 0.5, zf - 0.8), hw.lightened(0.06))
 	_box("paint", Vector3(20.6, 0.6, 2.0), Vector3(hx, th + 0.1, zf - 0.8), hb)
 	sign_spec = spec
-	_sign(Vector3(hx, th - 2.8, zf - 1.62), 15.0, 2.0)
+	if fine_parts and sign_spec.is_empty():
+		_channel_letters(Vector3(hx, th - 2.8, zf - 1.62), 15.0, 2.0, "HARDWARE")
+	else:
+		_sign(Vector3(hx, th - 2.8, zf - 1.62), 15.0, 2.0, TRADE_WORDS.find("HARDWARE"))
 	sign_spec = {}
 	var doors := [hx - 6.0, hx + 6.0]
 	for vx: float in doors:
@@ -1646,6 +1698,7 @@ func _power_center(to_curb: float) -> void:
 	var jbands := ["#1f4e8a", "#b0262b", "#2f6a3e", "#e0a31f", "#5a3f7a", "#2a2c2e"]
 	var jc0 := cr.randi() % jcols.size()
 	var jb0 := cr.randi() % jbands.size()
+	var jt0 := posmod(hash([rng.seed, "junior"]), JUNIOR_TRADES.size())
 	for j in nj:
 		var x0 := xh1 + j * jw
 		var x1 := x0 + jw
@@ -1660,7 +1713,13 @@ func _power_center(to_curb: float) -> void:
 		var jt := jh + 1.8
 		_box("paint", Vector3(tw, jt, 1.2), Vector3(jx, jt * 0.5, zf + 0.4), jc.lightened(0.08))
 		_box("paint", Vector3(tw + 0.4, 0.45, 1.5), Vector3(jx, jt + 0.1, zf + 0.4), jb)
-		_sign(Vector3(jx, jt - 2.4, zf - 0.22), tw * 0.8, 1.3)
+		# A junior box letters a category killer's trade (shoes, books, pets,
+		# sporting goods...), never a diner's; no two alike.
+		var jword: String = JUNIOR_TRADES[(jt0 + j * 3) % JUNIOR_TRADES.size()]
+		if fine_parts:
+			_channel_letters(Vector3(jx, jt - 2.4, zf - 0.22), tw * 0.8, 1.3, jword)
+		else:
+			_sign(Vector3(jx, jt - 2.4, zf - 0.22), tw * 0.8, 1.3, TRADE_WORDS.find(jword))
 		_glass(Vector3(jx, 1.6, zf - 0.23), Vector3(-1, 0, 0), tw - 1.4, 2.8, 0.0)
 		_box("paint", Vector3(tw + 0.6, 0.25, 2.2), Vector3(jx, 3.3, zf - 1.1), jb)  # entry canopy
 		if fine_parts:
@@ -1672,7 +1731,7 @@ func _power_center(to_curb: float) -> void:
 				_glass(Vector3(wx, 2.0, zf + 0.97), Vector3(-1, 0, 0), 3.4, 2.2, cr.randf_range(0.2, 0.5))
 		for px in [x0 + 0.45, x1 - 0.45]:
 			_box("paint", Vector3(0.9, jh, 0.5), Vector3(px, jh * 0.5, zf + 0.75), jc.darkened(0.06))
-		boxes.append([x0, x1, jh])
+		boxes.append([x0, x1, jh, zf + 1.0 + jd])
 	# The discount store at the other end.
 	var dh := cr.randf_range(8.4, 9.4)
 	var dw := Color(["#b8b2a4", "#c9c1ae", "#d6c4a0", "#a49d8f"][cr.randi() % 4])
@@ -1684,7 +1743,11 @@ func _power_center(to_curb: float) -> void:
 	var ew := minf(wd * 0.5, 22.0)
 	_box("paint", Vector3(ew, dh + 2.4, 1.4), Vector3(ex, (dh + 2.4) * 0.5, zf - 0.7), dw.lightened(0.06))
 	_box("paint", Vector3(ew + 0.4, 0.4, 1.7), Vector3(ex, dh + 2.6, zf - 0.7), db)
-	_sign(Vector3(ex, dh + 0.1, zf - 1.42), ew * 0.75, 1.7)
+	var dword: String = ["DISCOUNT", "SUPERCENTER"][posmod(hash([rng.seed, "disc"]), 2)]
+	if fine_parts:
+		_channel_letters(Vector3(ex, dh + 0.1, zf - 1.42), ew * 0.75, 1.7, dword)
+	else:
+		_sign(Vector3(ex, dh + 0.1, zf - 1.42), ew * 0.75, 1.7, TRADE_WORDS.find(dword))
 	for vx: float in [ex - ew * 0.3, ex + ew * 0.3]:
 		_box("paint", Vector3(5.0, 3.4, 3.0), Vector3(vx, 1.7, zf - 2.9), dw.lightened(0.03))
 		_box("paint", Vector3(5.4, 0.3, 3.4), Vector3(vx, 3.5, zf - 2.9), db)
@@ -1692,6 +1755,17 @@ func _power_center(to_curb: float) -> void:
 		_box("paint", Vector3(2.4, 2.2, 0.06), Vector3(vx, 1.1, zf - 4.46), Color("#2b2d2f"))
 		if fine_parts:
 			_cc_entry(vx, zf - 4.4, db, vx < ex, 6, 1.0 if vx < ex else -1.0, true, 1.5)
+	if fine_parts:
+		# Desktop: the long wings either side of the entry broken into 30 ft
+		# (9.1 m) bays by block pilasters with a cast cap, as any 1990s-2010s
+		# discount store front (Walmart, Target, Meijer) is.
+		var npd := maxi(2, int(wd / 9.1))
+		for i in npd + 1:
+			var px := xd0 + 0.45 + i * (wd - 0.9) / npd
+			if absf(px - ex) < ew * 0.5 + 0.8:
+				continue
+			_box("paint", Vector3(0.9, dh - 0.1, 0.45), Vector3(px, (dh - 0.1) * 0.5, zf - 0.22), dw.darkened(0.07))
+			_box("paint", Vector3(1.1, 0.35, 0.6), Vector3(px, dh + 0.1, zf - 0.27), dw.lightened(0.1))
 	boxes.append([xd0, w * 0.5, dh])
 	sign_spec = spec
 	site.door = Vector2(hx + 6.0, zf - 4.5)
@@ -1700,13 +1774,19 @@ func _power_center(to_curb: float) -> void:
 	if depth - dz > 5.0:
 		_flat_rect("asphalt", -half + 0.6, half - 0.6, dz, depth - 0.6, 0.06)
 		for bx in boxes:
-			var bz: float = zf + dd if float(bx[1]) - float(bx[0]) > 30.0 else zf + 1.0 + minf(dd, 36.0)
+			# Docks on the box's own back wall; a shallower junior box's
+			# truck court is paved up to it (no lawn between dock and trucks).
+			var bz: float = float(bx[3]) if bx.size() > 3 else zf + dd
+			if bz < dz - 0.1:
+				_flat_rect("asphalt", float(bx[0]) + 0.05, float(bx[1]) - 0.05, bz, dz + 0.2, 0.06)
 			var nk := 2 if float(bx[1]) - float(bx[0]) > 30.0 else 1
 			for k in nk:
 				var kx: float = float(bx[1]) - 5.0 - k * 5.0
 				_box("paint", Vector3(3.0, 3.2, 0.1), Vector3(kx, 1.6, bz + 0.06), Color("#5a5c5e"))
 				_box("paint", Vector3(3.4, 1.2, 0.5), Vector3(kx, 1.2, bz + 0.3), Color("#1e1f20"))
-				if k == 0 and depth - bz > 15.0 and cr.randf() < 0.6:
+				# (the dice roll on the old dock line, so the draws stay as they were)
+				var old_bz: float = zf + dd if float(bx[1]) - float(bx[0]) > 30.0 else zf + 1.0 + minf(dd, 36.0)
+				if k == 0 and depth - old_bz > 15.0 and cr.randf() < 0.6:
 					_box("paint", Vector3(2.6, 2.4, 14.6), Vector3(kx, 2.4, bz + 7.9), Color("#e6e4de"))
 					_box("paint", Vector3(2.6, 0.5, 14.6), Vector3(kx, 3.85, bz + 7.9), Color("#e6e4de"))
 					_box("paint", Vector3(2.4, 1.0, 0.4), Vector3(kx, 0.6, bz + 13.5), Color("#2a2a2a"))
@@ -1897,13 +1977,31 @@ func _cc_parking(to_curb: float, w: float, zw: float, xg0: float, cr: RandomNumb
 			break
 		rows.append([az2 + 3.65 + 2.75, 1.0, az2])
 		az = az2
+	# Interior islands: Indiana parking codes (Indianapolis, Fort Wayne,
+	# Carmel) cap a row at about 15 unbroken stalls, so every 16th stall is a
+	# curbed, planted island, lined up row to row as in any power center lot.
+	var isles := []
+	# Cart corrals: a big box's lot gives a stall in every other row to a
+	# galvanized corral (Walmart and Lowe's lots: one within ~45 m of any
+	# stall), halfway between the islands, its open end on the aisle.
+	var corrals := []
+	var ri := -1
 	for row in rows:
 		var zc: float = row[0]
+		ri += 1
 		var x := lot0 + 2.0
+		var n := -1
 		while x + stall <= lot1 - 2.0 + 0.01:
 			var mx := x + stall * 0.5
 			x += stall
+			n += 1
 			if absf(mx - cut_x) < 7.0 or pad.grow(1.0).has_point(Vector2(mx, zc)):
+				continue
+			if n % 16 == 15 and absf(mx - cut_x) > 10.0 and mx < lot1 - 10.0 and not pad.grow(4.0).has_point(Vector2(mx, zc)):
+				isles.append(Vector2(mx, zc))
+				continue
+			if n % 16 == 7 and ri % 2 == 1 and absf(mx - cut_x) > 10.0 and mx < lot1 - 10.0 and not pad.grow(4.0).has_point(Vector2(mx, zc)):
+				corrals.append([Vector2(mx, zc), signf(float(row[2]) - zc)])
 				continue
 			_flat_rect("line", mx - stall * 0.5 - 0.06, mx - stall * 0.5 + 0.06, zc - 2.75, zc + 2.75, 0.07, LINE)
 			site.stalls.append([Vector2(mx, zc), Vector2(0, row[1]), row[2]])
@@ -1941,6 +2039,41 @@ func _cc_parking(to_curb: float, w: float, zw: float, xg0: float, cr: RandomNumb
 				_box("concrete", e[0], e[1], Color("#cfcac0"))
 			var pick := TreeField.pick(cr, true)
 			trees.append([Vector3(x, 0, zc), pick[0], pick[1], cr.randf_range(0.7, 0.95)])
+	# The interior islands (their own dice, so the rest stays as it was).
+	var ir := RandomNumberGenerator.new()
+	ir.seed = hash([rng.seed, "isles"])
+	for c in isles:
+		var hx := stall * 0.5 - 0.1
+		_flat_rect("mulch", c.x - hx, c.x + hx, c.y - 2.5, c.y + 2.5, 0.09)
+		for e in [[Vector3(hx * 2.0 + 0.1, 0.15, 0.15), Vector3(c.x, 0.075, c.y - 2.55)], [Vector3(hx * 2.0 + 0.1, 0.15, 0.15), Vector3(c.x, 0.075, c.y + 2.55)],
+				[Vector3(0.15, 0.15, 4.95), Vector3(c.x - hx - 0.05, 0.075, c.y)], [Vector3(0.15, 0.15, 4.95), Vector3(c.x + hx + 0.05, 0.075, c.y)]]:
+			_box("concrete", e[0], e[1], Color("#cfcac0"))
+		var pick := TreeField.pick(ir, true)
+		trees.append([Vector3(c.x, 0, c.y), pick[0], pick[1], ir.randf_range(0.7, 0.95)])
+	# The corrals: two rails of 1.9" galvanized pipe on posts, a closed head
+	# with a CART RETURN panel, a kick rail low, and the day's carts nested
+	# in from the open end (how many is the corral's own hash).
+	var galv := Color("#a9adb0")
+	for cc in corrals:
+		var c: Vector2 = cc[0]
+		var o: float = cc[1]  # toward the aisle: the open end
+		var head := c.y - o * 2.4
+		for sx in [-0.8, 0.8]:
+			for y in [1.05, 0.35]:
+				_box("metal", Vector3(0.05, 0.05, 4.8), Vector3(c.x + sx, y, c.y), galv)
+			for k in 3:
+				_box("metal", Vector3(0.06, 1.08, 0.06), Vector3(c.x + sx, 0.54, c.y - o * 2.4 + o * k * 2.4), galv)
+		_box("metal", Vector3(1.66, 0.05, 0.05), Vector3(c.x, 1.05, head), galv)
+		_box("paint", Vector3(1.2, 0.5, 0.03), Vector3(c.x, 1.45, head), Color("#1f4e8a"))
+		_box("paint", Vector3(1.0, 0.1, 0.035), Vector3(c.x, 1.48, head), Color("#eef0f0"))  # its words
+		for e in [-0.5, 0.5]:
+			_box("metal", Vector3(0.04, 0.5, 0.04), Vector3(c.x + e, 1.3, head), galv)
+		var nc := posmod(hash([rng.seed, c.x, c.y, "carts"]), 6)
+		for k in nc:
+			var cz := head + o * (0.55 + k * 0.32)
+			_box("metal", Vector3(0.56, 0.5, 0.85), Vector3(c.x, 0.62, cz + o * 0.2), Color("#c4c7c6"))  # basket
+			_box("paint", Vector3(0.58, 0.04, 0.05), Vector3(c.x, 1.0, cz + o * 0.68), Color("#b0262b"))  # handle
+			_box("metal", Vector3(0.5, 0.03, 0.7), Vector3(c.x, 0.2, cz + o * 0.2), Color("#8f9396"))  # lower rack
 
 
 ## The supermarket that anchors a neighborhood center (ICSC: 30,000 to
@@ -1983,7 +2116,7 @@ func _grocery_anchor(x0: float, x1: float, zf: float, cz: float, d: float, wall:
 		_channel_letters(Vector3(tx, th - 2.2, zfa - 1.25), tw * 0.8, 1.6,
 			["GROCERY", "FOODS", "MARKET"][posmod(hash([rng.seed, "grocer word"]), 3)])
 	else:
-		_sign(Vector3(tx, th - 2.2, zfa - 1.25), tw * 0.8, 1.6)
+		_sign(Vector3(tx, th - 2.2, zfa - 1.25), tw * 0.8, 1.6, TRADE_WORDS.find(["GROCERY", "FOODS", "MARKET"][posmod(hash([rng.seed, "grocer word"]), 3)]))
 	sign_spec = spec
 	# The vestibule: glass across the tower's foot, in and out doors.
 	_glass(Vector3(tx, 1.7, zfa - 1.23), Vector3(-1, 0, 0), tw - 1.2, 3.0, 0.0)
