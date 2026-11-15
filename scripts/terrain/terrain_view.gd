@@ -427,6 +427,26 @@ void fragment() {
 	}
 	float crown_hash = fract(sin(dot(cell, vec2(41.3, 289.1))) * 43758.5453);
 	float relief = 1.0 - smoothstep(0.12, 0.45, length(fwidth(cq)));
+#ifdef DESKTOP_DETAIL
+	// A woodlot in October is not one rust colour: Indiana's oak-hickory
+	// woods turn crown by crown (aerial photos of Grant County woodlots in
+	// mid-October): oaks a dull bronze that hangs on, hickories and tulip
+	// trees gold, sugar maples orange, red maples scarlet, each on its own
+	// week, some still green, matching the drawn trees beside them. Linear.
+	// Far off, the crowns merge into stands of a species a few dozen
+	// metres across (a grove of maples, a ridge of oaks), so the far woods
+	// stay mottled instead of one averaged rust.
+	float stand = texture(noise_soft, turn(p, 0.7) / 45.0 + 0.17).r;
+	float ready = texture(noise_soft, turn(p, 1.9) / 70.0 + 0.53).r;
+	float key = mix(smoothstep(0.3, 0.7, stand), crown_hash, relief);
+	vec3 fall_c = mix(vec3(0.16, 0.11, 0.035), vec3(0.22, 0.16, 0.02), smoothstep(0.25, 0.35, key));
+	fall_c = mix(fall_c, vec3(0.24, 0.1, 0.015), smoothstep(0.62, 0.7, key));
+	fall_c = mix(fall_c, vec3(0.19, 0.04, 0.015), smoothstep(0.86, 0.9, key));
+	float late = mix(smoothstep(0.25, 0.75, ready), fract(crown_hash * 7.31), relief);
+	float turn_c = clamp(season_look.x * 1.3 - late * 0.6, 0.0, 1.0);
+	leaves = mix(canopy.rgb, fall_c * (0.8 + 0.5 * mid), turn_c);
+	leaves = mix(leaves, twigs.rgb, season_look.y);
+#endif
 	vec2 slope = -to_c / 0.62;
 	float gap = smoothstep(0.75, 1.05, length(slope));
 	vec3 tint = mix(vec3(1.08, 1.04, 0.82), vec3(0.9, 1.0, 1.08), crown_hash);
@@ -463,8 +483,10 @@ void fragment() {
 	// when mayapple, jewelweed and the like cover it.
 	float fallen = max(season_look.y, season_look.x * 0.55);
 	// (Colours written here are linear, like everything this shader mixes:
-	// the carpet is sRGB 0.40/0.30/0.18, fresh 0.50/0.33/0.16.)
-	vec3 carpet = mix(vec3(0.133, 0.073, 0.027), vec3(0.214, 0.089, 0.022), season_look.x);
+	// the carpet is sRGB 0.40/0.30/0.18, fresh 0.46/0.33/0.21.)
+	// Fresh fall is mixed oak tan, hickory gold and maple orange, which
+	// reads tan-brown from above, not orange.
+	vec3 carpet = mix(vec3(0.133, 0.073, 0.027), vec3(0.18, 0.09, 0.035), season_look.x);
 	carpet = mix(carpet, vec3(0.119, 0.089, 0.059), season_look.y * (1.0 - season_look.x) * (1.0 - season_look.w * 0.4));
 	carpet *= 0.82 + 0.36 * clump;
 	litter_floor = mix(litter_floor, mix(litter_floor, carpet, 0.35 + 0.6 * smoothstep(0.4, 0.8, cover.r)), fallen);
