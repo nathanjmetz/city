@@ -213,7 +213,13 @@ def main():
             if check_only or (args and aid not in args):
                 continue
             src = spec.get("src", "polyhaven")
-            entry, total = {"polyhaven": fetch_polyhaven, "scan": fetch_scan}.get(src, fetch_url)(kind, aid, spec)
+            try:
+                entry, total = {"polyhaven": fetch_polyhaven, "scan": fetch_scan}.get(src, fetch_url)(kind, aid, spec)
+            except Exception as e:  # one bad scan bake must not hold up every other asset
+                if src != "scan":
+                    raise
+                print("SKIPPED %s: %s" % (aid, e))
+                continue
             entry.update(licence=lic, source=src, loop=spec.get("loop", ""), use=spec.get("use", ""),
                          real=spec.get("real", ""))
             index[kind][aid] = entry
