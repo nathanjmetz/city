@@ -285,7 +285,8 @@ func _ready() -> void:
 				mm.mesh = VehicleModels.build(key, lod)
 			var mi := MultiMeshInstance3D.new()
 			mi.multimesh = mm
-			mi.material_override = mat
+			var scan := VehicleScans.material(key, lod)
+			mi.material_override = scan if scan else mat
 			if lod == 1:
 				mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 			add_child(mi)
@@ -312,7 +313,8 @@ func _add_ultra_batch(key: String) -> void:
 	mm.mesh = VehicleModels.build(key, VehicleModels.LOD_ULTRA)
 	var mi := MultiMeshInstance3D.new()
 	mi.multimesh = mm
-	mi.material_override = VehicleMaterial.get_material(true)
+	var scan := VehicleScans.material(key, VehicleModels.LOD_ULTRA)
+	mi.material_override = scan if scan else VehicleMaterial.get_material(true)
 	add_child(mi)
 	_batches[key].append(mi)
 
@@ -488,7 +490,7 @@ func _describe(car: Dictionary) -> Array:
 	var long: bool = float(VehicleTypes.spec(kind).len) > LONG
 	# A rig steers by its tractor's axles.
 	var body: String = VehicleModels.ARTIC[kind].cab if VehicleModels.ARTIC.has(kind) else model
-	var rear := float(VehicleModels.AXLE.get(body, 3.5))
+	var rear := VehicleModels.axle(body)
 	var fo := float(FRONT.get(body, 1.0))
 	var wb := maxf(rear - fo, 1.0)
 	var need := wb + 1.0
@@ -517,7 +519,8 @@ func _model(kind: String, id: int) -> String:
 
 
 static func _far(kind: String, model: String) -> String:
-	return kind if VehicleModels.VARIANTS.has(kind) else model
+	# A scan keeps its own far version: its photo's colours, not a paint.
+	return kind if VehicleModels.VARIANTS.has(kind) and not VehicleScans.is_scan(model) else model
 
 
 func _add_parked(kind: String, xf: Transform3D, id: int, eye: Vector3, ultra2: float) -> void:

@@ -13,6 +13,7 @@ func _init() -> void:
 	_road_to_next_block()
 	_asks_before_crossing()
 	_county_road_crossing()
+	_county_rail_crossing()
 	_done()
 
 
@@ -199,6 +200,62 @@ func _county_road_crossing() -> void:
 		"fields away from the road are left whole")
 	sim.county_removed[key] = true
 	_check(not sim._on_painted_road(m, 30.0), "a bulldozed mile frees the ground again")
+
+
+## A county railroad runs through farm country: fields stop at its bed,
+## ditches and fence (CountyRail.CROP_CLEAR), never over the track.
+func _county_rail_crossing() -> void:
+	var sim := CitySim.new()
+	sim.simulate_traffic = false
+	sim.economy.money = 20_000_000
+	var id := _farm(sim)
+	if id == -1 or CountyRail.all().is_empty():
+		_check(false, "a farm is placed and the county has railroads")
+		return
+	sim.county_rail = true
+	var f: Dictionary = sim.farms.farms[id]
+	var c := Vector2i(3, 5)
+	var m := Farms.cell_center(f, c)
+	# Shift the map so a stretch of track (out in the country) runs right
+	# through cell c.
+	var r: Dictionary = CountyRail.all()[0]
+	# Mid-route, well away from either end of the line.
+	var on: Vector2 = CountyRail.point(0, CountyRail.length(0) * 0.5)
+	for t in [0.5, 0.3, 0.7, 0.2, 0.8]:
+		on = CountyRail.point(0, CountyRail.length(0) * t)
+		if not Backdrop.inside(on):
+			break
+	sim.terrain_offset = on - Vector2(m.x, m.z)
+	_no_county_roads(sim, m)
+	for x in range(0, 7):
+		for y in range(2, 9):
+			if not Vector2i(x, y) in f.cells:
+				f.cells.append(Vector2i(x, y))
+	sim._usable_cache.clear()
+	_check(not sim.field_usable(m, Farms.cell_corners(f, c)), "a farmer can't plant over the railroad")
+	sim._road_wins()
+	var cut: bool = not c in f.cells or (sim.farms.trim.has(id) and sim.farms.trim[id].has(c))
+	_check(cut, "a field already over the track is cut back to the railroad's fence")
+	if cut and c in f.cells:
+		var reg := []
+		for piece in sim.farms.trim[id][c]:
+			var q := PackedVector2Array()
+			for v in piece:
+				q.append(v + sim.terrain_offset)
+			reg.append(CountyRail.poly_distance(q, 20.0))
+		_check(reg.all(func(d): return d >= CountyRail.CROP_CLEAR - 0.5), "what's left keeps %d m off the track (%s)" % [CountyRail.CROP_CLEAR, str(reg)])
+
+
+## No county roads cross this test's ground (as if the player bulldozed the
+## miles near p).
+func _no_county_roads(sim: CitySim, p: Vector3) -> void:
+	var sec := CountyGrid.SECTION
+	var cx := floori((p.x + sim.terrain_offset.x) / sec)
+	var cz := floori((p.z + sim.terrain_offset.y) / sec)
+	for k in range(-3, 5):
+		for seg in range(-3, 4):
+			sim.county_removed["ns:%d:%d" % [cx + k, cz + seg]] = true
+			sim.county_removed["ew:%d:%d" % [cz + k, cx + seg]] = true
 
 
 func _check(ok: bool, what: String) -> void:

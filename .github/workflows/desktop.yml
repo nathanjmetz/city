@@ -74,6 +74,12 @@ jobs:
           cp build/windows/Neighbors.exe out/Neighbors-windows.exe
           ls -la out
 
+      # Blender as a Python module (vehicle scans, tools/vehicles/bake_vehicle.py)
+      # ships wheels for Python 3.13 only.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
       - name: Art packs (the free asset library, one small pack per asset)
         # A Poly Haven outage must never hold up a game update: the last
         # build's art list carries over (Write latest.json).

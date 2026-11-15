@@ -1319,7 +1319,8 @@ func _road_wins() -> void:
 		for c in f.cells:
 			for q in Farms.cell_corners(f, c):
 				shape.append(Vector3(q.x, 0.0, q.y))
-		var roads := field_corr + RoadWins.painted(painted_near(shape), RoadWins.VERGE) if not shape.is_empty() else field_corr
+		var roads := field_corr + RoadWins.painted(painted_near(shape), RoadWins.VERGE) + _rail_corridors(shape) \
+			if not shape.is_empty() else field_corr
 		for c in f.cells.duplicate():
 			var cell := Farms.cell_corners(f, c)
 			if not RoadWins.hits(roads, cell):
@@ -2781,6 +2782,14 @@ func _ground_free(mid: Vector3, corners: PackedVector2Array, in_fields: bool) ->
 		return _usable_cache[key]
 	var ok := RoadIndex.segment_near(network, mid, Farms.CELL * 0.6 + RoadStyle.right_of_way_half(RoadStyle.Type.AVENUE), 2.0).is_empty() \
 		and not _on_painted_road(mid, Farms.CELL * 0.6 + RoadStyle.right_of_way_half(RoadStyle.Type.COUNTY))
+	# Nor over a county railroad's bed, ditches and fence (CountyRail.CROP_CLEAR),
+	# as crops and wild trees already keep off it: a field never hides the track.
+	if ok:
+		var poly := corners
+		if poly.size() < 3:
+			poly = PackedVector2Array([Vector2(mid.x - 1.0, mid.z - 1.0), Vector2(mid.x + 1.0, mid.z - 1.0),
+				Vector2(mid.x + 1.0, mid.z + 1.0), Vector2(mid.x - 1.0, mid.z + 1.0)])
+		ok = not _rail_under(poly, CountyRail.CROP_CLEAR)
 	var pts := [mid]
 	for c in corners:
 		pts.append(mid.lerp(Vector3(c.x, 0.0, c.y), 0.8))
@@ -2818,6 +2827,32 @@ func _on_painted_road(p: Vector3, reach: float) -> bool:
 		if not county_removed.has(mile.key):
 			return true
 	return false
+
+
+## The county railroads' crop-free strip (CountyRail.CROP_CLEAR each side of
+## the track) round a shape (town coordinates), as RoadWins corridors: a
+## field a saved town planted over the track is cut back to it, as at a road.
+func _rail_corridors(shape: Array) -> Array:
+	if not county_rail or shape.is_empty():
+		return []
+	var box := Rect2(Vector2(shape[0].x, shape[0].z), Vector2.ZERO)
+	for p in shape:
+		box = box.expand(Vector2(p.x, p.z))
+	var o := terrain_offset
+	var out := []
+	var pieces := CountyRail.row_pieces(Rect2(box.position + o, box.size).grow(CountyRail.CROP_CLEAR), 48.0,
+		CountyRail.CROP_CLEAR + RoadWins.VERGE)
+	var keys := pieces.keys()
+	keys.sort()
+	for k in keys:
+		var poly := PackedVector2Array()
+		for q in pieces[k]:
+			poly.append(q - o)
+		var b := Rect2(poly[0], Vector2.ZERO)
+		for q in poly:
+			b = b.expand(q)
+		out.append({"bounds": b, "polys": [poly]})
+	return out
 
 
 ## Whose land a point is: "farm:<id>" for a farm's yard, lane or fields,
