@@ -49,6 +49,7 @@ const LOT_AREA := 1500.0
 const LOT_SHARE := 1.3
 const LOT_ASPHALT := Color(0.33, 0.33, 0.33)
 const ASPHALT := Color(0.27, 0.27, 0.28)
+const WALK := Color(0.56, 0.55, 0.52)
 ## Yard trees, desktop only. Marion's older neighbourhoods sit under
 ## mature maples, oaks and ashes (Indiana's urban canopy is about a third
 ## of residential land; aerial photos show a crown or two in most yards),
@@ -353,6 +354,19 @@ func _street(v: PackedVector3Array, nrm: PackedVector3Array, col: PackedColorArr
 		for k in 4:
 			w.append(Vector3(q[k].x - o.x, y[k], q[k].y - o.y))
 		_quad(v, nrm, col, w[0], w[1], w[2], w[3], ASPHALT)
+		if _trees > 0.0:
+			# Sidewalks (desktop): Marion's streets have a 1.5 m concrete
+			# walk on each side past a 2 m grass tree lawn, the pale lines
+			# that frame every block from the air.
+			for sgn: float in [-1.0, 1.0]:
+				var n: Vector2 = side.normalized() * sgn
+				var i0: Vector2 = n * (width * 0.5 + 2.0)
+				var i1: Vector2 = n * (width * 0.5 + 3.5)
+				var sw := [a + i0, a + i1, b + i1, b + i0]
+				var sp := []
+				for k in sw:
+					sp.append(Vector3(k.x - o.x, Terrain.height(k.x, k.y) + 0.14, k.y - o.y))
+				_quad(v, nrm, col, sp[0], sp[1], sp[2], sp[3], WALK)
 
 
 func _building(v: PackedVector3Array, nrm: PackedVector3Array, col: PackedColorArray, uv: PackedVector2Array,
