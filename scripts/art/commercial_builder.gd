@@ -797,6 +797,11 @@ func _monument_sign(c: Vector3, w: float, h: float) -> void:
 	_box("brick", Vector3(w + 0.8, 0.14, 0.62), Vector3(c.x, h + 0.82, c.z + 0.26), stone)
 	_box("brick", Vector3(w + 0.7, 0.2, 0.56), Vector3(c.x, 0.1, c.z + 0.26), _dressed(Color("#b9b09a")))  # its base course
 	_sign(Vector3(c.x, 0.45, c.z - 0.005), w, h)
+	# Two ground floods in the bed wash its face after dark (the way
+	# office-park and bank monument signs are lit).
+	for sx in [-0.3, 0.3]:
+		_box("metal", Vector3(0.22, 0.16, 0.18), Vector3(c.x + sx * w, 0.16, c.z - 0.75), Color("#2a2b2c"))
+	_light_pool(Vector3(c.x, (h + 0.75) * 0.5, c.z - 0.02), w + 1.2, h + 1.4, Color(0.85, 0.8, 0.7), Vector3.FORWARD)
 
 
 func _sign(c: Vector3, w: float, h: float, word := -1) -> void:
