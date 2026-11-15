@@ -1689,10 +1689,21 @@ func _office_mirror(to_curb: float, width: float, storeys: int) -> void:
 	var bh := floor_h * 2.0
 	var bz := zf - bd * 0.5
 	_box("paint", Vector3(bw - 0.2, bh, bd - 0.2), Vector3(0, bh * 0.5, bz), tint.darkened(0.2))
+	# Desktop: the lobby behind the bay is a lit room with its reception
+	# desk, lit all night as real office lobbies are (security desk, code
+	# lighting), not a house window's lamp.
+	var lobby_keep := [shopfront, allnight, shop_kind]
+	if fine:
+		shopfront = true
+		allnight = true
+		shop_kind = 4
 	_glass(Vector3(0, bh * 0.5, zf - bd - 0.03), Vector3(-1, 0, 0), bw - 0.2, bh - 0.3, 0.0)
 	for sx in [-1.0, 1.0]:
 		_glass(Vector3(sx * (bw * 0.5 + 0.03), bh * 0.5, bz), Vector3(0, 0, -sx), bd - 0.2, bh - 0.3, 0.0)
 		_box("metal", Vector3(0.18, bh, 0.18), Vector3(sx * bw * 0.5, bh * 0.5, zf - bd), frame)
+	shopfront = lobby_keep[0]
+	allnight = lobby_keep[1]
+	shop_kind = lobby_keep[2]
 	for k in range(1, 4):
 		_box("metal", Vector3(0.1, bh, 0.1), Vector3(-bw * 0.5 + k * bw * 0.25, bh * 0.5, zf - bd - 0.06), frame)
 	_box("metal", Vector3(bw, 0.12, 0.12), Vector3(0, 2.4, zf - bd - 0.06), frame)  # door head
