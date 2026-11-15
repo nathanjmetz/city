@@ -504,7 +504,23 @@ bool shop_room(vec2 uv, vec3 vw, bool diner, bool aisles, float sill, int kind, 
 			float g = floor(b.x / 0.3) + floor(b.z / 0.35) * 7.0;
 			col = mix(fix, CLOTH[clamp(int(hash(vec2(g, sid)) * 12.0), 0, 11)] + 0.08, step(0.3, hash(vec2(g, 2.0 + sid))));
 		} else {
+			// The sides: a tall one is a gondola end cap, shelves of stock
+			// every 35 cm over a kick base; a low one a display table, its
+			// top's edge band and a recessed base, not a plain block.
+			float hb = b.y - bmin.y;
+			float u = tin == tn.x ? b.z : b.x;
 			col = fix * 0.7;
+			if (bmax.y - bmin.y > 1.0) {
+				float sh = fract((hb - 0.15) / 0.35);
+				float g = floor(u / 0.12) + floor((hb - 0.15) / 0.35) * 13.0;
+				vec3 stock = CLOTH[clamp(int(hash(vec2(g, sid + 5.0)) * 12.0), 0, 11)] + 0.06;
+				col = mix(col, stock, step(hb, bmax.y - bmin.y - 0.08) * step(0.15, hb) * step(0.12, sh) * step(sh, 0.8) * step(0.25, hash(vec2(g, sid + 9.0))));
+				col = mix(col, fix * 0.4, step(sh, 0.06) * step(0.15, hb));  // the shelf lips
+				col = mix(col, vec3(0.08), step(hb, 0.12));  // the kick base
+			} else {
+				col = mix(col, fix * 0.95, step(bmax.y - bmin.y - 0.06, hb));  // the top's edge
+				col = mix(col, vec3(0.06), step(hb, 0.1));  // the base, set back
+			}
 		}
 		t = tin;
 		glow = 0.0;
