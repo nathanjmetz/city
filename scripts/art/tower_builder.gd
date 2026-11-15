@@ -746,12 +746,23 @@ func _tw_deco(to_curb: float, width: float, storeys: int) -> void:
 	var top := y0
 	var cw: float = tiers[-1][0]
 	var cd: float = tiers[-1][1]
+	# Desktop: floodlights on the setback roofs wash the top tier and the
+	# crown's steps from below after dark, as deco towers have been lit
+	# since the 1930s (Chicago's Board of Trade, Indianapolis's Indiana
+	# Bell and Circle Tower crowns).
+	var flood := Color(0.92, 0.84, 0.68)
+	if fine_parts:
+		# From the last setback, where the floods stand, up the top tier.
+		var base_y := ground_h + floor_h * (int(tiers[-2][2]) - 1) + 0.6
+		_tw_washes(float(tiers[-1][0]), float(tiers[-1][1]), zf + d * 0.5, base_y, top, flood)
 	for k in 2:
 		cw -= 4.0
 		cd -= 4.0
 		if cw < 4.0 or cd < 4.0:
 			break
 		_box("brick", Vector3(cw, 3.5, cd), Vector3(0, top + 1.75, zf + d * 0.5), _dressed(stone))
+		if fine_parts:
+			_tw_washes(cw, cd, zf + d * 0.5, top, top + 3.5, flood)
 		top += 3.5
 	# The crown hides the house tank, as deco towers did: steps under a
 	# flagpole (Indianapolis's Circle Tower), a copper or gilded pyramid
@@ -775,6 +786,24 @@ func _tw_deco(to_curb: float, width: float, storeys: int) -> void:
 		_:
 			_box("metal", Vector3(0.2, 9.0, 0.2), Vector3(0, top + 4.5, cz1), Color("#c9cccd"))  # flagpole
 			_box("paint", Vector3(2.2, 1.3, 0.04), Vector3(-1.2, top + 8.3, cz1), Color("#3c3b6e"))
+
+
+## Floodlight washing all four walls of a w by d block from y0 up to y1
+## after dark (HouseMaterials "pool"): brightest at the foot where the
+## floods stand, fading as it climbs, and no wider than the wall.
+func _tw_washes(w: float, d: float, cz: float, y0: float, y1: float, col: Color) -> void:
+	for face in _tw_faces(w, d, cz):
+		var along: Vector3 = face[1]
+		var out: Vector3 = along.cross(Vector3.UP)
+		var c: Vector3 = face[0] + out * 0.5
+		var u: Vector3 = along * (float(face[2]) * 0.5 - 0.1)
+		var lo := Vector3(c.x, y0, c.z)
+		var hi := Vector3(c.x, y1, c.z)
+		# The pool's falloff is round about the quad's middle; UVs from
+		# its centre line (0.5) at the foot to near its rim at the top
+		# make it a wash from below, even along the wall.
+		_quad("pool", lo - u, lo + u, hi + u, hi - u, col,
+			[Vector2(0.5, 0.5), Vector2(0.5, 0.5), Vector2(0.5, 0.95), Vector2(0.5, 0.95)], out)
 
 
 ## Desktop: the deco portal as you walk up to it (Indianapolis's Circle
