@@ -87,7 +87,9 @@ static func _mi_midcentury(b: DenseBuilder, r: RandomNumberGenerator, to_curb: f
 			if i == lights / 2:
 				# The entry: a glass door in a wide aluminium stile.
 				b._box("paint", Vector3(lw, 2.5, 0.06), Vector3(x, 1.25, zf - 0.03), ALUMINIUM)
+				b.shopfront = DenseBuilder.fine  # the door shows the shop, lit or closed with it
 				b._glass(Vector3(x, 1.2, zf - 0.07), Vector3(-1, 0, 0), lw - 0.3, 2.1, 0.0)
+				b.shopfront = false
 				b._glass(Vector3(x, 2.75, zf - 0.07), Vector3(-1, 0, 0), lw - 0.1, 0.4, 0.0)
 				b._box("metal", Vector3(0.06, 2.5, 0.1), Vector3(x - lw * 0.5, 1.75, zf - 0.06), ALUMINIUM)
 				if DenseBuilder.fine:
@@ -264,7 +266,9 @@ static func _mi_newbuild(b: DenseBuilder, r: RandomNumberGenerator, to_curb: flo
 				if k % 2 == 1:
 					r.randf()
 				b._box("paint", Vector3(1.1, 2.5, 0.05), Vector3(x, 1.25, zf - 0.03), BLACK)
+				b.shopfront = DenseBuilder.fine  # the door shows the shop, lit or closed with it
 				b._glass(Vector3(x, 1.25, zf - 0.07), Vector3(-1, 0, 0), 0.8, 2.2, 0.0)
+				b.shopfront = false
 				if DenseBuilder.fine:
 					# Desktop: a brushed pull, a deep bottom rail and a threshold.
 					b._box("metal", Vector3(0.035, 0.9, 0.035), Vector3(x + 0.28, 1.05, zf - 0.16), Color("#b9bbbc"))

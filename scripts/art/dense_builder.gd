@@ -825,7 +825,9 @@ func _shop_door(x: float, bw: float, zf: float, mull: Color) -> void:
 		# bottom panel, a brass push bar across the glass, a brass kick
 		# plate and mail slot, and a transom bar over the leaf.
 		var brass := Color("#b08d4a")
+		shopfront = true  # the door's glass shows the shop, lit or closed with it
 		_glass(Vector3(x, 1.62, zf - 0.07), Vector3(-1, 0, 0), dw - 0.26, 1.6, 0.0)
+		shopfront = false
 		_box("paint", Vector3(dw - 0.38, 0.32, 0.03), Vector3(x, 0.55, zf - 0.075), col.lightened(0.08))
 		_box("paint", Vector3(dw - 0.3, 0.03, 0.04), Vector3(x, 0.74, zf - 0.08), col.darkened(0.2))
 		_box("metal", Vector3(dw - 0.14, 0.18, 0.02), Vector3(x, 0.12, zf - 0.075), brass)
