@@ -596,7 +596,13 @@ void fragment() {
 		vec3 tint = mix(vec3(0.72, 0.84, 0.86), vec3(1.0), oldglass);
 		vec3 deep = mix(room, vcol(COLOR.rgb) * 0.3 * slat, blinds);
 		deep += vec3(0.03, 0.032, 0.034) * smoothstep(0.8, 0.95, UV.y) * (1.0 - blinds);
-		vec3 refl = sky * (0.9 + 0.2 * pane) * mix(0.85, 1.05, UV.y);
+		// What a curtain wall mirrors runs on across its lites: the sky's
+		// gradient from the reflected ray, pale at the horizon and deeper
+		// overhead, the ground darker below it (not a fresh ramp per pane).
+		vec3 rw = normalize((INV_VIEW_MATRIX * vec4(reflect(-VIEW, NORMAL), 0.0)).xyz);
+		vec3 skyr = mix(vec3(0.56, 0.63, 0.71), vec3(0.26, 0.35, 0.50), smoothstep(0.0, 0.7, rw.y));
+		skyr = mix(vec3(0.16, 0.17, 0.16), skyr, smoothstep(-0.12, 0.04, rw.y)) * (1.0 - night * 0.85);
+		vec3 refl = mix(sky * mix(0.85, 1.05, UV.y), skyr, 1.0 - oldglass) * (0.9 + 0.2 * pane);
 		// Clear old glass shows more of the room and less sky.
 		ALBEDO = mix(deep, refl, mix(0.38, 0.2, oldglass) + 0.45 * fres) * tint;
 	}
