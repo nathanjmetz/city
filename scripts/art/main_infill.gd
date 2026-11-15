@@ -293,6 +293,18 @@ static func _mi_newbuild(b: DenseBuilder, r: RandomNumberGenerator, to_curb: flo
 				# One wide window pair with a Juliet balcony rail.
 				for e in [-0.5, 0.5]:
 					b._glass(Vector3(bx + e * 1.25, y, face - 0.02), Vector3(-1, 0, 0), 1.15, 2.0, r.randf_range(0.0, 0.6))
+				if DenseBuilder.fine:
+					# Desktop: the door pair in its dark aluminium frame
+					# (jambs, a meeting mullion, head and sill), a formed
+					# sill flashing over the panel below, and a lever on
+					# each leaf, as new main-street flats are built.
+					for jx in [-1.24, 0.0, 1.24]:
+						b._box("metal", Vector3(0.08, 2.16, 0.07), Vector3(bx + jx, y, face - 0.045), BLACK)
+					for hy in [1.04, -1.04]:
+						b._box("metal", Vector3(2.56, 0.08, 0.07), Vector3(bx, y + hy, face - 0.045), BLACK)
+					b._box("metal", Vector3(2.7, 0.03, 0.14), Vector3(bx, y - 1.095, face - 0.07), panel.darkened(0.25))
+					for e in [-1.0, 1.0]:
+						b._box("metal", Vector3(0.12, 0.025, 0.04), Vector3(bx + e * 0.14, y - 0.05, face - 0.1), Color("#b9bbbc"))
 				b._box("metal", Vector3(2.6, 0.06, 0.4), Vector3(bx, y - 0.1, face - 0.2), BLACK)
 				for q in 9:
 					b._box("metal", Vector3(0.025, 0.9, 0.025), Vector3(bx - 1.3 + q * 2.6 / 8.0, y - 0.55, face - 0.38), BLACK)
