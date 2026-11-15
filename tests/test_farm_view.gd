@@ -52,10 +52,17 @@ func _run() -> void:
 	sim.apply({"type": "clear"})
 	sim.economy.money = 20_000_000
 	_main.set_speed(0)
-	sim.apply({"type": "build_road", "start": [-1200, 0], "ctrl": [0, 0], "end": [1200, 0]})
-	sim.apply({"type": "paint_farmland", "points": [[-1150, 30], [1150, 30], [1150, 1100], [-1150, 1100]]})
+	# Farm country with no county railroad through it: the test's road
+	# would otherwise have to cross the track (at 45 degrees or more).
+	var d := Vector2.ZERO
+	for k in 40:
+		d = Vector2((k % 7 - 3) * 2600.0, (k / 7) * 1800.0)
+		if not CountyRail.any_in(Rect2(Vector2(-1300, -200) + d + sim.terrain_offset, Vector2(2600, 1400))):
+			break
+	sim.apply({"type": "build_road", "start": [d.x - 1200, d.y], "ctrl": [d.x, d.y], "end": [d.x + 1200, d.y]})
+	sim.apply({"type": "paint_farmland", "points": [[d.x - 1150, d.y + 30], [d.x + 1150, d.y + 30], [d.x + 1150, d.y + 1100], [d.x - 1150, d.y + 1100]]})
 	for x in [-700, -100, 500]:
-		sim.apply({"type": "place_farmhouse", "pos": [x, 60], "dir": [0, -1], "crop": "corn"})
+		sim.apply({"type": "place_farmhouse", "pos": [d.x + x, d.y + 60], "dir": [0, -1], "crop": "corn"})
 	sim.farms.price = 1.2
 	for i in 200:
 		sim.farms.decide(sim.field_usable)

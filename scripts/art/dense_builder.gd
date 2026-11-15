@@ -857,7 +857,8 @@ func _alley_side(w: float, zb: float, fronts: int, fw: float, storeys: int, shop
 		var fx := -w * 0.5 + (k + 0.5) * fw
 		var side := -1.0 if k % 2 == 0 else 1.0
 		var dx := fx + fw * 0.2 * side
-		_steel_door(Vector3(dx, 1.05, zb), 1.0)
+		# The wall pack lights only its own lot, not the neighbour's.
+		_steel_door(Vector3(dx, 1.05, zb), 1.0, Color("#5a5e60"), true, minf(5.0, (w * 0.5 - absf(dx)) * 2.0))
 		var wx := dx - side * 2.0
 		# Some shops keep a steel roll-down shutter down over the back
 		# window instead of bars (a scan from the free library; the bars
@@ -1421,9 +1422,26 @@ func _scanned_escape(xa: float, xb: float, zb: float, levels: Array[float], righ
 func _downtown_walk(to_curb: float, width: float, zf: float) -> void:
 	_flat_rect("drive", -width * 0.5, width * 0.5, -to_curb + RoadStyle.CURB_WIDTH, zf, 0.06)
 	var tz := -to_curb + RoadStyle.CURB_WIDTH + 0.9
+	if fine:
+		_walk_paving(width, -to_curb + RoadStyle.CURB_WIDTH, zf)
 	if rng.randf() < 0.6:
 		var tx := rng.randf_range(-width * 0.25, width * 0.25)
 		_flat_rect("line", tx - 0.6, tx + 0.6, tz - 0.6, tz + 0.6, 0.07, Color("#2a2a28"))
+		if fine:
+			# Desktop: the cast-iron grate's frame, rings and radial bars.
+			var iron := Color("#3a3936")
+			for e in [[0.6, 0.06], [0.42, 0.04], [0.26, 0.04]]:
+				var o: float = e[0]
+				var t: float = e[1]
+				_flat_rect("line", tx - o, tx + o, tz - o, tz - o + t, 0.072, iron)
+				_flat_rect("line", tx - o, tx + o, tz + o - t, tz + o, 0.072, iron)
+				_flat_rect("line", tx - o, tx - o + t, tz - o, tz + o, 0.072, iron)
+				_flat_rect("line", tx + o - t, tx + o, tz - o, tz + o, 0.072, iron)
+			for q in [-0.3, 0.0, 0.3]:
+				_flat_rect("line", tx + q - 0.015, tx + q + 0.015, tz - 0.6, tz - 0.26, 0.072, iron)
+				_flat_rect("line", tx + q - 0.015, tx + q + 0.015, tz + 0.26, tz + 0.6, 0.072, iron)
+				_flat_rect("line", tx - 0.6, tx - 0.26, tz + q - 0.015, tz + q + 0.015, 0.072, iron)
+				_flat_rect("line", tx + 0.26, tx + 0.6, tz + q - 0.015, tz + q + 0.015, 0.072, iron)
 		# Downtown street trees are mostly thornless honey locust, which
 		# tolerates grates and salt, with the odd maple.
 		var sp: int = TreeField.Species.LOCUST if rng.randf() < 0.75 else TreeField.Species.MAPLE
@@ -1456,6 +1474,34 @@ func _downtown_walk(to_curb: float, width: float, zf: float) -> void:
 			_box("paint", Vector3(0.42, 0.55, 0.42), Vector3(lx, 4.35, tz), Color("#efe9d8"))  # the acorn globe
 			_box("paint", Vector3(0.3, 0.12, 0.3), Vector3(lx, 4.7, tz), black)
 	_street_furniture(width, tz)
+
+
+## Desktop: how a downtown walk is actually laid (Main Street streetscape
+## projects in Wabash, Huntington and Fairmount): a brick paver amenity band
+## along the curb, 1.8 m wide, inside a soldier course each side,
+## where the trees, lamps and benches stand; then broom-finished concrete to
+## the shopfronts, tooled into 1.5 m (5 ft) panels. No random numbers.
+func _walk_paving(width: float, zc: float, zf: float) -> void:
+	var x0 := -width * 0.5
+	var x1 := width * 0.5
+	var zb := zc + 1.8
+	# The pavers: the brick material laid flat, so its coursing and colour
+	# variation read as clay pavers, inside a soldier course each side.
+	_quad("brick", Vector3(x0, 0.063, zc), Vector3(x1, 0.063, zc), Vector3(x1, 0.063, zb), Vector3(x0, 0.063, zb),
+		Color("#8a5040"), [], Vector3.UP)
+	for z in [zc + 0.1, zb - 0.1]:
+		_flat_rect("line", x0, x1, z - 0.1, z + 0.1, 0.064, Color("#7a4536"))
+		_flat_rect("line", x0, x1, z - 0.012, z + 0.012, 0.0645, Color("#6a3c30"))
+	var joint := Color("#8a877f")
+	_flat_rect("line", x0, x1, zb - 0.012, zb + 0.012, 0.064, joint)
+	var jx := x0 + 1.5
+	while jx < x1 - 0.2:
+		_flat_rect("line", jx - 0.012, jx + 0.012, zb, zf - 0.02, 0.064, joint)
+		jx += 1.5
+	# A longitudinal joint halfway across a walk wider than one panel.
+	if zf - zb > 2.6:
+		var mz := (zb + zf) * 0.5
+		_flat_rect("line", x0, x1, mz - 0.012, mz + 0.012, 0.064, joint)
 
 
 ## What a Main Street streetscape grant puts along the curb (Fairmount,

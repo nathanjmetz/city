@@ -2591,7 +2591,8 @@ func _front_door(x: float, zf: float, sill: float, c: Color) -> void:
 ## surface closer at the head, a wall-pack light above and a concrete stoop.
 ## `c` is the door's centre on the wall face; `out_z` is the wall's outward
 ## z direction (+1 or -1). `stoop` false: it opens onto a landing instead.
-func _steel_door(c: Vector3, out_z: float, col := Color("#5a5e60"), stoop := true) -> void:
+## `pool_w`: how wide the light pool on the pavement may be.
+func _steel_door(c: Vector3, out_z: float, col := Color("#5a5e60"), stoop := true, pool_w := 5.0) -> void:
 	var o := out_z
 	var bottom := c.y - 1.05
 	var frame := col.darkened(0.25)
@@ -2609,7 +2610,7 @@ func _steel_door(c: Vector3, out_z: float, col := Color("#5a5e60"), stoop := tru
 		_box("sign", Vector3(0.2, 0.06, 0.02), Vector3(c.x, bottom + 2.47, c.z + o * 0.145), Color(1.0, 0.93, 0.8, 1.0))
 		_light_pool(Vector3(c.x, bottom + 1.55, c.z + o * 0.13), 3.4, 3.6, Color(1.0, 0.9, 0.75), Vector3(0, 0, o))
 		if stoop:
-			_light_pool(Vector3(c.x, 0.1, c.z + o * 2.2), 5.0, 4.4, Color(1.0, 0.9, 0.75))
+			_light_pool(Vector3(c.x, 0.1, c.z + o * 2.2), pool_w, 4.4, Color(1.0, 0.9, 0.75))
 	else:
 		_box("paint", Vector3(0.2, 0.06, 0.02), Vector3(c.x, bottom + 2.47, c.z + o * 0.145), Color("#e8e2c8"))
 	if stoop and bottom > 0.05:
