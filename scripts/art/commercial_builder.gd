@@ -185,18 +185,7 @@ func _retail(to_curb: float) -> void:
 	_flat_rect("asphalt", lot0, lot1, 0.0, zf - 2.2, 0.06)
 	_curb_cut(0.0, 3.6, -to_curb, 0.0)
 	if fine_parts:
-		# Desktop: a 6 in (15 cm) poured concrete curb round the lot's open
-		# edges, open across the 24 ft drive (Indiana towns' parking-lot codes
-		# want the lot curbed off from the lawn and the neighbour's lot).
-		var cc := Color("#b9b5ab")
-		var lz := zf - 2.2
-		for e in [lot0 + 0.075, lot1 - 0.075]:
-			_box("concrete", Vector3(0.15, 0.15, lz), Vector3(e, 0.075, lz * 0.5), cc)
-		for seg in [[lot0, -3.6], [3.6, lot1]]:
-			var a: float = seg[0]
-			var b: float = seg[1]
-			if b - a > 0.3:
-				_box("concrete", Vector3(b - a, 0.15, 0.15), Vector3((a + b) * 0.5, 0.075, 0.075), cc)
+		_lot_curb(lot0, lot1, zf - 2.2, 0.0)
 	var stall := 2.75  # 9 ft
 	var x := lot0
 	while x <= lot1 + 0.01:
@@ -1166,6 +1155,8 @@ func _strip_center(to_curb: float, anchor := false) -> void:
 		if n >= 5:
 			_raised_front(-w * 0.5 + (n / 2 + 0.5) * bay, bay, zf, h + 1.2, wall, mat)
 	_shop_parking(to_curb, w, zf - 2.6, 0.0)
+	if fine_parts:
+		_lot_curb(-half + 0.6, half - 0.6, zf - 4.6, 0.0)
 	# The walk carries on under the canopy to the shop doors (concrete from
 	# curb to storefront, as at every strip centre), not grass.
 	_flat_rect("drive", -w * 0.5 - 0.5, w * 0.5 + 0.5, zf - 2.6, zf, 0.08)
@@ -2828,6 +2819,22 @@ func _shop_parking(to_curb: float, w: float, zw: float, cut_x: float) -> void:
 				sx += 2.75
 	else:
 		site.aisle_z = (zw - 2.0) * 0.5
+
+
+## Desktop: a 6 in (15 cm) poured concrete curb round a front lot's open
+## edges, its sides from the street edge back to `back` and along the
+## street edge, open across the 24 ft drive at `cut_x` (Indiana towns'
+## parking-lot codes want the lot curbed off from the lawn and the
+## neighbour's lot).
+func _lot_curb(lot0: float, lot1: float, back: float, cut_x: float) -> void:
+	var cc := Color("#b9b5ab")
+	for e in [lot0 + 0.075, lot1 - 0.075]:
+		_box("concrete", Vector3(0.15, 0.15, back), Vector3(e, 0.075, back * 0.5), cc)
+	for seg in [[lot0, cut_x - 3.6], [cut_x + 3.6, lot1]]:
+		var a: float = seg[0]
+		var b: float = seg[1]
+		if b - a > 0.3:
+			_box("concrete", Vector3(b - a, 0.15, 0.15), Vector3((a + b) * 0.5, 0.075, 0.075), cc)
 
 
 ## Notes the row of 90 degree stalls painted between lines every 9 ft from
