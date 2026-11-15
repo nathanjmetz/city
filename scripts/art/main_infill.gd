@@ -376,6 +376,26 @@ static func _mi_newbuild(b: DenseBuilder, r: RandomNumberGenerator, to_curb: flo
 	# The flats' lobby door at one end.
 	var sx := (w * 0.5 - 0.9) * (-1.0 if r.randf() < 0.5 else 1.0)
 	b._box("paint", Vector3(1.0, 2.3, 0.06), Vector3(sx, 1.15, zf - 0.21), BLACK)
-	b._glass(Vector3(sx, 1.15, zf - 0.25), Vector3(-1, 0, 0), 0.75, 2.0, 0.0)
+	if DenseBuilder.fine:
+		# Desktop: the glass shows the lobby behind it, lit all night as
+		# egress lighting must be (IBC 1008): lay-in lights, a counter of
+		# mailboxes, plain walls; not a glowing white slab. An aluminium
+		# door, stiles, a deep bottom rail and a push bar, set in the frame.
+		var ks := [b.shopfront, b.allnight, b.shop_kind]
+		b.shopfront = true
+		b.allnight = true
+		b.shop_kind = 4
+		b._glass(Vector3(sx, 1.25, zf - 0.25), Vector3(-1, 0, 0), 0.66, 1.8, 0.0)
+		b.shopfront = ks[0]
+		b.allnight = ks[1]
+		b.shop_kind = ks[2]
+		for e in [-1.0, 1.0]:
+			b._box("metal", Vector3(0.09, 2.2, 0.06), Vector3(sx + e * 0.375, 1.1, zf - 0.26), BLACK)
+		b._box("metal", Vector3(0.84, 0.1, 0.06), Vector3(sx, 2.17, zf - 0.26), BLACK)
+		b._box("metal", Vector3(0.84, 0.27, 0.06), Vector3(sx, 0.17, zf - 0.26), BLACK)
+		b._box("metal", Vector3(0.62, 0.04, 0.05), Vector3(sx, 1.05, zf - 0.32), Color("#b9bbbc"))  # push bar
+		b._box("metal", Vector3(1.1, 0.015, 0.22), Vector3(sx, 0.01, zf - 0.33), Color("#9a9c9d"))  # threshold
+	else:
+		b._glass(Vector3(sx, 1.15, zf - 0.25), Vector3(-1, 0, 0), 0.75, 2.0, 0.0)
 	b._alley_side(w, zf + d, bays, bw, storeys, shop_h, floor_h, brick)
 	b._downtown_walk(to_curb, width, zf)
