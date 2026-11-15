@@ -318,6 +318,9 @@ func set_time(hour: float, months: float) -> void:
 	_sky_colors(l.zenith, l.horizon, l.stars)
 	env.fog_light_color = l.fog_color
 	if not _gl:
+		# The haze under cloud is grey too, whatever colour the sky's edge
+		# would be under a clear sky.
+		env.fog_light_color = l.fog_color.lerp(_neutral(l.fog_color) * Color(0.97, 0.99, 1.03), overcast * 0.75)
 		# The fog's even veil over the dome greyed dusk's blue overhead to
 		# purple and the night's navy to brown; it fades out from a low sun,
 		# leaving the haze to the sky's own horizon (CloudSky).
@@ -336,6 +339,11 @@ func set_time(hour: float, months: float) -> void:
 		var dir := SunPath.toward(pos)
 		sun.look_at_from_position(Vector3.ZERO, -dir, Vector3.UP if absf(dir.y) < 0.99 else Vector3.FORWARD)
 		sun.light_color = l.sun_color
+		if not _gl:
+			# Under a closed overcast the low sun's gold never reaches the
+			# ground: the cloud spreads it into an even grey light (photos of
+			# a cloudy winter sunset in town: grey-blue, not peach).
+			sun.light_color = l.sun_color.lerp(_neutral(l.sun_color), overcast * 0.75)
 		sun.light_energy = SUN_ENERGY * _light * l.sun_energy
 	else:
 		# Moonlight: a full moon riding opposite the sun, at least 25 degrees up.
@@ -344,6 +352,12 @@ func set_time(hour: float, months: float) -> void:
 		sun.look_at_from_position(Vector3.ZERO, -dir, Vector3.UP)
 		sun.light_color = MOON_COLOR if _gl else MOON_COLOR_RICH
 		sun.light_energy = (0.7 if _gl else MOON_RICH) * _light * smoothstep(-2.0, -10.0, elev)
+
+
+## A grey of the same brightness as c.
+static func _neutral(c: Color) -> Color:
+	var y := c.r * 0.2126 + c.g * 0.7152 + c.b * 0.0722
+	return Color(y, y, y, c.a)
 
 
 ## How overcast the sky is, 0 to 1 (Weather: its grey). Sent on only when
