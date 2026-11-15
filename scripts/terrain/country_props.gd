@@ -445,9 +445,55 @@ func _fill(b: Vector2i) -> Array:
 		mi.visibility_range_end = REACH
 		mi.visibility_range_end_margin = 20.0
 		mi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
+		mi.material_overlay = _snow_overlay()
 		add_child(mi)
 		out.append(mi)
 	return out
+
+
+## Snow lying on the props' tops (logs, stones, the piles, a stacker's
+## belt frame) when it lies on the ground: a white skin drawn over each
+## one's upward faces, patchy where it thins at the edges. Without it a
+## brown log or a gravel pile stood out bare in a white field.
+static var _snow_mat: ShaderMaterial
+
+
+static func _snow_overlay() -> ShaderMaterial:
+	if _snow_mat == null:
+		var sh := Shader.new()
+		sh.code = """shader_type spatial;
+render_mode blend_mix, depth_draw_never, cull_back;
+global uniform float snow;
+varying float up;
+varying vec3 wp;
+void vertex() {
+	vec3 n = normalize(mat3(MODEL_MATRIX) * NORMAL);
+	up = n.y;
+	// Lifted 2 cm off the surface, whatever the instance's scale.
+	VERTEX += NORMAL * 0.02 / max(length(MODEL_MATRIX[0].xyz), 0.01);
+	wp = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+}
+float n2(vec2 q) {
+	vec2 i = floor(q); vec2 f = q - i; f = f * f * (3.0 - 2.0 * f);
+	float a = fract(sin(dot(i, vec2(127.1, 311.7))) * 43758.5453);
+	float b = fract(sin(dot(i + vec2(1.0, 0.0), vec2(127.1, 311.7))) * 43758.5453);
+	float c = fract(sin(dot(i + vec2(0.0, 1.0), vec2(127.1, 311.7))) * 43758.5453);
+	float d = fract(sin(dot(i + vec2(1.0, 1.0), vec2(127.1, 311.7))) * 43758.5453);
+	return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+}
+void fragment() {
+	float k = smoothstep(0.3, 0.75, up + (n2(wp.xz * 2.3) - 0.5) * 0.35) * smoothstep(0.05, 0.4, snow);
+	if (k < 0.02) { discard; }
+	// Linear, as the ground's snow (TerrainView).
+	ALBEDO = vec3(0.80, 0.83, 0.88) * (0.94 + 0.08 * n2(wp.xz * 7.0));
+	ROUGHNESS = 0.85;
+	SPECULAR = 0.3;
+	ALPHA = k;
+}
+"""
+		_snow_mat = ShaderMaterial.new()
+		_snow_mat.shader = sh
+	return _snow_mat
 
 
 static func _add(by_id: Dictionary, id: String, xf: Transform3D) -> void:
