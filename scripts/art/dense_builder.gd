@@ -1425,7 +1425,12 @@ func _downtown_walk(to_curb: float, width: float, zf: float) -> void:
 		var sp: int = TreeField.Species.LOCUST if rng.randf() < 0.75 else TreeField.Species.MAPLE
 		trees.append([Vector3(tx, 0, tz), sp, TreeField.LEAF[sp], rng.randf_range(0.55, 0.75)])
 	if rng.randf() < 0.4:
-		var lx := (width * 0.5 - 0.4) * (-1.0 if rng.randf() < 0.5 else 1.0)
+		# Always on the lot's right-hand edge (looking out from the fronts),
+		# so the next lot's lamp is a whole frontage away: a city sets its
+		# lamps at a steady spacing along the curb, never two side by side
+		# at a property line. The draw stays so nothing after it moves.
+		rng.randf()
+		var lx := width * 0.5 - 0.4
 		var black := Color("#1f2224")
 		if fine and PropLog.place(self, "street_lamp_01", Transform3D(Basis().scaled(Vector3.ONE * 1.15), Vector3(lx, 0.0, tz))):
 			# Desktop with the free library: Poly Haven's cast-iron lantern
