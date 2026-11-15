@@ -2082,15 +2082,7 @@ func _office_lot_marks(x0: float, x1: float, z0: float, z1: float, rows: int, fr
 	var white := Color("#f2f2ee")
 	var cz := z0 + 3.4
 	_flat_rect("line", sx + 0.83, sx + 1.92, cz - 0.55, cz + 0.55, 0.072, blue)
-	# The wheelchair symbol, seen from the aisle: head, back, seat and wheel.
-	_flat_rect("line", sx + 1.12, sx + 1.24, cz + 0.22, cz + 0.34, 0.073, white)
-	_flat_rect("line", sx + 1.16, sx + 1.22, cz - 0.1, cz + 0.18, 0.073, white)
-	_flat_rect("line", sx + 1.16, sx + 1.5, cz - 0.16, cz - 0.1, 0.073, white)
-	_flat_rect("line", sx + 1.44, sx + 1.5, cz - 0.36, cz - 0.1, 0.073, white)
-	for i in 8:
-		var ang := TAU * i / 8.0
-		var p := Vector2(sx + 1.3, cz - 0.18) + Vector2(cos(ang), sin(ang)) * 0.24
-		_flat_rect("line", p.x - 0.03, p.x + 0.03, p.y - 0.03, p.y + 0.03, 0.073, white)
+	_isa_mark(sx + 1.375, cz - 0.06, -1.05)  # the wheelchair symbol
 	var ax := sx + 2.75
 	# 45 degree hatch lines, clipped to the aisle's stripes.
 	var c := -2.4
