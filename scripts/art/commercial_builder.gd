@@ -2415,6 +2415,32 @@ func _bank_dress(w: float, zf: float, cz: float, lx: float) -> void:
 	for sx in [-1.6, 1.6]:
 		_box("metal", Vector3(0.015, 0.75, 0.015), Vector3(lx + sx, 3.63, bz), Color("#8a8a8a"))
 	_box("paint", Vector3(4.2, 0.05, 0.05), Vector3(lx, 4.0, bz), Color("#5a5e60"))
+	# The remote teller terminal on the grey pedestal (a pneumatic-tube
+	# drive-up, as at every county bank from the 1960s on): an island pad
+	# under it, a carrier door with its window, the call button and speaker,
+	# a lane-open light on top, and the tube itself rising to the canopy and
+	# running along its soffit into the building's side wall.
+	var tx2 := lx - 1.2
+	_box("concrete", Vector3(0.9, 0.18, 1.4), Vector3(tx2, 0.09, cz), Color("#cfcac0"))
+	var face := tx2 + 0.41
+	_box("paint", Vector3(0.03, 0.62, 0.42), Vector3(face, 1.05, cz), Color("#5d6164"))  # the carrier door
+	_box("sign", Vector3(0.012, 0.36, 0.2), Vector3(face + 0.02, 1.07, cz), Color(0.62, 0.72, 0.78, 1.0))  # its window, lit
+	_box("paint", Vector3(0.03, 0.18, 0.3), Vector3(face, 0.6, cz), Color("#2a2c2e"))  # speaker grille
+	_cylinder("sign", Vector3(face + 0.01, 0.5, cz + 0.22), 0.035, 0.02, Color(0.9, 0.2, 0.15, 1.0), 8)  # call button
+	_box("sign", Vector3(0.22, 0.1, 0.22), Vector3(tx2, 1.45, cz), Color(0.3, 0.95, 0.4, 1.0))  # lane open
+	var tube := Color("#9aa0a4")
+	_cylinder("metal", Vector3(tx2, 1.4, cz + 0.25), 0.07, 2.65, tube, 10)
+	_box("metal", Vector3(tx2 - w * 0.5 + 0.1, 0.14, 0.14), Vector3((tx2 + w * 0.5) * 0.5, 3.92, cz + 0.25), tube)
+	_box("metal", Vector3(0.3, 0.3, 0.08), Vector3(w * 0.5 + 0.04, 3.92, cz + 0.25), tube.darkened(0.2))  # wall sleeve
+	# Lane markings: two white arrows toward the street, and a stop bar
+	# at the terminal.
+	var white := Color("#eceae4")
+	for az2 in [cz + 2.6, cz - 4.6]:
+		_flat_rect("line", lx + 0.6, lx + 0.75, az2, az2 + 1.6, 0.075, white)
+		for k in 6:
+			var hw := 0.06 + k * 0.06
+			_flat_rect("line", lx + 0.675 - hw, lx + 0.675 + hw, az2 - 0.06 * (k + 1), az2 - 0.06 * k, 0.075, white)
+	_flat_rect("line", lx - 0.75, lx + 2.1, cz - 0.62, cz - 0.5, 0.075, white)
 	# Lights under the canopy.
 	for k in 2:
 		_box("sign", Vector3(0.5, 0.02, 0.5), Vector3(lx, 3.99, cz + (k * 2.0 - 1.0) * 1.6), Color(0.95, 0.96, 1.0, 1.0))
