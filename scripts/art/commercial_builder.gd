@@ -770,9 +770,12 @@ const READER_BOARDS := [
 ## SUBS, TACOS, GRILL, DONUTS, TAVERN): their windows show booths.
 const EATERIES := [0, 1, 2, 7, 8, 11, 28, 29, 35]
 ## What each trade's window shows (HouseBuilder.shop_kind): clothes on
-## racks, goods on shelves, or a showroom floor of sofas and tables.
+## racks, goods on shelves, a showroom floor of sofas and tables, an
+## office's counter and desks, or a salon's chairs and mirrors.
 const APPAREL := ["SHOES", "THRIFT", "SPORTS"]
 const SHOWROOM := ["FURNITURE", "APPLIANCE", "ANTIQUES"]
+const OFFICE_FRONTS := ["TAX", "INSURANCE", "REALTY", "LOANS", "DENTAL", "LAW"]
+const SALONS := ["SALON", "NAILS", "BARBER"]
 const SHELVES := ["DRUGS", "LIQUOR", "HARDWARE", "VIDEO", "BOOKS", "TOYS", "GIFTS", "MUSIC", "PETS", "CANDY",
 	"HOBBY", "PAINT", "QUILTS", "FABRIC", "SEWING", "CELLULAR", "MARKET", "OPTICAL", "JEWELRY", "BIKES"]
 
@@ -781,6 +784,10 @@ static func _trade_room(word: int) -> int:
 	if word < 0 or word >= TRADE_WORDS.size():
 		return 0
 	var t: String = TRADE_WORDS[word]
+	if t in OFFICE_FRONTS:
+		return 4
+	if t in SALONS:
+		return 5
 	return 1 if t in APPAREL else (3 if t in SHOWROOM else (2 if t in SHELVES else 0))
 
 
