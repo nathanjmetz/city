@@ -66,7 +66,8 @@ var _todo := {}
 var _origin := Vector2.INF
 ## Squares still to build, a block's together.
 var _queue: Array = []
-## Block -> [squares left, vertices, normals, colours, uvs, tree vertices, normals, colours]
+## Block -> [squares left, vertices, normals, colours, uvs, tree vertices, normals, colours,
+##   streetlight pool vertices, colours, uvs]
 var _blocks := {}
 ## The player town's far-building look (sRGB colours, windows, snow).
 var _material: Material
@@ -147,13 +148,79 @@ func _process(_delta: float) -> void:
 			var k := _block(c)
 			if not _blocks.has(k):
 				_blocks[k] = [0, PackedVector3Array(), PackedVector3Array(), PackedColorArray(), PackedVector2Array(),
-					PackedVector3Array(), PackedVector3Array(), PackedColorArray()]
+					PackedVector3Array(), PackedVector3Array(), PackedColorArray(),
+					PackedVector3Array(), PackedColorArray(), PackedVector2Array()]
 			_blocks[k][0] += 1
 	if _queue.is_empty():
 		return
 	var start := Time.get_ticks_msec()
 	while not _queue.is_empty() and Time.get_ticks_msec() - start < BUDGET_MS:
 		_build(_queue.pop_back())
+
+
+## Streetlights after dark (desktop): seen from the air a Midwest town at
+## night is strings of light along every street, each pole's pool on the
+## pavement and its lamp a bright point, not just lit windows. Cobra-head
+## poles about 9 m tall throw a pool about 25 m across; spacing about
+## 55 m on residential streets (every other or third lot line), 45 m on
+## collectors and 38 m on arterials (IES RP-8 practice). Colour in the
+## real mix of a town part way through its LED change-over: warm
+## high-pressure sodium (about 2,100 K) and 4,000 K LED.
+const POOL_SPACING := [55.0, 45.0, 38.0]
+const POOL_RADIUS := 13.0
+const SODIUM := Color(1.0, 0.55, 0.2)
+const LED := Color(0.8, 0.78, 0.7)
+static var _pool_mat: ShaderMaterial
+
+
+static func _pool_material() -> ShaderMaterial:
+	if _pool_mat == null:
+		var sh := Shader.new()
+		sh.code = """
+shader_type spatial;
+render_mode unshaded, blend_add, depth_draw_never, cull_disabled, fog_disabled, shadows_disabled;
+global uniform float night;
+varying float dist;
+void vertex() {
+	dist = length((MODELVIEW_MATRIX * vec4(VERTEX, 1.0)).xyz);
+}
+void fragment() {
+	float r = length(UV);
+	float pool = exp(-r * r * 9.0) * 0.32;
+	float lamp = exp(-r * r * 900.0) * 6.0;
+	ALBEDO = COLOR.rgb * (pool + lamp) * smoothstep(0.25, 0.7, night) * exp(-0.00016 * dist);
+}
+"""
+		_pool_mat = ShaderMaterial.new()
+		_pool_mat.shader = sh
+	return _pool_mat
+
+
+func _pools(v: PackedVector3Array, col: PackedColorArray, uv: PackedVector2Array,
+		pts: PackedVector2Array, kind: int, o: Vector2) -> void:
+	var gap: float = POOL_SPACING[clampi(kind, 0, POOL_SPACING.size() - 1)]
+	var next := gap * 0.5
+	var run := 0.0
+	for i in pts.size() - 1:
+		var a := pts[i]
+		var b := pts[i + 1]
+		var l := a.distance_to(b)
+		while next <= run + l:
+			var c := a.lerp(b, (next - run) / maxf(l, 0.001))
+			var h := absi(hash(Vector2i(int(c.x), int(c.y))))
+			var tint: Color = SODIUM if h % 5 < 3 else LED
+			var y := Terrain.height(c.x, c.y) + 0.5
+			var x0 := c.x - o.x
+			var z0 := c.y - o.y
+			var r := POOL_RADIUS
+			var q := [Vector3(x0 - r, y, z0 - r), Vector3(x0 + r, y, z0 - r), Vector3(x0 + r, y, z0 + r), Vector3(x0 - r, y, z0 + r)]
+			var t := [Vector2(-1, -1), Vector2(1, -1), Vector2(1, 1), Vector2(-1, 1)]
+			for k in [0, 1, 2, 0, 2, 3]:
+				v.append(q[k])
+				uv.append(t[k])
+				col.append(tint)
+			next += gap
+		run += l
 
 
 func _block(c: Vector2i) -> Vector2i:
@@ -171,6 +238,8 @@ func _build(c: Vector2i) -> void:
 	var o := _origin
 	for s in sq[1]:
 		_street(v, nrm, col, s[1], WIDTHS[s[0]], o)
+		if _trees > 0.0:
+			_pools(blk[8], blk[9], blk[10], s[1], s[0], o)
 	for b in sq[0]:
 		_building(v, nrm, col, uv, b, o)
 		if _trees > 0.0:
@@ -196,6 +265,14 @@ func _build(c: Vector2i) -> void:
 		ta[Mesh.ARRAY_COLOR] = blk[7]
 		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, ta)
 		mesh.surface_set_material(1, HouseMaterials.get_mat("plain"))
+	if not blk[8].is_empty():
+		var la := []
+		la.resize(Mesh.ARRAY_MAX)
+		la[Mesh.ARRAY_VERTEX] = blk[8]
+		la[Mesh.ARRAY_COLOR] = blk[9]
+		la[Mesh.ARRAY_TEX_UV] = blk[10]
+		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, la)
+		mesh.surface_set_material(mesh.get_surface_count() - 1, _pool_material())
 	var mi := MeshInstance3D.new()
 	mi.mesh = mesh
 	add_child(mi)

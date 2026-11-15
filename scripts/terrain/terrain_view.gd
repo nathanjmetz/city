@@ -543,7 +543,19 @@ void fragment() {
 	col = mix(col, spoil.rgb * (0.85 + 0.3 * clump), smoothstep(0.3, 0.7, cover.a));
 	// Muddy, sandy banks by the water.
 	float banks = smoothstep(0.03, 0.3, cover.g);
+#ifdef DESKTOP_DETAIL
+	// From the air Grant County's pit ponds and the Mississinewa's banks
+	// are grassy or wooded right down to the water, with only a narrow lip
+	// of dark wet silt and a little grey gravel at the edge, never a pale
+	// beach ring. The wet margin above it grows lush and dark (reed canary
+	// grass, sedges, cattails in the coves).
+	float margin = smoothstep(0.02, 0.12, cover.g) * (1.0 - smoothstep(0.15, 0.35, cover.g));
+	col = mix(col, col * vec3(0.72, 0.84, 0.64), margin * (1.0 - season_look.y * 0.5) * (1.0 - cover.r * 0.6));
+	banks = smoothstep(0.16, 0.42, cover.g + (clump - 0.5) * 0.12);
+	col = mix(col, mix(vec3(0.21, 0.19, 0.15), vec3(0.33, 0.33, 0.31), step(0.8, grain) * 0.5) * (0.9 + 0.2 * grain), banks);
+#else
 	col = mix(col, mud.rgb * (0.9 + 0.2 * grain), banks);
+#endif
 	if (pk > 0.0 && banks > 0.0) {
 		pr = mix(pr, ph_mud(p), banks);
 		ps = mix(ps, ph_mud_s(p), banks);
@@ -652,6 +664,9 @@ void fragment() {
 	float metres = depth3 * 3.0;
 	float hand = (1.0 - smoothstep(0.1, 0.9, metres)) * (1.0 - ice);
 	ALBEDO = mix(ALBEDO, vec3(0.17, 0.19, 0.11) * (0.85 + 0.3 * a), hand);
+	// Water's own reflectance (F0 about 0.02, Godot's SPECULAR 0.25): at
+	// 0.55 every shallow read as a pale milky shoal from the air.
+	SPECULAR = mix(0.25, 0.35, ice);
 	ALPHA = mix(smoothstep(0.04, 0.3, metres + (a - 0.5) * 0.16 + (c - 0.5) * 0.1), 1.0, ice);
 #endif
 }
