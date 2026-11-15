@@ -280,7 +280,11 @@ func _tw_chicago(to_curb: float, width: float, storeys: int, roof := true) -> vo
 	# Shopfronts and the lobby arch between granite piers.
 	for i in bays:
 		var x := -w * 0.5 + (i + 0.5) * bw
+		shopfront = fine_parts
 		_glass(Vector3(x, 0.4 + 1.9, zf - 0.03), Vector3(-1, 0, 0), bw - 1.4, 3.6, rng.randf_range(0.0, 0.2))
+		shopfront = false
+		if fine_parts:
+			_tw_storefront(Vector3(x, 0.4 + 1.9, zf - 0.03), Vector3(-1, 0, 0), bw - 1.4, 3.6, Color("#2c2a28"))
 		if base_floors > 1:
 			_glass(Vector3(x, ground_h + 1.7, zf - 0.03), Vector3(-1, 0, 0), bw - 1.6, 2.4, rng.randf_range(0.0, 0.4))
 	var door_x := -w * 0.5 + (floori(bays * 0.5) + 0.5) * bw
@@ -448,8 +452,7 @@ func _tw_chicago_entry(x: float, zf: float, mw: float) -> void:
 		_box("metal", Vector3(0.06, 2.5, 0.06), dc + Vector3(cos(a) * 1.17, 1.25, sin(a) * 1.17), bronze)
 	for k in 4:
 		var a := TAU * k / 4.0 + 0.3
-		_box("metal", Vector3(1.05, 2.4, 0.05), dc + Vector3(cos(a) * 0.52, 1.25, sin(a) * 0.52), Color("#9fb3bd"),
-			Basis(Vector3.UP, -a))
+		_tw_wing(dc + Vector3(cos(a) * 0.52, 1.25, sin(a) * 0.52), a, 1.05, 2.4, bronze)
 	for sx in [-1.0, 1.0]:
 		var c := Vector3(x + sx * 1.9, 0, fz)
 		_box("metal", Vector3(1.1, 2.6, 0.06), c + Vector3(0, 1.3, 0), bronze)
@@ -701,7 +704,11 @@ func _tw_deco(to_curb: float, width: float, storeys: int) -> void:
 		for i in n:
 			var c: Vector3 = face[0] + face[1] * (-w0 * 0.5 + (i + 0.5) * w0 / n)
 			c.y = 2.6
+			shopfront = fine_parts  # desktop: the shop behind its window, lit or closed
 			_glass(c, face[1], w0 / n - 1.2, 3.8, 0.0)
+			shopfront = false
+			if fine_parts:
+				_tw_storefront(c, face[1], w0 / n - 1.2, 3.8, Color("#4a3a26"))
 	_box("brick", Vector3(5.0, 8.0, 0.6), Vector3(0, 4.0, zf - 0.3), base_stone.lightened(0.1))  # limestone portal
 	_box("paint", Vector3(3.0, 6.5, 0.1), Vector3(0, 3.25, zf - 0.62), Color("#3b2f22"))  # bronze and glass
 	if fine_parts:
@@ -985,8 +992,7 @@ func _tw_glass_lobby(w: float, d: float, cz: float, ground_h: float) -> void:
 			_box("metal", Vector3(0.06, 2.4, 0.06), dc + Vector3(cos(a) * 1.27, 1.2, sin(a) * 1.27), stainless)
 		for k in 4:
 			var a := TAU * k / 4.0 + 0.3
-			_box("metal", Vector3(1.1, 2.3, 0.05), dc + Vector3(cos(a) * 0.55, 1.2, sin(a) * 0.55), Color("#9fb3bd"),
-				Basis(Vector3.UP, -a))
+			_tw_wing(dc + Vector3(cos(a) * 0.55, 1.2, sin(a) * 0.55), a, 1.1, 2.3, stainless)
 	_box("metal", Vector3(1.0, 2.4, 0.06), Vector3(0, 1.2, fz - 0.05), stainless)  # the swing door's frame
 	_box("metal", Vector3(0.9, 0.06, 0.08), Vector3(0, 1.0, fz - 0.1), stainless)  # its push bar
 	# Downlights in the soffit round the overhang.
@@ -1554,8 +1560,7 @@ func _tw_arch(at: Vector3, w: float, h: float, stone: Color, glass_col: Color, d
 			_box("metal", Vector3(0.07, 2.3, 0.07), dc + Vector3(cos(a) * 1.22, 1.15, sin(a) * 1.22), bronze)
 		for k in 3:
 			var a := TAU * k / 3.0 + 0.4
-			_box("metal", Vector3(1.0, 2.2, 0.05), dc + Vector3(cos(a) * 0.5, 1.15, sin(a) * 0.5), Color("#9fb3bd"),
-				Basis(Vector3.UP, -a))
+			_tw_wing(dc + Vector3(cos(a) * 0.5, 1.15, sin(a) * 0.5), a, 1.0, 2.2, bronze)
 
 
 ## The top of a postmodern tower over a w by d roof at height y:
@@ -2218,3 +2223,37 @@ func _tw_tank(at: Vector3) -> void:
 		var e0 := p0 + Vector3(0, h, 0) + outv * 0.15
 		var e1 := p1 + Vector3(0, h, 0) + outv * 0.15
 		_tri("roof", e0, e1, apex, TW_TANK.darkened(0.3), [], Vector3.UP)
+
+
+## Desktop: a tower's ground-floor shop window as built, not one sheet of
+## glass: a metal frame (jambs, head, a bulkhead and sill), mullions about
+## every 1.5 m and a transom bar 2.6 m up with the lights above it, as the
+## bronze and black storefronts of 1910s-30s office buildings (Kawneer and
+## Brasco catalogues). `c` is the glass's centre, `right` along its face.
+func _tw_storefront(c: Vector3, right: Vector3, gw: float, gh: float, frame: Color) -> void:
+	var out := right.cross(Vector3.UP).normalized()
+	var bas := Basis(right.normalized(), Vector3.UP, -out)
+	var y0 := c.y - gh * 0.5
+	var at := func(t: float, y: float, o: float) -> Vector3:
+		return Vector3(c.x, y, c.z) + right.normalized() * t + out * o
+	var n := maxi(2, ceili(gw / 1.6))
+	for k in n + 1:
+		var t := -gw * 0.5 + k * gw / n
+		_box("metal", Vector3(0.1 if k == 0 or k == n else 0.06, gh, 0.1), at.call(t, c.y, 0.05), frame, bas)
+	_box("metal", Vector3(gw + 0.1, 0.12, 0.11), at.call(0.0, y0 + gh - 0.06, 0.05), frame, bas)  # head
+	_box("metal", Vector3(gw + 0.1, 0.08, 0.1), at.call(0.0, y0 + 2.6, 0.05), frame, bas)  # transom bar
+	_box("metal", Vector3(gw + 0.1, 0.55, 0.08), at.call(0.0, y0 + 0.275, 0.06), frame.darkened(0.15), bas)  # bulkhead
+	_box("metal", Vector3(gw + 0.14, 0.05, 0.16), at.call(0.0, y0 + 0.57, 0.08), frame.lightened(0.1), bas)  # sill
+
+
+## Desktop: one wing of a revolving door, read as what it is: a sheet of
+## clear glass (dark, showing the lobby behind) in a metal frame, a top
+## rail, a 20 cm kick plate and the outer stile with its sweep, not a pale
+## opaque panel. Centre `c`, turned `a` about the drum's post.
+func _tw_wing(c: Vector3, a: float, len: float, h: float, frame: Color) -> void:
+	var bas := Basis(Vector3.UP, -a)
+	var along := bas * Vector3(1, 0, 0)
+	_box("paint", Vector3(len - 0.08, h - 0.3, 0.02), c + Vector3(0, 0.08, 0), Color("#3e4a50"), bas)
+	_box("metal", Vector3(len, 0.07, 0.05), c + Vector3(0, h * 0.5 - 0.035, 0), frame, bas)  # top rail
+	_box("metal", Vector3(len, 0.2, 0.05), c + Vector3(0, -h * 0.5 + 0.1, 0), frame, bas)  # kick plate
+	_box("metal", Vector3(0.06, h, 0.06), c + along * (len * 0.5 - 0.03), frame, bas)  # outer stile
