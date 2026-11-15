@@ -1995,6 +1995,79 @@ func _office_lot(to_curb: float, w: float, zf: float, zb: float, width: float) -
 				_flat_rect("line", x + 2.69, x + 2.81, a, a + 5.5, 0.07, LINE)
 				site.stalls.append([Vector2(x + 1.375, a + 2.75), Vector2(0, -1) if r == 0 else Vector2(0, 1)])
 			x += 2.75
+	if fine:
+		_office_lot_marks(x0, x1, z0, z1, rows, dx - dhw - 0.3)
+
+
+## Desktop: what makes an office lot read as one at walk height (Indiana
+## office parks; 2010 ADA Standards 208/502; MUTCD R7-8): a 6 in concrete
+## curb along the walk, a precast wheel stop 2 ft 6 in back from the head
+## of every stall, and the van-accessible stall nearest the back door with
+## its blue symbol, a hatched 8 ft access aisle beside it and the
+## reserved-parking sign on a post at its head. No random numbers.
+func _office_lot_marks(x0: float, x1: float, z0: float, z1: float, rows: int, front_end: float) -> void:
+	var curb := Color("#a9a6a0")
+	_box("concrete", Vector3(x1 - x0, 0.15, 0.15), Vector3((x0 + x1) * 0.5, 0.075, z0 + 0.075), curb)
+	var stop := Color("#b8b5ae")
+	# The van stall: the one nearest the middle (the back door) with room
+	# for its aisle in the next stall over.
+	var first := -1
+	var k := 0
+	var x := x0
+	while x + 5.5 <= minf(front_end, x1 + 0.01):
+		if first < 0 or absf(x + 1.375) < absf(x0 + first * 2.75 + 1.375):
+			first = k
+		x += 2.75
+		k += 1
+	var aisle := x0 + first * 2.75 + 2.75 if first >= 0 else -1e9
+	x = x0
+	while x + 2.75 <= x1 + 0.01:
+		for r in rows:
+			if r == 0 and (x + 2.75 > front_end or absf(x - aisle) < 0.1):
+				continue
+			var sz := z0 + 0.75 if r == 0 else z1 - 0.75
+			_box("concrete", Vector3(1.83, 0.12, 0.16), Vector3(x + 1.375, 0.12, sz), stop)
+		x += 2.75
+	if first < 0:
+		return
+	# The van stall (x..x+2.75) and its access aisle in the next stall over.
+	var sx := x0 + first * 2.75
+	var blue := Color("#1f4fa0")
+	var white := Color("#f2f2ee")
+	var cz := z0 + 3.4
+	_flat_rect("line", sx + 0.83, sx + 1.92, cz - 0.55, cz + 0.55, 0.072, blue)
+	# The wheelchair symbol, seen from the aisle: head, back, seat and wheel.
+	_flat_rect("line", sx + 1.12, sx + 1.24, cz + 0.22, cz + 0.34, 0.073, white)
+	_flat_rect("line", sx + 1.16, sx + 1.22, cz - 0.1, cz + 0.18, 0.073, white)
+	_flat_rect("line", sx + 1.16, sx + 1.5, cz - 0.16, cz - 0.1, 0.073, white)
+	_flat_rect("line", sx + 1.44, sx + 1.5, cz - 0.36, cz - 0.1, 0.073, white)
+	for i in 8:
+		var ang := TAU * i / 8.0
+		var p := Vector2(sx + 1.3, cz - 0.18) + Vector2(cos(ang), sin(ang)) * 0.24
+		_flat_rect("line", p.x - 0.03, p.x + 0.03, p.y - 0.03, p.y + 0.03, 0.073, white)
+	var ax := sx + 2.75
+	# 45 degree hatch lines, clipped to the aisle's stripes.
+	var c := -2.4
+	while c < 5.35:
+		var a := Vector2(maxf(0.1, -c), 0.0)
+		a.y = a.x + c
+		var b := Vector2(minf(2.65, 5.35 - c), 0.0)
+		b.y = b.x + c
+		if a.y < 0.1:
+			a = Vector2(0.1 - c, 0.1)
+		if b.x - a.x > 0.15:
+			var mid := Vector3(ax + (a.x + b.x) * 0.5, 0.072, z0 + (a.y + b.y) * 0.5)
+			_box("paint", Vector3(0.1, 0.004, (b - a).length()), mid, white, Basis(Vector3.UP, PI * 0.25))
+		c += 0.75
+	# R7-8 on a galvanized post at the head of the stall, bottom at 5 ft,
+	# with its VAN ACCESSIBLE plaque below.
+	var post := Vector3(sx + 1.375, 0.0, z0 - 0.35)
+	_cylinder("metal", post, 0.03, 2.25, Color("#9a9d9f"), 8)
+	_box("paint", Vector3(0.3, 0.46, 0.015), post + Vector3(0, 2.0, 0.035), white)
+	_box("paint", Vector3(0.24, 0.24, 0.006), post + Vector3(0, 2.07, 0.046), blue)
+	_box("paint", Vector3(0.24, 0.05, 0.006), post + Vector3(0, 1.84, 0.046), Color("#2a8a3a"))
+	_box("paint", Vector3(0.3, 0.15, 0.015), post + Vector3(0, 1.66, 0.035), white)
+	_box("paint", Vector3(0.24, 0.04, 0.006), post + Vector3(0, 1.66, 0.046), Color("#2a8a3a"))
 
 
 # ---------------------------------------------------------------- parts
