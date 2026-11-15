@@ -1982,7 +1982,10 @@ func _office_front(w: float, zf: float, storeys: int, floor_h: float, band: Colo
 	# Downlights in the canopy soffit (canopy underside at 3.45).
 	for x in [-2.0, 0.0, 2.0]:
 		for z in [zf - 0.6, zf - 1.8]:
-			_box("paint", Vector3(0.22, 0.03, 0.22), Vector3(x, 3.43, z), Color("#f2efe4"))
+			_box("sign", Vector3(0.22, 0.03, 0.22), Vector3(x, 3.43, z), Color("#f2efe4"))
+	# After dark they light the landing and walk (IES RP-33: building
+	# entries several times brighter than the lot around them).
+	_light_pool(Vector3(0, 0.125, zf - 3.0), 9.0, 7.5, Color(0.95, 0.88, 0.76))
 	# Drip reveal under each spandrel band, and a dark stone water table.
 	for f in range(1, storeys):
 		_box("paint", Vector3(w + 0.1, 0.05, 0.1), Vector3(0, f * floor_h + 0.33, zf - 0.09), band.darkened(0.35))
