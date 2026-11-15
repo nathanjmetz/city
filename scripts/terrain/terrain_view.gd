@@ -730,7 +730,13 @@ void fragment() {
 	// wooded shore in aerial photos, open water bright only mid-channel.
 	float shade = smoothstep(0.3, 0.85, COLOR.r) * (1.0 - bar) * (1.0 - ice);
 	ALBEDO = mix(ALBEDO, vec3(0.010, 0.017, 0.007) * (0.8 + 0.4 * b), shade * 0.6);
-	SPECULAR = mix(SPECULAR, SPECULAR * 0.5, shade);
+	// Seen low along the river, though, the open middle mirrors the sky
+	// (grazing light reflects most): the shade only dulls it from above.
+	float down = smoothstep(0.25, 0.6, dot(NORMAL, VIEW));
+	SPECULAR = mix(SPECULAR, SPECULAR * 0.5, shade * down);
+	// The Mississinewa is slow and smooth between riffles: a sharp mirror,
+	// not the ruffled sheen of a lake in the wind.
+	ROUGHNESS = mix(ROUGHNESS, 0.06, fl * smoothstep(0.4, 0.9, metres) * (1.0 - bar) * (1.0 - ice));
 #endif
 }
 """
