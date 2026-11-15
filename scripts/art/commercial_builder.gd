@@ -1941,13 +1941,22 @@ func _cc_parking(to_curb: float, w: float, zw: float, xg0: float, cr: RandomNumb
 			break
 		rows.append([az2 + 3.65 + 2.75, 1.0, az2])
 		az = az2
+	# Interior islands: Indiana parking codes (Indianapolis, Fort Wayne,
+	# Carmel) cap a row at about 15 unbroken stalls, so every 16th stall is a
+	# curbed, planted island, lined up row to row as in any power center lot.
+	var isles := []
 	for row in rows:
 		var zc: float = row[0]
 		var x := lot0 + 2.0
+		var n := -1
 		while x + stall <= lot1 - 2.0 + 0.01:
 			var mx := x + stall * 0.5
 			x += stall
+			n += 1
 			if absf(mx - cut_x) < 7.0 or pad.grow(1.0).has_point(Vector2(mx, zc)):
+				continue
+			if n % 16 == 15 and absf(mx - cut_x) > 10.0 and mx < lot1 - 10.0 and not pad.grow(4.0).has_point(Vector2(mx, zc)):
+				isles.append(Vector2(mx, zc))
 				continue
 			_flat_rect("line", mx - stall * 0.5 - 0.06, mx - stall * 0.5 + 0.06, zc - 2.75, zc + 2.75, 0.07, LINE)
 			site.stalls.append([Vector2(mx, zc), Vector2(0, row[1]), row[2]])
@@ -1985,6 +1994,17 @@ func _cc_parking(to_curb: float, w: float, zw: float, xg0: float, cr: RandomNumb
 				_box("concrete", e[0], e[1], Color("#cfcac0"))
 			var pick := TreeField.pick(cr, true)
 			trees.append([Vector3(x, 0, zc), pick[0], pick[1], cr.randf_range(0.7, 0.95)])
+	# The interior islands (their own dice, so the rest stays as it was).
+	var ir := RandomNumberGenerator.new()
+	ir.seed = hash([rng.seed, "isles"])
+	for c in isles:
+		var hx := stall * 0.5 - 0.1
+		_flat_rect("mulch", c.x - hx, c.x + hx, c.y - 2.5, c.y + 2.5, 0.09)
+		for e in [[Vector3(hx * 2.0 + 0.1, 0.15, 0.15), Vector3(c.x, 0.075, c.y - 2.55)], [Vector3(hx * 2.0 + 0.1, 0.15, 0.15), Vector3(c.x, 0.075, c.y + 2.55)],
+				[Vector3(0.15, 0.15, 4.95), Vector3(c.x - hx - 0.05, 0.075, c.y)], [Vector3(0.15, 0.15, 4.95), Vector3(c.x + hx + 0.05, 0.075, c.y)]]:
+			_box("concrete", e[0], e[1], Color("#cfcac0"))
+		var pick := TreeField.pick(ir, true)
+		trees.append([Vector3(c.x, 0, c.y), pick[0], pick[1], ir.randf_range(0.7, 0.95)])
 
 
 ## The supermarket that anchors a neighborhood center (ICSC: 30,000 to
