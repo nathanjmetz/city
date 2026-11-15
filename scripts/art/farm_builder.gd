@@ -610,14 +610,22 @@ func _drape(r: Rect2, col: Color, st: SurfaceTool, above: float, step_m := 8.0, 
 	var nz := clampi(ceili(r.size.y / step_m), 1, 64)
 	col.a = 1.0
 	var hs := []
+	# A county farmstead's corners on a railroad's bed (FarmsteadPlan.on_bed).
+	var bed := []
+	var near_rail := not _county.is_empty() and FarmsteadPlan._on_track(_county, r, CountyRail.CROP_CLEAR)
 	for i in nx + 1:
 		var row := []
+		var bed_row := []
 		for j in nz + 1:
 			var q := r.position + r.size * Vector2(float(i) / nx, float(j) / nz)
 			row.append(Vector3(q.x, lift_at(q) + above, q.y))
+			bed_row.append(near_rail and FarmsteadPlan.on_bed(_county, q))
 		hs.append(row)
+		bed.append(bed_row)
 	for i in nx:
 		for j in nz:
+			if bed[i][j] or bed[i + 1][j] or bed[i + 1][j + 1] or bed[i][j + 1]:
+				continue
 			var a: Vector3 = hs[i][j]
 			var b: Vector3 = hs[i + 1][j]
 			var c: Vector3 = hs[i + 1][j + 1]

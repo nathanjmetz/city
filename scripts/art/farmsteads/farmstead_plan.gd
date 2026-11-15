@@ -124,18 +124,137 @@ static func grow(at: Vector2, farm: bool, facing: float, seed: int) -> Dictionar
 	else:
 		_farm_yard(p, rng)
 	_drive(p, rng)
+	_clear_track(p)
 	_shade_trees(p, rng)
 	_windbreak(p, rng)
 	# None out in a pond or the river: a windbreak row reaches 30 m past the
 	# yard, and on a bank it ran on into the water. Left out after every
 	# roll, so the rest of the plan is the same.
-	p.trees = p.trees.filter(func(t): return not under_water(to_region(p, t[0])))
-	# The farmstead's grounds: the yard and the grass out to its windbreak.
+	# Nor on a county railroad's right of way, cut back from the track
+	# (CountyRail.TREE_CLEAR).
+	p.trees = p.trees.filter(func(t):
+		var r := to_region(p, t[0])
+		return not under_water(r) and not CountyRail.clears(r.x, r.y, CountyRail.TREE_CLEAR))
+	# The farmstead's grounds: the yard and the grass out to its windbreak,
+	# short of a county railroad's bed, ditches and fence.
 	var g: Rect2 = p.extent
 	for t in p.trees:
 		g = g.expand(t[0])
-	p.grounds = g.grow(3.0)
+	p.grounds = _off_track(p, g.grow(3.0), p.get("keep", [p.extent]))
+	p.erase("keep")
 	return p
+
+
+## Whether a county railroad's track passes within `half` metres of the
+## local rectangle `r` (sampled every 3 m): CountyRail.clears.
+static func _on_track(p: Dictionary, r: Rect2, half: float) -> bool:
+	var mid := to_region(p, r.get_center())
+	if CountyRail.near(mid.x, mid.y, r.size.length() * 0.5 + half + 2.0).is_empty():
+		return false
+	for i in ceili(r.size.x / 3.0) + 1:
+		for j in ceili(r.size.y / 3.0) + 1:
+			var q := to_region(p, r.position + Vector2(minf(i * 3.0, r.size.x), minf(j * 3.0, r.size.y)))
+			if CountyRail.clears(q.x, q.y, half):
+				return true
+	return false
+
+
+## A farmstead beside a county railroad: off_rail sets the house back past
+## the right of way, but its yard can run on toward the track behind it.
+## No building stands on the railroad's own land (CountyRail.ROW_HALF; the
+## dryer goes with the last of its bins), the yard's gravel stops short of
+## the bed, ditches and fence (the lane to the road still crosses, as a
+## farm's private crossing does), and the yard ends at what is left.
+static func _clear_track(p: Dictionary) -> void:
+	if not CountyRail.drawn() or not _on_track(p, p.extent, CountyRail.ROW_HALF):
+		return
+	var gone := []
+	for q in p.parts:
+		if q.kind != "dryer" and _on_track(p, _extent(q).grow(1.0), CountyRail.ROW_HALF):
+			gone.append(q)
+	for q in p.parts:
+		if q.kind == "dryer":
+			q.bins = q.bins.filter(func(b): return not gone.has(b))
+			if q.bins.is_empty() or _on_track(p, _extent(q).grow(1.0), CountyRail.ROW_HALF):
+				gone.append(q)
+	p.parts = p.parts.filter(func(q): return not gone.has(q))
+	# A farm hemmed in by the railroad hauls what its bins can't hold to
+	# the elevator.
+	p.by_rail = not gone.is_empty()
+	var h: Dictionary = p.house
+	var home := Rect2(h.x - h.w * 0.5, 0.0, h.w, h.d)
+	var keep := [home]
+	for q in p.parts:
+		keep.append(_extent(q))
+	var gravel := []
+	for g: Rect2 in p.gravel:
+		if g.position.y < -4.0:
+			gravel.append(g)  # The lane from the road.
+			continue
+		# A little short of the lawn's edge, so the grass runs on round it.
+		var c := _off_track(p, g, [home], CountyRail.CROP_CLEAR + 2.0)
+		if c.size.x > 2.0 and c.size.y > 2.0:
+			gravel.append(c)
+			keep.append(c)
+	p.gravel = gravel
+	p.extent = _off_track(p, p.extent, keep)
+	p.keep = keep
+	if not p.light.is_empty() and _on_track(p, Rect2(p.light.pos, Vector2.ZERO).grow(0.5), CountyRail.ROW_HALF):
+		p.light = {}
+
+
+## Whether a local point of the farmstead lies on a county railroad's bed,
+## ditches and fence (CountyRail.CROP_CLEAR): its lawn and gravel are drawn
+## in pieces and leave out any piece with a corner there, where the track
+## cuts across a corner of the grounds the rectangles can't leave out.
+static func on_bed(p: Dictionary, q: Vector2) -> bool:
+	var r := to_region(p, q)
+	return CountyRail.drawn() and CountyRail.clears(r.x, r.y, CountyRail.CROP_CLEAR)
+
+
+## `g` (local) cut back, a side at a time, until no part of it lies within
+## `half` (CountyRail.CROP_CLEAR) of a track, as the fields keep off it; never
+## through the `keep` rectangles (the house, buildings and yard), which
+## off_rail and _clear_track set back.
+static func _off_track(p: Dictionary, g: Rect2, keep: Array, half := CountyRail.CROP_CLEAR) -> Rect2:
+	if not CountyRail.drawn() or not _on_track(p, g, half):
+		return g
+	for k in 24:
+		var hits := []
+		for i in ceili(g.size.x / 3.0) + 1:
+			for j in ceili(g.size.y / 3.0) + 1:
+				var q := g.position + Vector2(minf(i * 3.0, g.size.x), minf(j * 3.0, g.size.y))
+				var r := to_region(p, q)
+				if CountyRail.clears(r.x, r.y, half) and not keep.any(func(e: Rect2): return e.grow(0.1).has_point(q)):
+					hits.append(q)
+		if hits.is_empty():
+			return g
+		# Each side cut past as many of the points as it can without cutting
+		# into anything kept; the cut that clears the most, then keeps the
+		# most grass.
+		var best := Rect2()
+		var best_area := -1.0
+		var best_n := 0
+		for q: Vector2 in hits:
+			var cuts := [
+				[Rect2(q.x + 1.5, g.position.y, g.end.x - q.x - 1.5, g.size.y), func(e: Rect2): return e.position.x >= q.x + 1.5 or e.end.x <= g.position.x],
+				[Rect2(g.position.x, g.position.y, q.x - 1.5 - g.position.x, g.size.y), func(e: Rect2): return e.end.x <= q.x - 1.5 or e.position.x >= g.end.x],
+				[Rect2(g.position.x, q.y + 1.5, g.size.x, g.end.y - q.y - 1.5), func(e: Rect2): return e.position.y >= q.y + 1.5 or e.end.y <= g.position.y],
+				[Rect2(g.position.x, g.position.y, g.size.x, q.y - 1.5 - g.position.y), func(e: Rect2): return e.end.y <= q.y - 1.5 or e.position.y >= g.end.y]]
+			for cut in cuts:
+				var c: Rect2 = cut[0]
+				if c.size.x <= 0.0 or c.size.y <= 0.0 or not keep.all(cut[1]):
+					continue
+				var n := hits.filter(func(h: Vector2): return not c.has_point(h)).size()
+				if n > best_n or n == best_n and c.get_area() > best_area:
+					best = c
+					best_area = c.get_area()
+					best_n = n
+		if best_area < 0.0:
+			# Hemmed in by what's kept: that point stays, and so does the rest.
+			return g
+		g = best
+	return g
 
 
 ## A tree kind by name from the trees code (TreeField), or `fallback`

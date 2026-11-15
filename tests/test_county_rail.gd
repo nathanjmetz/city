@@ -65,6 +65,36 @@ func _init() -> void:
 		if CountyRail.distance(q.x, q.y, 40.0) < 40.0:
 			close += 1
 	_check(close == 0, "no farmstead stands on the railroad (%d too close)" % close)
+	# Nor does its yard: no building on the railroad's land, no yard gravel
+	# or lawn on the bed, ditches and fence, as the fields (#1078), and the
+	# windbreak off the cut right of way.
+	var on_bed := 0
+	var near_track := 0
+	for i in data.decode_u32(4):
+		var at := 8 + i * 7
+		var q := FarmsteadPlan.off_rail(Vector2(data.decode_s16(at), data.decode_s16(at + 2)))
+		if CountyRail.distance(q.x, q.y, 200.0) >= 200.0:
+			continue
+		near_track += 1
+		var p := FarmsteadPlan.grow(q, data.decode_u8(at + 4) == 1, data.decode_u8(at + 5) / 256.0 * TAU, data.decode_u8(at + 6))
+		var bad := false
+		# The lawn and gravel as drawn close up, in their local frame.
+		var b := FarmBuilder.county(p)
+		b.step(0)
+		b.step(1)
+		for st: SurfaceTool in [b._lawn, b._gravel]:
+			var arr := st.commit_to_arrays()
+			for v: Vector3 in arr[Mesh.ARRAY_VERTEX]:
+				var r := FarmsteadPlan.to_region(p, Vector2(v.x, v.z))
+				bad = bad or CountyRail.clears(r.x, r.y, CountyRail.CROP_CLEAR - 0.05)
+		for t in p.trees:
+			var r := FarmsteadPlan.to_region(p, t[0])
+			bad = bad or CountyRail.clears(r.x, r.y, CountyRail.TREE_CLEAR - 0.5)
+		for part in p.parts:
+			bad = bad or FarmsteadPlan._on_track(p, FarmsteadPlan._extent(part), CountyRail.ROW_HALF - 0.5)
+		if bad:
+			on_bed += 1
+	_check(near_track > 0 and on_bed == 0, "no farmstead's buildings, yard or windbreak reach the railroad (%d of %d near it do)" % [on_bed, near_track])
 
 	# Where a town street crosses the track (CountyRailView, 2026-10-31):
 	# the bed eases down so the rail tops sit flush in the street, and is
