@@ -371,9 +371,55 @@ func _tw_chicago(to_curb: float, width: float, storeys: int, roof := true) -> vo
 	if storeys >= 6:  # city water pressure reaches about six floors
 		_tw_tank(tank_at)
 	_box("brick", Vector3(5.0, 3.6, 6.0), Vector3(-w * 0.3, top + 3.7, cz + d * 0.25), shaft.darkened(0.1))  # elevator penthouse
+	if fine_parts:
+		_tw_chicago_roof(w, dz, zf, top + 1.9, shaft, tank_at if storeys >= 6 else Vector3(1e6, 0, 0))
 	if storeys >= 8:
 		_tw_roof_sign(Vector3(0, top + 1.9, zf + 1.6), minf(w * 0.6, 20.0))
 	_tw_alley(w, zf + d, ground_h, floor_h, storeys, lc)
+
+
+## Desktop: the rest of an old office block's roof as seen from the tower
+## next door (Chicago and Indianapolis blocks of the 1890s-1920s): the
+## boiler's brick chimney stack at a back corner with a cast cap, a stair
+## bulkhead with its door, ridge skylights of wired glass over the top
+## floor's halls, and cast iron roof drains. Own random numbers, so the
+## builder's don't move.
+func _tw_chicago_roof(w: float, d: float, zf: float, y: float, brick: Color, tank: Vector3) -> void:
+	var r := RandomNumberGenerator.new()
+	r.seed = hash([rng.seed, "chicago roof"])
+	var side := 1.0 if r.randf() < 0.5 else -1.0
+	# The chimney: a square brick stack, a stone cap and its dark flue.
+	var cx := side * (w * 0.5 - 1.6)
+	var cz := zf + d - 1.6
+	var ch := r.randf_range(4.5, 6.5)
+	_box("brick", Vector3(1.6, ch, 1.6), Vector3(cx, y + ch * 0.5, cz), brick.darkened(0.12))
+	_box("paint", Vector3(1.9, 0.25, 1.9), Vector3(cx, y + ch + 0.12, cz), Color("#a7a196"))
+	_box("paint", Vector3(0.9, 0.04, 0.9), Vector3(cx, y + ch + 0.26, cz), Color("#1d1b19"))
+	# The stair bulkhead: a brick box with a flat cap and a steel door.
+	# (Toward the chimney's side: the elevator penthouse stands on the other.)
+	var bx := side * r.randf_range(w * 0.08, w * 0.2)
+	var bz := zf + d * r.randf_range(0.6, 0.72)
+	_box("brick", Vector3(3.2, 2.8, 4.2), Vector3(bx, y + 1.4, bz), brick.darkened(0.06))
+	_box("paint", Vector3(3.4, 0.15, 4.4), Vector3(bx, y + 2.87, bz), Color("#8e8a82"))
+	_box("paint", Vector3(0.95, 2.1, 0.05), Vector3(bx, y + 1.05, bz - 2.12), Color("#4b5258"))
+	# Ridge skylights down the middle: a low curb and two pitched faces of
+	# wired glass on each, grey with age.
+	var n := r.randi_range(2, 3)
+	var glass := Color("#8d9a9c")
+	for i in n:
+		var sx := lerpf(-w * 0.3, w * 0.3, (i + 0.5) / n)
+		var sz := zf + d * 0.35
+		if absf(sx - bx) < 3.5 or (absf(sx - tank.x) < 4.0 and absf(sz - tank.z) < 5.0):
+			continue
+		var sl := 4.0
+		_box("paint", Vector3(2.2, 0.35, sl + 0.2), Vector3(sx, y + 0.18, sz), Color("#6f6b64"))
+		for k in [-1.0, 1.0]:
+			_quad("paint", Vector3(sx + k * 1.0, y + 0.36, sz - sl * 0.5), Vector3(sx, y + 1.0, sz - sl * 0.5),
+				Vector3(sx, y + 1.0, sz + sl * 0.5), Vector3(sx + k * 1.0, y + 0.36, sz + sl * 0.5), glass, [], Vector3(k * 0.6, 1, 0))
+		_box("paint", Vector3(0.08, 0.08, sl), Vector3(sx, y + 1.02, sz), Color("#4a4b48"))  # ridge
+	# Roof drains, with their cast domes, toward the back.
+	for k in [-1.0, 1.0]:
+		_box("paint", Vector3(0.5, 0.12, 0.5), Vector3(k * w * 0.25, y + 0.06, zf + d * 0.85), Color("#3a3836"))
 
 
 ## The old block an addition stands on (_tw_chicago): its size, roof
@@ -759,6 +805,21 @@ func _tw_deco(to_curb: float, width: float, storeys: int) -> void:
 		# From the last setback, where the floods stand, up the top tier.
 		var base_y := ground_h + floor_h * (int(tiers[-2][2]) - 1) + 0.6
 		_tw_washes(float(tiers[-1][0]), float(tiers[-1][1]), zf + d * 0.5, base_y, top, flood)
+		# The floods themselves: weatherproof metal-halide heads on yokes,
+		# about 1.5 m out on the setback roof and 5 m apart, tipped up at
+		# the wall (seen from the towers next door by day).
+		var roof_y := base_y - 0.6
+		for face in _tw_faces(float(tiers[-1][0]), float(tiers[-1][1]), zf + d * 0.5):
+			var along: Vector3 = face[1]
+			var out: Vector3 = along.cross(Vector3.UP)
+			var nf := maxi(2, roundi(float(face[2]) / 5.0))
+			for i in nf:
+				var p: Vector3 = face[0] + along * (-float(face[2]) * 0.5 + (i + 0.5) * float(face[2]) / nf) + out * 1.5
+				p.y = roof_y
+				_box("metal", Vector3(0.5, 0.12, 0.5), p + Vector3(0, 0.06, 0), Color("#4a4c4e"))  # base plate
+				_box("metal", Vector3(0.08, 0.45, 0.08), p + Vector3(0, 0.3, 0), Color("#4a4c4e"))
+				var tilt := Basis(along, -0.6) * _tw_yaw(along)
+				_box("metal", Vector3(0.55, 0.42, 0.32), p + Vector3(0, 0.62, 0) - out * 0.05, Color("#3a3c3e"), tilt)
 	for k in 2:
 		cw -= 4.0
 		cd -= 4.0
@@ -1354,6 +1415,7 @@ func _tw_slab(to_curb: float, width: float, storeys: int) -> void:
 	_box("paint", Vector3(w + 0.12, 0.8, d + 0.12), Vector3(0, top + 0.4, cz), slab)
 	_tw_roof(w, d, cz, top + 0.8)
 	_tw_rooftop(w, d, cz, top + 0.8)
+	_tw_obstruction(w + 0.12, d + 0.12, cz, top + 0.8)
 	_box("brick", Vector3(w * 0.3, mech, d * 0.6), Vector3(0, top + 0.8 + mech * 0.5, cz), wall.darkened(0.1))
 	# The lawn: a walk to the curb, foundation shrubs, shade trees, parking behind.
 	_flat_rect("drive", -1.5, 1.5, -to_curb + RoadStyle.CURB_WIDTH, zf - 4.0, 0.06)
@@ -1436,6 +1498,7 @@ func _tw_balcony(to_curb: float, width: float, storeys: int) -> void:
 	_box("paint", Vector3(w + 0.2, 1.0, d + 0.2), Vector3(0, top + 0.5, cz), edge)
 	_tw_roof(w, d, cz, top + 1.0)
 	_tw_rooftop(w, d, cz, top + 1.0, 0.0, false, true)
+	_tw_obstruction(w + 0.2, d + 0.2, cz, top + 1.0)
 	_tw_roof_deck(w, d, cz, top + 1.0, mech, edge, guard)
 	# The porte-cochere over a drop-off loop, and the walk to the curb.
 	_box("paint", Vector3(10.0, 0.6, 7.0), Vector3(0, ground_h - 0.3, zf - 3.5), edge)
@@ -1600,6 +1663,10 @@ func _tw_pomo(to_curb: float, width: float, storeys: int) -> void:
 		y0 = y1
 		f0 = f1
 	_tw_crown(crown, cw, cd, cz, y0 + 0.5, granite, mirror)
+	if crown == "pyramid" or crown == "stepped":
+		# The gable and spires carry masts with their own beacons; the
+		# others light the corners of the top setback, inside its notches.
+		_tw_obstruction(cw - minf(cw, cd) * 0.28, cd, cz, y0 + 0.5)
 	_tw_name(Vector3(0, y0 - floor_h + 0.6, cz - cd * 0.5), (cw - minf(cw, cd) * 0.28) * 0.8, floor_h * 0.6)
 
 
@@ -1868,12 +1935,12 @@ func _tw_pyramid(base: Vector3, w: float, d: float, h: float, col: Color) -> voi
 ## lights (FAA AC 70/7460-1, L-810 steady red): a red globe on a short
 ## stalk at each corner of the roof parapet, burning all night. Draws no
 ## random numbers.
-func _tw_obstruction(w: float, d: float, cz: float, y: float) -> void:
+func _tw_obstruction(w: float, d: float, cz: float, y: float, x := 0.0) -> void:
 	if not fine_parts or y < 61.0:
 		return
 	for sx in [-1.0, 1.0]:
 		for sz in [-1.0, 1.0]:
-			var at := Vector3(sx * (w * 0.5 - 0.4), y, cz + sz * (d * 0.5 - 0.4))
+			var at := Vector3(x + sx * (w * 0.5 - 0.4), y, cz + sz * (d * 0.5 - 0.4))
 			_box("metal", Vector3(0.08, 0.7, 0.08), at + Vector3(0, 0.35, 0), TW_STEEL)
 			_box("paint", Vector3(0.24, 0.08, 0.24), at + Vector3(0, 0.72, 0), Color("#2a2b2c"))
 			_box("sign", Vector3(0.3, 0.32, 0.3), at + Vector3(0, 0.92, 0), Color(1.0, 0.1, 0.06, 1.0))
@@ -1882,7 +1949,10 @@ func _tw_obstruction(w: float, d: float, cz: float, y: float) -> void:
 ## A steel antenna mast with an aircraft warning light.
 func _tw_mast(at: Vector3, h: float) -> void:
 	_box("metal", Vector3(0.25, h, 0.25), at + Vector3(0, h * 0.5, 0), TW_STEEL)
-	_box("paint", Vector3(0.4, 0.4, 0.4), at + Vector3(0, h + 0.2, 0), Color("#c0281e"))
+	if fine_parts:
+		_box("sign", Vector3(0.4, 0.4, 0.4), at + Vector3(0, h + 0.2, 0), Color(1.0, 0.1, 0.06, 1.0))
+	else:
+		_box("paint", Vector3(0.4, 0.4, 0.4), at + Vector3(0, h + 0.2, 0), Color("#c0281e"))
 
 
 # ---------------------------------------------------------------- podium towers
@@ -2039,6 +2109,7 @@ func _tw_podium(to_curb: float, width: float, storeys: int) -> void:
 	# The mechanical screen on top, and on some offices a lit blade.
 	_tw_roof(tw, td, tz, top + 0.05, tx)  # the tower's own roof: far away it stops here, under the screen
 	_tw_rooftop(tw, td, tz, top + 0.05, tx, true, true)
+	_tw_obstruction(tw, td, tz, top + 0.05, tx)
 	if _homes:
 		# An apartment tower: a clad penthouse and the residents' roof deck.
 		_tw_roof_deck(tw, td, tz, top + 0.05, 4.5, slab, Color("#a9bcc4"), tx)
