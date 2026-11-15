@@ -769,6 +769,26 @@ const READER_BOARDS := [
 ## The stand-in trades that serve food at tables (DINER, CAFE, PIZZA, DELI,
 ## SUBS, TACOS, GRILL, DONUTS, TAVERN): their windows show booths.
 const EATERIES := [0, 1, 2, 7, 8, 11, 28, 29, 35]
+## What each trade's window shows (HouseBuilder.shop_kind): clothes on
+## racks, goods on shelves, a showroom floor of sofas and tables, an
+## office's counter and desks, or a salon's chairs and mirrors.
+const APPAREL := ["SHOES", "THRIFT", "SPORTS"]
+const SHOWROOM := ["FURNITURE", "APPLIANCE", "ANTIQUES"]
+const OFFICE_FRONTS := ["TAX", "INSURANCE", "REALTY", "LOANS", "DENTAL", "LAW"]
+const SALONS := ["SALON", "NAILS", "BARBER"]
+const SHELVES := ["DRUGS", "LIQUOR", "HARDWARE", "VIDEO", "BOOKS", "TOYS", "GIFTS", "MUSIC", "PETS", "CANDY",
+	"HOBBY", "PAINT", "QUILTS", "FABRIC", "SEWING", "CELLULAR", "MARKET", "OPTICAL", "JEWELRY", "BIKES"]
+
+
+static func _trade_room(word: int) -> int:
+	if word < 0 or word >= TRADE_WORDS.size():
+		return 0
+	var t: String = TRADE_WORDS[word]
+	if t in OFFICE_FRONTS:
+		return 4
+	if t in SALONS:
+		return 5
+	return 1 if t in APPAREL else (3 if t in SHOWROOM else (2 if t in SHELVES else 0))
 
 
 ## Which stand-in trade word a shop at `x` letters, as the sign shader reads
@@ -956,9 +976,11 @@ func _strip_center(to_curb: float, anchor := false) -> void:
 		var sw := bay - 1.4
 		shopfront = fine_parts
 		diner_room = 7.0 if fine_parts and (i > 0 or sign_spec.is_empty()) and _letters_word(x) in EATERIES else 0.0
+		shop_kind = _trade_room(_letters_word(x)) if fine_parts and (i > 0 or sign_spec.is_empty()) else 0
 		_glass(Vector3(x - 0.4, 1.7, zf - 0.03), Vector3(-1, 0, 0), sw - 1.4, 2.3, rng.randf_range(0.0, 0.2))
 		shopfront = false
 		diner_room = 0.0
+		shop_kind = 0
 		_glass(Vector3(x + sw * 0.5 - 0.5, 1.45, zf - 0.03), Vector3(-1, 0, 0), 0.95, 2.4, 0.0)
 		_box("paint", Vector3(sw, 0.1, 0.12), Vector3(x, 2.9, zf - 0.06), mull)
 		if fine_parts:

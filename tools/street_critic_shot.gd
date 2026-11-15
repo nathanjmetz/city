@@ -18,6 +18,9 @@ const SPOTS := [
 	["homes_40", Vector3(126, 0, 210), 150.0, 30.0, 40.0],
 	["homes_low", Vector3(84, 0, 250), 20.0, 14.0, 42.0],
 	["pole_close", Vector3(84, 0, 250), 30.0, 14.0, 18.0],
+	["walk_close", Vector3(84, 0, 225), 200.0, 9.0, 22.0],
+	["corner_close", Vector3(84, 0, 205), 135.0, 18.0, 26.0],
+	["chip_close", Vector3(1560, 0, 330), 30.0, 16.0, 16.0],
 	["lid_close", Vector3(84, 0, 250), 20.0, 45.0, 5.0],
 	["homes_100", Vector3(200, 0, 240), 230.0, 35.0, 100.0],
 	["junction_top", Vector3(84, 0, 0), 180.0, 89.0, 40.0],
@@ -61,6 +64,12 @@ func _process(_delta: float) -> bool:
 		# Late morning in July, unless SHOT_HOUR / SHOT_MONTH say otherwise.
 		var month := float(OS.get_environment("SHOT_MONTH")) if OS.get_environment("SHOT_MONTH") != "" else 7.0
 		var hour := float(OS.get_environment("SHOT_HOUR")) if OS.get_environment("SHOT_HOUR") != "" else 11.0
+		# CHIP="x0,z0,x1,z1" lays a chip-seal road there first, to look at.
+		if OS.get_environment("CHIP") != "":
+			var c := OS.get_environment("CHIP").split_floats(",")
+			var a := Vector3(c[0], 0.0, c[1])
+			var b := Vector3(c[2], 0.0, c[3])
+			print("chip seal road: ", _main.sim.network.build_road(a, (a + b) * 0.5, b, RoadStyle.Type.CHIP_SEAL))
 		_main.sim.set_calendar(Seasons.tick_at(SkyClock.at(int(month), hour)))
 		# The clock jumped: the hour's workers at work, cars in the lots.
 		_main.sim.people.settle(_main.sim, _main.sim.traffic)

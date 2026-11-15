@@ -673,6 +673,9 @@ const PHOTO_DIR := "res://art/textures/roads/"
 const PHOTOS := {
 	"asphalt": ["clean_asphalt", 2.1, 1.6],
 	"concrete": ["brushed_concrete", 2.5, 0.6],
+	# From the free asset library (AssetLib, art/assets): Poly Haven's
+	# tarred_gravel, tar and chip as on most Grant County roads.
+	"chip seal": ["asset:tarred_gravel", 2.2, 1.4],
 }
 static var _photo_mats := {}  # material -> {uniform prefix: photo key}
 static var _photo_hooked := false
@@ -725,12 +728,21 @@ static func photo_code(prefix: String) -> String:
 static func _photo_apply(mat: ShaderMaterial, key: String, level: float, prefix := "photo") -> void:
 	var spec: Array = PHOTOS[key]
 	var base: String = PHOTO_DIR + spec[0]
+	var files := [base + "_diff.jpg", base + "_nor_gl.jpg", base + "_rough.jpg"]
+	if str(spec[0]).begins_with("asset:"):
+		# An asset library surface: its packed AO/rough/metal map has the
+		# roughness in green, as the shader reads it.
+		var id := str(spec[0]).trim_prefix("asset:")
+		var dir := str(AssetLib.info(id).get("dir", ""))
+		files = [dir.path_join("albedo.jpg"), dir.path_join("normal.jpg"), dir.path_join("arm.jpg")]
+		if not AssetLib.has(id):
+			files[0] = ""
 	if level > 0.0 and mat.get_shader_parameter(prefix + "_albedo") == null:
-		if not ResourceLoader.exists(base + "_diff.jpg"):
+		if files[0] == "" or not ResourceLoader.exists(files[0]):
 			return
-		mat.set_shader_parameter(prefix + "_albedo", load(base + "_diff.jpg"))
-		mat.set_shader_parameter(prefix + "_normal", load(base + "_nor_gl.jpg"))
-		mat.set_shader_parameter(prefix + "_rough", load(base + "_rough.jpg"))
+		mat.set_shader_parameter(prefix + "_albedo", load(files[0]))
+		mat.set_shader_parameter(prefix + "_normal", load(files[1]))
+		mat.set_shader_parameter(prefix + "_rough", load(files[2]))
 		mat.set_shader_parameter(prefix + "_size", spec[1])
 		mat.set_shader_parameter(prefix + "_bump", spec[2])
 	mat.set_shader_parameter(prefix, level if mat.get_shader_parameter(prefix + "_albedo") != null else 0.0)
@@ -786,8 +798,8 @@ static func far_road(kind: String, color := Color.WHITE) -> ShaderMaterial:
 
 ## Chip seal: the asphalt shader in the grey-tan of the stone chips.
 static func chip_seal() -> ShaderMaterial:
-	return _make("chip seal", ASPHALT, {"fresh": Color(0.30, 0.29, 0.27), "faded": Color(0.42, 0.40, 0.37),
-		"tar": Color(0.2, 0.19, 0.18)})
+	return with_photo(_make("chip seal", ASPHALT, {"fresh": Color(0.30, 0.29, 0.27), "faded": Color(0.42, 0.40, 0.37),
+		"tar": Color(0.2, 0.19, 0.18)}), "chip seal")
 
 
 static func brick() -> ShaderMaterial:
