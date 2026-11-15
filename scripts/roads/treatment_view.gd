@@ -73,6 +73,7 @@ var _near_on := false
 var _claims_seen := -1
 var _claims_wait := 0.0
 var _water := false
+var _photo := false  # whether the props were drawn for High and up (scans)
 
 
 func setup(s: CitySim, street_lights: StreetLights) -> void:
@@ -123,6 +124,17 @@ func _process(delta: float) -> void:
 			var boxes := claims.changes_since(_claims_seen)
 			_claims_seen = now
 			_forget_near(boxes)
+	if _photo != (Surfaces.photo_level() > 0.0):
+		# The quality tier came up (or went down; it's set after the town
+		# loads): the wooden poles and the hydrants swap between the scans
+		# and the code-built ones.
+		_photo = not _photo
+		_cobras.multimesh.mesh = StreetLights._pole_mesh("wood", 9.0, 1.8)
+		for sq in _squares:
+			_squares[sq].queue_free()
+		_squares.clear()
+		_square_props.clear()
+		_dirty = true
 	var near := RoadView.curbs_wanted()
 	if near != _near_on:
 		_near_on = near
@@ -351,7 +363,12 @@ func _rebuild() -> void:
 			continue
 		var st := SurfaceTool.new()
 		st.begin(Mesh.PRIMITIVE_TRIANGLES)
+		var scan := hydrant_scan()
+		var hydrants := []
 		for e in p.props[sq]:
+			if e[0] == "hydrant" and scan != null:
+				hydrants.append(e[1])
+				continue
 			_add_prop(st, e[0], e[1])
 		st.generate_normals()
 		var mi := MeshInstance3D.new()
@@ -361,11 +378,35 @@ func _rebuild() -> void:
 		mi.visibility_range_end_margin = 20.0
 		mi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
 		add_child(mi)
+		if not hydrants.is_empty():
+			var mm := MultiMesh.new()
+			mm.transform_format = MultiMesh.TRANSFORM_3D
+			mm.mesh = scan
+			mm.instance_count = hydrants.size()
+			for i in hydrants.size():
+				mm.set_instance_transform(i, hydrants[i])
+			var hm := MultiMeshInstance3D.new()
+			hm.name = "Hydrants"
+			hm.multimesh = mm
+			hm.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			hm.visibility_range_end = NEAR
+			hm.visibility_range_end_margin = 20.0
+			hm.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
+			mi.add_child(hm)
 		_squares[sq] = mi
 		_square_props[sq] = p.props[sq]
 
 
 # ------------------------------------------------------------------ meshes
+
+## The photo-scanned hydrant (Poly Haven fire_hydrant, CC0: a red US dry
+## barrel hydrant about 0.8 m tall, its pumper nozzle toward +z like the
+## code-built one) on desktop High and up; null elsewhere.
+static func hydrant_scan() -> Mesh:
+	if Surfaces.photo_level() <= 0.0:
+		return null
+	return AssetLib.mesh("fire_hydrant", ["fire_hydrant*"], ["*aged"])
+
 
 const IRON := Color(0.06, 0.07, 0.065)
 const STEEL := Color(0.55, 0.56, 0.55)
