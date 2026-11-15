@@ -40,7 +40,12 @@ func _run() -> void:
 	await _until(func(): return not ann.pins.is_empty())
 	_check(ann.pins.size() == 1 and str(ann.pins[0].pin).length() == 6, "the host sees her own PIN (%s)" % str(ann.pins))
 	var ann_pin := str(ann.pins[0].pin)
-	_check(not JSON.stringify(server.region.to_dict()).contains(ann_pin), "PINs never go out with the region")
+	# A PIN is six random digits, so the bare digits can turn up by chance
+	# inside a coordinate or a seed; look for it as a value, and for any
+	# "pin" field, instead.
+	var region_json := JSON.stringify(server.region.to_dict())
+	_check(not region_json.contains("\"%s\"" % ann_pin) and not region_json.contains(":%s," % ann_pin)
+		and not region_json.contains(":%s}" % ann_pin) and not region_json.contains("\"pin\""), "PINs never go out with the region")
 
 	# After that, nobody gets in without a PIN: not a wrong code, not the
 	# right code with someone's name.
