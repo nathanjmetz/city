@@ -1280,6 +1280,19 @@ func _tw_slab(to_curb: float, width: float, storeys: int) -> void:
 	# The lawn: a walk to the curb, foundation shrubs, shade trees, parking behind.
 	_flat_rect("drive", -1.5, 1.5, -to_curb + RoadStyle.CURB_WIDTH, zf - 4.0, 0.06)
 	_flat_rect("drive", -2.5, 2.5, zf - 4.0, zf, 0.06)
+	if fine_parts:
+		# Desktop: the foundation planting bed of shredded bark behind
+		# steel edging (the landscape plans of 1960s apartment towers), and
+		# the poured concrete foundation showing a hand's width above grade
+		# as a water table under the brick.
+		var edge := Color("#2c2b28")
+		for sgn in [-1.0, 1.0]:
+			var x0: float = sgn * 2.5
+			var x1: float = sgn * (w * 0.5)
+			_flat_rect("mulch", minf(x0, x1), maxf(x0, x1), zf - 1.8, zf, 0.05)
+			_flat_rect("line", minf(x0, x1), maxf(x0, x1), zf - 1.84, zf - 1.8, 0.055, edge)
+			_flat_rect("line", x1 - 0.04, x1 + 0.04, zf - 1.84, zf, 0.055, edge)
+		_box("paint", Vector3(w + 0.04, 0.3, d + 0.04), Vector3(0, 0.15, cz), Color("#a9a59c"))
 	var sx := -w * 0.5 + 1.0
 	while sx < w * 0.5 - 1.0:
 		if absf(sx) > 3.5:
