@@ -2608,6 +2608,15 @@ func _shop_parking(to_curb: float, w: float, zw: float, cut_x: float) -> void:
 			_flat_rect("line", x - 0.06, x + 0.06, zw - 2.0 - 5.5, zw - 2.0, 0.07, LINE)
 			x += 2.75
 		_site_row(lot0, lot1, zw - 2.0, cut_x)
+		if fine_parts:
+			# Desktop: the front walk stands a 6 in curb above the lot, and
+			# every stall has a precast wheel stop 2 ft 6 in off its head so
+			# bumpers stop short of the walk (Indiana strip and pad sites).
+			_box("concrete", Vector3(w + 1.0, 0.15, 0.15), Vector3(0, 0.075, zw - 2.0 + 0.075), Color("#b4b0a8"))
+			var sx := lot0
+			while sx + 2.75 <= lot1 + 0.01:
+				_box("concrete", Vector3(1.83, 0.12, 0.16), Vector3(sx + 1.375, 0.12, zw - 2.0 - 0.75), Color("#bdb9b1"))
+				sx += 2.75
 	else:
 		site.aisle_z = (zw - 2.0) * 0.5
 
