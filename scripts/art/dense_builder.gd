@@ -1982,7 +1982,10 @@ func _office_front(w: float, zf: float, storeys: int, floor_h: float, band: Colo
 	# Downlights in the canopy soffit (canopy underside at 3.45).
 	for x in [-2.0, 0.0, 2.0]:
 		for z in [zf - 0.6, zf - 1.8]:
-			_box("paint", Vector3(0.22, 0.03, 0.22), Vector3(x, 3.43, z), Color("#f2efe4"))
+			_box("sign", Vector3(0.22, 0.03, 0.22), Vector3(x, 3.43, z), Color("#f2efe4"))
+	# After dark they light the landing and walk (IES RP-33: building
+	# entries several times brighter than the lot around them).
+	_light_pool(Vector3(0, 0.125, zf - 3.0), 9.0, 7.5, Color(0.95, 0.88, 0.76))
 	# Drip reveal under each spandrel band, and a dark stone water table.
 	for f in range(1, storeys):
 		_box("paint", Vector3(w + 0.1, 0.05, 0.1), Vector3(0, f * floor_h + 0.33, zf - 0.09), band.darkened(0.35))
@@ -2062,6 +2065,27 @@ func _office_lot(to_curb: float, w: float, zf: float, zb: float, width: float) -
 			x += 2.75
 	if fine:
 		_office_lot_marks(x0, x1, z0, z1, rows, dx - dhw - 0.3)
+		_office_lot_lights(x0, x1, z0, z1)
+
+
+## Desktop: the lot's lights (IES RP-20 parking, about 1 fc average, and
+## the 20-25 ft poles of every office park's lot): square steel poles on
+## concrete piers along the back edge, about 25 m apart, each with a
+## shoebox LED head on a short arm out over the stalls, pooling light
+## across both rows. No random numbers.
+func _office_lot_lights(x0: float, x1: float, z0: float, z1: float) -> void:
+	var pole := Color("#34373a")
+	var n := maxi(1, roundi((x1 - x0) / 25.0))
+	var pz := z1 - 0.3
+	for i in n:
+		var px := lerpf(x0, x1, (i + 0.5) / n)
+		_pole_base(Vector3(px, 0, pz), 0.5)
+		_box("paint", Vector3(0.13, 6.7, 0.13), Vector3(px, 0.5 + 3.35, pz), pole)
+		_box("paint", Vector3(0.17, 0.05, 0.17), Vector3(px, 7.22, pz), pole)  # pole cap
+		_box("paint", Vector3(0.08, 0.08, 0.5), Vector3(px, 7.05, pz - 0.3), pole)  # mast arm
+		_box("paint", Vector3(0.48, 0.1, 0.62), Vector3(px, 7.1, pz - 0.85), pole)  # the head
+		_box("sign", Vector3(0.4, 0.02, 0.56), Vector3(px, 7.045, pz - 0.88), Color(0.95, 0.96, 1.0, 1.0))
+		_light_pool(Vector3(px, 0.13, (z0 + z1) * 0.5), (x1 - x0) / n * 1.1, z1 - z0 + 2.0, Color(0.72, 0.74, 0.78))
 
 
 ## Desktop: what makes an office lot read as one at walk height (Indiana

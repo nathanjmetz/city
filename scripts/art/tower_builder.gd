@@ -494,7 +494,11 @@ func _tw_chicago_entry(x: float, zf: float, mw: float) -> void:
 	_box("metal", Vector3(mw + 0.06, 0.08, 0.06), Vector3(x, 4.12, zf - 1.62), Color("#8a6a3e"))
 	var n := maxi(2, roundi(mw / 1.5))
 	for i in n:
-		_box("paint", Vector3(0.25, 0.03, 0.25), Vector3(x - mw * 0.5 + (i + 0.5) * mw / n, 4.03, zf - 0.8), Color("#f4f0e2"))
+		_box("sign", Vector3(0.25, 0.03, 0.25), Vector3(x - mw * 0.5 + (i + 0.5) * mw / n, 4.03, zf - 0.8), Color("#f4f0e2"))
+	# After dark the downlights pool on the walk under the marquee and wash
+	# the bronze and prism glass behind it, as a lit entrance does.
+	_light_pool(Vector3(x, 0.125, zf - 1.4), mw + 3.0, 5.0, Color(0.92, 0.84, 0.68))
+	_light_pool(Vector3(x, 2.4, fz - 0.06), mw + 1.0, 3.6, Color(0.7, 0.62, 0.48), Vector3.FORWARD)
 
 
 ## Desktop: the mouth of a podium garage on the street (any downtown
@@ -746,12 +750,23 @@ func _tw_deco(to_curb: float, width: float, storeys: int) -> void:
 	var top := y0
 	var cw: float = tiers[-1][0]
 	var cd: float = tiers[-1][1]
+	# Desktop: floodlights on the setback roofs wash the top tier and the
+	# crown's steps from below after dark, as deco towers have been lit
+	# since the 1930s (Chicago's Board of Trade, Indianapolis's Indiana
+	# Bell and Circle Tower crowns).
+	var flood := Color(0.92, 0.84, 0.68)
+	if fine_parts:
+		# From the last setback, where the floods stand, up the top tier.
+		var base_y := ground_h + floor_h * (int(tiers[-2][2]) - 1) + 0.6
+		_tw_washes(float(tiers[-1][0]), float(tiers[-1][1]), zf + d * 0.5, base_y, top, flood)
 	for k in 2:
 		cw -= 4.0
 		cd -= 4.0
 		if cw < 4.0 or cd < 4.0:
 			break
 		_box("brick", Vector3(cw, 3.5, cd), Vector3(0, top + 1.75, zf + d * 0.5), _dressed(stone))
+		if fine_parts:
+			_tw_washes(cw, cd, zf + d * 0.5, top, top + 3.5, flood)
 		top += 3.5
 	# The crown hides the house tank, as deco towers did: steps under a
 	# flagpole (Indianapolis's Circle Tower), a copper or gilded pyramid
@@ -777,6 +792,24 @@ func _tw_deco(to_curb: float, width: float, storeys: int) -> void:
 			_box("paint", Vector3(2.2, 1.3, 0.04), Vector3(-1.2, top + 8.3, cz1), Color("#3c3b6e"))
 
 
+## Floodlight washing all four walls of a w by d block from y0 up to y1
+## after dark (HouseMaterials "pool"): brightest at the foot where the
+## floods stand, fading as it climbs, and no wider than the wall.
+func _tw_washes(w: float, d: float, cz: float, y0: float, y1: float, col: Color) -> void:
+	for face in _tw_faces(w, d, cz):
+		var along: Vector3 = face[1]
+		var out: Vector3 = along.cross(Vector3.UP)
+		var c: Vector3 = face[0] + out * 0.5
+		var u: Vector3 = along * (float(face[2]) * 0.5 - 0.1)
+		var lo := Vector3(c.x, y0, c.z)
+		var hi := Vector3(c.x, y1, c.z)
+		# The pool's falloff is round about the quad's middle; UVs from
+		# its centre line (0.5) at the foot to near its rim at the top
+		# make it a wash from below, even along the wall.
+		_quad("pool", lo - u, lo + u, hi + u, hi - u, col,
+			[Vector2(0.5, 0.5), Vector2(0.5, 0.5), Vector2(0.5, 0.95), Vector2(0.5, 0.95)], out)
+
+
 ## Desktop: the deco portal as you walk up to it (Indianapolis's Circle
 ## Tower and Indiana Bell Building, Chicago's Board of Trade): stepped,
 ## fluted limestone jambs, a pair of bronze-framed glass doors under a
@@ -796,12 +829,21 @@ func _tw_deco_portal(fz: float, stone: Color) -> void:
 		for i in 3:
 			_box("brick", Vector3(0.12, 7.4, 0.08), Vector3(sx * (2.05 + i * 0.22), 3.7, fz + 0.03), stone.lightened(0.06))
 	# The doors: two leaves, each a glass light in a bronze frame.
+	# Through their glass, the lobby: its marble and bronze under the
+	# ceiling lights, lit all night (the guard's desk), as at _office_front.
+	var lobby_keep := [shopfront, allnight, shop_kind]
+	shopfront = true
+	allnight = true
+	shop_kind = 4
 	for sx in [-0.7, 0.7]:
 		_box("metal", Vector3(1.3, 2.7, 0.06), Vector3(sx, 1.35, fz - 0.03), bronze)
 		_glass(Vector3(sx, 1.45, fz - 0.07), Vector3(-1, 0, 0), 0.9, 2.1, 0.0)
 		_box("metal", Vector3(0.05, 0.6, 0.08), Vector3(sx * 0.2, 1.1, fz - 0.1), Color("#b08d57"))  # pull
 	_box("metal", Vector3(3.0, 0.18, 0.1), Vector3(0, 2.8, fz - 0.05), bronze)  # transom bar
 	_glass(Vector3(0, 3.15, fz - 0.03), Vector3(-1, 0, 0), 2.7, 0.5, 0.0)
+	shopfront = lobby_keep[0]
+	allnight = lobby_keep[1]
+	shop_kind = lobby_keep[2]
 	_box("metal", Vector3(3.0, 0.12, 0.1), Vector3(0, 3.45, fz - 0.05), bronze)
 	# The grille above: upright bars, rows of chevrons, and a sunburst.
 	for i in 7:
@@ -824,8 +866,12 @@ func _tw_deco_portal(fz: float, stone: Color) -> void:
 		var lc := Vector3(sx * 2.9, 3.2, fz + 0.2)
 		_box("metal", Vector3(0.08, 0.08, 0.5), lc + Vector3(0, 0.45, 0.25), dark)  # bracket back to the wall
 		_box("metal", Vector3(0.36, 0.6, 0.36), lc, dark)
-		_box("paint", Vector3(0.28, 0.45, 0.38), lc, Color("#efe2bd"))
+		_box("sign", Vector3(0.28, 0.45, 0.38), lc, Color(1.0, 0.88, 0.64, 1.0))  # its frosted glass, lit
 		_box("metal", Vector3(0.44, 0.08, 0.44), lc + Vector3(0, 0.34, 0), dark)
+		# After dark each lantern lights the stone round it.
+		_light_pool(Vector3(lc.x, 3.0, fz + 0.01), 3.2, 4.2, Color(0.9, 0.78, 0.58), Vector3.FORWARD)
+	# And the walk before the doors.
+	_light_pool(Vector3(0, 0.125, fz - 2.2), 8.0, 5.0, Color(0.88, 0.8, 0.64))
 
 
 # ---------------------------------------------------------------- postwar glass
@@ -993,6 +1039,7 @@ func _tw_glass_box(w: float, d: float, cz: float, ground_h: float, floor_h: floa
 	_tw_louvres(w, d, cz, top, mech)
 	_tw_roof(w, d, cz, top + mech)
 	_tw_rooftop(w, d, cz, top + mech, 0.0, true)
+	_tw_obstruction(w, d, cz, top + mech)
 	_tw_name(Vector3(0, top + mech * 0.2, cz - d * 0.5), w * 0.7, mech * 0.6)
 
 
@@ -1121,6 +1168,7 @@ func _tw_glass_shaped(w: float, d: float, cz: float, ground_h: float, floor_h: f
 	_box("metal", Vector3(tw - c * 1.2, mech, td - c * 1.2), Vector3(0, y1 + mech * 0.5, cz), Color("#2b2d2f"))
 	_tw_roof(tw - c * 1.2, td - c * 1.2, cz, y1 + mech)
 	_tw_rooftop(tw - c * 1.2, td - c * 1.2, cz, y1 + mech, 0.0, true)
+	_tw_obstruction(tw - c * 1.2, td - c * 1.2, cz, y1 + mech)
 	_tw_name(Vector3(0, y1 + mech * 0.2, cz - (td - c * 1.2) * 0.5), (tw - c * 1.2) * 0.75, mech * 0.6)
 
 
@@ -1814,6 +1862,21 @@ func _tw_pyramid(base: Vector3, w: float, d: float, h: float, col: Color) -> voi
 		var a: Vector3 = c[i]
 		var b: Vector3 = c[(i + 1) % 4]
 		_tri("roof", a, b, apex, col, [], (a + b) * 0.5 - base + Vector3(0, h * 0.3, 0))
+
+
+## Desktop: a tower over 200 ft (61 m) carries aircraft obstruction
+## lights (FAA AC 70/7460-1, L-810 steady red): a red globe on a short
+## stalk at each corner of the roof parapet, burning all night. Draws no
+## random numbers.
+func _tw_obstruction(w: float, d: float, cz: float, y: float) -> void:
+	if not fine_parts or y < 61.0:
+		return
+	for sx in [-1.0, 1.0]:
+		for sz in [-1.0, 1.0]:
+			var at := Vector3(sx * (w * 0.5 - 0.4), y, cz + sz * (d * 0.5 - 0.4))
+			_box("metal", Vector3(0.08, 0.7, 0.08), at + Vector3(0, 0.35, 0), TW_STEEL)
+			_box("paint", Vector3(0.24, 0.08, 0.24), at + Vector3(0, 0.72, 0), Color("#2a2b2c"))
+			_box("sign", Vector3(0.3, 0.32, 0.3), at + Vector3(0, 0.92, 0), Color(1.0, 0.1, 0.06, 1.0))
 
 
 ## A steel antenna mast with an aircraft warning light.
