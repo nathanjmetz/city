@@ -23,6 +23,11 @@ const GRAVEL := Color("#8d877c")
 const LINE := Color("#e8e6df")
 ## Set by the art gallery to draw one kind of shop.
 static var force_shop := ""
+## Set by the builders whose sites were planned under a zoning code (strip
+## centres): their dumpster stands in a screened enclosure whatever the era.
+var bin_enclosure := false
+## Where such a site plan put the enclosure (x), clear of the back doors; NAN: anywhere.
+var bin_x := NAN
 ## Small parts only the desktop draws; the browser keeps its triangle budget.
 static var fine_parts := not OS.has_feature("web")
 
@@ -184,6 +189,8 @@ func _retail(to_curb: float) -> void:
 	var lot1 := half - 0.6
 	_flat_rect("asphalt", lot0, lot1, 0.0, zf - 2.2, 0.06)
 	_curb_cut(0.0, 3.6, -to_curb, 0.0)
+	if fine_parts:
+		_lot_curb(lot0, lot1, zf - 2.2, 0.0)
 	var stall := 2.75  # 9 ft
 	var x := lot0
 	while x <= lot1 + 0.01:
@@ -200,13 +207,29 @@ func _retail(to_curb: float) -> void:
 	# mounting heights apart (IES RP-20 parking lot spacing).
 	rng.randf()  # once the pole's side; kept so the rest of the lot stays as it was
 	var lx := lot1 - 0.5
-	_box("paint", Vector3(0.6, 0.5, 0.6), Vector3(lx, 0.25, 0.8), FOUNDATION)
-	_box("paint", Vector3(0.16, 7.5, 0.16), Vector3(lx, 4.0, 0.8), Color("#3a3c3e"))
-	_box("paint", Vector3(0.5, 0.18, 0.9), Vector3(lx, 7.7, 0.8 + 0.3), Color("#3a3c3e"))
-	if fine_parts:
+	if not fine_parts:
+		_box("paint", Vector3(0.6, 0.5, 0.6), Vector3(lx, 0.25, 0.8), FOUNDATION)
+		_box("paint", Vector3(0.16, 7.5, 0.16), Vector3(lx, 4.0, 0.8), Color("#3a3c3e"))
+		_box("paint", Vector3(0.5, 0.18, 0.9), Vector3(lx, 7.7, 0.8 + 0.3), Color("#3a3c3e"))
+	else:
+		# Desktop: as built, a 25 ft (7.6 m) square steel pole on its
+		# concrete pier and anchor-bolt base, a hand-hole cover near the
+		# foot, and a single LED area light on a short mast arm (a shoebox
+		# head, thin at the front, as on every Indiana store lot since the
+		# 2010s retrofits).
+		var pole := Color("#3a3c3e")
+		_pole_base(Vector3(lx, 0, 0.8), 0.5)
+		_box("paint", Vector3(0.13, 7.2, 0.13), Vector3(lx, 0.5 + 3.6, 0.8), pole)
+		_box("paint", Vector3(0.09, 0.2, 0.012), Vector3(lx, 1.15, 0.8 + 0.07), pole.lightened(0.06))  # hand hole
+		_box("paint", Vector3(0.17, 0.05, 0.17), Vector3(lx, 7.72, 0.8), pole)  # pole cap
+		_box("paint", Vector3(0.08, 0.08, 0.5), Vector3(lx, 7.55, 0.8 + 0.3), pole)  # mast arm
+		_box("paint", Vector3(0.48, 0.1, 0.62), Vector3(lx, 7.6, 0.8 + 0.85), pole)  # the head's housing
+		_box("paint", Vector3(0.44, 0.06, 0.2), Vector3(lx, 7.58, 0.8 + 1.25), pole)  # its thin front
+		for k in 4:
+			_box("paint", Vector3(0.02, 0.025, 0.5), Vector3(lx - 0.17 + k * 0.113, 7.665, 0.8 + 0.85), pole.darkened(0.2))  # cooling fins
 		# Its LED lens and light on the lot, and the accessible stall by the
 		# door that every lot needs (ADA 208: one for up to 25 stalls).
-		_box("sign", Vector3(0.4, 0.02, 0.7), Vector3(lx, 7.6, 1.1), Color(0.95, 0.96, 1.0, 1.0))
+		_box("sign", Vector3(0.4, 0.02, 0.62), Vector3(lx, 7.545, 0.8 + 0.95), Color(0.95, 0.96, 1.0, 1.0))
 		var lot_d := zf - 2.2 - 0.8
 		var pw := minf(18.0, lot1 - lot0)
 		_light_pool(Vector3(clampf(lx - 3.0, lot0 + pw * 0.5, lot1 - pw * 0.5), 0.13, 0.8 + lot_d * 0.5), pw, lot_d,
@@ -260,11 +283,23 @@ func _rt_grown(w: float, d: float, h: float, zf: float, door_x: float, sw: float
 			_steel_door(Vector3(mx, 1.35, back + ad + 0.03), 1.0)
 		_flat_rect("asphalt", rx - 2.0, rx + 2.0, back + ad, minf(back + ad + 6.0, depth - 0.5), 0.07)
 	# Out front: an ice chest and a propane cage one side of the door,
-	# pallets of bags the other, on the walk against the glass.
+	# pallets of bags the other, on the walk against the glass. Only the
+	# trades that sell them put them out (a drugstore, market or hardware
+	# store has the ice and propane; a hardware, garden, feed or grocery
+	# store the bagged salt, mulch and feed): a taco place or an antiques
+	# shop never stacks pallets in its window.
 	var walk_z := zf - 0.75
 	var left := door_x - 1.8
 	var right := door_x + 1.8
 	var edge := sw * 0.5
+	var trade := _front_trade()
+	var any := trade == ""
+	var ice := any or trade in ICE_TRADES
+	var bags := any or trade in BAG_TRADES
+	if not ice:
+		left = -edge
+	if not bags:
+		right = edge
 	if left - 1.6 > -edge:
 		_box("paint", Vector3(1.55, 1.25, 0.8), Vector3(left - 0.8, 0.63, walk_z), Color("#f2f4f5"))
 		_box("paint", Vector3(1.4, 0.35, 0.02), Vector3(left - 0.8, 0.9, walk_z - 0.41), Color("#2a6db5"))
@@ -438,8 +473,14 @@ func _store_walk(w: float, zf: float, dx: float, lot1: float) -> void:
 	var out := 1.0 if dx > 0.0 else -1.0
 	_box("paint", Vector3(0.55, 0.9, 0.55), Vector3(dx - out * 1.9, 0.53, zf - 1.0), Color("#3a3c3e"))  # trash can
 	var ex := dx - out * 3.2
+	# The ice, propane and carts only where the trade sells by them.
+	var trade := _front_trade()
+	var sells := trade == "" or trade in ICE_TRADES
 	if absf(ex) < w * 0.5 - 1.0:
-		if r.randf() < 0.5:
+		var roll := r.randf()
+		if not sells:
+			pass
+		elif roll < 0.5:
 			# Ice merchandiser: a white chest with the blue band.
 			_box("metal", Vector3(1.6, 1.7, 0.8), Vector3(ex, 0.93, zf - 0.6), Color("#eef0f0"))
 			_box("paint", Vector3(1.62, 0.3, 0.02), Vector3(ex, 1.3, zf - 1.01), Color("#2a5ea8"))
@@ -450,7 +491,7 @@ func _store_walk(w: float, zf: float, dx: float, lot1: float) -> void:
 				_box("paint", Vector3(0.3, 0.45, 0.3), Vector3(ex - 0.4 + t * 0.4, 0.4, zf - 0.96), Color("#e8e8e4"))
 	# A row of nested carts along the wall the other side of the door
 	# (kept off the stalls, which the town's parking counts).
-	if r.randf() < 0.7:
+	if r.randf() < 0.7 and (trade == "" or trade in CART_TRADES):
 		var side := out
 		var steel := Color("#a9adb0")
 		var n := r.randi_range(3, 7)
@@ -532,6 +573,8 @@ func _service_yard(gravel: bool, dumpster := true, reach := 15.0) -> void:
 		_flat_ground("gravel" if gravel else "asphalt", poly, 0.05, col)  # 1 cm under any parking already drawn
 	if dumpster and depth - z0 > 3.0:
 		var at := Vector3(rng.randf_range(-half * 0.5, half * 0.5), 0, z0 + 1.2)
+		if fine_parts and not is_nan(bin_x):
+			at.x = bin_x
 		if _in_lot(at, 1.5):
 			var bin := Color(_pick(["#2f4a3a", "#2a3a5a", "#4a4e52"]))
 			if fine_parts:
@@ -550,6 +593,29 @@ func _service_yard(gravel: bool, dumpster := true, reach := 15.0) -> void:
 				for sx in [-1.0, 1.0]:
 					_box("metal", Vector3(0.1, 0.2, 0.95), at + Vector3(sx * 0.97, 0.85, 0), bin.darkened(0.25))
 					_box("metal", Vector3(0.12, 0.1, 0.1), at + Vector3(sx * 0.7, 0.5, 0.58), bin.darkened(0.25))
+				if bin_enclosure or not gravel:
+					# A newer shop's can stands in the enclosure its site plan
+					# had to show (Indiana town codes: refuse containers
+					# screened on three sides by a 6 ft masonry wall the
+					# colour of the building, opaque steel gates on the
+					# truck side): split-face block walls under a cap, the
+					# gates on steel posts, one leaf swung open for pickup.
+					var cmu := Color("#a9a49a")
+					var cap := Color("#c4bfb4")
+					var wz := at.z - 1.15
+					_box("cmu", Vector3(2.9, 1.83, 0.2), Vector3(at.x, 0.915, wz), cmu)
+					_box("concrete", Vector3(3.0, 0.08, 0.26), Vector3(at.x, 1.87, wz), cap)
+					for sx in [-1.0, 1.0]:
+						_box("cmu", Vector3(0.2, 1.83, 2.3), Vector3(at.x + sx * 1.35, 0.915, wz + 1.15), cmu)
+						_box("concrete", Vector3(0.26, 0.08, 2.36), Vector3(at.x + sx * 1.35, 1.87, wz + 1.15), cap)
+						_box("metal", Vector3(0.1, 1.95, 0.1), Vector3(at.x + sx * 1.2, 0.975, wz + 2.35), Color("#3a3c3e"))  # gate post
+					var gate := Color("#4a4e52")
+					# The left leaf shut, the right one swung out against the wall.
+					_box("metal", Vector3(1.15, 1.7, 0.05), Vector3(at.x - 0.6, 0.95, wz + 2.37), gate)
+					for gy in [0.25, 1.65]:
+						_box("metal", Vector3(1.15, 0.06, 0.07), Vector3(at.x - 0.6, gy, wz + 2.38), gate.darkened(0.2))
+					_box("metal", Vector3(0.05, 1.7, 1.15), Vector3(at.x + 1.27, 0.95, wz + 2.95), gate)
+					_box("metal", Vector3(0.02, 0.02, 0.5), Vector3(at.x - 0.05, 0.02, wz + 2.6), Color("#2c2d2b"))  # cane bolt's hole
 			else:
 				_box("metal", Vector3(1.83, 1.07, 1.07), at + Vector3(0, 0.6, 0), bin)
 				_box("paint", Vector3(1.87, 0.06, 1.12), at + Vector3(0, 1.16, 0), Color("#1c1d1f"))
@@ -790,11 +856,25 @@ const EATERIES := [0, 1, 2, 7, 8, 11, 28, 29, 35]
 ## racks, goods on shelves, a showroom floor of sofas and tables, an
 ## office's counter and desks, or a salon's chairs and mirrors.
 const APPAREL := ["SHOES", "THRIFT", "SPORTS"]
+## The trades that set an ice chest and a propane exchange cage out front,
+## and those that stack pallets of bagged goods (salt, mulch, feed, soil).
+const ICE_TRADES := ["DRUGS", "LIQUOR", "HARDWARE", "MARKET", "GROCERY", "FOODS", "DISCOUNT", "PHARMACY", "SUPERCENTER"]
+const CART_TRADES := ["DRUGS", "HARDWARE", "MARKET", "GROCERY", "FOODS", "DISCOUNT", "PHARMACY", "SUPERCENTER", "PETS", "LIQUOR"]
+const BAG_TRADES := ["HARDWARE", "MARKET", "FLOWERS", "PETS", "GROCERY", "DISCOUNT", "SUPERCENTER"]
 const SHOWROOM := ["FURNITURE", "APPLIANCE", "ANTIQUES"]
 const OFFICE_FRONTS := ["TAX", "INSURANCE", "REALTY", "LOANS", "DENTAL", "LAW"]
 const SALONS := ["SALON", "NAILS", "BARBER"]
 const SHELVES := ["DRUGS", "LIQUOR", "HARDWARE", "VIDEO", "BOOKS", "TOYS", "GIFTS", "MUSIC", "PETS", "CANDY",
 	"HOBBY", "PAINT", "QUILTS", "FABRIC", "SEWING", "CELLULAR", "MARKET", "OPTICAL", "JEWELRY", "BIKES"]
+
+
+## The stand-in trade a lone store letters (its sign at x = 0), or "" when
+## it carries a real business name, whose trade the art can't know.
+func _front_trade() -> String:
+	if not sign_spec.is_empty():
+		return ""
+	var wi := int(_word_slot(0.0) * 0.5) - 1
+	return TRADE_WORDS[wi] if wi >= 0 and wi < TRADE_WORDS.size() else ""
 
 
 static func _trade_room(word: int) -> int:
@@ -954,6 +1034,7 @@ func _awning(cx: float, w: float, zf: float, y: float, col: Color) -> void:
 ## canopy on square columns, with a parking field in front.
 func _strip_center(to_curb: float, anchor := false) -> void:
 	_tenant_words = []
+	bin_enclosure = true
 	var w := half * 2.0 - 2.0
 	var d := rng.randf_range(14.0, minf(18.0, maxf(depth - 18.0, 14.0)))
 	var h := rng.randf_range(5.2, 6.0)
@@ -1105,6 +1186,8 @@ func _strip_center(to_curb: float, anchor := false) -> void:
 		if n >= 5:
 			_raised_front(-w * 0.5 + (n / 2 + 0.5) * bay, bay, zf, h + 1.2, wall, mat)
 	_shop_parking(to_curb, w, zf - 2.6, 0.0)
+	if fine_parts:
+		_lot_curb(-half + 0.6, half - 0.6, zf - 4.6, 0.0)
 	# The walk carries on under the canopy to the shop doors (concrete from
 	# curb to storefront, as at every strip centre), not grass.
 	_flat_rect("drive", -w * 0.5 - 0.5, w * 0.5 + 0.5, zf - 2.6, zf, 0.08)
@@ -1135,6 +1218,7 @@ func _strip_rear(w: float, n: int, bay: float, aw: float, back: float, top: floa
 	if depth - back > 4.0:
 		_flat_rect("asphalt", -w * 0.5 - 0.5, w * 0.5 + 0.5, back, minf(back + 7.0, depth - 0.5), 0.07)
 	var tenants := 0
+	var doors := []
 	for i in n:
 		var x := -w * 0.5 + (i + 0.5) * bay
 		if aw > 0.0 and x > ax0:
@@ -1142,11 +1226,22 @@ func _strip_rear(w: float, n: int, bay: float, aw: float, back: float, top: floa
 		tenants += 1
 		var dx := x + bay * 0.25 * (1.0 if posmod(hash([rng.seed, i, 73]), 2) == 0 else -1.0)
 		_steel_door(Vector3(dx, 1.35, back + 0.03), 1.0)
+		doors.append(dx)
 		if i % 2 == 1:
 			var sx := -w * 0.5 + i * bay
 			_box("metal", Vector3(0.16, top - 0.2, 0.12), Vector3(sx, (top - 0.2) * 0.5, back + 0.09), wall.darkened(0.15))
 			_box("metal", Vector3(0.3, 0.2, 0.2), Vector3(sx, top - 0.35, back + 0.12), wall.darkened(0.2))
 			_box("concrete", Vector3(0.35, 0.06, 0.7), Vector3(sx, 0.1, back + 0.45), Color("#bdb9ae"))
+	# The trash enclosure in the widest stretch of wall between two back
+	# doors, nearest the middle, so no tenant's exit opens into it.
+	doors.sort()
+	var best := -1.0
+	for k in range(1, doors.size()):
+		var gap: float = doors[k] - doors[k - 1]
+		var c: float = (doors[k] + doors[k - 1]) * 0.5
+		if gap >= 4.6 and gap - absf(c) * 0.05 > best:
+			best = gap - absf(c) * 0.05
+			bin_x = c
 	# The utility end: one meter per tenant on a common panel, gas beside it.
 	var mx := -w * 0.5 + 1.2
 	var cols := mini(tenants, 6)
@@ -2767,6 +2862,22 @@ func _shop_parking(to_curb: float, w: float, zw: float, cut_x: float) -> void:
 				sx += 2.75
 	else:
 		site.aisle_z = (zw - 2.0) * 0.5
+
+
+## Desktop: a 6 in (15 cm) poured concrete curb round a front lot's open
+## edges, its sides from the street edge back to `back` and along the
+## street edge, open across the 24 ft drive at `cut_x` (Indiana towns'
+## parking-lot codes want the lot curbed off from the lawn and the
+## neighbour's lot).
+func _lot_curb(lot0: float, lot1: float, back: float, cut_x: float) -> void:
+	var cc := Color("#b9b5ab")
+	for e in [lot0 + 0.075, lot1 - 0.075]:
+		_box("concrete", Vector3(0.15, 0.15, back), Vector3(e, 0.075, back * 0.5), cc)
+	for seg in [[lot0, cut_x - 3.6], [cut_x + 3.6, lot1]]:
+		var a: float = seg[0]
+		var b: float = seg[1]
+		if b - a > 0.3:
+			_box("concrete", Vector3(b - a, 0.15, 0.15), Vector3((a + b) * 0.5, 0.075, 0.075), cc)
 
 
 ## Notes the row of 90 degree stalls painted between lines every 9 ft from

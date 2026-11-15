@@ -89,8 +89,8 @@ static func _mi_midcentury(b: DenseBuilder, r: RandomNumberGenerator, to_curb: f
 				b._box("paint", Vector3(lw, 2.5, 0.06), Vector3(x, 1.25, zf - 0.03), ALUMINIUM)
 				b.shopfront = DenseBuilder.fine  # the door shows the shop, lit or closed with it
 				b._glass(Vector3(x, 1.2, zf - 0.07), Vector3(-1, 0, 0), lw - 0.3, 2.1, 0.0)
+				b._glass(Vector3(x, 2.75, zf - 0.07), Vector3(-1, 0, 0), lw - 0.1, 0.4, 0.0)  # its transom, into the shop too
 				b.shopfront = false
-				b._glass(Vector3(x, 2.75, zf - 0.07), Vector3(-1, 0, 0), lw - 0.1, 0.4, 0.0)
 				b._box("metal", Vector3(0.06, 2.5, 0.1), Vector3(x - lw * 0.5, 1.75, zf - 0.06), ALUMINIUM)
 				if DenseBuilder.fine:
 					# Desktop: the 1950s wide-stile door's hardware: a
@@ -282,7 +282,13 @@ static func _mi_newbuild(b: DenseBuilder, r: RandomNumberGenerator, to_curb: flo
 				b._glass(Vector3(x, 1.85, zf - 0.03), Vector3(-1, 0, 0), lw - 0.08, 2.8, r.randf_range(0.0, 0.15))
 				b.shopfront = false
 				b.diner_room = 0.0
+			# The transom looks into the same shop (desktop): lit or dark with
+			# it, not at random like an upstairs flat's window.
+			b.shopfront = DenseBuilder.fine
+			b.diner_room = 7.0 if eats else 0.0
 			b._glass(Vector3(x, 3.75, zf - 0.03), Vector3(-1, 0, 0), lw - 0.08, 0.7, 0.0)
+			b.shopfront = false
+			b.diner_room = 0.0
 			b._box("metal", Vector3(0.07, 3.8, 0.1), Vector3(x - lw * 0.5, 2.05, zf - 0.06), BLACK)
 		b.shop_kind = 0
 		b._box("metal", Vector3(0.07, 3.8, 0.1), Vector3(bx + sw * 0.5, 2.05, zf - 0.06), BLACK)

@@ -457,6 +457,14 @@ func _tw_chicago_entry(x: float, zf: float, mw: float) -> void:
 	var bronze := Color("#5a4632")
 	var fz := zf - 0.12
 	var dc := Vector3(x, 0, fz - 0.05)
+	# The lobby seen through the drum and the swing doors: its marble,
+	# lamps and the security desk, lit all night (real office lobbies keep
+	# their lights on after hours), not a dark hole and two pale sheets.
+	var lobby_keep := [shopfront, allnight, shop_kind]
+	shopfront = true
+	allnight = true
+	shop_kind = 4
+	_glass(Vector3(x, 1.4, zf - 0.115), Vector3(-1, 0, 0), 2.3, 2.7, 0.0)
 	_cylinder("metal", dc + Vector3(0, 2.5, 0), 1.2, 0.35, bronze)
 	_cylinder("metal", dc, 1.2, 0.05, bronze)
 	_box("metal", Vector3(0.08, 2.5, 0.08), dc + Vector3(0, 1.25, 0), bronze)
@@ -471,6 +479,9 @@ func _tw_chicago_entry(x: float, zf: float, mw: float) -> void:
 		_box("metal", Vector3(1.1, 2.6, 0.06), c + Vector3(0, 1.3, 0), bronze)
 		_glass(c + Vector3(0, 1.4, -0.04), Vector3(-1, 0, 0), 0.75, 2.0, 0.0)
 		_box("metal", Vector3(0.6, 0.05, 0.08), c + Vector3(0, 1.05, -0.08), Color("#b08d57"))  # push bar
+	shopfront = lobby_keep[0]
+	allnight = lobby_keep[1]
+	shop_kind = lobby_keep[2]
 	_box("metal", Vector3(5.0, 0.15, 0.1), Vector3(x, 2.85, fz), bronze)  # transom bar
 	_box("paint", Vector3(5.0, 0.95, 0.05), Vector3(x, 3.4, fz + 0.02), Color("#9fa49a"))  # prism glass
 	for i in 9:
@@ -1243,10 +1254,14 @@ func _tw_slab(to_curb: float, width: float, storeys: int) -> void:
 				if not balcony:
 					c.y = y0 + 1.55
 					_glass(c, face[1], len_b - 1.4, 1.5, rng.randf_range(0.1, 0.7))
+					if fine_parts and face[1] != Vector3(1, 0, 0):  # not the back
+						_tw_slider(c, face[1], len_b - 1.4, 1.5, slab, true)
 					continue
 				# A sliding door out to a cantilevered slab with an aluminium guard.
 				c.y = y0 + 0.22 + 1.05
 				_glass(c, face[1], len_b - 1.2, 2.1, rng.randf_range(0.1, 0.6))
+				if fine_parts:
+					_tw_slider(c, face[1], len_b - 1.2, 2.1, slab, false)
 				var b0: Vector3 = wall_at + face[1] * (-face[2] * 0.5 + (i + 0.5) * len_b)
 				var yaw := _tw_yaw(face[1])
 				_box("paint", Vector3(len_b - 0.4, 0.24, 1.54), b0 + out * 0.72 + Vector3(0, y0 + 0.14, 0), slab, yaw)
@@ -1260,10 +1275,14 @@ func _tw_slab(to_curb: float, width: float, storeys: int) -> void:
 		var x := -w * 0.5 + (i + 0.5) * bw
 		if absf(x) > lobby * 0.5 + 0.5:
 			_glass(Vector3(x, 2.1, zf - 0.03), Vector3(-1, 0, 0), bw - 1.4, 1.6, rng.randf_range(0.2, 0.7))
+			if fine_parts:
+				_tw_slider(Vector3(x, 2.1, zf - 0.03), Vector3(-1, 0, 0), bw - 1.4, 1.6, slab, true)
 	_box("paint", Vector3(5.0, 0.3, 4.0), Vector3(0, 3.35, zf - 2.0), slab)
 	for s in [-1.0, 1.0]:
 		_box("metal", Vector3(0.15, 3.2, 0.15), Vector3(s * 2.2, 1.6, zf - 3.7), guard)
 	_box("paint", Vector3(1.4, 0.22, 0.04), Vector3(0, 3.35, zf - 4.03), Color("#c8b27a"))  # brass street number
+	if fine_parts:
+		_tw_flat_lobby(lobby, zf)
 	# A concrete parapet, the roof and the elevator and fan penthouse.
 	_box("paint", Vector3(w + 0.12, 0.8, d + 0.12), Vector3(0, top + 0.4, cz), slab)
 	_tw_roof(w, d, cz, top + 0.8)
@@ -1272,6 +1291,19 @@ func _tw_slab(to_curb: float, width: float, storeys: int) -> void:
 	# The lawn: a walk to the curb, foundation shrubs, shade trees, parking behind.
 	_flat_rect("drive", -1.5, 1.5, -to_curb + RoadStyle.CURB_WIDTH, zf - 4.0, 0.06)
 	_flat_rect("drive", -2.5, 2.5, zf - 4.0, zf, 0.06)
+	if fine_parts:
+		# Desktop: the foundation planting bed of shredded bark behind
+		# steel edging (the landscape plans of 1960s apartment towers), and
+		# the poured concrete foundation showing a hand's width above grade
+		# as a water table under the brick.
+		var edge := Color("#2c2b28")
+		for sgn in [-1.0, 1.0]:
+			var x0: float = sgn * 2.5
+			var x1: float = sgn * (w * 0.5)
+			_flat_rect("mulch", minf(x0, x1), maxf(x0, x1), zf - 1.8, zf, 0.05)
+			_flat_rect("line", minf(x0, x1), maxf(x0, x1), zf - 1.84, zf - 1.8, 0.055, edge)
+			_flat_rect("line", x1 - 0.04, x1 + 0.04, zf - 1.84, zf, 0.055, edge)
+		_box("paint", Vector3(w + 0.04, 0.3, d + 0.04), Vector3(0, 0.15, cz), Color("#a9a59c"))
 	var sx := -w * 0.5 + 1.0
 	while sx < w * 0.5 - 1.0:
 		if absf(sx) > 3.5:
@@ -2102,9 +2134,12 @@ func _tw_faces(w: float, d: float, cz: float, cx := 0.0) -> Array:
 	]
 
 
-## Turns a box built facing the street to lie along `along`.
+## Turns a box built facing the street to lie along `along`. (A turn of a
+## about UP takes x to (cos a, 0, -sin a), so the angle is atan2(z, -x);
+## the z sign used to be flipped, harmless on square faces but it set a
+## cut corner's floor-line steel crosswise, poking out as spikes.)
 func _tw_yaw(along: Vector3) -> Basis:
-	return Basis(Vector3.UP, atan2(-along.z, -along.x))
+	return Basis(Vector3.UP, atan2(along.z, -along.x))
 
 
 ## A gravel roof inside the parapet, in the membrane material, so the far
@@ -2257,6 +2292,68 @@ func _tw_storefront(c: Vector3, right: Vector3, gw: float, gh: float, frame: Col
 	_box("metal", Vector3(gw + 0.1, 0.08, 0.1), at.call(0.0, y0 + 2.6, 0.05), frame, bas)  # transom bar
 	_box("metal", Vector3(gw + 0.1, 0.55, 0.08), at.call(0.0, y0 + 0.275, 0.06), frame.darkened(0.15), bas)  # bulkhead
 	_box("metal", Vector3(gw + 0.14, 0.05, 0.16), at.call(0.0, y0 + 0.57, 0.08), frame.lightened(0.1), bas)  # sill
+
+
+## Desktop: a postwar apartment's aluminium window or balcony door as it
+## was built (1960s Midwest high-rise flats: mill-finish horizontal
+## sliders and sliding patio doors): a frame round the glass, the meeting
+## stile where the two sashes overlap, and under a window a precast sill
+## that sheds water off the wall. Centre `c` on the face, `right` along it.
+func _tw_slider(c: Vector3, right: Vector3, gw: float, gh: float, sill_col: Color, sill: bool) -> void:
+	var r := right.normalized()
+	var out := r.cross(Vector3.UP).normalized()
+	var bas := Basis(r, Vector3.UP, -out)
+	var al := Color("#9a9c9a")
+	var p := c + out * 0.03
+	_box("metal", Vector3(gw + 0.08, 0.06, 0.06), p + Vector3(0, gh * 0.5, 0), al, bas)  # head
+	_box("metal", Vector3(gw + 0.08, 0.06, 0.06), p - Vector3(0, gh * 0.5, 0), al, bas)  # sill track
+	for e in [-1.0, 1.0]:
+		_box("metal", Vector3(0.06, gh, 0.06), p + r * e * (gw * 0.5 + 0.01), al, bas)  # jambs
+	_box("metal", Vector3(0.07, gh, 0.07), p + r * gw * 0.04, al, bas)  # meeting stile
+	if sill:
+		_box("paint", Vector3(gw + 0.3, 0.07, 0.14), c + out * 0.07 - Vector3(0, gh * 0.5 + 0.06, 0), sill_col, bas)
+
+
+## Desktop: a postwar apartment tower's lobby front as you walk up to it
+## (Lake Shore Drive and Indianapolis's 1960s high-rise flats): the glass
+## wall in an anodised aluminium frame, mullions about 1.5 m apart, a
+## transom bar at door head; a pair of narrow-stile doors in the middle
+## with push bars and a threshold; the call box beside them; and under
+## the canopy a dark metal fascia and recessed soffit lights. `lobby` is
+## the glass's width, centred at x 0 on the street face at `zf`.
+func _tw_flat_lobby(lobby: float, zf: float) -> void:
+	var al := Color("#8c8f8e")
+	var z := zf - 0.08
+	var n := maxi(4, roundi(lobby / 1.5))
+	for k in n + 1:
+		var x := -lobby * 0.5 + k * lobby / n
+		if absf(x) < 0.95:
+			continue  # the doors' own frame
+		_box("metal", Vector3(0.1 if k == 0 or k == n else 0.07, 3.4, 0.1), Vector3(x, 2.0, z), al)
+	_box("metal", Vector3(lobby + 0.1, 0.12, 0.12), Vector3(0, 3.64, z), al)  # head
+	_box("metal", Vector3(lobby + 0.1, 0.08, 0.1), Vector3(0, 2.45, z), al)  # transom bar
+	_box("metal", Vector3(lobby + 0.1, 0.1, 0.1), Vector3(0, 0.35, z), al)  # sill
+	# The door pair: 0.9 m leaves of clear glass in narrow stiles.
+	var dark := Color("#3e4a50")
+	for sx in [-1.0, 1.0]:
+		var dx: float = sx * 0.46
+		_box("paint", Vector3(0.8, 1.95, 0.02), Vector3(dx, 1.38, z - 0.02), dark)
+		for e in [-1.0, 1.0]:
+			_box("metal", Vector3(0.06, 2.1, 0.06), Vector3(dx + e * 0.43, 1.35, z - 0.03), al)  # stiles
+		_box("metal", Vector3(0.9, 0.06, 0.06), Vector3(dx, 2.38, z - 0.03), al)  # top rail
+		_box("metal", Vector3(0.9, 0.22, 0.06), Vector3(dx, 0.41, z - 0.03), al)  # bottom rail
+		_box("metal", Vector3(0.7, 0.04, 0.05), Vector3(dx, 1.05, z - 0.09), al.lightened(0.2))  # push bar
+	_box("metal", Vector3(1.9, 0.02, 0.3), Vector3(0, 0.31, z - 0.1), al)  # threshold
+	# The call box: a stainless panel of buttons by the door.
+	_box("metal", Vector3(0.28, 0.42, 0.05), Vector3(1.3, 1.35, z - 0.04), Color("#b9bcbc"))
+	_box("paint", Vector3(0.16, 0.06, 0.01), Vector3(1.3, 1.48, z - 0.07), Color("#2a2c2e"))
+	# The canopy's fascia and soffit lights.
+	var fascia := Color("#2f3234")
+	_box("metal", Vector3(5.06, 0.45, 0.06), Vector3(0, 3.33, zf - 4.0), fascia)
+	for sx in [-1.0, 1.0]:
+		_box("metal", Vector3(0.06, 0.45, 4.0), Vector3(sx * 2.5, 3.33, zf - 2.0), fascia)
+		for k in 2:
+			_box("paint", Vector3(0.3, 0.02, 0.3), Vector3(sx * 1.2, 3.19, zf - 1.2 - k * 1.6), Color("#fff4dc"))
 
 
 ## Desktop: one wing of a revolving door, read as what it is: a sheet of

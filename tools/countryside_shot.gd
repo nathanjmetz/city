@@ -26,6 +26,9 @@ const VIEWS := [
 	["river_wide", "river", 200.0, 45.0, 900.0],
 	["pits_wide", "pits", 200.0, 45.0, 900.0],
 	["river_low", "river", 250.0, 12.0, 45.0],
+	["bare_mid", "bare", 200.0, 35.0, 250.0],
+	["bare_close", "bare", 200.0, 22.0, 70.0],
+	["pile_close", "prop", 120.0, 18.0, 45.0],
 ]
 
 var _view := -1
@@ -78,21 +81,27 @@ func _process(delta: float) -> bool:
 
 
 ## Scanned props drawn near the camera (CountryProps), for the log.
-func _props() -> int:
-	var n := 0
+func _props() -> String:
+	var by := {}
 	for c in _main.get_children():
 		if c is CountryProps:
 			for mi in c.get_children():
-				n += (mi as MultiMeshInstance3D).multimesh.instance_count
-	return n
+				var mm := (mi as MultiMeshInstance3D).multimesh
+				var k := mm.mesh.resource_name if mm.mesh.resource_name != "" else str(mm.mesh.get_aabb().size.round())
+				by[k] = by.get(k, 0) + mm.instance_count
+	return str(by)
 
 
 ## Where the first scanned prop near the camera lies (the woods if none).
 func _prop_spot() -> Vector3:
+	# PROP_ID picks a scan by its mesh name (e.g. nettle), else the first.
+	var want := OS.get_environment("PROP_ID")
 	for c in _main.get_children():
 		if c is CountryProps:
 			for mi in c.get_children():
 				var mm: MultiMesh = (mi as MultiMeshInstance3D).multimesh
+				if want != "" and not want in String((mi as Node).name):
+					continue
 				if mm.instance_count > 0:
 					return (mi as Node3D).position + mm.get_instance_transform(0).origin
 	return _aims.woods
@@ -160,6 +169,9 @@ func _find_aims() -> void:
 				_aims.river = Vector3(x, 0, z)
 	# Flooded gravel pits west of Sweetser: square lakes with berms.
 	_aims.pits = Vector3(-3500, 0, 600)
+	# Bare worked ground beside those pits (WorldCover bare): the active
+	# face of a sand and gravel pit.
+	_aims.bare = Vector3(-3381, 0, -513)
 	# The railroad: the point of the county's track nearest the demo
 	# farms, off a crossing or bridge.
 	_aims.rail = _aims.field

@@ -242,7 +242,9 @@ bool shop_room(vec2 uv, vec3 vw, bool diner, bool aisles, float sill, int kind, 
 	float xl = min(a, a + sx) - 1.2;
 	float xr = max(a, a + sx) + 1.2;
 	float yb = world_pos.y - uv.y * sy;
-	float yf = yb - sill;
+	// A short light (a transom band over the display windows) looks into
+	// the same room from up near its ceiling: the floor is well below it.
+	float yf = yb - (abs(sy) < 0.8 ? 2.6 : sill);
 	float yc = yb + abs(sy) + 0.5;
 	vec3 rd = vec3(dot(vw, rt), vw.y, max(dot(vw, inw), 0.02));
 	float tx = abs(rd.x) < 1e-4 ? 1e9 : ((rd.x > 0.0 ? xr : xl) - px) / rd.x;
@@ -604,8 +606,17 @@ void fragment() {
 	float on = step(pick, windows_lit) * smoothstep(0.2, 0.6, night);
 	vec3 warm = mix(vec3(1.0, 0.62, 0.3), vec3(1.0, 0.78, 0.5), hash(cell + 3.1));
 	vec3 lamp = mix(warm, vec3(0.55, 0.7, 1.0), step(0.9, hash(cell + 7.7)));
-	// Light through blinds is dimmer and softer.
-	EMISSION = lamp * on * mix(2.2, 1.1, blinds) * (0.8 + 0.4 * UV.y);
+	// Light through blinds is dimmer and softer. A lit room is not a flat
+	// slab of light: brightest up under the ceiling fixture mid-window,
+	// falling off to the jambs, darker low down where a sofa back or a
+	// table sits against the glass, and drawn-back curtains glow through
+	// as warm, dimmer fabric (the colour of the cloth).
+	float mid = 0.62 + 0.38 * sin(3.14159 * ux);
+	float high = mix(0.55, 1.1, smoothstep(0.0, 0.9, UV.y));
+	float sill = mix(0.55 + 0.3 * hash(wcell + 9.4), 1.0, smoothstep(0.14, 0.3, UV.y));
+	float cloth = side * step(h1, 0.6) * (1.0 - blinds);
+	vec3 shade = mix(lamp, lamp * (lin(drape) * 0.9 + 0.25), cloth) * mix(1.0, 0.5, cloth);
+	EMISSION = shade * on * mix(1.6, 0.95, blinds) * mid * high * mix(sill, 1.0, blinds);
 	if (office > 0.5) {
 		// Offices after hours go dark a floor at a time: a few whole floors
 		// still lit (late workers, the cleaning crew) in cool LED white, a
@@ -621,8 +632,15 @@ void fragment() {
 		float hx = world_pos.x + world_pos.z;
 		float troffer = step(0.5, fract(hx / 1.2)) * smoothstep(0.8, 0.84, UV.y) * (1.0 - smoothstep(0.93, 0.97, UV.y));
 		float parts = mix(0.35, 1.0, smoothstep(0.3, 0.36, UV.y));
-		float room_lit = 0.5 + 0.12 * hash(cell + 2.2);
-		EMISSION = vec3(0.82, 0.9, 1.0) * lit * (room_lit * parts + 1.3 * troffer) * mix(1.0, 0.65, blinds);
+		// Exposed for the street at night the room itself sits well under
+		// the fittings (an office lit to ~500 lux reads mid-grey through
+		// tinted glass, the lamps bright); too strong and the whole lite
+		// clips to a flat white panel.
+		float room_lit = 0.16 + 0.06 * hash(cell + 2.2);
+		// The far wall and the ceiling grid between fittings: a little
+		// darker toward the corners of each lite.
+		float vign = 0.75 + 0.25 * sin(3.14159 * clamp(fract(hx / 1.5), 0.0, 1.0));
+		EMISSION = vec3(0.82, 0.9, 1.0) * lit * (room_lit * parts * vign + 0.9 * troffer) * mix(1.0, 0.65, blinds);
 	}
 	}
 }
@@ -962,8 +980,12 @@ void fragment() {
 	ALBEDO = mix(vcol(COLOR.rgb), vec3(0.86, 0.84, 0.79), text);
 	ROUGHNESS = 0.4;
 	SPECULAR = 0.5;
-	// Lit signs after dark: bright letters on a softly glowing panel.
-	EMISSION = mix(vcol(COLOR.rgb) * 0.5, vec3(1.0, 0.95, 0.85) * 2.0, text) * smoothstep(0.3, 0.6, night);
+	// Lit signs after dark: the letters lit (channel letters on a raceway,
+	// the usual Main Street sign since the 1950s), the board behind them
+	// only faintly, from the letters' own spill, not glowing edge to edge
+	// like a cabinet box.
+	float spill = 0.05 + 0.1 * smoothstep(0.1, 0.5, vy) * smoothstep(0.9, 0.5, vy) * band;
+	EMISSION = mix(vcol(COLOR.rgb) * spill, vec3(1.0, 0.95, 0.85) * 2.0, text) * smoothstep(0.3, 0.6, night);
 	EMISSION = mix(EMISSION, vcol(COLOR.rgb) * (0.25 + 3.5 * smoothstep(0.2, 0.6, night)), neon) * (1.0 - painted);
 	ROUGHNESS = mix(0.4, 0.85, painted);
 }

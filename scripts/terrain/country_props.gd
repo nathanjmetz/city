@@ -22,6 +22,8 @@ const REACH := 170.0
 const PER_FRAME := 2
 ## Spot spacing on the woods floor, metres.
 const WOODS_STEP := 6.0
+## Stockpile spot spacing on a gravel pit's worked floor, metres.
+const PILE_STEP := 12.0
 ## Spot spacing along wooded water edges for driftwood, metres.
 const DRIFT_STEP := 10.0
 
@@ -108,8 +110,159 @@ static func _dist(b: Vector2i, c: Vector2) -> float:
 
 func _mesh(id: String) -> Mesh:
 	if not _meshes.has(id):
-		_meshes[id] = AssetLib.mesh(id)
+		if id == "stacker":
+			_meshes[id] = _stacker_mesh()
+		elif id.begins_with("pile_"):
+			_meshes[id] = _pile_mesh(id)
+		else:
+			_meshes[id] = AssetLib.mesh(id)
 	return _meshes[id]
+
+
+## A stockpile a metre across at the foot: sorted sand or washed gravel
+## heaped by the conveyor and the loader at its angle of repose (about 34
+## degrees). Not a clean cone: the sides slump in lobes, the toe wanders,
+## the crest is a rounded ridge, and one side is a loader's bite (a steep
+## cut face where the trucks are filled). Dressed in the gravel photo, the
+## damp toe darker.
+static func _pile_mesh(id: String) -> Mesh:
+	var seed := 3.0 if id == "pile_sand" else 7.0
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var segs := 48
+	var rings := 16
+	var bite := _pile_bite(id)
+	var pts := []
+	for k in rings + 1:
+		var t := float(k) / rings
+		var row := []
+		for i in segs:
+			var ang := TAU * i / segs
+			# Lobes and the bite at the toe, fading up the slope to a round crest.
+			var toe := 1.0 - t
+			var lobe := 1.0 + toe * (0.06 * sin(3.0 * ang + seed) + 0.035 * sin(7.0 * ang + seed * 2.3))
+			var d := absf(wrapf(ang - bite, -PI, PI))
+			var cut := 1.0 - 0.3 * (1.0 - smoothstep(0.25, 0.8, d)) * toe
+			var rad := (1.0 - t) * lobe * cut
+			# Straight repose slope (about 34 degrees), rounded over at the top.
+			var h := 0.7 * (t - 0.35 * pow(t, 4.0)) + 0.015 * sin(5.0 * ang + seed) * t * toe
+			row.append(Vector3(cos(ang) * rad, h, sin(ang) * rad))
+		pts.append(row)
+	for k in rings:
+		for i in segs:
+			var a0: Vector3 = pts[k][i]
+			var a1: Vector3 = pts[k][(i + 1) % segs]
+			var b0: Vector3 = pts[k + 1][i]
+			var b1: Vector3 = pts[k + 1][(i + 1) % segs]
+			for v: Vector3 in [a0, a1, b0, a1, b1, b0]:
+				var damp := 1.0 - smoothstep(0.0, 0.08, v.y)
+				st.set_color(Color(1.0 - 0.3 * damp, 1.0 - 0.32 * damp, 1.0 - 0.35 * damp))
+				st.add_vertex(v)
+	st.index()
+	st.generate_normals()
+	var mesh := st.commit()
+	var mat := StandardMaterial3D.new()
+	mat.vertex_color_use_as_albedo = true
+	mat.albedo_color = Color(0.8, 0.72, 0.6) if id == "pile_sand" else Color(0.74, 0.71, 0.66)
+	mat.roughness = 0.95
+	var tex := PhotoGround.DIR + "gravel_floor_02/albedo.jpg"
+	if ResourceLoader.exists(tex):
+		mat.albedo_texture = load(tex)
+		mat.uv1_triplanar = true
+		mat.uv1_world_triplanar = true
+		mat.uv1_scale = Vector3.ONE * (0.5 if id == "pile_sand" else 0.35)
+		var nrm := PhotoGround.DIR + "gravel_floor_02/normal.jpg"
+		if ResourceLoader.exists(nrm):
+			mat.normal_enabled = true
+			mat.normal_texture = load(nrm)
+			mat.normal_scale = 0.6 if id == "pile_sand" else 1.0
+	mesh.surface_set_material(0, mat)
+	return mesh
+
+
+## The angle of a pile's loader bite in its own frame (_pile_mesh).
+static func _pile_bite(id: String) -> float:
+	return 1.1 + (3.0 if id == "pile_sand" else 7.0) * 0.4
+
+
+## How far out from a pile's middle its stacker's tail sits (metres).
+const STACKER_REACH := 18.8
+## The stacker's belt: 20 m long, rising at 20 degrees.
+const STACKER_LEN := 20.0
+const STACKER_RISE := 0.35
+
+
+## A radial stacking conveyor (like the 80-100 ft portable stackers at
+## every Indiana sand and gravel plant), 20 m long, from its tail hopper on
+## the ground (the origin) along +x up to the head pulley over the pile:
+## a box-girder frame under a black belt, a wheeled undercarriage on two
+## raking legs, a tail hopper. Faded safety-yellow paint.
+static func _stacker_mesh() -> Mesh:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var paint := Color(0.62, 0.5, 0.16)
+	var steel := Color(0.22, 0.22, 0.21)
+	var belt := Color(0.05, 0.05, 0.05)
+	var ang := STACKER_RISE
+	var d := Vector3(cos(ang), sin(ang), 0.0)
+	var a := Vector3(0.0, 0.9, 0.0)
+	var b := a + d * STACKER_LEN
+	# The frame: two side girders and the belt between them.
+	for side in [-0.5, 0.5]:
+		_beam(st, a + Vector3(0, 0, side), b + Vector3(0, 0, side), 0.12, 0.45, paint)
+	_beam(st, a + Vector3(0, 0.26, 0), b + Vector3(0, 0.26, 0), 0.85, 0.05, belt)
+	# Cross struts under the belt, every 2 m.
+	var k := 1.0
+	while k < STACKER_LEN:
+		_beam(st, a + d * k + Vector3(0, -0.15, -0.5), a + d * k + Vector3(0, -0.15, 0.5), 0.08, 0.08, paint)
+		k += 2.0
+	# Undercarriage at 60% along: two raking legs to an axle and wheels.
+	var m := a + d * (STACKER_LEN * 0.6)
+	var axle := Vector3(m.x - 1.2, 0.55, 0.0)
+	for side in [-1.0, 1.0]:
+		_beam(st, m + Vector3(0, -0.2, side * 0.5), axle + Vector3(0, 0, side * 1.1), 0.18, 0.18, paint)
+		_beam(st, axle + Vector3(0, 0, side * 1.1), axle + Vector3(0, 0, side * 1.45), 1.05, 1.05, steel)
+		# A brace back to the tail.
+		_beam(st, axle + Vector3(0, 0.1, side * 1.0), a + d * 4.0 + Vector3(0, -0.2, side * 0.5), 0.1, 0.1, paint)
+	_beam(st, axle + Vector3(0, 0, -1.2), axle + Vector3(0, 0, 1.2), 0.12, 0.12, steel)
+	# Tail hopper and its feet; head pulley housing.
+	_beam(st, Vector3(-0.6, 1.2, 0), Vector3(1.0, 1.7, 0), 1.6, 0.9, paint)
+	_beam(st, Vector3(-0.3, 0.0, 0), Vector3(-0.3, 1.0, 0), 1.0, 0.3, paint)
+	_beam(st, b - d * 0.4, b + d * 0.3, 1.1, 0.6, paint)
+	var mesh := st.commit()
+	var mat := StandardMaterial3D.new()
+	mat.vertex_color_use_as_albedo = true
+	mat.roughness = 0.75
+	mat.metallic = 0.2
+	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	mesh.surface_set_material(0, mat)
+	return mesh
+
+
+## A box from p to q, `w` wide and `h` deep across it, with flat faces.
+static func _beam(st: SurfaceTool, p: Vector3, q: Vector3, w: float, h: float, c: Color) -> void:
+	var d := (q - p).normalized()
+	var ref := Vector3.UP if absf(d.y) < 0.9 else Vector3.RIGHT
+	var sv := d.cross(ref).normalized() * w * 0.5
+	var uv := sv.cross(d).normalized() * h * 0.5
+	var corners := []
+	for e in [p, q]:
+		for cs in [[-1, -1], [1, -1], [1, 1], [-1, 1]]:
+			corners.append(e + sv * cs[0] + uv * cs[1])
+	var faces := [[0, 1, 2, 3], [7, 6, 5, 4], [0, 4, 5, 1], [1, 5, 6, 2], [2, 6, 7, 3], [3, 7, 4, 0]]
+	st.set_color(c)
+	for f in faces:
+		var v0: Vector3 = corners[f[0]]
+		var v1: Vector3 = corners[f[1]]
+		var v2: Vector3 = corners[f[2]]
+		var v3: Vector3 = corners[f[3]]
+		var n := (v1 - v0).cross(v2 - v0).normalized()
+		# Face outward from the box's middle.
+		if n.dot((v0 + v2) * 0.5 - (p + q) * 0.5) < 0.0:
+			n = -n
+		st.set_normal(n)
+		for v: Vector3 in [v0, v1, v2, v0, v2, v3]:
+			st.add_vertex(v)
 
 
 ## True where a prop may lie: open or wooded land, not water, the railroad
@@ -160,6 +313,58 @@ func _fill(b: Vector2i) -> Array:
 				_add(by_id, STUMPS[int(k * 2.0) % 2], _at(p, yaw, lerpf(0.7, 1.05, sz), 0.05))
 			else:
 				_add(by_id, BRANCHES, _at(p, yaw, lerpf(1.4, 2.4, sz), 0.04))
+	# A working gravel pit's floor: conical stockpiles of washed gravel and
+	# sand by the plant (Grant County pits sell pea gravel, #53 stone and
+	# fill sand off piles 5-10 m high), a few to a pit.
+	var np := int(SQUARE / PILE_STEP) + 1
+	var piles: Array[Vector3] = []
+	for j in np:
+		for i in np:
+			var g := Vector2i(floori((lo.x + o.x) / PILE_STEP) + i, floori((lo.y + o.y) / PILE_STEP) + j)
+			var r := Vector2((g.x + 0.3 + 0.4 * CropCalendar.h01(g.x, g.y, 61)) * PILE_STEP,
+				(g.y + 0.3 + 0.4 * CropCalendar.h01(g.x, g.y, 62)) * PILE_STEP)
+			var p := Vector3(r.x - o.x, 0.0, r.y - o.y)
+			if p.x < lo.x or p.x >= lo.x + SQUARE or p.z < lo.y or p.z >= lo.y + SQUARE:
+				continue
+			if CropCalendar.h01(g.x, g.y, 63) > 0.4:
+				continue
+			if Terrain.bare(r.x, r.y) < 0.55:
+				continue
+			var near := false
+			for q in piles:
+				if q.distance_to(Vector3(r.x - o.x, 0.0, r.y - o.y)) < 24.0:
+					near = true
+			if near:
+				continue
+			if Terrain.water(r.x, r.y) > 0.03 or CountyRail.clears(r.x, r.y):
+				continue
+			if sim != null and sim.vegetation.is_occupied(Vegetation.cell_of(p)):
+				continue
+			var rad := lerpf(6.0, 11.0, CropCalendar.h01(g.x, g.y, 64))
+			# Beside the haul road, not on it: the loader works off its edge.
+			if TerrainView.on_haul(r.x, r.y, rad * 0.75):
+				continue
+			var xf := Transform3D(Basis(Vector3.UP, CropCalendar.h01(g.x, g.y, 65) * TAU).scaled(Vector3(rad, rad, rad)),
+				Vector3(p.x, Terrain.base(r.x, r.y) - 0.2, p.z))
+			piles.append(p)
+			var pid := "pile_sand" if CropCalendar.h01(g.x, g.y, 66) < 0.4 else "pile_gravel"
+			_add(by_id, pid, xf)
+			# Most piles are built by a radial stacker: a conveyor on a
+			# wheeled undercarriage reaching up over the crest, its tail
+			# hopper on the ground, on the side away from the loader's bite.
+			if CropCalendar.h01(g.x, g.y, 67) < 0.75:
+				for turn in [0.0, 0.9, -0.9]:
+					var phi: float = _pile_bite(pid) + PI + turn - CropCalendar.h01(g.x, g.y, 65) * TAU
+					var out := Vector2(cos(phi), sin(phi))
+					var tail := r + out * STACKER_REACH
+					var mid := r + out * STACKER_REACH * 0.4
+					if Terrain.water(tail.x, tail.y) > 0.03 or Terrain.water(mid.x, mid.y) > 0.03 \
+							or CountyRail.clears(tail.x, tail.y) or Terrain.trees(tail.x, tail.y) > 0.4:
+						continue
+					var yaw := atan2(out.y, -out.x)
+					_add(by_id, "stacker", Transform3D(Basis(Vector3.UP, yaw),
+						Vector3(tail.x - o.x, Terrain.base(tail.x, tail.y) - 0.1, tail.y - o.y)))
+					break
 	# Driftwood: trees the river undercut, lying from the bank into the
 	# water or stranded at the edge (the Mississinewa and its creeks are
 	# full of these strainers and small log jams below wooded banks).
@@ -234,6 +439,7 @@ func _fill(b: Vector2i) -> Array:
 			xf.origin -= mid
 			mm.set_instance_transform(i, xf)
 		var mi := MultiMeshInstance3D.new()
+		mi.name = id
 		mi.multimesh = mm
 		mi.position = mid
 		mi.visibility_range_end = REACH
