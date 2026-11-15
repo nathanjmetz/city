@@ -65,6 +65,15 @@ void fragment() {
 	// Fencerow verge: rough grass with brushy darker clumps, tan when dormant.
 	vec3 verge = mix(vec3(0.15, 0.21, 0.07), vec3(0.21, 0.22, 0.1), mid);
 	verge = mix(verge, vec3(0.30, 0.26, 0.16), clamp(season_look.w, 0.0, 1.0) * 0.8);
+#ifdef DESKTOP_DETAIL
+	// Linear, like everything this shader mixes: an unmowed fencerow or
+	// field-edge strip is rank fescue, brome and brush, darker and rougher
+	// than the pasture beside it (sRGB about 0.30/0.36/0.18), never the pale
+	// painted frame the old sRGB-looking values drew round every field;
+	// straw-tan only once it goes dormant.
+	verge = mix(vec3(0.055, 0.085, 0.022), vec3(0.085, 0.1, 0.032), mid) * (0.75 + 0.5 * patch);
+	verge = mix(verge, vec3(0.15, 0.12, 0.06), clamp(season_look.w, 0.0, 1.0) * 0.8);
+#endif
 	verge *= 0.85 + grain * 0.3;
 	vec3 col = mix(verge, crop, vc.a);
 	// The desktop's photographed ground (PhotoGround): worked soil between
