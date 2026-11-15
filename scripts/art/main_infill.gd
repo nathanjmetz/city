@@ -198,9 +198,21 @@ static func _mi_newbuild(b: DenseBuilder, r: RandomNumberGenerator, to_curb: flo
 		b._box("paint", Vector3(sw, 0.45, 0.1), Vector3(bx, 0.22, zf - 0.05), stone)
 		for i in lights:
 			var x := bx - sw * 0.5 + (i + 0.5) * lw
-			if i == lights / 2 and k % 2 == 0:
+			# Every shop has its own door, in its middle light (the odd bays
+			# used to have none). The odd bays still take the random draw
+			# their display light took, so nothing after it moves.
+			if i == lights / 2:
+				if k % 2 == 1:
+					r.randf()
 				b._box("paint", Vector3(1.1, 2.5, 0.05), Vector3(x, 1.25, zf - 0.03), BLACK)
 				b._glass(Vector3(x, 1.25, zf - 0.07), Vector3(-1, 0, 0), 0.8, 2.2, 0.0)
+				if DenseBuilder.fine:
+					# Desktop: a brushed pull, a deep bottom rail and a threshold.
+					b._box("metal", Vector3(0.035, 0.9, 0.035), Vector3(x + 0.28, 1.05, zf - 0.16), Color("#b9bbbc"))
+					for y in [0.68, 1.42]:
+						b._box("metal", Vector3(0.025, 0.025, 0.08), Vector3(x + 0.28, y, zf - 0.11), Color("#b9bbbc"))
+					b._box("metal", Vector3(0.8, 0.22, 0.03), Vector3(x, 0.26, zf - 0.08), BLACK)
+					b._box("metal", Vector3(1.1, 0.015, 0.2), Vector3(x, 0.01, zf - 0.12), Color("#9a9c9d"))
 			else:
 				b.shopfront = DenseBuilder.fine
 				b.diner_room = 7.0 if eats else 0.0
@@ -218,6 +230,18 @@ static func _mi_newbuild(b: DenseBuilder, r: RandomNumberGenerator, to_curb: flo
 			var c := Vector3(bx + t * sw * 0.35, 3.45, zf - 1.45)
 			b._box("metal", Vector3(0.04, 0.04, a.distance_to(c)), (a + c) * 0.5, BLACK,
 				Basis(Vector3.RIGHT, -atan2(a.y - c.y, a.z - c.z)))
+		if DenseBuilder.fine:
+			# Desktop: the canopy's formed fascia channel with a drip lip,
+			# and LED cans in its soffit lighting the walk (hung steel
+			# canopies on new Indiana main-street infill, Carmel and
+			# Noblesville).
+			b._box("metal", Vector3(sw + 0.04, 0.28, 0.06), Vector3(bx, 3.33, zf - 1.5), BLACK)
+			b._box("metal", Vector3(sw + 0.04, 0.03, 0.1), Vector3(bx, 3.195, zf - 1.53), BLACK)
+			var cans := maxi(2, roundi(sw / 2.2))
+			for q in cans:
+				var lx := bx - sw * 0.5 + (q + 0.5) * sw / cans
+				b._box("sign", Vector3(0.16, 0.012, 0.16), Vector3(lx, 3.265, zf - 0.85), Color(0.98, 0.95, 0.88, 1.0))
+				b._light_pool(Vector3(lx, 0.11, zf - 1.0), 2.4, 2.6, Color(1.0, 0.95, 0.86))
 		b._sign(Vector3(bx, 3.6, zf - 0.12), minf(sw * 0.6, 5.0), 0.45)
 		b._box("brick", Vector3(0.8, shop_h, 0.2), Vector3(bx - bw * 0.5 + 0.4, shop_h * 0.5, zf - 0.1), brick.darkened(0.08))
 		# Upstairs: projecting panel bays rise past the brick parapet.
