@@ -534,8 +534,25 @@ func _service_yard(gravel: bool, dumpster := true, reach := 15.0) -> void:
 		var at := Vector3(rng.randf_range(-half * 0.5, half * 0.5), 0, z0 + 1.2)
 		if _in_lot(at, 1.5):
 			var bin := Color(_pick(["#2f4a3a", "#2a3a5a", "#4a4e52"]))
-			_box("metal", Vector3(1.83, 1.07, 1.07), at + Vector3(0, 0.6, 0), bin)
-			_box("paint", Vector3(1.87, 0.06, 1.12), at + Vector3(0, 1.16, 0), Color("#1c1d1f"))
+			if fine_parts:
+				# Desktop: a real 2 yd front-load can: a body that slopes
+				# down to the truck side, two black poly lids hinged at the
+				# back, the fork pockets along its sides, lift-bar lugs and
+				# the steel skids it slides on, set on a concrete pad.
+				_flat_rect("drive", at.x - 1.4, at.x + 1.4, at.z - 1.0, at.z + 1.4, 0.075)
+				for sx in [-0.7, 0.7]:
+					_box("metal", Vector3(0.12, 0.1, 1.05), at + Vector3(sx, 0.05, 0), bin.darkened(0.3))
+				_box("metal", Vector3(1.83, 0.85, 1.07), at + Vector3(0, 0.525, 0), bin)
+				var tilt := Basis(Vector3.RIGHT, -0.22)
+				_box("metal", Vector3(1.83, 0.28, 1.07), at + Vector3(0, 1.0, -0.02), bin, tilt)
+				for lx in [-0.46, 0.46]:
+					_box("paint", Vector3(0.9, 0.05, 1.14), at + Vector3(lx, 1.17, 0.0), Color("#1c1d1f"), tilt)
+				for sx in [-1.0, 1.0]:
+					_box("metal", Vector3(0.1, 0.2, 0.95), at + Vector3(sx * 0.97, 0.85, 0), bin.darkened(0.25))
+					_box("metal", Vector3(0.12, 0.1, 0.1), at + Vector3(sx * 0.7, 0.5, 0.58), bin.darkened(0.25))
+			else:
+				_box("metal", Vector3(1.83, 1.07, 1.07), at + Vector3(0, 0.6, 0), bin)
+				_box("paint", Vector3(1.87, 0.06, 1.12), at + Vector3(0, 1.16, 0), Color("#1c1d1f"))
 
 
 ## Flat ground work over a polygon (x, z), as _flat_rect does for a rectangle.

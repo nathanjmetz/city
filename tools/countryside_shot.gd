@@ -21,6 +21,8 @@ const VIEWS := [
 	["creek_close", "creek", 150.0, 22.0, 70.0],
 	["woods_floor", "woods_in", 120.0, 38.0, 32.0],
 	["prop_close", "prop", 140.0, 30.0, 9.0],
+	["river_mid", "river", 200.0, 28.0, 220.0],
+	["river_close", "river", 160.0, 18.0, 70.0],
 ]
 
 var _view := -1
@@ -142,6 +144,22 @@ func _find_aims() -> void:
 			if d < best_c and w > 0.25 and w < 0.6 and not (absf(x) < 900.0 and absf(z) < 700.0):
 				best_c = d
 				_aims.creek = Vector3(x, 0, z)
+	# A river: open water 30-80 m wide (the Mississinewa), dry land a
+	# stone's throw off each bank across its run.
+	_aims.river = _aims.pond
+	var best_v := INF
+	for x in range(-9000, 9001, 40):
+		for z in range(-9000, 9001, 40):
+			if Terrain.water(x + o.x, z + o.y) < 0.7:
+				continue
+			var w := func(dx: float, dz: float) -> float: return Terrain.water(x + dx + o.x, z + dz + o.y)
+			# Long one way (water 100 m up and down it), narrow the other.
+			var narrow: bool = (w.call(60, 0) < 0.2 and w.call(-60, 0) < 0.2 and w.call(0, 100) > 0.6 and w.call(0, -100) > 0.6) \
+				or (w.call(0, 60) < 0.2 and w.call(0, -60) < 0.2 and w.call(100, 0) > 0.6 and w.call(-100, 0) > 0.6)
+			var d := Vector2(x + 250, z - 200).length()
+			if narrow and d < best_v:
+				best_v = d
+				_aims.river = Vector3(x, 0, z)
 	# The railroad: the point of the county's track nearest the demo
 	# farms, off a crossing or bridge.
 	_aims.rail = _aims.field

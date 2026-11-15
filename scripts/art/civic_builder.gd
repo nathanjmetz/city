@@ -180,7 +180,8 @@ func _police(front: float, to_curb: float) -> void:
 	# A fenced lot for the cruisers out back.
 	_flat_rect("asphalt", -14.5, 14.5, zf + d, front + FIRST_D - 0.2, 0.06)
 	# The fence takes in any yard the station has grown behind (Stations).
-	_fence(Vector2(-14.5, zf + d + 1.0), Vector2(14.5, -front - 0.2), 2.0)
+	# Its gate is a slide gate on the side drive past the building's end.
+	_police_yard(zf + d + 1.0, -front - 0.2)
 	_parking(-14.5, 14.5, front + 0.3, zf - 3.0, to_curb, -9.0)
 	_flat_rect("drive", -w * 0.5, w * 0.5, zf - 3.0, zf, 0.08)
 	_flagpole(Vector3(ex - 4.5, 0, zf - 4.0))
@@ -248,9 +249,41 @@ func _police_details(w: float, zf: float, d: float, h: float, ex: float, trim: C
 	_box("paint", Vector3(0.12, 1.1, 0.12), Vector3(dx - 1.4, 0.55, zb + 1.5), dark)  # reader pedestal
 	_box("paint", Vector3(0.14, 0.2, 0.06), Vector3(dx - 1.4, 1.05, zb + 1.43), Color("#1c1d1f"))
 	for x in [-w * 0.35, 0.0, w * 0.35]:
-		_box("paint", Vector3(0.4, 0.3, 0.25), Vector3(x, h - 0.9, zb + 0.13), dark)
+		if not _wall_light(Vector3(x, h - 0.5, zb), Vector3(0, 0, 1)):
+			_box("paint", Vector3(0.4, 0.3, 0.25), Vector3(x, h - 0.9, zb + 0.13), dark)
 	_box("paint", Vector3(0.16, 0.16, 0.36), Vector3(w * 0.5 - 0.3, h - 0.6, zb + 0.2), Color("#e8e8e2"))
 	_box("paint", Vector3(0.16, 0.16, 0.36), Vector3(-w * 0.5 + 0.3, h - 0.6, zf - 0.2), Color("#e8e8e2"))
+
+
+## The fenced cruiser yard behind a small-town station, from Indiana town
+## departments: the side drive past the building to a motor-operated slide
+## gate (parked open along the fence) with its card-reader pedestal, and
+## the cruisers' stalls striped nose-in along the back fence. `z0` is the
+## fence line behind the building, `z1` the back fence.
+func _police_yard(z0: float, z1: float) -> void:
+	var gx0 := 11.6
+	var gx1 := 14.5
+	_flat_rect("asphalt", gx0, gx1, z0 - 15.5, z0 + 0.5, 0.061)
+	_fence_run(Vector3(-14.5, 0, z0), Vector3(gx0, 0, z0), 2.0)
+	_fence_run(Vector3(14.5, 0, z0), Vector3(14.5, 0, z1), 2.0)
+	_fence_run(Vector3(14.5, 0, z1), Vector3(-14.5, 0, z1), 2.0)
+	_fence_run(Vector3(-14.5, 0, z1), Vector3(-14.5, 0, z0), 2.0)
+	# The slide gate, rolled open behind the fence on its track and rollers.
+	var gz := z0 + 0.25
+	_box("paint", Vector3(gx1 - gx0, 0.06, 0.06), Vector3(gx0 - (gx1 - gx0) * 0.5, 2.0, gz), GALV)
+	_box("paint", Vector3(gx1 - gx0, 0.06, 0.06), Vector3(gx0 - (gx1 - gx0) * 0.5, 0.15, gz), GALV)
+	_box("chain", Vector3(gx1 - gx0, 1.8, 0.006), Vector3(gx0 - (gx1 - gx0) * 0.5, 1.07, gz), GALV)
+	_box("paint", Vector3(0.12, 2.1, 0.12), Vector3(gx0 + 0.1, 1.05, z0), GALV)  # latch post
+	_box("paint", Vector3(0.5, 0.6, 0.35), Vector3(gx0 - 0.6, 0.3, z0 + 0.6), Color("#5c5f61"))  # operator
+	_box("paint", Vector3(0.12, 1.1, 0.12), Vector3(gx1 - 0.5, 0.55, z0 - 2.0), Color("#3a3c3e"))  # reader pedestal
+	_box("paint", Vector3(0.16, 0.22, 0.08), Vector3(gx1 - 0.5, 1.12, z0 - 2.05), Color("#1c1d1f"))
+	# Cruiser stalls: 9 ft wide, nose to the back fence.
+	if z1 - z0 > 6.0:
+		var x := -13.8
+		while x + 2.75 <= gx0 - 0.5:
+			_flat_rect("line", x - 0.05, x + 0.05, z1 - 5.2, z1 - 0.4, 0.066, LINE)
+			x += 2.75
+		_flat_rect("line", x - 0.05, x + 0.05, z1 - 5.2, z1 - 0.4, 0.066, LINE)
 
 
 # ---------------------------------------------------------------- station growth

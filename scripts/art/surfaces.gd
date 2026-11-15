@@ -159,7 +159,9 @@ void fragment() {
 	}
 	float edge = (sqrt(f2) - sqrt(f1)) * 0.5 * 4.5;  // metres to the nearest cell edge
 	edge += (texture(noise_grain, p / 1.7).r - 0.5) * 0.05;
-	float run = smoothstep(0.46, 0.52, texture(noise_soft, p / 7.0 + 0.5).r);
+	// Sealed or not a few cells at a time (a crew seals a stretch), so the
+	// network reads as connected cracks, not a dashed line of short bits.
+	float run = smoothstep(0.42, 0.5, texture(noise_soft, p / 60.0 + 0.5).r);
 	float wide = 0.025;
 	float crack = (1.0 - smoothstep(wide, wide + footprint, edge)) * run * cracked;
 	// Transverse cracks, the commonest on a Midwest street: the pavement
