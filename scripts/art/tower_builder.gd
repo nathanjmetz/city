@@ -371,9 +371,55 @@ func _tw_chicago(to_curb: float, width: float, storeys: int, roof := true) -> vo
 	if storeys >= 6:  # city water pressure reaches about six floors
 		_tw_tank(tank_at)
 	_box("brick", Vector3(5.0, 3.6, 6.0), Vector3(-w * 0.3, top + 3.7, cz + d * 0.25), shaft.darkened(0.1))  # elevator penthouse
+	if fine_parts:
+		_tw_chicago_roof(w, dz, zf, top + 1.9, shaft, tank_at if storeys >= 6 else Vector3(1e6, 0, 0))
 	if storeys >= 8:
 		_tw_roof_sign(Vector3(0, top + 1.9, zf + 1.6), minf(w * 0.6, 20.0))
 	_tw_alley(w, zf + d, ground_h, floor_h, storeys, lc)
+
+
+## Desktop: the rest of an old office block's roof as seen from the tower
+## next door (Chicago and Indianapolis blocks of the 1890s-1920s): the
+## boiler's brick chimney stack at a back corner with a cast cap, a stair
+## bulkhead with its door, ridge skylights of wired glass over the top
+## floor's halls, and cast iron roof drains. Own random numbers, so the
+## builder's don't move.
+func _tw_chicago_roof(w: float, d: float, zf: float, y: float, brick: Color, tank: Vector3) -> void:
+	var r := RandomNumberGenerator.new()
+	r.seed = hash([rng.seed, "chicago roof"])
+	var side := 1.0 if r.randf() < 0.5 else -1.0
+	# The chimney: a square brick stack, a stone cap and its dark flue.
+	var cx := side * (w * 0.5 - 1.6)
+	var cz := zf + d - 1.6
+	var ch := r.randf_range(4.5, 6.5)
+	_box("brick", Vector3(1.6, ch, 1.6), Vector3(cx, y + ch * 0.5, cz), brick.darkened(0.12))
+	_box("paint", Vector3(1.9, 0.25, 1.9), Vector3(cx, y + ch + 0.12, cz), Color("#a7a196"))
+	_box("paint", Vector3(0.9, 0.04, 0.9), Vector3(cx, y + ch + 0.26, cz), Color("#1d1b19"))
+	# The stair bulkhead: a brick box with a flat cap and a steel door.
+	# (Toward the chimney's side: the elevator penthouse stands on the other.)
+	var bx := side * r.randf_range(w * 0.08, w * 0.2)
+	var bz := zf + d * r.randf_range(0.6, 0.72)
+	_box("brick", Vector3(3.2, 2.8, 4.2), Vector3(bx, y + 1.4, bz), brick.darkened(0.06))
+	_box("paint", Vector3(3.4, 0.15, 4.4), Vector3(bx, y + 2.87, bz), Color("#8e8a82"))
+	_box("paint", Vector3(0.95, 2.1, 0.05), Vector3(bx, y + 1.05, bz - 2.12), Color("#4b5258"))
+	# Ridge skylights down the middle: a low curb and two pitched faces of
+	# wired glass on each, grey with age.
+	var n := r.randi_range(2, 3)
+	var glass := Color("#8d9a9c")
+	for i in n:
+		var sx := lerpf(-w * 0.3, w * 0.3, (i + 0.5) / n)
+		var sz := zf + d * 0.35
+		if absf(sx - bx) < 3.5 or (absf(sx - tank.x) < 4.0 and absf(sz - tank.z) < 5.0):
+			continue
+		var sl := 4.0
+		_box("paint", Vector3(2.2, 0.35, sl + 0.2), Vector3(sx, y + 0.18, sz), Color("#6f6b64"))
+		for k in [-1.0, 1.0]:
+			_quad("paint", Vector3(sx + k * 1.0, y + 0.36, sz - sl * 0.5), Vector3(sx, y + 1.0, sz - sl * 0.5),
+				Vector3(sx, y + 1.0, sz + sl * 0.5), Vector3(sx + k * 1.0, y + 0.36, sz + sl * 0.5), glass, [], Vector3(k * 0.6, 1, 0))
+		_box("paint", Vector3(0.08, 0.08, sl), Vector3(sx, y + 1.02, sz), Color("#4a4b48"))  # ridge
+	# Roof drains, with their cast domes, toward the back.
+	for k in [-1.0, 1.0]:
+		_box("paint", Vector3(0.5, 0.12, 0.5), Vector3(k * w * 0.25, y + 0.06, zf + d * 0.85), Color("#3a3836"))
 
 
 ## The old block an addition stands on (_tw_chicago): its size, roof
