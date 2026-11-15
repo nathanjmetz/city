@@ -87,7 +87,9 @@ static func _mi_midcentury(b: DenseBuilder, r: RandomNumberGenerator, to_curb: f
 			if i == lights / 2:
 				# The entry: a glass door in a wide aluminium stile.
 				b._box("paint", Vector3(lw, 2.5, 0.06), Vector3(x, 1.25, zf - 0.03), ALUMINIUM)
+				b.shopfront = DenseBuilder.fine  # the door shows the shop, lit or closed with it
 				b._glass(Vector3(x, 1.2, zf - 0.07), Vector3(-1, 0, 0), lw - 0.3, 2.1, 0.0)
+				b.shopfront = false
 				b._glass(Vector3(x, 2.75, zf - 0.07), Vector3(-1, 0, 0), lw - 0.1, 0.4, 0.0)
 				b._box("metal", Vector3(0.06, 2.5, 0.1), Vector3(x - lw * 0.5, 1.75, zf - 0.06), ALUMINIUM)
 				if DenseBuilder.fine:
@@ -120,7 +122,12 @@ static func _mi_midcentury(b: DenseBuilder, r: RandomNumberGenerator, to_curb: f
 	for f in range(1, storeys):
 		var y0 := shop_h + (f - 1) * floor_h
 		b._box("paint", Vector3(w - 1.2, 0.85, 0.06), Vector3(0, y0 + 0.43, zf - 0.04), enamel)
+		# Desktop: upstairs are offices (the lawyer, the dentist, the
+		# insurance man), lit a floor at a time after dark, not flats.
+		var was_office := b.office_glass
+		b.office_glass = DenseBuilder.fine
 		b._glass(Vector3(0, y0 + 1.65, zf - 0.03), Vector3(-1, 0, 0), w - 1.6, 1.5, r.randf_range(0.0, 0.5))
+		b.office_glass = was_office
 		var n := maxi(3, roundi((w - 1.6) / 1.4))
 		if DenseBuilder.fine:
 			# Desktop: the spandrel is a row of separate enamelled steel
@@ -140,6 +147,24 @@ static func _mi_midcentury(b: DenseBuilder, r: RandomNumberGenerator, to_curb: f
 		for i in n + 1:
 			b._box("metal", Vector3(0.05, 1.5, 0.08), Vector3(lerpf(-w * 0.5 + 0.8, w * 0.5 - 0.8, float(i) / n), y0 + 1.65, zf - 0.05),
 				Color("#3a3d3e"))
+		if DenseBuilder.fine:
+			# Desktop: steel projected windows, as the ribbon really was:
+			# a fixed light over a row of vents, the bar between them, and
+			# here and there a vent pushed open on its arms on a warm day
+			# (Truscon and Fenestra catalogues, 1950s Indiana offices).
+			var steel := Color("#3a3d3e")
+			b._box("metal", Vector3(w - 1.6, 0.05, 0.08), Vector3(0, y0 + 1.3, zf - 0.05), steel)
+			for i in n:
+				if posmod(hash([r.seed, f, i, 91]), 4) != 0:
+					continue
+				var x0 := lerpf(-w * 0.5 + 0.8, w * 0.5 - 0.8, float(i) / n)
+				var x1 := lerpf(-w * 0.5 + 0.8, w * 0.5 - 0.8, float(i + 1) / n)
+				var tilt := Basis(Vector3.RIGHT, deg_to_rad(28.0))
+				var hinge := Vector3((x0 + x1) * 0.5, y0 + 1.27, zf - 0.08)
+				var sash := hinge + tilt * Vector3(0, -0.19, 0)
+				b._box("metal", Vector3(x1 - x0 - 0.08, 0.38, 0.03), sash, steel, tilt)
+				b._box("paint", Vector3(x1 - x0 - 0.18, 0.28, 0.035), sash, Color("#56656e"), tilt)
+				b._box("metal", Vector3(0.02, 0.02, 0.2), Vector3(x1 - 0.12, y0 + 1.0, zf - 0.13), steel)  # the arm
 		b._box("paint", Vector3(w - 1.4, 0.08, 0.2), Vector3(0, y0 + 0.88, zf - 0.1), Color("#d9d3c3"))
 	b._box("metal", Vector3(w + 0.06, 0.14, 0.3), Vector3(0, top - 0.07, zf - 0.1), ALUMINIUM)
 	# A blade sign at one end (1950s porcelain-and-neon), the flats' door
@@ -241,7 +266,9 @@ static func _mi_newbuild(b: DenseBuilder, r: RandomNumberGenerator, to_curb: flo
 				if k % 2 == 1:
 					r.randf()
 				b._box("paint", Vector3(1.1, 2.5, 0.05), Vector3(x, 1.25, zf - 0.03), BLACK)
+				b.shopfront = DenseBuilder.fine  # the door shows the shop, lit or closed with it
 				b._glass(Vector3(x, 1.25, zf - 0.07), Vector3(-1, 0, 0), 0.8, 2.2, 0.0)
+				b.shopfront = false
 				if DenseBuilder.fine:
 					# Desktop: a brushed pull, a deep bottom rail and a threshold.
 					b._box("metal", Vector3(0.035, 0.9, 0.035), Vector3(x + 0.28, 1.05, zf - 0.16), Color("#b9bbbc"))
@@ -285,6 +312,21 @@ static func _mi_newbuild(b: DenseBuilder, r: RandomNumberGenerator, to_curb: flo
 		var bay_top := top + (0.9 if is_panel else 0.0)
 		if is_panel:
 			b._box("paint", Vector3(bw - 0.8, bay_top - shop_h, 0.35), Vector3(bx, (shop_h + bay_top) * 0.5, zf - 0.175), panel)
+			if DenseBuilder.fine:
+				# Desktop: fibre-cement panels as hung, about 1.2 m wide,
+				# with reveal joints in a grid: a vertical either side of
+				# the window stack and at the bay's edges, a horizontal at
+				# each floor line, and a metal corner trim down both edges.
+				var pw := bw - 0.8
+				var jc := panel.darkened(0.4)
+				var jh := bay_top - shop_h
+				for jx in [-1.6, 1.6]:
+					if absf(jx) < pw * 0.5 - 0.3:
+						b._box("paint", Vector3(0.02, jh, 0.01), Vector3(bx + jx, shop_h + jh * 0.5, zf - 0.352), jc)
+				for f in range(1, storeys):
+					b._box("paint", Vector3(pw, 0.02, 0.01), Vector3(bx, shop_h + f * floor_h, zf - 0.352), jc)
+				for e in [-1.0, 1.0]:
+					b._box("metal", Vector3(0.05, jh, 0.37), Vector3(bx + e * (pw * 0.5 + 0.005), shop_h + jh * 0.5, zf - 0.175), panel.darkened(0.2))
 		b._box("metal", Vector3(bw - (0.6 if is_panel else 0.0), 0.3, 0.5 + (0.35 if is_panel else 0.0)),
 			Vector3(bx, bay_top - 0.15, zf - 0.25 - (0.17 if is_panel else 0.0)), BLACK if is_panel else panel.darkened(0.3))
 		for f in range(1, storeys):
@@ -293,6 +335,18 @@ static func _mi_newbuild(b: DenseBuilder, r: RandomNumberGenerator, to_curb: flo
 				# One wide window pair with a Juliet balcony rail.
 				for e in [-0.5, 0.5]:
 					b._glass(Vector3(bx + e * 1.25, y, face - 0.02), Vector3(-1, 0, 0), 1.15, 2.0, r.randf_range(0.0, 0.6))
+				if DenseBuilder.fine:
+					# Desktop: the door pair in its dark aluminium frame
+					# (jambs, a meeting mullion, head and sill), a formed
+					# sill flashing over the panel below, and a lever on
+					# each leaf, as new main-street flats are built.
+					for jx in [-1.24, 0.0, 1.24]:
+						b._box("metal", Vector3(0.08, 2.16, 0.07), Vector3(bx + jx, y, face - 0.045), BLACK)
+					for hy in [1.04, -1.04]:
+						b._box("metal", Vector3(2.56, 0.08, 0.07), Vector3(bx, y + hy, face - 0.045), BLACK)
+					b._box("metal", Vector3(2.7, 0.03, 0.14), Vector3(bx, y - 1.095, face - 0.07), panel.darkened(0.25))
+					for e in [-1.0, 1.0]:
+						b._box("metal", Vector3(0.12, 0.025, 0.04), Vector3(bx + e * 0.14, y - 0.05, face - 0.1), Color("#b9bbbc"))
 				b._box("metal", Vector3(2.6, 0.06, 0.4), Vector3(bx, y - 0.1, face - 0.2), BLACK)
 				for q in 9:
 					b._box("metal", Vector3(0.025, 0.9, 0.025), Vector3(bx - 1.3 + q * 2.6 / 8.0, y - 0.55, face - 0.38), BLACK)
@@ -304,6 +358,17 @@ static func _mi_newbuild(b: DenseBuilder, r: RandomNumberGenerator, to_curb: flo
 					b._glass(Vector3(x, y, zf - 0.02), Vector3(-1, 0, 0), 1.2, 1.9, r.randf_range(0.0, 0.6))
 					b._box("paint", Vector3(1.5, 0.12, 0.18), Vector3(x, y - 1.01, zf - 0.09), stone)
 					b._box("paint", Vector3(1.5, 0.22, 0.12), Vector3(x, y + 1.06, zf - 0.06), stone)
+					if DenseBuilder.fine:
+						# Desktop: the window set back in the brick, as built:
+						# brick returns at the jambs so it reads recessed a
+						# brick's depth, a dark aluminium frame and the
+						# single-hung sash's meeting rail.
+						for e in [-1.0, 1.0]:
+							b._box("brick", Vector3(0.1, 1.98, 0.11), Vector3(x + e * 0.66, y, zf - 0.055), brick)
+							b._box("metal", Vector3(0.06, 1.9, 0.05), Vector3(x + e * 0.585, y, zf - 0.035), BLACK)
+						for hy in [0.93, -0.93]:
+							b._box("metal", Vector3(1.2, 0.06, 0.05), Vector3(x, y + hy, zf - 0.035), BLACK)
+						b._box("metal", Vector3(1.12, 0.05, 0.06), Vector3(x, y + 0.08, zf - 0.04), BLACK)
 	b._box("brick", Vector3(0.8, shop_h, 0.2), Vector3(w * 0.5 - 0.4, shop_h * 0.5, zf - 0.1), brick.darkened(0.08))
 	b._box("paint", Vector3(w, 0.3, 0.2), Vector3(0, shop_h + 0.05, zf - 0.1), stone)
 	for i in r.randi_range(1, 3):
@@ -311,6 +376,26 @@ static func _mi_newbuild(b: DenseBuilder, r: RandomNumberGenerator, to_curb: flo
 	# The flats' lobby door at one end.
 	var sx := (w * 0.5 - 0.9) * (-1.0 if r.randf() < 0.5 else 1.0)
 	b._box("paint", Vector3(1.0, 2.3, 0.06), Vector3(sx, 1.15, zf - 0.21), BLACK)
-	b._glass(Vector3(sx, 1.15, zf - 0.25), Vector3(-1, 0, 0), 0.75, 2.0, 0.0)
+	if DenseBuilder.fine:
+		# Desktop: the glass shows the lobby behind it, lit all night as
+		# egress lighting must be (IBC 1008): lay-in lights, a counter of
+		# mailboxes, plain walls; not a glowing white slab. An aluminium
+		# door, stiles, a deep bottom rail and a push bar, set in the frame.
+		var ks := [b.shopfront, b.allnight, b.shop_kind]
+		b.shopfront = true
+		b.allnight = true
+		b.shop_kind = 4
+		b._glass(Vector3(sx, 1.25, zf - 0.25), Vector3(-1, 0, 0), 0.66, 1.8, 0.0)
+		b.shopfront = ks[0]
+		b.allnight = ks[1]
+		b.shop_kind = ks[2]
+		for e in [-1.0, 1.0]:
+			b._box("metal", Vector3(0.09, 2.2, 0.06), Vector3(sx + e * 0.375, 1.1, zf - 0.26), BLACK)
+		b._box("metal", Vector3(0.84, 0.1, 0.06), Vector3(sx, 2.17, zf - 0.26), BLACK)
+		b._box("metal", Vector3(0.84, 0.27, 0.06), Vector3(sx, 0.17, zf - 0.26), BLACK)
+		b._box("metal", Vector3(0.62, 0.04, 0.05), Vector3(sx, 1.05, zf - 0.32), Color("#b9bbbc"))  # push bar
+		b._box("metal", Vector3(1.1, 0.015, 0.22), Vector3(sx, 0.01, zf - 0.33), Color("#9a9c9d"))  # threshold
+	else:
+		b._glass(Vector3(sx, 1.15, zf - 0.25), Vector3(-1, 0, 0), 0.75, 2.0, 0.0)
 	b._alley_side(w, zf + d, bays, bw, storeys, shop_h, floor_h, brick)
 	b._downtown_walk(to_curb, width, zf)

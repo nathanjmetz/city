@@ -25,6 +25,7 @@ const VIEWS := [
 	["river_close", "river", 160.0, 40.0, 90.0],
 	["river_wide", "river", 200.0, 45.0, 900.0],
 	["pits_wide", "pits", 200.0, 45.0, 900.0],
+	["river_low", "river", 250.0, 12.0, 45.0],
 ]
 
 var _view := -1

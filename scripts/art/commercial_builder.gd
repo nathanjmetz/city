@@ -998,7 +998,9 @@ func _strip_center(to_curb: float, anchor := false) -> void:
 		shopfront = false
 		diner_room = 0.0
 		shop_kind = 0
+		shopfront = fine_parts  # the door shows the shop, lit or closed with it
 		_glass(Vector3(x + sw * 0.5 - 0.5, 1.45, zf - 0.03), Vector3(-1, 0, 0), 0.95, 2.4, 0.0)
+		shopfront = false
 		_box("paint", Vector3(sw, 0.1, 0.12), Vector3(x, 2.9, zf - 0.06), mull)
 		if fine_parts:
 			# Desktop: the bulkhead stops at the tenant's door, which runs to
@@ -1343,7 +1345,9 @@ func _community_center(to_curb: float) -> void:
 		shopfront = fine_parts
 		_glass(Vector3(x - 0.4, 1.7, zf - 0.03), Vector3(-1, 0, 0), bay - 2.8, 2.3, cr.randf_range(0.0, 0.2))
 		shopfront = false
+		shopfront = fine_parts  # the door shows the shop, lit or closed with it
 		_glass(Vector3(x + (bay - 1.4) * 0.5 - 0.5, 1.45, zf - 0.03), Vector3(-1, 0, 0), 0.95, 2.4, 0.0)
+		shopfront = false
 		_box("paint", Vector3(0.5, 3.0, 0.2), Vector3(x - bay * 0.5, 1.8, zf - 0.1), wall.darkened(0.12))
 		if fine_parts:
 			_channel_letters(Vector3(x, 4.0, zf - 2.55), (bay - 1.4) * 0.65, 0.7)

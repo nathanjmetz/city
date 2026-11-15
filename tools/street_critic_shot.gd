@@ -21,8 +21,9 @@ const SPOTS := [
 	["walk_close", Vector3(84, 0, 225), 200.0, 9.0, 22.0],
 	["corner_close", Vector3(84, 0, 205), 135.0, 18.0, 26.0],
 	["chip_close", Vector3(1560, 0, 330), 30.0, 16.0, 16.0],
-	["main_close", Vector3(-39, 0, 110), 160.0, 12.0, 28.0],
+	["main_close", Vector3(-39, 0, 128), 200.0, 15.0, 30.0],
 	["lot_close", Vector3(-120, 0, 70), 140.0, 22.0, 30.0],
+	["hydrant_close", Vector3(84, 0, 230), 30.0, 12.0, 4.0],
 	["lid_close", Vector3(84, 0, 250), 20.0, 45.0, 5.0],
 	["homes_100", Vector3(200, 0, 240), 230.0, 35.0, 100.0],
 	["junction_top", Vector3(84, 0, 0), 180.0, 89.0, 40.0],
@@ -72,6 +73,12 @@ func _process(_delta: float) -> bool:
 			var a := Vector3(c[0], 0.0, c[1])
 			var b := Vector3(c[2], 0.0, c[3])
 			print("chip seal road: ", _main.sim.network.build_road(a, (a + b) * 0.5, b, RoadStyle.Type.CHIP_SEAL))
+		# Streets dress for what's built along them (RoadTreatments) on the
+		# sim's ticks, which a picture doesn't wait for: judge them now (an
+		# old town saved before treatments has none yet).
+		_main.sim.treatments.touch()
+		_main.sim.treatments._judge_all = true
+		_main.sim.treatments.update(_main.sim)
 		_main.sim.set_calendar(Seasons.tick_at(SkyClock.at(int(month), hour)))
 		# The clock jumped: the hour's workers at work, cars in the lots.
 		_main.sim.people.settle(_main.sim, _main.sim.traffic)
@@ -106,6 +113,8 @@ func _process(_delta: float) -> bool:
 		_cam.ignore_floor = str(t[0]).ends_with("_close")
 		if t[0] == "pole_close":
 			p = _nearest(p, "StreetLights", "wood")
+		elif t[0] == "hydrant_close":
+			p = _nearest(p, "TreatmentView", "Hydrants")
 		elif t[0] == "lid_close":
 			p = _nearest(p, "RoadView", "Lids")
 		print("spot ", t[0], " at ", p)
