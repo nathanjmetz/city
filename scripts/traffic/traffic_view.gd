@@ -587,6 +587,11 @@ func _clock(delta: float) -> void:
 func _sample(car: Dictionary, info: Array) -> void:
 	var m: Motion = info[9]
 	var c = car.get("j")
+	# Just after a load the sim still holds its saved key (an Array) here
+	# until its first rebuild turns it back into the path: draw it as on
+	# the street meanwhile.
+	if not (c is Dictionary):
+		c = null
 	# One drawn out on the drive comes home to stand there, and backs out
 	# from there: drawn short of (or ahead of) where it is along its path.
 	var drv := _on_drive(car, c)

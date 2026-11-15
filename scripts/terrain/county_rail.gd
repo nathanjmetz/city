@@ -649,13 +649,17 @@ static func profile(route: int) -> Dictionary:
 		if kind[i] != 2 and kind[i + 1] != 2:
 			bed[i] = maxf(bed[i], bed[i + 1] - rise)
 	# Down to the road at each grade crossing, easing in over RAMP metres:
-	# the rail tops at the road's surface.
+	# the rail tops at the road's surface. Each sample comes down to its
+	# own ground, not to the lowest crossing sample's: on ground falling
+	# along the track that buried the panels and the track for metres past
+	# the road on the high side (a real crossing keeps the track on its
+	# own grade and builds the road up to the rail tops).
 	var ramp := int(RAMP / STEP)
 	for i in n:
 		if kind[i] != 1:
 			continue
-		var flush := raw[i] - RAIL_TOP + RailView.CROSSING_RAIL
 		for j in range(maxi(0, i - ramp), mini(n, i + ramp + 1)):
+			var flush := raw[j] - RAIL_TOP + RailView.CROSSING_RAIL
 			var t := clampf((absf(j - i) * STEP - CROSSING) / (RAMP - CROSSING), 0.0, 1.0)
 			t = t * t * (3.0 - 2.0 * t)
 			bed[j] = minf(bed[j], lerpf(flush, maxf(bed[j], flush), t))
