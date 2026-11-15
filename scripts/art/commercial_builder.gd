@@ -289,11 +289,23 @@ func _rt_grown(w: float, d: float, h: float, zf: float, door_x: float, sw: float
 			_steel_door(Vector3(mx, 1.35, back + ad + 0.03), 1.0)
 		_flat_rect("asphalt", rx - 2.0, rx + 2.0, back + ad, minf(back + ad + 6.0, depth - 0.5), 0.07)
 	# Out front: an ice chest and a propane cage one side of the door,
-	# pallets of bags the other, on the walk against the glass.
+	# pallets of bags the other, on the walk against the glass. Only the
+	# trades that sell them put them out (a drugstore, market or hardware
+	# store has the ice and propane; a hardware, garden, feed or grocery
+	# store the bagged salt, mulch and feed): a taco place or an antiques
+	# shop never stacks pallets in its window.
 	var walk_z := zf - 0.75
 	var left := door_x - 1.8
 	var right := door_x + 1.8
 	var edge := sw * 0.5
+	var trade := _front_trade()
+	var any := trade == ""
+	var ice := any or trade in ICE_TRADES
+	var bags := any or trade in BAG_TRADES
+	if not ice:
+		left = -edge
+	if not bags:
+		right = edge
 	if left - 1.6 > -edge:
 		_box("paint", Vector3(1.55, 1.25, 0.8), Vector3(left - 0.8, 0.63, walk_z), Color("#f2f4f5"))
 		_box("paint", Vector3(1.4, 0.35, 0.02), Vector3(left - 0.8, 0.9, walk_z - 0.41), Color("#2a6db5"))
@@ -467,8 +479,14 @@ func _store_walk(w: float, zf: float, dx: float, lot1: float) -> void:
 	var out := 1.0 if dx > 0.0 else -1.0
 	_box("paint", Vector3(0.55, 0.9, 0.55), Vector3(dx - out * 1.9, 0.53, zf - 1.0), Color("#3a3c3e"))  # trash can
 	var ex := dx - out * 3.2
+	# The ice, propane and carts only where the trade sells by them.
+	var trade := _front_trade()
+	var sells := trade == "" or trade in ICE_TRADES
 	if absf(ex) < w * 0.5 - 1.0:
-		if r.randf() < 0.5:
+		var roll := r.randf()
+		if not sells:
+			pass
+		elif roll < 0.5:
 			# Ice merchandiser: a white chest with the blue band.
 			_box("metal", Vector3(1.6, 1.7, 0.8), Vector3(ex, 0.93, zf - 0.6), Color("#eef0f0"))
 			_box("paint", Vector3(1.62, 0.3, 0.02), Vector3(ex, 1.3, zf - 1.01), Color("#2a5ea8"))
@@ -479,7 +497,7 @@ func _store_walk(w: float, zf: float, dx: float, lot1: float) -> void:
 				_box("paint", Vector3(0.3, 0.45, 0.3), Vector3(ex - 0.4 + t * 0.4, 0.4, zf - 0.96), Color("#e8e8e4"))
 	# A row of nested carts along the wall the other side of the door
 	# (kept off the stalls, which the town's parking counts).
-	if r.randf() < 0.7:
+	if r.randf() < 0.7 and (trade == "" or trade in CART_TRADES):
 		var side := out
 		var steel := Color("#a9adb0")
 		var n := r.randi_range(3, 7)
@@ -819,11 +837,25 @@ const EATERIES := [0, 1, 2, 7, 8, 11, 28, 29, 35]
 ## racks, goods on shelves, a showroom floor of sofas and tables, an
 ## office's counter and desks, or a salon's chairs and mirrors.
 const APPAREL := ["SHOES", "THRIFT", "SPORTS"]
+## The trades that set an ice chest and a propane exchange cage out front,
+## and those that stack pallets of bagged goods (salt, mulch, feed, soil).
+const ICE_TRADES := ["DRUGS", "LIQUOR", "HARDWARE", "MARKET", "GROCERY", "FOODS", "DISCOUNT", "PHARMACY", "SUPERCENTER"]
+const CART_TRADES := ["DRUGS", "HARDWARE", "MARKET", "GROCERY", "FOODS", "DISCOUNT", "PHARMACY", "SUPERCENTER", "PETS", "LIQUOR"]
+const BAG_TRADES := ["HARDWARE", "MARKET", "FLOWERS", "PETS", "GROCERY", "DISCOUNT", "SUPERCENTER"]
 const SHOWROOM := ["FURNITURE", "APPLIANCE", "ANTIQUES"]
 const OFFICE_FRONTS := ["TAX", "INSURANCE", "REALTY", "LOANS", "DENTAL", "LAW"]
 const SALONS := ["SALON", "NAILS", "BARBER"]
 const SHELVES := ["DRUGS", "LIQUOR", "HARDWARE", "VIDEO", "BOOKS", "TOYS", "GIFTS", "MUSIC", "PETS", "CANDY",
 	"HOBBY", "PAINT", "QUILTS", "FABRIC", "SEWING", "CELLULAR", "MARKET", "OPTICAL", "JEWELRY", "BIKES"]
+
+
+## The stand-in trade a lone store letters (its sign at x = 0), or "" when
+## it carries a real business name, whose trade the art can't know.
+func _front_trade() -> String:
+	if not sign_spec.is_empty():
+		return ""
+	var wi := int(_word_slot(0.0) * 0.5) - 1
+	return TRADE_WORDS[wi] if wi >= 0 and wi < TRADE_WORDS.size() else ""
 
 
 static func _trade_room(word: int) -> int:
