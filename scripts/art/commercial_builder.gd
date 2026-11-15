@@ -1835,7 +1835,10 @@ func _ada_stalls(x0: float, back: float) -> void:
 		var x := x0 + j * 2.75
 		if j == 0:
 			_flat_rect("line", x + 0.07, x + 2.68, back - 5.4, back - 0.1, 0.065, blue)
-			_flat_rect("line", x + 1.05, x + 1.7, back - 3.1, back - 2.4, 0.075, LINE)  # the symbol
+			if fine_parts:
+				_isa_mark(x + 1.375, back - 2.75, 1.6)
+			else:
+				_flat_rect("line", x + 1.05, x + 1.7, back - 3.1, back - 2.4, 0.075, LINE)  # the symbol
 			_box("metal", Vector3(0.06, 2.3, 0.06), Vector3(x + 1.375, 1.15, back + 0.4), Color("#7d8184"))
 			_box("paint", Vector3(0.3, 0.45, 0.03), Vector3(x + 1.375, 2.05, back + 0.36), Color("#f2f2ee"))
 			_box("paint", Vector3(0.2, 0.2, 0.01), Vector3(x + 1.375, 2.12, back + 0.34), blue)
@@ -1844,6 +1847,27 @@ func _ada_stalls(x0: float, back: float) -> void:
 			for h in 7:
 				var z := back - 5.2 + h * 0.75
 				_flat_rect("line", x + 0.2, x + 2.55, z, z + 0.12, 0.072, LINE)
+
+
+## Desktop: the International Symbol of Access in white stencil paint on the
+## stall (MUTCD 3B.22: about 3 ft tall, read from the drive aisle, the head
+## toward the stall's head): the head, the back, the seat, the leg and the
+## wheel ring. `s` scales the 0.75 m figure; a negative `s` turns it round
+## for a stall whose head is toward -z.
+func _isa_mark(cx: float, cz: float, s: float) -> void:
+	var y := 0.085
+	var white := LINE
+	var f := -s  # +x is the viewer's left: the figure faces the viewer's right
+	var rects := [[-0.13, -0.01, 0.22, 0.34], [-0.09, -0.03, -0.1, 0.18], [-0.09, 0.25, -0.16, -0.1], [0.19, 0.25, -0.36, -0.1]]
+	for q in rects:
+		_flat_rect("line", cx + minf(q[0] * f, q[1] * f), cx + maxf(q[0] * f, q[1] * f), cz + minf(q[2] * s, q[3] * s), cz + maxf(q[2] * s, q[3] * s), y, white)
+	for i in 22:
+		var ang := TAU * i / 22.0
+		if ang > PI * 0.3 and ang < PI * 0.55:
+			continue  # the ring opens where the back meets the seat
+		var p := Vector2(cx + 0.05 * f, cz - 0.18 * s) + Vector2(cos(ang) * f, sin(ang) * s) * 0.24
+		var hs := 0.028 * absf(s)
+		_flat_rect("line", p.x - hs, p.x + hs, p.y - hs, p.y + hs, y, white)
 
 
 ## What a real strip centre's lot has that a bare one doesn't (Marion's
