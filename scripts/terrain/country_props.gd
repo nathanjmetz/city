@@ -22,6 +22,8 @@ const REACH := 170.0
 const PER_FRAME := 2
 ## Spot spacing on the woods floor, metres.
 const WOODS_STEP := 6.0
+## Stockpile spot spacing on a gravel pit's worked floor, metres.
+const PILE_STEP := 12.0
 ## Spot spacing along wooded water edges for driftwood, metres.
 const DRIFT_STEP := 10.0
 
@@ -108,8 +110,62 @@ static func _dist(b: Vector2i, c: Vector2) -> float:
 
 func _mesh(id: String) -> Mesh:
 	if not _meshes.has(id):
-		_meshes[id] = AssetLib.mesh(id)
+		_meshes[id] = _pile_mesh(id) if id.begins_with("pile_") else AssetLib.mesh(id)
 	return _meshes[id]
+
+
+## A stockpile a metre across at the foot: sorted sand or washed gravel
+## heaped by the conveyor and the loader at its angle of repose (about 34
+## degrees). Not a clean cone: the sides slump in lobes, the toe wanders,
+## the crest is a rounded ridge, and one side is a loader's bite (a steep
+## cut face where the trucks are filled). Dressed in the gravel photo, the
+## damp toe darker.
+static func _pile_mesh(id: String) -> Mesh:
+	var seed := 3.0 if id == "pile_sand" else 7.0
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var segs := 36
+	var rings := 10
+	var bite := 1.1 + seed * 0.4
+	var pts := []
+	for k in rings + 1:
+		var t := float(k) / rings
+		var row := []
+		for i in segs:
+			var ang := TAU * i / segs
+			var lobe := 1.0 + 0.1 * sin(3.0 * ang + seed) + 0.05 * sin(7.0 * ang + seed * 2.3) + 0.03 * sin(13.0 * ang)
+			var d := absf(wrapf(ang - bite, -PI, PI))
+			var cut := 1.0 - 0.32 * (1.0 - smoothstep(0.25, 0.75, d))
+			var rad := (1.0 - t) * lobe * lerpf(cut, 1.0, t * t)
+			# Rounded crest, straight repose slope below it, a slight flare at the toe.
+			var h := 0.6 * (1.0 - pow(1.0 - t, 1.0)) * (1.0 - 0.25 * t * t) + 0.03 * sin(5.0 * ang + seed) * t * (1.0 - t)
+			h *= lerpf(1.0, 0.92, 1.0 - smoothstep(0.2, 0.7, d))
+			row.append(Vector3(cos(ang) * rad, h, sin(ang) * rad))
+		pts.append(row)
+	for k in rings:
+		for i in segs:
+			var a0: Vector3 = pts[k][i]
+			var a1: Vector3 = pts[k][(i + 1) % segs]
+			var b0: Vector3 = pts[k + 1][i]
+			var b1: Vector3 = pts[k + 1][(i + 1) % segs]
+			for v: Vector3 in [a0, a1, b0, a1, b1, b0]:
+				var damp := 1.0 - smoothstep(0.0, 0.08, v.y)
+				st.set_color(Color(1.0 - 0.3 * damp, 1.0 - 0.32 * damp, 1.0 - 0.35 * damp))
+				st.add_vertex(v)
+	st.generate_normals()
+	var mesh := st.commit()
+	var mat := StandardMaterial3D.new()
+	mat.vertex_color_use_as_albedo = true
+	mat.albedo_color = Color(0.86, 0.76, 0.6) if id == "pile_sand" else Color(0.74, 0.71, 0.66)
+	mat.roughness = 0.95
+	var tex := PhotoGround.DIR + "gravel_floor_02/albedo.jpg"
+	if ResourceLoader.exists(tex):
+		mat.albedo_texture = load(tex)
+		mat.uv1_triplanar = true
+		mat.uv1_world_triplanar = true
+		mat.uv1_scale = Vector3.ONE * (0.5 if id == "pile_sand" else 0.35)
+	mesh.surface_set_material(0, mat)
+	return mesh
 
 
 ## True where a prop may lie: open or wooded land, not water, the railroad
@@ -160,6 +216,38 @@ func _fill(b: Vector2i) -> Array:
 				_add(by_id, STUMPS[int(k * 2.0) % 2], _at(p, yaw, lerpf(0.7, 1.05, sz), 0.05))
 			else:
 				_add(by_id, BRANCHES, _at(p, yaw, lerpf(1.4, 2.4, sz), 0.04))
+	# A working gravel pit's floor: conical stockpiles of washed gravel and
+	# sand by the plant (Grant County pits sell pea gravel, #53 stone and
+	# fill sand off piles 5-10 m high), a few to a pit.
+	var np := int(SQUARE / PILE_STEP) + 1
+	var piles: Array[Vector3] = []
+	for j in np:
+		for i in np:
+			var g := Vector2i(floori((lo.x + o.x) / PILE_STEP) + i, floori((lo.y + o.y) / PILE_STEP) + j)
+			var r := Vector2((g.x + 0.3 + 0.4 * CropCalendar.h01(g.x, g.y, 61)) * PILE_STEP,
+				(g.y + 0.3 + 0.4 * CropCalendar.h01(g.x, g.y, 62)) * PILE_STEP)
+			var p := Vector3(r.x - o.x, 0.0, r.y - o.y)
+			if p.x < lo.x or p.x >= lo.x + SQUARE or p.z < lo.y or p.z >= lo.y + SQUARE:
+				continue
+			if CropCalendar.h01(g.x, g.y, 63) > 0.4:
+				continue
+			if Terrain.bare(r.x, r.y) < 0.55:
+				continue
+			var near := false
+			for q in piles:
+				if q.distance_to(Vector3(r.x - o.x, 0.0, r.y - o.y)) < 24.0:
+					near = true
+			if near:
+				continue
+			if Terrain.water(r.x, r.y) > 0.03 or CountyRail.clears(r.x, r.y):
+				continue
+			if sim != null and sim.vegetation.is_occupied(Vegetation.cell_of(p)):
+				continue
+			var rad := lerpf(6.0, 11.0, CropCalendar.h01(g.x, g.y, 64))
+			var xf := Transform3D(Basis(Vector3.UP, CropCalendar.h01(g.x, g.y, 65) * TAU).scaled(Vector3(rad, rad, rad)),
+				Vector3(p.x, Terrain.base(r.x, r.y) - 0.2, p.z))
+			piles.append(p)
+			_add(by_id, "pile_sand" if CropCalendar.h01(g.x, g.y, 66) < 0.4 else "pile_gravel", xf)
 	# Driftwood: trees the river undercut, lying from the bank into the
 	# water or stranded at the edge (the Mississinewa and its creeks are
 	# full of these strainers and small log jams below wooded banks).
