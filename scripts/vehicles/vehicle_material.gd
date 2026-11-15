@@ -14,10 +14,16 @@ render_mode cull_back;
 global uniform float night;
 global uniform float snow;
 uniform bool ultra = false;
+// A photo-scanned vehicle (VehicleScans): its body comes from the photo.
+uniform bool scan = false;
+uniform float scan_len = 4.5;
+uniform sampler2D scan_tex : source_color, filter_linear_mipmap_anisotropic, hint_default_white;
 varying vec4 v_custom;
 varying float v_side;
 varying float v_y;
 varying vec3 v_local;
+// Metres from the rear bumper (scans light their tail lamps by it).
+varying float v_back;
 vec3 lin(vec3 c) { return pow(c, vec3(2.2)); }
 // The Compatibility renderer (the browser) hands INSTANCE_CUSTOM's rgb
 // over as if it were an sRGB colour, already turned linear (alpha comes
@@ -35,6 +41,7 @@ void vertex() {
 	v_side = VERTEX.x;
 	v_y = VERTEX.y;
 	v_local = VERTEX;
+	v_back = scan_len - VERTEX.z;
 }
 float hash(vec3 p) { return fract(sin(dot(p, vec3(12.9898, 78.233, 37.719))) * 43758.5453); }
 // Smooth value noise (0 to 1), for soft-edged patches.
@@ -59,6 +66,7 @@ void fragment() {
 	float spec = 0.5;
 	vec3 emit = vec3(0.0);
 	float snowed = 0.0;
+	float coat = 0.0;  // a scan's clear coat: on the paint, not the tyres
 	if (code < 0.05) {          // body paint
 		col = lin(v_custom.rgb);
 		rough = 0.28;
@@ -75,6 +83,30 @@ void fragment() {
 		spec = 0.25;
 	} else if (code < 0.45) {   // fixed colours (decals, liveries)
 		rough = 0.45;
+		if (scan) {
+			// The photo already holds the paint, lamps, tyres and chrome,
+			// lit by a grey sky. Its lamp lenses light up: red ones at the
+			// back while braking and after dark, white ones up front.
+			vec3 t = texture(scan_tex, UV).rgb;
+			float lum = dot(t, vec3(0.3, 0.59, 0.11));
+			// Scanned from the ground, roofs and hoods keep the white sky
+			// glare of the day they were shot, in blotches. On what faces
+			// up, glare brighter than the paint (the vertex colour, the
+			// median door colour) settles back to the paint; the clear
+			// coat below adds the game's own sky instead.
+			vec3 paint = COLOR.rgb;  // already linear (glTF vertex colours)
+			float up_n = (INV_VIEW_MATRIX * vec4(NORMAL, 0.0)).y;
+			float glare = smoothstep(0.35, 0.75, up_n) * smoothstep(0.015, 0.12, lum - dot(paint, vec3(0.3, 0.59, 0.11)));
+			col = mix(t, paint * (0.9 + 0.2 * lum), glare);
+			coat = smoothstep(0.03, 0.1, lum) * 0.8;
+			rough = mix(0.5, 0.3, smoothstep(0.1, 0.5, lum));
+			metal = 0.1;
+			float red = smoothstep(0.08, 0.3, t.r - max(t.g, t.b) * 1.6);
+			float back = 1.0 - smoothstep(0.1, 0.3, v_back);
+			float fore = (1.0 - smoothstep(0.15, 0.35, v_local.z)) * step(0.45, v_y) * step(v_y, 1.1);
+			emit = vec3(1.0, 0.04, 0.02) * red * back * (smoothstep(0.3, 0.7, night) * 1.2 + brake * 2.5) * running;
+			emit += vec3(1.0, 0.95, 0.85) * smoothstep(0.55, 0.8, lum) * fore * smoothstep(0.3, 0.7, night) * 3.0 * running;
+		}
 	} else if (code < 0.55) {   // headlights, on full after dark
 		rough = 0.1;
 		emit = col * (0.35 + smoothstep(0.3, 0.7, night) * 5.0) * running;
@@ -163,9 +195,9 @@ void fragment() {
 		}
 	}
 #endif
-	if (ultra && code < 0.05) {
+	if (ultra && (code < 0.05 || coat > 0.0)) {
 		// A glossy clear coat, except under snow.
-		CLEARCOAT = 1.0 - snowed;
+		CLEARCOAT = (code < 0.05 ? 1.0 : coat) - snowed;
 		CLEARCOAT_ROUGHNESS = 0.06;
 	}
 	ALBEDO = col;

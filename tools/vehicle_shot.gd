@@ -56,7 +56,7 @@ func _lineup() -> void:
 		mm.use_colors = true
 		mm.mesh = VehicleModels.build(key, lod)
 		mm.instance_count = 1
-		var kind: String = key
+		var kind: String = VehicleScans.kind_of(key) if VehicleScans.is_scan(key) else key
 		if key.begins_with("tractor_") or key.begins_with("trailer_"):
 			kind = "semi"
 		var paint := VehicleTypes.paint(kind, 7 + i * 3)
@@ -70,7 +70,8 @@ func _lineup() -> void:
 		mm.set_instance_transform(0, Transform3D(Basis.IDENTITY, Vector3(x, Terrain.ground_y(x, row * 26.0), row * 26.0)))
 		var mi := MultiMeshInstance3D.new()
 		mi.multimesh = mm
-		mi.material_override = VehicleMaterial.get_material(lod == VehicleModels.LOD_ULTRA)
+		var scan := VehicleScans.material(key, lod)
+		mi.material_override = scan if scan else VehicleMaterial.get_material(lod == VehicleModels.LOD_ULTRA)
 		_main.add_child(mi)
 		x += maxf(w, 2.0) + 2.5
 		i += 1

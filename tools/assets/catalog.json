@@ -248,6 +248,25 @@
    "loop": "countryside",
    "use": "fieldstone piles, second set",
    "real": "fieldstone pile"
+  },
+  "veh_sedan_fusion_2016": {
+   "src": "scan",
+   "raw": "fusion.zip",
+   "raw_url": "https://raw.githubusercontent.com/nathanjmetz/city/vehicle-raw-fusion/vehicle-raw/fusion/fusion.zip",
+   "length": 4.87,
+   "licence": "CC-BY-4.0",
+   "author": "Gizmitt",
+   "page": "https://sketchfab.com/3d-models/2016-ford-fusion-photoscan-b9df0c1e69524b9dbcbd0932b830cf82",
+   "name": "2016 Ford Fusion Photoscan (cleaned and resized for the game)",
+   "loop": "vehicles",
+   "use": "sedans in traffic and parked (VehicleScans)",
+   "real": "2016 Ford Fusion sedan, 4.87 m long (Ford spec)",
+   "tris": 30574,
+   "size_m": [
+    2.02,
+    1.45,
+    4.87
+   ]
   }
  },
  "textures": {

@@ -52,6 +52,7 @@ leaves `art/assets/` out. Licences:
 - `tree_stump_01` Tree Stump 01 by Rob Tuytel, CC0-1.0, https://polyhaven.com/a/tree_stump_01. Used for: stumps in woods, fencerows and cleared lots
 - `tree_stump_02` Tree Stump 02 by Rob Tuytel, CC0-1.0, https://polyhaven.com/a/tree_stump_02. Used for: stumps, second shape
 - `utility_box_02` Utility Box 02 by James Ray Cock, CC0-1.0, https://polyhaven.com/a/utility_box_02. Used for: electric cabinets by substations and signals
+- `veh_sedan_fusion_2016` 2016 Ford Fusion Photoscan (cleaned and resized for the game) by Gizmitt, CC-BY-4.0, https://sketchfab.com/3d-models/2016-ford-fusion-photoscan-b9df0c1e69524b9dbcbd0932b830cf82. Used for: sedans in traffic and parked (VehicleScans)
 - `water_manhole_cover` Water Manhole Cover by Raunox, CC0-1.0, https://polyhaven.com/a/water_manhole_cover. Used for: manhole lids in the street over sewer and water lines
 - `wooden_crate_02` Wooden Crate 02 by James Ray Cock, Jurita Burger, CC0-1.0, https://polyhaven.com/a/wooden_crate_02. Used for: farm stands and farmers' market
 - `wooden_ladder` Wooden Ladder by Miroslav Turura, CC0-1.0, https://polyhaven.com/a/wooden_ladder. Used for: ladders on construction sites and against garages

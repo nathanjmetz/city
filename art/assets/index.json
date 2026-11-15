@@ -777,6 +777,23 @@
    "tris": 6268,
    "use": "electric cabinets by substations and signals"
   },
+  "veh_sedan_fusion_2016": {
+   "author": "Gizmitt",
+   "licence": "CC-BY-4.0",
+   "loop": "vehicles",
+   "name": "2016 Ford Fusion Photoscan (cleaned and resized for the game)",
+   "page": "https://sketchfab.com/3d-models/2016-ford-fusion-photoscan-b9df0c1e69524b9dbcbd0932b830cf82",
+   "path": "res://art/assets/models/veh_sedan_fusion_2016/veh_sedan_fusion_2016.glb",
+   "real": "2016 Ford Fusion sedan, 4.87 m long (Ford spec)",
+   "size_m": [
+    2.02,
+    1.45,
+    4.87
+   ],
+   "source": "scan",
+   "tris": 30574,
+   "use": "sedans in traffic and parked (VehicleScans)"
+  },
   "water_manhole_cover": {
    "author": "Raunox",
    "licence": "CC0-1.0",
