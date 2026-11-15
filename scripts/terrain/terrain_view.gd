@@ -110,6 +110,10 @@ uniform vec2 region_origin;
 // r north-south, g east-west.
 uniform sampler2D county_hidden : hint_default_black, filter_nearest, repeat_enable;
 uniform sampler2D county_miles : hint_default_black, filter_nearest, repeat_enable;
+// Haul roads into the gravel pits (haul.bin, tools/terrain/build_haul.py):
+// a texel per mile square, a = has one, r = side of its county road (x64),
+// g = where across the square, b = how far in (256ths of a mile).
+uniform sampler2D haul_lanes : hint_default_black, filter_nearest, repeat_enable;
 // Middle of the real map in region metres (Terrain.CENTRE; 36864 = Terrain.SIZE).
 uniform vec2 map_centre;
 // The state highways (Highways.texture): signed metres from each group of
@@ -579,6 +583,36 @@ void fragment() {
 		pr = mix(pr, ph_soil(p), pit * 0.6);
 		ps = mix(ps, ph_soil_s(p) * 0.5, pit * 0.6);
 	}
+	// The pit's haul road: one straight gravel lane in from the nearest
+	// county road, 8 m wide, kept pale with dust by the trucks, two worn
+	// wheel tracks and a little grass up the middle, ending on the floor.
+	if (abs(r.x - map_centre.x) < 18432.0 && abs(r.y - map_centre.y) < 18432.0) {
+		ivec2 sq = ivec2(floor(r / 1608.0));
+		vec4 hl = texelFetch(haul_lanes, ivec2(sq.x & 63, sq.y & 63), 0);
+		if (hl.a > 0.5) {
+			int side = int(hl.r * 255.0 + 0.5) / 64;
+			vec2 f = r - vec2(sq) * 1608.0;
+			float along = side == 0 ? f.x : (side == 1 ? 1608.0 - f.x : (side == 2 ? f.y : 1608.0 - f.y));
+			float acr = (side < 2 ? f.y : f.x) - hl.g * 1608.0 + sin(along / 70.0 + hl.g * 40.0) * 1.2;
+			float lane_len = hl.b * 255.0 / 256.0 * 1608.0;
+			float aa = max(0.35, (side < 2 ? cross_px.y : cross_px.x) * 0.5);
+			float haul = (1.0 - smoothstep(3.6 - aa, 3.6 + aa, abs(acr)))
+				* (1.0 - smoothstep(lane_len - 14.0, lane_len, along + (clump - 0.5) * 8.0))
+				* (1.0 - smoothstep(0.06, 0.12, cover.g)) * (1.0 - smoothstep(0.3, 0.7, town.x));
+			if (haul > 0.0) {
+				vec3 dust = mix(gravel.rgb, outwash, 0.45) * (0.9 + 0.2 * grain) * (0.95 + 0.1 * clump);
+				float rut = (1.0 - smoothstep(0.3, 0.6, abs(abs(acr) - 1.15))) * min(1.0, 0.6 / aa);
+				float crown = (1.0 - smoothstep(0.25, 0.5, abs(acr))) * min(1.0, 0.5 / aa) * (1.0 - season_look.y * 0.6);
+				dust *= 1.0 - 0.16 * rut;
+				dust = mix(dust, col * 0.9, crown * 0.45 * (0.6 + 0.8 * clump));
+				col = mix(col, dust, haul);
+				if (pk > 0.0) {
+					pr = mix(pr, ph_gravel(p), haul);
+					ps = mix(ps, ph_gravel_s(p) * 0.5, haul);
+				}
+			}
+		}
+	}
 #else
 	col = mix(col, spoil.rgb * (0.85 + 0.3 * clump), smoothstep(0.3, 0.7, cover.a));
 #endif
@@ -849,10 +883,47 @@ static func ground_material() -> ShaderMaterial:
 		_ground_mat.set_shader_parameter("noise_grain", Ground.noise(256, 0.09, 2, 23))
 		_ground_mat.set_shader_parameter("highway_field", Highways.texture())
 		_ground_mat.set_shader_parameter("county_miles", CountyGrid.texture())
+		_ground_mat.set_shader_parameter("haul_lanes", _haul_texture())
 		_ground_mat.set_shader_parameter("map_centre", Terrain.CENTRE)
 		_ground_mat.set_shader_parameter("crop_table", CropCalendar.texture())
 		PhotoGround.apply(_ground_mat)
 	return _ground_mat
+
+
+## The pits' haul roads (haul.bin; read by the desktop ground shader).
+static var _haul_img: Image
+
+
+static func _haul_image() -> Image:
+	if _haul_img == null:
+		_haul_img = Image.new()
+		var bytes := FileAccess.get_file_as_bytes(Terrain.DIR + "haul.bin")
+		if bytes.is_empty() or _haul_img.load_webp_from_buffer(bytes) != OK:
+			_haul_img = Image.create(64, 64, false, Image.FORMAT_RGBA8)
+		_haul_img.convert(Image.FORMAT_RGBA8)
+	return _haul_img
+
+
+static func _haul_texture() -> Texture2D:
+	return ImageTexture.create_from_image(_haul_image())
+
+
+## Whether region point (x, z) is within `margin` metres of a pit's haul
+## road (the same lane the ground shader paints), so stockpiles keep off it.
+static func on_haul(x: float, z: float, margin: float) -> bool:
+	if absf(x - Terrain.CENTRE.x) > 18432.0 or absf(z - Terrain.CENTRE.y) > 18432.0:
+		return false
+	var sx := floori(x / 1608.0)
+	var sz := floori(z / 1608.0)
+	var c := _haul_image().get_pixel(sx & 63, sz & 63)
+	if c.a < 0.5:
+		return false
+	var side := int(c.r8 / 64)
+	var fx := x - sx * 1608.0
+	var fz := z - sz * 1608.0
+	var along: float = [fx, 1608.0 - fx, fz, 1608.0 - fz][side]
+	var acr := (fz if side < 2 else fx) - c.g * 1608.0
+	return absf(acr) < 3.6 + margin and along < c.b * 255.0 / 256.0 * 1608.0 + margin
 
 
 static func water_material() -> ShaderMaterial:
