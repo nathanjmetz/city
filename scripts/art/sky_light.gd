@@ -329,7 +329,7 @@ func set_time(hour: float, months: float) -> void:
 	if not _gl:
 		# The haze under cloud is grey too, whatever colour the sky's edge
 		# would be under a clear sky.
-		env.fog_light_color = l.fog_color.lerp(_neutral(l.fog_color) * Color(0.97, 0.99, 1.03), overcast * 0.75)
+		env.fog_light_color = l.fog_color.lerp(_cloud_light(l.fog_color, elev), overcast * 0.75)
 		# The fog's even veil over the dome greyed dusk's blue overhead to
 		# purple and the night's navy to brown; it fades out from a low sun,
 		# leaving the haze to the sky's own horizon (CloudSky).
@@ -340,6 +340,10 @@ func set_time(hour: float, months: float) -> void:
 		env.adjustment_saturation = saturation()
 	haze_scale = l.haze
 	env.ambient_light_color = l.shade_color
+	if not _gl:
+		# The shade's light comes off the cloud's underside, not a clear
+		# sky's sunset-warmed blue: grey, and bluer as the day goes.
+		env.ambient_light_color = l.shade_color.lerp(_cloud_light(l.shade_color, elev), overcast * 0.75)
 	# Moonlit shade keeps its own tuned strength.
 	env.ambient_light_energy = SHADE_ENERGY * _light * lerpf(_fill(), 1.0, darkness) * l.shade_energy
 	env.glow_intensity = 0.9 * darkness
@@ -353,7 +357,7 @@ func set_time(hour: float, months: float) -> void:
 			# Under a closed overcast the low sun's gold never reaches the
 			# ground: the cloud spreads it into an even grey light (photos of
 			# a cloudy winter sunset in town: grey-blue, not peach).
-			sun.light_color = l.sun_color.lerp(_neutral(l.sun_color), overcast * 0.75)
+			sun.light_color = l.sun_color.lerp(_cloud_light(l.sun_color, elev), overcast * 0.75)
 		sun.light_energy = SUN_ENERGY * _light * l.sun_energy
 	else:
 		# Moonlight: a full moon riding opposite the sun, at least 25 degrees up.
@@ -370,6 +374,17 @@ func saturation() -> float:
 	if _gl:
 		return weather_sat
 	return 1.08 * (1.0 - NIGHT_GREY * darkness) * weather_sat
+
+
+## Light through a closed cloud deck for a sun at `elev` degrees, as bright
+## as c: a cool grey by day (overcast daylight runs about 6,500-7,000 K, a
+## touch bluer than sun and sky together), bluer still from a low sun to
+## dusk (overcast twilight measures 8,000-10,000 K and up: the sun's red is
+## gone, only the scattered blue gets through). Photos of a grey winter
+## afternoon in town turn from grey to blue-grey, never peach or beige.
+static func _cloud_light(c: Color, elev: float) -> Color:
+	var dusk := 1.0 - smoothstep(-2.0, 10.0, elev)
+	return _neutral(c) * Color(0.97, 0.99, 1.03).lerp(Color(0.84, 0.95, 1.2), dusk)
 
 
 ## A grey of the same brightness as c.
