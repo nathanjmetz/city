@@ -642,14 +642,19 @@ func _ground_work(p: Dictionary) -> void:
 	var stone := Color("#b5ad9c")
 	stone.a = GRAVEL_ALPHA
 	for r: Rect2 in p.gravel:
-		var nx := clampi(ceili(r.size.x / 40.0), 1, 6)
-		var nz := clampi(ceili(r.size.y / 40.0), 1, 12)
+		# Finer by a railroad, leaving out the pieces on its bed as close up
+		# (FarmsteadPlan.on_bed).
+		var rail := FarmsteadPlan._on_track(p, r, CountyRail.CROP_CLEAR)
+		var nx := clampi(ceili(r.size.x / (8.0 if rail else 40.0)), 1, 32 if rail else 6)
+		var nz := clampi(ceili(r.size.y / (8.0 if rail else 40.0)), 1, 64 if rail else 12)
 		for i in nx:
 			for j in nz:
 				var q := [r.position + r.size * Vector2(float(i) / nx, float(j) / nz),
 					r.position + r.size * Vector2(float(i + 1) / nx, float(j) / nz),
 					r.position + r.size * Vector2(float(i + 1) / nx, float(j + 1) / nz),
 					r.position + r.size * Vector2(float(i) / nx, float(j + 1) / nz)]
+				if rail and q.any(func(k: Vector2): return FarmsteadPlan.on_bed(p, k)):
+					continue
 				var pts := []
 				for k in q:
 					pts.append(_p3(k, _lift(k) + FarmsteadPlan.GRAVEL_LIFT))
@@ -659,14 +664,17 @@ func _ground_work(p: Dictionary) -> void:
 	var lawn := Color("#4f6a2e") if not p.house.vacant else Color("#727a40")
 	lawn.a = LAWN_ALPHA
 	var g: Rect2 = p.grounds
-	var nx := clampi(ceili(g.size.x / 48.0), 1, 6)
-	var nz := clampi(ceili(g.size.y / 48.0), 1, 6)
+	var rail := FarmsteadPlan._on_track(p, g, CountyRail.CROP_CLEAR)
+	var nx := clampi(ceili(g.size.x / (12.0 if rail else 48.0)), 1, 32 if rail else 6)
+	var nz := clampi(ceili(g.size.y / (12.0 if rail else 48.0)), 1, 32 if rail else 6)
 	for i in nx:
 		for j in nz:
 			var q := [g.position + g.size * Vector2(float(i) / nx, float(j) / nz),
 				g.position + g.size * Vector2(float(i + 1) / nx, float(j) / nz),
 				g.position + g.size * Vector2(float(i + 1) / nx, float(j + 1) / nz),
 				g.position + g.size * Vector2(float(i) / nx, float(j + 1) / nz)]
+			if rail and q.any(func(k: Vector2): return FarmsteadPlan.on_bed(p, k)):
+				continue
 			var pts := []
 			for k in q:
 				pts.append(_p3(k, _lift(k) + FarmsteadPlan.LAWN_LIFT))
