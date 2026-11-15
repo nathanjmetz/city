@@ -1109,6 +1109,17 @@ func _strip_center(to_curb: float, anchor := false) -> void:
 	# curb to storefront, as at every strip centre), not grass.
 	_flat_rect("drive", -w * 0.5 - 0.5, w * 0.5 + 0.5, zf - 2.6, zf, 0.08)
 	if fine_parts:
+		# Desktop: the walk's tooled contraction joints, across it every
+		# 5 ft as poured (ACI 302 / INDOT sidewalk spec: joints at intervals
+		# about equal to the walk's width), and the isolation joint along
+		# the storefront.
+		var jc := Color("#77746e")
+		var jx := -w * 0.5 - 0.5 + 1.52
+		while jx < w * 0.5 + 0.4:
+			_box("paint", Vector3(0.014, 0.004, 2.58), Vector3(jx, 0.0815, zf - 1.3), jc)
+			jx += 1.52
+		_box("paint", Vector3(w + 1.0, 0.004, 0.018), Vector3(0, 0.0815, zf - 0.02), jc.darkened(0.2))
+	if fine_parts:
 		_strip_lot_dress(to_curb, zf - 4.6, n, wall)
 		_strip_rear(w, n, bay, aw, zf + d, h + 1.2, wall)
 
@@ -1732,9 +1743,30 @@ func _cc_parking(to_curb: float, w: float, zw: float, xg0: float, cr: RandomNumb
 	var accent := Color(AWNING[cr.randi() % AWNING.size()])
 	_box("paint", Vector3(12.3, 0.55, 9.3), Vector3(pc.x, 4.45, pc.y + 1.0), accent)
 	var food: int = [62, 63, 11, 8, 2][posmod(hash([rng.seed, 59]), 5)]  # BURGERS, CHICKEN, TACOS, SUBS, PIZZA
-	diner_room = 7.0 if fine_parts else 0.0  # its dining room's booths
-	_glass(Vector3(pc.x, 1.6, pc.y - 3.53), Vector3(-1, 0, 0), 8.0, 2.0, 0.1)
-	diner_room = 0.0
+	if fine_parts:
+		# Desktop: the dining room's window set on the brick wainscot (not
+		# through it) in a dark-bronze storefront frame, mullions every
+		# 1.5 m, a head and a precast sill, and the entry door at its end
+		# in its own frame with a pull and a closer.
+		var fr := Color("#33302c")
+		var fz := pc.y - 3.53
+		diner_room = 7.0  # its dining room's booths
+		_glass(Vector3(pc.x - 0.9, 1.86, fz), Vector3(-1, 0, 0), 6.2, 1.42, 0.1)
+		_glass(Vector3(pc.x + 3.2, 1.12, fz - 0.07), Vector3(-1, 0, 0), 0.84, 2.0, 0.0)  # the door
+		diner_room = 0.0
+		_box("concrete", Vector3(6.4, 0.08, 0.16), Vector3(pc.x - 0.9, 1.13, fz - 0.05), Color("#cfc8b8"))  # sill
+		_box("metal", Vector3(6.3, 0.09, 0.09), Vector3(pc.x - 0.9, 2.6, fz - 0.04), fr)  # head
+		for k in 5:
+			_box("metal", Vector3(0.07, 1.45, 0.09), Vector3(pc.x - 4.0 + k * 1.55, 1.86, fz - 0.04), fr)
+		for e in [-1.0, 1.0]:
+			_box("metal", Vector3(0.09, 2.3, 0.1), Vector3(pc.x + 3.2 + e * 0.47, 1.15, fz - 0.08), fr)
+		_box("metal", Vector3(1.03, 0.1, 0.1), Vector3(pc.x + 3.2, 2.25, fz - 0.08), fr)
+		_box("metal", Vector3(0.86, 0.22, 0.09), Vector3(pc.x + 3.2, 0.13, fz - 0.09), fr)  # bottom rail
+		_box("metal", Vector3(0.04, 0.7, 0.05), Vector3(pc.x + 2.9, 1.05, fz - 0.16), Color("#b9bcbe"))  # pull
+		_box("metal", Vector3(0.36, 0.05, 0.06), Vector3(pc.x + 3.35, 2.12, fz - 0.15), Color("#4a4c4e"))  # closer
+		_box("metal", Vector3(1.1, 0.02, 0.25), Vector3(pc.x + 3.2, 0.01, fz - 0.14), Color("#b0b3b5"))  # threshold
+	else:
+		_glass(Vector3(pc.x, 1.6, pc.y - 3.53), Vector3(-1, 0, 0), 8.0, 2.0, 0.1)
 	_sign(Vector3(pc.x, 3.0, pc.y - 3.6), 5.0, 0.8, food)
 	# The drive-through: a 3.5 m lane down the east side, cars heading for
 	# the road with the building on the driver's side; the pickup window
