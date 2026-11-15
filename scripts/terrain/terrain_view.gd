@@ -710,6 +710,13 @@ void fragment() {
 	ROUGHNESS = mix(ROUGHNESS, mix(0.35, 0.9, dry), bar);
 	SPECULAR = mix(SPECULAR, mix(0.3, 0.1, dry), bar);
 	ALPHA = mix(ALPHA, 1.0, bar);
+	// Under a wooded bank (sycamore, silver maple and cottonwood lean out
+	// over the Mississinewa) the water mirrors the dark foliage instead of
+	// the sky and lies in its shade: a near-black green band along each
+	// wooded shore in aerial photos, open water bright only mid-channel.
+	float shade = smoothstep(0.3, 0.85, COLOR.r) * (1.0 - bar) * (1.0 - ice);
+	ALBEDO = mix(ALBEDO, vec3(0.010, 0.017, 0.007) * (0.8 + 0.4 * b), shade * 0.6);
+	SPECULAR = mix(SPECULAR, SPECULAR * 0.5, shade);
 #endif
 }
 """
@@ -1504,9 +1511,11 @@ static func _water_mesh(d: Dictionary) -> ArrayMesh:
 	var wet: PackedFloat32Array = d.wet
 	var wverts := PackedVector3Array()
 	var wdepth := PackedVector2Array()
+	var wwood := PackedColorArray()
 	var widx := PackedInt32Array()
 	var index := {}
 	var flows := {}
+	var woods := {}
 	var desk := PhotoGround.drawable()
 	for j in n:
 		for i in n:
@@ -1545,6 +1554,10 @@ static func _water_mesh(d: Dictionary) -> ArrayMesh:
 						flows[c] = _river_channel(verts[c].x + Terrain.view_origin.x, verts[c].z + Terrain.view_origin.y)
 					fl = flows[c]
 				wdepth.append(Vector2(1.0 - clampf((at - verts[c].y) / 3.0, 0.0, 1.0), fl))
+				if desk:
+					if not woods.has(c):
+						woods[c] = _bank_woods(verts[c].x + Terrain.view_origin.x, verts[c].z + Terrain.view_origin.y)
+					wwood.append(Color(woods[c], 0.0, 0.0))
 			widx.append_array([base, base + 1, base + 2, base, base + 2, base + 3])
 	if widx.is_empty():
 		return null
@@ -1556,6 +1569,8 @@ static func _water_mesh(d: Dictionary) -> ArrayMesh:
 	warrays[Mesh.ARRAY_VERTEX] = wverts
 	warrays[Mesh.ARRAY_NORMAL] = wn
 	warrays[Mesh.ARRAY_TEX_UV2] = wdepth
+	if not wwood.is_empty():
+		warrays[Mesh.ARRAY_COLOR] = wwood
 	warrays[Mesh.ARRAY_INDEX] = widx
 	var water := ArrayMesh.new()
 	water.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, warrays)
@@ -1580,6 +1595,15 @@ static func _river_channel(x: float, z: float) -> float:
 		if Terrain.water(x + cos(ang) * 250.0, z + sin(ang) * 250.0) > 0.4:
 			far += 1
 	return 1.0 if far >= 2 and far <= 6 else 0.0
+
+
+## How wooded the bank is within 25 m of a water point, 0 to 1: trees
+## standing over the water shade it and mirror in it.
+static func _bank_woods(x: float, z: float) -> float:
+	var t := Terrain.trees(x, z)
+	for o: Vector2 in [Vector2(25, 0), Vector2(-25, 0), Vector2(0, 25), Vector2(0, -25)]:
+		t = maxf(t, Terrain.trees(x + o.x, z + o.y))
+	return t
 
 
 # --- Grading under roads ----------------------------------------------------
