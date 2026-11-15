@@ -457,6 +457,14 @@ func _tw_chicago_entry(x: float, zf: float, mw: float) -> void:
 	var bronze := Color("#5a4632")
 	var fz := zf - 0.12
 	var dc := Vector3(x, 0, fz - 0.05)
+	# The lobby seen through the drum and the swing doors: its marble,
+	# lamps and the security desk, lit all night (real office lobbies keep
+	# their lights on after hours), not a dark hole and two pale sheets.
+	var lobby_keep := [shopfront, allnight, shop_kind]
+	shopfront = true
+	allnight = true
+	shop_kind = 4
+	_glass(Vector3(x, 1.4, zf - 0.115), Vector3(-1, 0, 0), 2.3, 2.7, 0.0)
 	_cylinder("metal", dc + Vector3(0, 2.5, 0), 1.2, 0.35, bronze)
 	_cylinder("metal", dc, 1.2, 0.05, bronze)
 	_box("metal", Vector3(0.08, 2.5, 0.08), dc + Vector3(0, 1.25, 0), bronze)
@@ -471,6 +479,9 @@ func _tw_chicago_entry(x: float, zf: float, mw: float) -> void:
 		_box("metal", Vector3(1.1, 2.6, 0.06), c + Vector3(0, 1.3, 0), bronze)
 		_glass(c + Vector3(0, 1.4, -0.04), Vector3(-1, 0, 0), 0.75, 2.0, 0.0)
 		_box("metal", Vector3(0.6, 0.05, 0.08), c + Vector3(0, 1.05, -0.08), Color("#b08d57"))  # push bar
+	shopfront = lobby_keep[0]
+	allnight = lobby_keep[1]
+	shop_kind = lobby_keep[2]
 	_box("metal", Vector3(5.0, 0.15, 0.1), Vector3(x, 2.85, fz), bronze)  # transom bar
 	_box("paint", Vector3(5.0, 0.95, 0.05), Vector3(x, 3.4, fz + 0.02), Color("#9fa49a"))  # prism glass
 	for i in 9:
