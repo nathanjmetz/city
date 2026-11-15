@@ -564,7 +564,24 @@ void fragment() {
 	pr = mix(pr, vec3(1.0), hw_paved);
 	ps = mix(ps, vec2(0.0), hw_paved);
 	// Strip mine spoil and gravel.
+#ifdef DESKTOP_DETAIL
+	// A working sand and gravel pit (Grant County's are in the glacial
+	// outwash along the creeks): the floor is stripped to buff sand with
+	// grey gravel streaks, hard-edged where the dozers stopped, ringed by
+	// the dark stripped topsoil pushed up into a berm; not a soft pale stain.
+	float pit_k = cover.a + (mid - 0.5) * 0.12 + (clump - 0.5) * 0.06;
+	float pit = smoothstep(0.42, 0.5, pit_k);
+	float berm = smoothstep(0.26, 0.4, pit_k) * (1.0 - pit);
+	vec3 outwash = mix(vec3(0.30, 0.24, 0.16), vec3(0.21, 0.18, 0.14), smoothstep(0.45, 0.7, mid)) * (0.85 + 0.3 * grain);
+	col = mix(col, soil.rgb * 0.75, berm * 0.65);
+	col = mix(col, outwash, pit);
+	if (pk > 0.0 && pit > 0.0) {
+		pr = mix(pr, ph_soil(p), pit * 0.6);
+		ps = mix(ps, ph_soil_s(p) * 0.5, pit * 0.6);
+	}
+#else
 	col = mix(col, spoil.rgb * (0.85 + 0.3 * clump), smoothstep(0.3, 0.7, cover.a));
+#endif
 	// Muddy, sandy banks by the water.
 	float banks = smoothstep(0.03, 0.3, cover.g);
 #ifdef DESKTOP_DETAIL
