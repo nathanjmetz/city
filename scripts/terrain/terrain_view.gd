@@ -1744,7 +1744,23 @@ static func _river_channel(x: float, z: float) -> float:
 		var ang := k * TAU / 28.0
 		if Terrain.water(x + cos(ang) * 500.0, z + sin(ang) * 500.0) > 0.15:
 			wide += 1
-	return 1.0 if wide <= 5 else 0.0
+	if wide > 5:
+		return 0.0
+	# A river runs on through: it crosses a 250 m ring on two far-apart
+	# sides (upstream and down). A farm pond or a pit lake a few hundred
+	# metres long touches it on one side only, or not at all (field view
+	# 2026-11-15: a pond's shallow corners drew as dry gravel bars). Points
+	# 22 m apart, so the 18 m river (read bilinearly) isn't missed.
+	var hits: Array[float] = []
+	for k in 72:
+		var ang := k * TAU / 72.0
+		if Terrain.water(x + cos(ang) * 250.0, z + sin(ang) * 250.0) > 0.15:
+			hits.append(ang)
+	for i in hits.size():
+		for j in range(i + 1, hits.size()):
+			if absf(wrapf(hits[j] - hits[i], -PI, PI)) > 2.1:
+				return 1.0
+	return 0.0
 
 
 ## How wooded the bank is within 25 m of a water point, 0 to 1: trees
