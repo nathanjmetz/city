@@ -1102,7 +1102,14 @@ void fragment() {
 	vec3 glass = vec3(0.025, 0.03, 0.035) + vec3(0.06, 0.08, 0.1) * (1.0 - night * 0.85);
 	// Winter: snow on roofs and flat tops, as on the close-up roofs.
 	float cover = snow_cover(0.35, 0.6) * (1.0 - win);
-	ALBEDO = mix(mix(vcol(COLOR.rgb), glass, win), vec3(0.86, 0.88, 0.92), cover);
+	// Pavement marked by vertex alpha 0.02-0.05 (the Marion backdrop's):
+	// streets and lots are plowed and salted, wet and dark (alpha 0.03);
+	// walks and drives are shovelled in strips (0.04).
+	float paved = step(0.02, COLOR.a) * step(COLOR.a, 0.05);
+	float walk = paved * step(0.035, COLOR.a);
+	cover *= 1.0 - paved * mix(0.92, 0.45, walk);
+	vec3 base = vcol(COLOR.rgb) * (1.0 - paved * (1.0 - walk) * snow * 0.25);
+	ALBEDO = mix(mix(base, glass, win), vec3(0.86, 0.88, 0.92), cover);
 	ROUGHNESS = mix(mix(0.85, 0.15, win), 0.7, cover);
 	SPECULAR = mix(0.3, 0.6, win);
 	vec2 cell = vec2(floor(UV.x / 2.0), floor(UV.y / 3.7));

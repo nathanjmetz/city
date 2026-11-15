@@ -47,9 +47,9 @@ const GLASS := [0.14, 0.12, 0.3]
 ## of lot to each m² of floor (US suburban codes: 4 spaces per 1,000 ft²).
 const LOT_AREA := 1500.0
 const LOT_SHARE := 1.3
-const LOT_ASPHALT := Color(0.33, 0.33, 0.33)
-const ASPHALT := Color(0.27, 0.27, 0.28)
-const WALK := Color(0.56, 0.55, 0.52)
+const LOT_ASPHALT := Color(0.33, 0.33, 0.33, 0.03)
+const ASPHALT := Color(0.27, 0.27, 0.28, 0.03)
+const WALK := Color(0.56, 0.55, 0.52, 0.04)
 ## Yard trees, desktop only. Marion's older neighbourhoods sit under
 ## mature maples, oaks and ashes (Indiana's urban canopy is about a third
 ## of residential land; aerial photos show a crown or two in most yards),
@@ -353,7 +353,7 @@ func _street(v: PackedVector3Array, nrm: PackedVector3Array, col: PackedColorArr
 		var w := []
 		for k in 4:
 			w.append(Vector3(q[k].x - o.x, y[k], q[k].y - o.y))
-		_quad(v, nrm, col, w[0], w[1], w[2], w[3], ASPHALT)
+		_quad(v, nrm, col, w[0], w[1], w[2], w[3], _pave(ASPHALT))
 		if _trees > 0.0:
 			# Sidewalks (desktop): Marion's streets have a 1.5 m concrete
 			# walk on each side past a 2 m grass tree lawn, the pale lines
@@ -581,7 +581,7 @@ func _lot(v: PackedVector3Array, nrm: PackedVector3Array, col: PackedColorArray,
 	var p := []
 	for c in q:
 		p.append(Vector3(c.x - o.x, Terrain.height(c.x, c.y) + 0.15, c.y - o.y))
-	_quad(v, nrm, col, p[0], p[1], p[2], p[3], LOT_ASPHALT)
+	_quad(v, nrm, col, p[0], p[1], p[2], p[3], _pave(LOT_ASPHALT))
 	if _trees > 0.0 and m > 12.0:
 		_parked(v, nrm, col, centre, u, w, m, o)
 	if _trees > 0.0:
@@ -633,7 +633,7 @@ func _street_grid(c: Vector2i) -> Dictionary:
 ## (the garage end) straight to the street, the way it reads from the air.
 const DRIVE_CELL := 40.0
 const DRIVE_WIDTH := 3.2
-const DRIVE_COLOURS := [Color(0.60, 0.59, 0.56), Color(0.55, 0.54, 0.52), Color(0.36, 0.36, 0.36)]
+const DRIVE_COLOURS := [Color(0.60, 0.59, 0.56, 0.04), Color(0.55, 0.54, 0.52, 0.04), Color(0.36, 0.36, 0.36, 0.04)]
 
 
 func _driveway(v: PackedVector3Array, nrm: PackedVector3Array, col: PackedColorArray,
@@ -755,6 +755,12 @@ func _car(v: PackedVector3Array, nrm: PackedVector3Array, col: PackedColorArray,
 		var away := (p0 + p1) * 0.5 - mid
 		_quad(v, nrm, col, Vector3(p0.x, lo, p0.y), Vector3(p1.x, lo, p1.y),
 			Vector3(p1.x, top, p1.y), Vector3(p0.x, top, p0.y), side, Vector3(away.x, 0.0, away.y))
+
+
+## Pavement's colour: on the desktop its alpha marks it for the far look's
+## plowed winter streets (HouseMaterials FAR); elsewhere plain, as before.
+func _pave(c: Color) -> Color:
+	return c if _trees > 0.0 else Color(c.r, c.g, c.b, 1.0)
 
 
 ## Two triangles, a b c d round the face's edge; the face looks toward `out`.
