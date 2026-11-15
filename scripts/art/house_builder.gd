@@ -213,7 +213,8 @@ var office_glass := false
 var diner_room := 0.0
 ## What a desktop shop window shows inside (house_materials.gd's shop_room),
 ## from its trade: 0 the shop's own pick, 1 racks of clothes, 2 shelves of
-## goods, 3 a furniture showroom floor. Rides in the glass's vertex blue.
+## goods, 3 a furniture showroom floor, 4 an office counter and desks, 5 a
+## salon's chairs and mirrors. Rides in the glass's vertex blue.
 var shop_kind := 0
 ## A shopfront whose room stays lit all night (a gas station's store).
 var allnight := false
