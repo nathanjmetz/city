@@ -1415,6 +1415,7 @@ func _tw_slab(to_curb: float, width: float, storeys: int) -> void:
 	_box("paint", Vector3(w + 0.12, 0.8, d + 0.12), Vector3(0, top + 0.4, cz), slab)
 	_tw_roof(w, d, cz, top + 0.8)
 	_tw_rooftop(w, d, cz, top + 0.8)
+	_tw_obstruction(w + 0.12, d + 0.12, cz, top + 0.8)
 	_box("brick", Vector3(w * 0.3, mech, d * 0.6), Vector3(0, top + 0.8 + mech * 0.5, cz), wall.darkened(0.1))
 	# The lawn: a walk to the curb, foundation shrubs, shade trees, parking behind.
 	_flat_rect("drive", -1.5, 1.5, -to_curb + RoadStyle.CURB_WIDTH, zf - 4.0, 0.06)
@@ -1497,6 +1498,7 @@ func _tw_balcony(to_curb: float, width: float, storeys: int) -> void:
 	_box("paint", Vector3(w + 0.2, 1.0, d + 0.2), Vector3(0, top + 0.5, cz), edge)
 	_tw_roof(w, d, cz, top + 1.0)
 	_tw_rooftop(w, d, cz, top + 1.0, 0.0, false, true)
+	_tw_obstruction(w + 0.2, d + 0.2, cz, top + 1.0)
 	_tw_roof_deck(w, d, cz, top + 1.0, mech, edge, guard)
 	# The porte-cochere over a drop-off loop, and the walk to the curb.
 	_box("paint", Vector3(10.0, 0.6, 7.0), Vector3(0, ground_h - 0.3, zf - 3.5), edge)
@@ -1661,6 +1663,10 @@ func _tw_pomo(to_curb: float, width: float, storeys: int) -> void:
 		y0 = y1
 		f0 = f1
 	_tw_crown(crown, cw, cd, cz, y0 + 0.5, granite, mirror)
+	if crown == "pyramid" or crown == "stepped":
+		# The gable and spires carry masts with their own beacons; the
+		# others light the corners of the top setback, inside its notches.
+		_tw_obstruction(cw - minf(cw, cd) * 0.28, cd, cz, y0 + 0.5)
 	_tw_name(Vector3(0, y0 - floor_h + 0.6, cz - cd * 0.5), (cw - minf(cw, cd) * 0.28) * 0.8, floor_h * 0.6)
 
 
@@ -1929,12 +1935,12 @@ func _tw_pyramid(base: Vector3, w: float, d: float, h: float, col: Color) -> voi
 ## lights (FAA AC 70/7460-1, L-810 steady red): a red globe on a short
 ## stalk at each corner of the roof parapet, burning all night. Draws no
 ## random numbers.
-func _tw_obstruction(w: float, d: float, cz: float, y: float) -> void:
+func _tw_obstruction(w: float, d: float, cz: float, y: float, x := 0.0) -> void:
 	if not fine_parts or y < 61.0:
 		return
 	for sx in [-1.0, 1.0]:
 		for sz in [-1.0, 1.0]:
-			var at := Vector3(sx * (w * 0.5 - 0.4), y, cz + sz * (d * 0.5 - 0.4))
+			var at := Vector3(x + sx * (w * 0.5 - 0.4), y, cz + sz * (d * 0.5 - 0.4))
 			_box("metal", Vector3(0.08, 0.7, 0.08), at + Vector3(0, 0.35, 0), TW_STEEL)
 			_box("paint", Vector3(0.24, 0.08, 0.24), at + Vector3(0, 0.72, 0), Color("#2a2b2c"))
 			_box("sign", Vector3(0.3, 0.32, 0.3), at + Vector3(0, 0.92, 0), Color(1.0, 0.1, 0.06, 1.0))
@@ -1943,7 +1949,10 @@ func _tw_obstruction(w: float, d: float, cz: float, y: float) -> void:
 ## A steel antenna mast with an aircraft warning light.
 func _tw_mast(at: Vector3, h: float) -> void:
 	_box("metal", Vector3(0.25, h, 0.25), at + Vector3(0, h * 0.5, 0), TW_STEEL)
-	_box("paint", Vector3(0.4, 0.4, 0.4), at + Vector3(0, h + 0.2, 0), Color("#c0281e"))
+	if fine_parts:
+		_box("sign", Vector3(0.4, 0.4, 0.4), at + Vector3(0, h + 0.2, 0), Color(1.0, 0.1, 0.06, 1.0))
+	else:
+		_box("paint", Vector3(0.4, 0.4, 0.4), at + Vector3(0, h + 0.2, 0), Color("#c0281e"))
 
 
 # ---------------------------------------------------------------- podium towers
@@ -2100,6 +2109,7 @@ func _tw_podium(to_curb: float, width: float, storeys: int) -> void:
 	# The mechanical screen on top, and on some offices a lit blade.
 	_tw_roof(tw, td, tz, top + 0.05, tx)  # the tower's own roof: far away it stops here, under the screen
 	_tw_rooftop(tw, td, tz, top + 0.05, tx, true, true)
+	_tw_obstruction(tw, td, tz, top + 0.05, tx)
 	if _homes:
 		# An apartment tower: a clad penthouse and the residents' roof deck.
 		_tw_roof_deck(tw, td, tz, top + 0.05, 4.5, slab, Color("#a9bcc4"), tx)
