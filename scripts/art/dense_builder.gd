@@ -892,12 +892,54 @@ func _alley_side(w: float, zb: float, fronts: int, fw: float, storeys: int, shop
 			var x := lerpf(-w * 0.5 + 1.8, w * 0.5 - 1.8, float(i) / (n - 1))
 			var wh := 1.7
 			_glass(Vector3(x, y, zb + 0.03), Vector3(1, 0, 0), 0.9, wh, rng.randf_range(0.0, 0.8))
-			_box("brick", Vector3(1.25, 0.3, 0.1), Vector3(x, y + wh * 0.5 + 0.15, zb + 0.05), arch)
+			if fine:
+				_rear_sash(x, y, zb, 0.9, wh, arch, f * 31 + i)
+			else:
+				_box("brick", Vector3(1.25, 0.3, 0.1), Vector3(x, y + wh * 0.5 + 0.15, zb + 0.05), arch)
 			_box("paint", Vector3(1.1, 0.08, 0.14), Vector3(x, y - wh * 0.5 - 0.04, zb + 0.07), FOUNDATION)
 	if fine:
 		_alley_services(w, zb, fronts, fw, storeys, shop_h, floor_h, n)
 	if stair != 0:
 		_ma_back_stair(w, zb, stair, shop_h)
+
+
+## Desktop: a back window of an 1880s-1910s commercial block as laid:
+## a segmental arch of two rowlock courses (header bricks on edge, fanned
+## round the curve, darker than the wall where the kiln's hardest ends
+## went), the opening's reveal in shadow (the window sits a brick's
+## depth back in a 12-13 in. wall), and a painted wood one-over-one sash
+## with its meeting rail (alley elevations in Wabash, Peru and Marion,
+## Indiana; NPS Preservation Brief 9). Colours from a hash: no draws.
+func _rear_sash(x: float, y: float, zb: float, ww: float, wh: float, arch: Color, k: int) -> void:
+	var paint := Color(["#ece6d6", "#2f3f33", "#e9e4d8", "#5a3a2a", "#3a3f44"][posmod(hash([rng.seed, k, "sash"]), 5)])
+	var z := zb + 0.035
+	# The reveal: the jambs and head of the opening, in shadow.
+	var shade := arch.darkened(0.45)
+	for e in [-1.0, 1.0]:
+		_box("brick", Vector3(0.06, wh + 0.06, 0.1), Vector3(x + e * (ww * 0.5 + 0.03), y, zb + 0.05), shade)
+	# The sash: stiles, top and bottom rails, the meeting rail.
+	for e in [-1.0, 1.0]:
+		_box("paint", Vector3(0.06, wh, 0.03), Vector3(x + e * (ww * 0.5 - 0.03), y, z + 0.01), paint)
+	_box("paint", Vector3(ww, 0.07, 0.03), Vector3(x, y + wh * 0.5 - 0.035, z + 0.01), paint)
+	_box("paint", Vector3(ww, 0.09, 0.03), Vector3(x, y - wh * 0.5 + 0.045, z + 0.01), paint)
+	_box("paint", Vector3(ww, 0.06, 0.05), Vector3(x, y + 0.03, z + 0.02), paint)
+	# The segmental arch: two rings of rowlock bricks on a shallow curve
+	# (rise about an eighth of the span) springing from the jambs.
+	var span := ww + 0.1
+	var rise := span * 0.14
+	var rad := (span * span * 0.25 + rise * rise) / (2.0 * rise)
+	var half := asin(span * 0.5 / rad)
+	var cy := y + wh * 0.5 - (rad - rise)
+	for ring in 2:
+		var r := rad + 0.06 + ring * 0.11
+		var n := 9 + ring * 2
+		for j in n:
+			var a := lerpf(-half, half, (j + 0.5) / n)
+			var c := Vector3(x + sin(a) * r, cy + cos(a) * r, zb + 0.06)
+			var tone := arch.darkened(0.06 * float(posmod(hash([k, ring, j]), 3)))
+			_box("brick", Vector3(r * (2.0 * half) / n - 0.012, 0.1, 0.11), c, tone, Basis(Vector3.BACK, -a))
+	# The tympanum between the flat head of the sash and the arch, in brick.
+	_box("brick", Vector3(span, rise + 0.02, 0.06), Vector3(x, y + wh * 0.5 + rise * 0.5, zb + 0.04), arch.darkened(0.03))
 
 
 ## Which end of a two-storey Main Street block's back wall gets the outside
