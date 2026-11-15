@@ -621,8 +621,15 @@ void fragment() {
 		float hx = world_pos.x + world_pos.z;
 		float troffer = step(0.5, fract(hx / 1.2)) * smoothstep(0.8, 0.84, UV.y) * (1.0 - smoothstep(0.93, 0.97, UV.y));
 		float parts = mix(0.35, 1.0, smoothstep(0.3, 0.36, UV.y));
-		float room_lit = 0.5 + 0.12 * hash(cell + 2.2);
-		EMISSION = vec3(0.82, 0.9, 1.0) * lit * (room_lit * parts + 1.3 * troffer) * mix(1.0, 0.65, blinds);
+		// Exposed for the street at night the room itself sits well under
+		// the fittings (an office lit to ~500 lux reads mid-grey through
+		// tinted glass, the lamps bright); too strong and the whole lite
+		// clips to a flat white panel.
+		float room_lit = 0.16 + 0.06 * hash(cell + 2.2);
+		// The far wall and the ceiling grid between fittings: a little
+		// darker toward the corners of each lite.
+		float vign = 0.75 + 0.25 * sin(3.14159 * clamp(fract(hx / 1.5), 0.0, 1.0));
+		EMISSION = vec3(0.82, 0.9, 1.0) * lit * (room_lit * parts * vign + 0.9 * troffer) * mix(1.0, 0.65, blinds);
 	}
 	}
 }
