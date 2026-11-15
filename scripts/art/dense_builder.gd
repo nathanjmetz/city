@@ -1648,6 +1648,8 @@ func _office_mirror(to_curb: float, width: float, storeys: int) -> void:
 	_flat_rect("drive", -bw * 0.5 - 1.0, bw * 0.5 + 1.0, zf - bd - 4.5, zf - bd, 0.07)
 	_flat_rect("drive", -1.5, 1.5, -0.3, zf - bd - 4.5, 0.07)
 	if fine:
+		_office_entry_doors(zf - bd - 0.03, bh, frame)
+	if fine:
 		# Desktop: the plaza's tooled control joints every 1.5 m (the
 		# walk is poured in panels so it cracks along them), and a pair of
 		# benches facing each other across the walk to the door.
@@ -1802,6 +1804,85 @@ func _office_added(w: float, d: float, zf: float, cz: float, floor_h: float, dec
 	var nb := band.lightened(0.35) if band.get_luminance() < 0.5 else band.darkened(0.35)
 	for f in range(_added, storeys):
 		_box("paint", Vector3(w + 0.1, 0.9, 0.1), Vector3(0, f * floor_h + 0.3 + 0.45, zf - 0.09), nb)
+
+
+## The doors of the mirror office's glass entry bay, at walk height (1990s
+## Carmel and Fort Wayne office entries; a narrow-stile aluminium storefront
+## pair, 6 ft by 7 ft, with offset pulls and a 10 in bottom rail): the
+## pair in the centre bay, a hung door canopy at 3.2 m on two tie rods with
+## can lights and the street number on its fascia, a walk-off mat, and
+## recessed cans in the high bay canopy. gz is the bay's glass face.
+## Desktop only; its own random numbers, so the builder's don't move.
+func _office_entry_doors(gz: float, bh: float, frame: Color) -> void:
+	var trim := Color("#b9bbbc")
+	# Frame: jambs, a head at door height and a threshold.
+	for s in [-1.0, 1.0]:
+		_box("metal", Vector3(0.07, 2.2, 0.12), Vector3(s * 0.95, 1.17, gz - 0.07), frame)
+	_box("metal", Vector3(1.97, 0.08, 0.12), Vector3(0, 2.23, gz - 0.07), frame)
+	_box("metal", Vector3(1.97, 0.015, 0.2), Vector3(0, 0.078, gz - 0.1), trim)
+	# Two leaves: narrow stiles, a top rail and a deep bottom rail.
+	for s in [-1.0, 1.0]:
+		var xo: float = s * 0.9
+		var xm: float = s * 0.03
+		var cx: float = (xo + xm) * 0.5
+		var lw: float = absf(xo - xm)
+		for x in [xo - s * 0.028, xm + s * 0.028]:
+			_box("metal", Vector3(0.056, 2.1, 0.05), Vector3(x, 1.12, gz - 0.06), frame)
+		_box("metal", Vector3(lw, 0.065, 0.05), Vector3(cx, 2.135, gz - 0.06), frame)
+		_box("metal", Vector3(lw, 0.25, 0.05), Vector3(cx, 0.195, gz - 0.06), frame)
+		# The offset pull on two standoffs by the meeting stiles.
+		var px: float = s * 0.17
+		_box("metal", Vector3(0.032, 0.95, 0.032), Vector3(px, 1.05, gz - 0.17), trim)
+		for y in [0.65, 1.45]:
+			_box("metal", Vector3(0.025, 0.025, 0.09), Vector3(px, y, gz - 0.12), trim)
+		_box("metal", Vector3(0.04, 0.07, 0.015), Vector3(s * 0.09, 1.0, gz - 0.09), Color("#6b6d6f"))  # lock cylinder
+	# Walk-off mat set in the plaza, with an aluminium edge.
+	_flat_rect("line", -1.05, 1.05, gz - 1.75, gz - 0.2, 0.073, trim.darkened(0.25))
+	_flat_rect("line", -1.0, 1.0, gz - 1.7, gz - 0.25, 0.075, Color("#2f3031"))
+	# The hung door canopy: a flat aluminium box with a fascia, two tie
+	# rods back to clevis plates on the curtain wall, and two cans.
+	var cd := 1.8
+	_box("metal", Vector3(3.4, 0.28, cd), Vector3(0, 3.34, gz - cd * 0.5), frame)
+	_box("metal", Vector3(3.44, 0.04, cd + 0.04), Vector3(0, 3.5, gz - cd * 0.5), frame.lightened(0.12))  # coping
+	var rod := Vector3(0, 1.4, cd - 0.15)
+	for s in [-1.0, 1.0]:
+		var a := Vector3(s * 1.5, 3.48, gz - cd + 0.12)
+		_box("metal", Vector3(0.035, rod.length(), 0.035), a + rod * 0.5, trim,
+			Basis(Vector3.RIGHT, atan2(rod.z, rod.y)))
+		_box("metal", Vector3(0.14, 0.2, 0.03), Vector3(s * 1.5, 4.88, gz - 0.02), frame)
+		_box("sign", Vector3(0.18, 0.015, 0.18), Vector3(s * 0.8, 3.195, gz - cd * 0.5), Color(0.98, 0.95, 0.88, 1.0))
+		_light_pool(Vector3(s * 0.8, 0.09, gz - cd * 0.5), 2.6, 2.6, Color(1.0, 0.95, 0.86))
+	# Brushed aluminium street numerals centred on the fascia.
+	var r := RandomNumberGenerator.new()
+	r.seed = hash([rng.seed, 7741])
+	var num := str((r.randi_range(1, 98)) * 100 + [0, 10, 20, 50][r.randi() % 4])
+	var ink := Color("#d9d7d0") if frame.get_luminance() < 0.4 else Color("#2b2a28")
+	var dw := 0.11
+	var x0 := -(num.length() * (dw + 0.05) - 0.05) * 0.5 + dw * 0.5
+	for i in num.length():
+		_digit(int(num[i]), Vector3(-(x0 + i * (dw + 0.05)), 3.34, gz - cd - 0.01), dw, 0.17, ink)
+	# Recessed cans in the high canopy over the bay, lighting the plaza.
+	for x in [-2.6, 0.0, 2.6]:
+		_box("sign", Vector3(0.24, 0.015, 0.24), Vector3(x, bh - 0.01, gz - 1.9), Color(0.98, 0.95, 0.88, 1.0))
+		_light_pool(Vector3(x, 0.08, gz - 2.4), 3.6, 3.6, Color(1.0, 0.95, 0.86))
+
+
+## A cut-out numeral in seven bars, w wide and h tall, its face at c facing
+## -z (seen from the front, +x is the viewer's left, so "right" bars sit at -x).
+func _digit(n: int, c: Vector3, w: float, h: float, col: Color) -> void:
+	const SEG := [0x3f, 0x06, 0x5b, 0x4f, 0x66, 0x6d, 0x7d, 0x07, 0x7f, 0x6f]
+	var t := w * 0.22
+	var m: int = SEG[clampi(n, 0, 9)]
+	var hx := -(w * 0.5 - t * 0.5)
+	var hy := h * 0.5 - t * 0.5
+	var bars := [
+		[Vector3(w, t, 0.012), Vector3(0, hy, 0)], [Vector3(t, h * 0.5, 0.012), Vector3(hx, h * 0.25, 0)],
+		[Vector3(t, h * 0.5, 0.012), Vector3(hx, -h * 0.25, 0)], [Vector3(w, t, 0.012), Vector3(0, -hy, 0)],
+		[Vector3(t, h * 0.5, 0.012), Vector3(-hx, -h * 0.25, 0)], [Vector3(t, h * 0.5, 0.012), Vector3(-hx, h * 0.25, 0)],
+		[Vector3(w, t, 0.012), Vector3(0, 0, 0)]]
+	for k in 7:
+		if m & (1 << k):
+			_box("metal", bars[k][0], c + bars[k][1], col)
 
 
 ## The close-up front of a suburban office (1980s-2000s Indianapolis,
