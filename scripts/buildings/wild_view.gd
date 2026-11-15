@@ -374,6 +374,7 @@ func _thicken_brush(plants: Array) -> Array:
 		var gx := absf(pos.x - roundf(pos.x / Vegetation.FENCE_GRID) * Vegetation.FENCE_GRID)
 		var gz := absf(pos.z - roundf(pos.z / Vegetation.FENCE_GRID) * Vegetation.FENCE_GRID)
 		if minf(gx, gz) > 2.5:
+			_thicket(out, p)
 			continue
 		var along := Vector3(0, 0, 1) if gx < gz else Vector3(1, 0, 0)
 		var side := Vector3(along.z, 0, along.x)
@@ -389,6 +390,30 @@ func _thicken_brush(plants: Array) -> Array:
 			out.append({"pos": q, "kind": Vegetation.Kind.SHRUB, "species": p.species,
 				"size": p.size * (0.9 + 0.6 * a), "tint": tint})
 	return out
+
+
+## Out in the open (an old pasture, a draw, a field corner) the sim's
+## shrubs stand alone 7 m apart, which from the air reads as a scatter of
+## dark balls on a lawn. Real thickets there (gray dogwood, sumac,
+## multiflora rose, honeysuckle) are tangled mounds that run together, of
+## mixed heights and greens, so each gets a few smaller, lighter or darker
+## neighbours pressed against it.
+func _thicket(out: Array, p: Dictionary) -> void:
+	var pos: Vector3 = p.pos
+	var hx := floori(pos.x * 4.0)
+	var hz := floori(pos.z * 4.0)
+	var n := 1 + int(CropCalendar.h01(hx, hz, 76) * 3.0)
+	for k in n:
+		var ang := CropCalendar.h01(hx, hz, 77 + k) * TAU
+		var a := CropCalendar.h01(hx, hz, 81 + k)
+		var q: Vector3 = pos + Vector3(cos(ang), 0.0, sin(ang)) * (1.4 + 1.6 * a) * maxf(p.size, 0.6)
+		if sim.vegetation.is_occupied(Vegetation.cell_of(q)):
+			continue
+		# Dogwood's grey-green, sumac's yellower green, rose's dark.
+		var tint: Color = (p.tint as Color).lerp(
+			[Color("#5d6b34"), Color("#647030"), Color("#36481e")][(hx + hz + k) % 3], 0.5)
+		out.append({"pos": q, "kind": Vegetation.Kind.SHRUB, "species": p.species,
+			"size": p.size * (0.55 + 0.45 * a), "tint": tint})
 
 
 ## A wild plant as TreeField draws it: [placement, kind, tint, facts]. The
