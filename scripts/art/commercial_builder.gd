@@ -1015,6 +1015,17 @@ func _strip_center(to_curb: float, anchor := false) -> void:
 			_box("metal", Vector3(0.04, 0.8, 0.05), Vector3(dcx - 0.34, 1.2, zf - 0.16), Color("#b9bcbe"))
 			_box("metal", Vector3(0.38, 0.05, 0.06), Vector3(dcx + 0.2, 2.47, zf - 0.15), Color("#4a4c4e"))
 			_box("metal", Vector3(1.0, 0.02, 0.18), Vector3(dcx, 0.31, zf - 0.1), Color("#b0b3b5"))
+			# The display window in a real storefront frame (2 x 4.5 in
+			# aluminium, Kawneer 451-type): a jamb at the party pier,
+			# vertical mullions every 1.2-1.5 m, a sill on the bulkhead and a
+			# transom bar level with the door head, the lights above it.
+			var gw := sw - 1.4
+			var g0 := x - 0.4 - gw * 0.5
+			var lites := maxi(2, ceili(gw / 1.5))
+			for k in lites:
+				_box("metal", Vector3(0.06, 2.2, 0.1), Vector3(g0 + 0.03 + k * gw / lites, 1.75, zf - 0.08), mull)
+			_box("metal", Vector3(gw, 0.07, 0.1), Vector3(g0 + gw * 0.5, 0.67, zf - 0.08), mull)  # sill
+			_box("metal", Vector3(gw, 0.08, 0.1), Vector3(g0 + gw * 0.5, 2.7, zf - 0.08), mull)  # transom bar
 		else:
 			_box("paint", Vector3(sw, 0.35, 0.12), Vector3(x, 0.47, zf - 0.06), mull)
 		_box("paint", Vector3(0.5, 3.0, 0.2), Vector3(x - bay * 0.5, 1.8, zf - 0.1), wall.darkened(0.1))
@@ -1835,7 +1846,10 @@ func _ada_stalls(x0: float, back: float) -> void:
 		var x := x0 + j * 2.75
 		if j == 0:
 			_flat_rect("line", x + 0.07, x + 2.68, back - 5.4, back - 0.1, 0.065, blue)
-			_flat_rect("line", x + 1.05, x + 1.7, back - 3.1, back - 2.4, 0.075, LINE)  # the symbol
+			if fine_parts:
+				_isa_mark(x + 1.375, back - 2.75, 1.6)
+			else:
+				_flat_rect("line", x + 1.05, x + 1.7, back - 3.1, back - 2.4, 0.075, LINE)  # the symbol
 			_box("metal", Vector3(0.06, 2.3, 0.06), Vector3(x + 1.375, 1.15, back + 0.4), Color("#7d8184"))
 			_box("paint", Vector3(0.3, 0.45, 0.03), Vector3(x + 1.375, 2.05, back + 0.36), Color("#f2f2ee"))
 			_box("paint", Vector3(0.2, 0.2, 0.01), Vector3(x + 1.375, 2.12, back + 0.34), blue)
@@ -1844,6 +1858,27 @@ func _ada_stalls(x0: float, back: float) -> void:
 			for h in 7:
 				var z := back - 5.2 + h * 0.75
 				_flat_rect("line", x + 0.2, x + 2.55, z, z + 0.12, 0.072, LINE)
+
+
+## Desktop: the International Symbol of Access in white stencil paint on the
+## stall (MUTCD 3B.22: about 3 ft tall, read from the drive aisle, the head
+## toward the stall's head): the head, the back, the seat, the leg and the
+## wheel ring. `s` scales the 0.75 m figure; a negative `s` turns it round
+## for a stall whose head is toward -z.
+func _isa_mark(cx: float, cz: float, s: float) -> void:
+	var y := 0.085
+	var white := LINE
+	var f := -s  # +x is the viewer's left: the figure faces the viewer's right
+	var rects := [[-0.13, -0.01, 0.22, 0.34], [-0.09, -0.03, -0.1, 0.18], [-0.09, 0.25, -0.16, -0.1], [0.19, 0.25, -0.36, -0.1]]
+	for q in rects:
+		_flat_rect("line", cx + minf(q[0] * f, q[1] * f), cx + maxf(q[0] * f, q[1] * f), cz + minf(q[2] * s, q[3] * s), cz + maxf(q[2] * s, q[3] * s), y, white)
+	for i in 22:
+		var ang := TAU * i / 22.0
+		if ang > PI * 0.3 and ang < PI * 0.55:
+			continue  # the ring opens where the back meets the seat
+		var p := Vector2(cx + 0.05 * f, cz - 0.18 * s) + Vector2(cos(ang) * f, sin(ang) * s) * 0.24
+		var hs := 0.028 * absf(s)
+		_flat_rect("line", p.x - hs, p.x + hs, p.y - hs, p.y + hs, y, white)
 
 
 ## What a real strip centre's lot has that a bare one doesn't (Marion's
@@ -2264,12 +2299,16 @@ func _shop_diner(to_curb: float) -> void:
 	# the local diners built off US 35 and SR 9 in Marion).
 	var r := RandomNumberGenerator.new()
 	r.seed = hash([rng.seed, 31])
-	if r.randf() < 0.5:
+	var mans := r.randf() < 0.5
+	if mans:
 		_mansard(w, d, cz, zf, 3.0, 4.75, 0.9, Color(["#4a3b30", "#3a3a3c", "#5b4636", "#7a3a2a"][r.randi() % 4]))
 	# Pole sign, with a changeable-letter reader board under it.
 	var px := half - 2.0
+	var dword: int = [0, 1, 28][posmod(hash([rng.seed, 41]), 3)]  # DINER, CAFE, GRILL
 	_box("paint", Vector3(0.35, 7.5, 0.35), Vector3(px, 3.75, 1.5), Color("#5a5e60"))
-	_sign(Vector3(px, 6.8, 1.3), 3.4, 1.6, [0, 1, 28][posmod(hash([rng.seed, 41]), 3)])  # DINER, CAFE, GRILL
+	_sign(Vector3(px, 6.8, 1.3), 3.4, 1.6, dword)
+	if fine_parts and sign_spec.is_empty():
+		_diner_letters(w, zf, n, band, mans, TRADE_WORDS[dword])
 	_box("paint", Vector3(3.0, 1.1, 0.3), Vector3(px, 5.3, 1.5), Color("#f4f2ea"))
 	_box("paint", Vector3(3.1, 0.08, 0.32), Vector3(px, 5.88, 1.5), Color("#2b2b2b"))
 	_box("paint", Vector3(3.1, 0.08, 0.32), Vector3(px, 4.72, 1.5), Color("#2b2b2b"))
@@ -2290,6 +2329,27 @@ func _shop_diner(to_curb: float) -> void:
 	# add one for Rotary lunches and rehearsal dinners.
 	if not small_store:
 		_rt_wing(w, zf + d, 3.6, wall, "paint", band, false)
+
+
+## Desktop: a family restaurant names itself on the building as well as on
+## the pole: lit channel letters over the entry vestibule's doors, and a
+## bigger set over the window band, on the fascia or, under a mansard, on a
+## raceway bracketed to the shingles (how Frisch's, Bob Evans and every
+## county-road diner letter their fronts). White on a coloured band, red on
+## a pale one; they glow after dark. No random numbers.
+func _diner_letters(w: float, zf: float, n: int, band: Color, mans: bool, word: String) -> void:
+	var col := Color("#c8102e") if band.get_luminance() > 0.6 else Color("#f4f1ea")
+	col.a = 1.0
+	# Over the vestibule doors (its face is at zf - 2.0, head at 2.54 m).
+	_pixel_text(word, -w * 0.5 + 1.0, 2.66, zf - 2.06, 0.1, 0.1, col, "sign")
+	# Over the windows, centred on the band of glass.
+	var cx := -w * 0.5 + 2.6 + (n - 1) * 0.75
+	var span := word.length() * 4.0 * 0.12 - 0.12
+	if mans:
+		_box("paint", Vector3(span + 0.3, 0.14, 0.3), Vector3(cx, 3.6, zf - 0.68), Color("#4a4c4e"))  # raceway
+		_pixel_text(word, cx, 3.32, zf - 0.86, 0.12, 0.12, col, "sign")
+	else:
+		_pixel_text(word, cx, 3.05, zf - 0.19, 0.1, 0.1, col, "sign")
 
 
 ## A small-town bank: brick, two storeys of tall windows, a stone portico
@@ -2317,6 +2377,19 @@ func _bank(to_curb: float) -> void:
 			_window(Vector3(x, y, zf), Vector3(-1, 0, 0), 1.2, 1.9, true, false, stone)
 	# Portico: four columns, an entablature and a pediment.
 	_stoop(0.0, zf, 6.0, 3.0, 0.6)
+	if fine_parts:
+		# Desktop: a classical bank meets the walk with limestone steps the
+		# full width of its portico, not a house stoop: three 6 in risers
+		# on 11 in treads with a bullnosed nosing, between stone cheek
+		# blocks (Bedford stone county banks).
+		for k in range(1, 4):
+			var sh := 0.6 - k * 0.15
+			var sz := zf - 3.0 - (k - 0.5) * 0.28
+			_box("brick", Vector3(6.0, sh + 0.006, 0.31), Vector3(0, sh * 0.5 + 0.003, sz), ashlar)
+			_box("paint", Vector3(6.0, 0.03, 0.04), Vector3(0, sh - 0.012, sz - 0.16), stone.lightened(0.04))  # nosing
+		for sx in [-1.0, 1.0]:
+			_box("brick", Vector3(0.35, 0.68, 0.9), Vector3(sx * 3.17, 0.34, zf - 3.42), ashlar)
+			_box("paint", Vector3(0.42, 0.06, 0.98), Vector3(sx * 3.17, 0.71, zf - 3.42), stone.lightened(0.05))  # cap
 	for k in 4:
 		_cylinder("paint", Vector3(-2.4 + k * 1.6, 0.6, zf - 2.5), 0.28, 5.4, stone, 10)
 		# A square plinth and a capital, as on every Colonial Revival bank.
@@ -2346,7 +2419,20 @@ func _bank(to_curb: float) -> void:
 		_glass(Vector3(sx, 1.9, zf - 0.17), Vector3(-1, 0, 0), 0.7, 2.0, 0.0)
 	_glass(Vector3(0, 3.2, zf - 0.17), Vector3(-1, 0, 0), 1.7, 0.55, 0.0)
 	site.door = Vector2(0.0, zf - 3.0)
-	_sign(Vector3(0, 4.3, zf - 0.08), 4.0, 0.5, [3, 3, 56, 57][posmod(hash([rng.seed, 47]), 4)])  # BANK, SAVINGS, TRUST
+	var bank_word: int = [3, 3, 56, 57][posmod(hash([rng.seed, 47]), 4)]  # BANK, SAVINGS, TRUST
+	if fine_parts and sign_spec.is_empty():
+		# Desktop: no sign board hung behind the columns; the name is cut
+		# into the limestone frieze over them, as on every 1910s-20s county
+		# bank (Bedford stone, incised Roman capitals), shadowed dark.
+		var lw := 5.2
+		var lc := stone.darkened(0.12)
+		lc.a = 0.5 + lw / 60.0
+		var v0 := 2.0 * (bank_word + 1)
+		var fz := zf - 3.115
+		_quad("sign", Vector3(lw * 0.5, 6.18, fz), Vector3(-lw * 0.5, 6.18, fz), Vector3(-lw * 0.5, 6.66, fz), Vector3(lw * 0.5, 6.66, fz),
+			lc, [Vector2(0, v0), Vector2(lw, v0), Vector2(lw, v0 + 1.0), Vector2(0, v0 + 1.0)], Vector3.FORWARD)
+	else:
+		_sign(Vector3(0, 4.3, zf - 0.08), 4.0, 0.5, bank_word)
 	# Drive-up lane and canopy beside the building.
 	var lx := w * 0.5 + 3.0
 	_box("paint", Vector3(4.0, 0.6, 7.0), Vector3(lx, 4.3, cz), stone)
@@ -2415,6 +2501,32 @@ func _bank_dress(w: float, zf: float, cz: float, lx: float) -> void:
 	for sx in [-1.6, 1.6]:
 		_box("metal", Vector3(0.015, 0.75, 0.015), Vector3(lx + sx, 3.63, bz), Color("#8a8a8a"))
 	_box("paint", Vector3(4.2, 0.05, 0.05), Vector3(lx, 4.0, bz), Color("#5a5e60"))
+	# The remote teller terminal on the grey pedestal (a pneumatic-tube
+	# drive-up, as at every county bank from the 1960s on): an island pad
+	# under it, a carrier door with its window, the call button and speaker,
+	# a lane-open light on top, and the tube itself rising to the canopy and
+	# running along its soffit into the building's side wall.
+	var tx2 := lx - 1.2
+	_box("concrete", Vector3(0.9, 0.18, 1.4), Vector3(tx2, 0.09, cz), Color("#cfcac0"))
+	var face := tx2 + 0.41
+	_box("paint", Vector3(0.03, 0.62, 0.42), Vector3(face, 1.05, cz), Color("#5d6164"))  # the carrier door
+	_box("sign", Vector3(0.012, 0.36, 0.2), Vector3(face + 0.02, 1.07, cz), Color(0.62, 0.72, 0.78, 1.0))  # its window, lit
+	_box("paint", Vector3(0.03, 0.18, 0.3), Vector3(face, 0.6, cz), Color("#2a2c2e"))  # speaker grille
+	_cylinder("sign", Vector3(face + 0.01, 0.5, cz + 0.22), 0.035, 0.02, Color(0.9, 0.2, 0.15, 1.0), 8)  # call button
+	_box("sign", Vector3(0.22, 0.1, 0.22), Vector3(tx2, 1.45, cz), Color(0.3, 0.95, 0.4, 1.0))  # lane open
+	var tube := Color("#9aa0a4")
+	_cylinder("metal", Vector3(tx2, 1.4, cz + 0.25), 0.07, 2.65, tube, 10)
+	_box("metal", Vector3(tx2 - w * 0.5 + 0.1, 0.14, 0.14), Vector3((tx2 + w * 0.5) * 0.5, 3.92, cz + 0.25), tube)
+	_box("metal", Vector3(0.3, 0.3, 0.08), Vector3(w * 0.5 + 0.04, 3.92, cz + 0.25), tube.darkened(0.2))  # wall sleeve
+	# Lane markings: two white arrows toward the street, and a stop bar
+	# at the terminal.
+	var white := Color("#eceae4")
+	for az2 in [cz + 2.6, cz - 4.6]:
+		_flat_rect("line", lx + 0.6, lx + 0.75, az2, az2 + 1.6, 0.075, white)
+		for k in 6:
+			var hw := 0.06 + k * 0.06
+			_flat_rect("line", lx + 0.675 - hw, lx + 0.675 + hw, az2 - 0.06 * (k + 1), az2 - 0.06 * k, 0.075, white)
+	_flat_rect("line", lx - 0.75, lx + 2.1, cz - 0.62, cz - 0.5, 0.075, white)
 	# Lights under the canopy.
 	for k in 2:
 		_box("sign", Vector3(0.5, 0.02, 0.5), Vector3(lx, 3.99, cz + (k * 2.0 - 1.0) * 1.6), Color(0.95, 0.96, 1.0, 1.0))
@@ -2556,6 +2668,15 @@ func _shop_parking(to_curb: float, w: float, zw: float, cut_x: float) -> void:
 			_flat_rect("line", x - 0.06, x + 0.06, zw - 2.0 - 5.5, zw - 2.0, 0.07, LINE)
 			x += 2.75
 		_site_row(lot0, lot1, zw - 2.0, cut_x)
+		if fine_parts:
+			# Desktop: the front walk stands a 6 in curb above the lot, and
+			# every stall has a precast wheel stop 2 ft 6 in off its head so
+			# bumpers stop short of the walk (Indiana strip and pad sites).
+			_box("concrete", Vector3(w + 1.0, 0.15, 0.15), Vector3(0, 0.075, zw - 2.0 + 0.075), Color("#b4b0a8"))
+			var sx := lot0
+			while sx + 2.75 <= lot1 + 0.01:
+				_box("concrete", Vector3(1.83, 0.12, 0.16), Vector3(sx + 1.375, 0.12, zw - 2.0 - 0.75), Color("#bdb9b1"))
+				sx += 2.75
 	else:
 		site.aisle_z = (zw - 2.0) * 0.5
 
