@@ -186,13 +186,13 @@ func _retail(to_curb: float) -> void:
 	_curb_cut(0.0, 3.6, -to_curb, 0.0)
 	if fine_parts:
 		# Desktop: a 6 in (15 cm) poured concrete curb round the lot's open
-		# edges, open only at the drive (Indiana towns' parking-lot codes
+		# edges, open across the 24 ft drive (Indiana towns' parking-lot codes
 		# want the lot curbed off from the lawn and the neighbour's lot).
 		var cc := Color("#b9b5ab")
 		var lz := zf - 2.2
 		for e in [lot0 + 0.075, lot1 - 0.075]:
 			_box("concrete", Vector3(0.15, 0.15, lz), Vector3(e, 0.075, lz * 0.5), cc)
-		for seg in [[lot0, -1.8], [1.8, lot1]]:
+		for seg in [[lot0, -3.6], [3.6, lot1]]:
 			var a: float = seg[0]
 			var b: float = seg[1]
 			if b - a > 0.3:
