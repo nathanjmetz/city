@@ -124,8 +124,8 @@ static func _pile_mesh(id: String) -> Mesh:
 	var seed := 3.0 if id == "pile_sand" else 7.0
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	var segs := 36
-	var rings := 10
+	var segs := 48
+	var rings := 16
 	var bite := 1.1 + seed * 0.4
 	var pts := []
 	for k in rings + 1:
@@ -133,13 +133,14 @@ static func _pile_mesh(id: String) -> Mesh:
 		var row := []
 		for i in segs:
 			var ang := TAU * i / segs
-			var lobe := 1.0 + 0.1 * sin(3.0 * ang + seed) + 0.05 * sin(7.0 * ang + seed * 2.3) + 0.03 * sin(13.0 * ang)
+			# Lobes and the bite at the toe, fading up the slope to a round crest.
+			var toe := 1.0 - t
+			var lobe := 1.0 + toe * (0.1 * sin(3.0 * ang + seed) + 0.05 * sin(7.0 * ang + seed * 2.3))
 			var d := absf(wrapf(ang - bite, -PI, PI))
-			var cut := 1.0 - 0.32 * (1.0 - smoothstep(0.25, 0.75, d))
-			var rad := (1.0 - t) * lobe * lerpf(cut, 1.0, t * t)
-			# Rounded crest, straight repose slope below it, a slight flare at the toe.
-			var h := 0.6 * (1.0 - pow(1.0 - t, 1.0)) * (1.0 - 0.25 * t * t) + 0.03 * sin(5.0 * ang + seed) * t * (1.0 - t)
-			h *= lerpf(1.0, 0.92, 1.0 - smoothstep(0.2, 0.7, d))
+			var cut := 1.0 - 0.3 * (1.0 - smoothstep(0.25, 0.8, d)) * toe
+			var rad := (1.0 - t) * lobe * cut
+			# Straight repose slope (about 34 degrees), rounded over at the top.
+			var h := 0.7 * (t - 0.35 * pow(t, 4.0)) + 0.015 * sin(5.0 * ang + seed) * t * toe
 			row.append(Vector3(cos(ang) * rad, h, sin(ang) * rad))
 		pts.append(row)
 	for k in rings:
@@ -152,11 +153,12 @@ static func _pile_mesh(id: String) -> Mesh:
 				var damp := 1.0 - smoothstep(0.0, 0.08, v.y)
 				st.set_color(Color(1.0 - 0.3 * damp, 1.0 - 0.32 * damp, 1.0 - 0.35 * damp))
 				st.add_vertex(v)
+	st.index()
 	st.generate_normals()
 	var mesh := st.commit()
 	var mat := StandardMaterial3D.new()
 	mat.vertex_color_use_as_albedo = true
-	mat.albedo_color = Color(0.86, 0.76, 0.6) if id == "pile_sand" else Color(0.74, 0.71, 0.66)
+	mat.albedo_color = Color(0.8, 0.72, 0.6) if id == "pile_sand" else Color(0.74, 0.71, 0.66)
 	mat.roughness = 0.95
 	var tex := PhotoGround.DIR + "gravel_floor_02/albedo.jpg"
 	if ResourceLoader.exists(tex):
@@ -164,6 +166,11 @@ static func _pile_mesh(id: String) -> Mesh:
 		mat.uv1_triplanar = true
 		mat.uv1_world_triplanar = true
 		mat.uv1_scale = Vector3.ONE * (0.5 if id == "pile_sand" else 0.35)
+		var nrm := PhotoGround.DIR + "gravel_floor_02/normal.jpg"
+		if ResourceLoader.exists(nrm):
+			mat.normal_enabled = true
+			mat.normal_texture = load(nrm)
+			mat.normal_scale = 0.6 if id == "pile_sand" else 1.0
 	mesh.surface_set_material(0, mat)
 	return mesh
 
@@ -244,6 +251,9 @@ func _fill(b: Vector2i) -> Array:
 			if sim != null and sim.vegetation.is_occupied(Vegetation.cell_of(p)):
 				continue
 			var rad := lerpf(6.0, 11.0, CropCalendar.h01(g.x, g.y, 64))
+			# Beside the haul road, not on it: the loader works off its edge.
+			if TerrainView.on_haul(r.x, r.y, rad * 0.75):
+				continue
 			var xf := Transform3D(Basis(Vector3.UP, CropCalendar.h01(g.x, g.y, 65) * TAU).scaled(Vector3(rad, rad, rad)),
 				Vector3(p.x, Terrain.base(r.x, r.y) - 0.2, p.z))
 			piles.append(p)
