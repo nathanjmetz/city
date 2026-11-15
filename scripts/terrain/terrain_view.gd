@@ -613,6 +613,9 @@ uniform vec4 deep : source_color = vec4(0.12, 0.16, 0.12, 1.0);
 // The silt and mud of the bottom where it's shallow by the bank.
 uniform vec4 shore : source_color = vec4(0.36, 0.33, 0.24, 1.0);
 global uniform float snow;
+#ifdef DESKTOP_DETAIL
+global uniform vec4 season_look;
+#endif
 
 varying vec3 world_pos;
 // Metres of water under this point, over 3. TerrainView._water_mesh puts
@@ -667,6 +670,15 @@ void fragment() {
 	// Water's own reflectance (F0 about 0.02, Godot's SPECULAR 0.25): at
 	// 0.55 every shallow read as a pale milky shoal from the air.
 	SPECULAR = mix(0.25, 0.35, ice);
+	// The shallow rim of an Indiana farm pond is grown over with cattails,
+	// bulrush and sedge standing in the water (a ring a few metres wide,
+	// green in summer, straw-tan from fall to spring), not open water
+	// mirroring the sky in a pale band.
+	float reeds = (1.0 - smoothstep(0.2, 0.65, metres + (b - 0.5) * 0.35 + (a - 0.5) * 0.15)) * (1.0 - ice);
+	vec3 reed_col = mix(vec3(0.085, 0.12, 0.045), vec3(0.34, 0.29, 0.19), clamp(season_look.y + season_look.x * 0.5, 0.0, 1.0));
+	ALBEDO = mix(ALBEDO, reed_col * (0.8 + 0.4 * a), reeds * 0.9);
+	ROUGHNESS = mix(ROUGHNESS, 0.92, reeds);
+	SPECULAR = mix(SPECULAR, 0.08, reeds);
 	ALPHA = mix(smoothstep(0.04, 0.3, metres + (a - 0.5) * 0.16 + (c - 0.5) * 0.1), 1.0, ice);
 #endif
 }
