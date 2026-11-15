@@ -53,6 +53,15 @@ var darkness := 0.0
 ## about sunset, ahead of the land's darkness. DayNight hands it to the
 ## shaders as `night`.
 var lights_on := 0.0
+## Colour fades by moonlight: under a fraction of a lux the eye's cones give
+## out and night vision (rods) sees little colour, so a moonlit lawn or car
+## reads as a dark blue-grey, not a deep pure green or red (the Purkinje
+## shift; why night photos look washed and day-for-night film is graded
+## grey-blue). Lamps and windows stay coloured: their light is bright
+## enough for the cones. How much colour full night takes off (desktop).
+const NIGHT_GREY := 0.4
+## What the weather's overcast leaves of the colour (Weather sets it).
+var weather_sat := 1.0
 var _day := {}  # the fixed late-morning look, to go back to
 ## How thick the haze is for the time of year (Daylight.at().haze).
 var haze_scale := 1.0
@@ -145,7 +154,7 @@ func _ready() -> void:
 	env.fog_sky_affect = 0.25
 	# AgX mutes colour, so bring saturation and contrast back up to photo levels.
 	env.adjustment_enabled = true
-	env.adjustment_saturation = 1.0 if _gl else 1.08
+	env.adjustment_saturation = saturation()
 	# The desktop's contrast is in its tone curve instead (_tone).
 	env.adjustment_contrast = 1.0
 	var we := WorldEnvironment.new()
@@ -328,6 +337,7 @@ func set_time(hour: float, months: float) -> void:
 		if absf(env.fog_sky_affect - veil) > 0.001:
 			env.fog_sky_affect = veil
 		_tone(maxf(darkness, overcast))
+		env.adjustment_saturation = saturation()
 	haze_scale = l.haze
 	env.ambient_light_color = l.shade_color
 	# Moonlit shade keeps its own tuned strength.
@@ -352,6 +362,14 @@ func set_time(hour: float, months: float) -> void:
 		sun.look_at_from_position(Vector3.ZERO, -dir, Vector3.UP)
 		sun.light_color = MOON_COLOR if _gl else MOON_COLOR_RICH
 		sun.light_energy = (0.7 if _gl else MOON_RICH) * _light * smoothstep(-2.0, -10.0, elev)
+
+
+## The picture's colour: AgX mutes colour, so the desktop brings it back up
+## to photo levels, less by moonlight (NIGHT_GREY), times the weather's.
+func saturation() -> float:
+	if _gl:
+		return weather_sat
+	return 1.08 * (1.0 - NIGHT_GREY * darkness) * weather_sat
 
 
 ## A grey of the same brightness as c.

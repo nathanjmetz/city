@@ -307,7 +307,8 @@ func _process(_delta: float) -> void:
 		_base = [env.adjustment_enabled, env.adjustment_brightness, env.adjustment_saturation, env.adjustment_contrast]
 	env.adjustment_enabled = bool(_base[0]) or grey > 0.01
 	env.adjustment_brightness = float(_base[1]) * (1.0 - 0.15 * grey)
-	env.adjustment_saturation = float(_base[2]) * (1.0 - 0.26 * grey)
+	sky.weather_sat = 1.0 - 0.26 * grey
+	env.adjustment_saturation = sky.saturation()
 	env.adjustment_contrast = float(_base[3]) * (1.0 - 0.1 * grey)
 	# No sun to cast a shadow: the shade's extra skylight and tone curve go too.
 	sky.set_overcast(grey)
