@@ -204,6 +204,16 @@ void sky() {
 	if (stars_alpha > 0.0 && !AT_CUBEMAP_PASS) {
 		col += star_field(d, px) * stars_alpha * smoothstep(0.03, 0.3, up);
 	}
+	// Overcast: one grey lid (stratus, nimbostratus), darker where it is
+	// thicker in soft rolls a kilometre or two across, never the blue of
+	// fair-weather cloud bases. As the cloud closes up the gaps between
+	// clouds turn to the lid too: under a full overcast no blue shows, and
+	// the dimmed blue showing through read as dark blue blots on the grey.
+	vec3 lid = mix(horizon_color, vec3(0.62, 0.64, 0.67), 0.5) * (0.85 + 0.15 * day);
+	float closed = smoothstep(0.75, 1.0, cover);
+	if (up > 0.0 && closed > 0.0) {
+		col = mix(col, lid, smoothstep(0.8, 1.0, cover) * smoothstep(0.0, 0.1, up));
+	}
 	if (up > 0.0) {
 		// Where this sight line meets the cloud base: the clouds hang over
 		// the land, so they pass overhead as the camera moves.
@@ -228,8 +238,8 @@ void sky() {
 			vec3 cc = mix(base, bright, lit);
 			// Silver lining toward the sun.
 			cc += sun_c * pow(max(mu, 0.0), 10.0) * (1.0 - dens) * 0.6 * day;
-			// Overcast: one grey lid, darker the thicker it is.
-			cc = mix(cc, mix(horizon_color, vec3(0.62, 0.64, 0.67), 0.5) * (0.85 + 0.15 * day), smoothstep(0.75, 1.0, cover) * 0.8);
+			// Overcast: the lid (above), darker where it is thicker.
+			cc = mix(cc, lid * (1.0 - 0.16 * cl.y - 0.08 * (noise(m / 2600.0) - 0.5)), closed);
 			// Far clouds sink into the haze at the horizon.
 			float far = 1.0 - exp(-t / 26000.0);
 			cc = mix(cc, horizon_color, far * 0.85);

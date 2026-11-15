@@ -3131,7 +3131,9 @@ func _block_soil(id: int, b: Vector2i) -> int:
 ## Whether a water utility can put a piece of its yard on this square: no
 ## roads, other buildings, farms, industry, reserved land or built lots.
 func yard_usable(corners: PackedVector2Array) -> bool:
-	if Services.road_clash(network, corners):
+	# Kept off the county railroad's right of way, as the service it grows
+	# from is (Services.site_problem).
+	if Services.road_clash(network, corners) or _rail_under(corners, CountyRail.ROW_HALF):
 		return false
 	var mid := Vector3.ZERO
 	for c in corners:

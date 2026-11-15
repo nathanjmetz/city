@@ -307,6 +307,7 @@ static func _castings(mesh: ArrayMesh, pts: PackedVector3Array, length: float, h
 	# space them no more than 400 ft apart).
 	var lane_mid := maxf(lane_edge - 1.8, 1.2)
 	var n := maxi(1, int(length / 90.0))
+	var lids := PackedVector3Array()
 	for i in n:
 		var d := length * (i + 0.5) / n
 		if d < hw + 6.0 or d > length - hw - 6.0:
@@ -314,14 +315,37 @@ static func _castings(mesh: ArrayMesh, pts: PackedVector3Array, length: float, h
 		var at: Array = LotPlanner.point_at(pts, d)
 		var side := 1.0 if i % 2 == 0 else -1.0
 		var c: Vector3 = at[0] + Vector3(-at[1].z, 0.0, at[1].x).normalized() * lane_mid * side
+		if scan_lid() != null:
+			lids.append(c)
+			continue
 		add_disc(slots, c, 0.43, RoadStyle.Y_ASPHALT + 0.005, 20)
 		add_disc(iron, c, 0.37, RoadStyle.Y_ASPHALT + 0.007, 20)
 	for at: float in joints:
 		_slant(slots, marks, at, -hw + 0.05, at, hw - 0.05, RoadStyle.Y_ASPHALT + 0.004)
+	if not lids.is_empty():
+		mesh.set_meta("lids", lids)
 	iron.commit(mesh)
 	mesh.surface_set_material(mesh.get_surface_count() - 1, mats.iron)
 	slots.commit(mesh)
 	mesh.surface_set_material(mesh.get_surface_count() - 1, mats.drain)
+
+
+## The photo-scanned cast-iron lid (Poly Haven water_manhole_cover, CC0,
+## 0.69 m across: the 27 in lid Indiana streets use) on desktop High and up;
+## null elsewhere, and the flat iron disc is drawn instead. Where it's used,
+## the street mesh lists the lid centres in its "lids" meta (RoadView stands
+## them in one MultiMesh per street).
+static func scan_lid() -> Mesh:
+	if Surfaces.photo_level() <= 0.0:
+		return null
+	return AssetLib.mesh("water_manhole_cover", ["water_manhole_cover*"])
+
+
+## Where a scanned lid stands: its frame's top flush with the asphalt (the
+## scan, frame and lid, is 6.8 cm deep), turned by a hash of where it is so no two read alike.
+static func lid_transform(c: Vector3) -> Transform3D:
+	var yaw := fmod(absf(c.x * 12.9898 + c.z * 78.233), TAU)
+	return Transform3D(Basis(Vector3.UP, yaw), c + Vector3(0.0, RoadStyle.Y_ASPHALT + 0.006 - 0.0675, 0.0))
 
 
 ## A flat patch from `d0` to `d1` metres along, `a0` to `a1` out on `side`.

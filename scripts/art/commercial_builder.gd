@@ -534,8 +534,25 @@ func _service_yard(gravel: bool, dumpster := true, reach := 15.0) -> void:
 		var at := Vector3(rng.randf_range(-half * 0.5, half * 0.5), 0, z0 + 1.2)
 		if _in_lot(at, 1.5):
 			var bin := Color(_pick(["#2f4a3a", "#2a3a5a", "#4a4e52"]))
-			_box("metal", Vector3(1.83, 1.07, 1.07), at + Vector3(0, 0.6, 0), bin)
-			_box("paint", Vector3(1.87, 0.06, 1.12), at + Vector3(0, 1.16, 0), Color("#1c1d1f"))
+			if fine_parts:
+				# Desktop: a real 2 yd front-load can: a body that slopes
+				# down to the truck side, two black poly lids hinged at the
+				# back, the fork pockets along its sides, lift-bar lugs and
+				# the steel skids it slides on, set on a concrete pad.
+				_flat_rect("drive", at.x - 1.4, at.x + 1.4, at.z - 1.0, at.z + 1.4, 0.075)
+				for sx in [-0.7, 0.7]:
+					_box("metal", Vector3(0.12, 0.1, 1.05), at + Vector3(sx, 0.05, 0), bin.darkened(0.3))
+				_box("metal", Vector3(1.83, 0.85, 1.07), at + Vector3(0, 0.525, 0), bin)
+				var tilt := Basis(Vector3.RIGHT, -0.22)
+				_box("metal", Vector3(1.83, 0.28, 1.07), at + Vector3(0, 1.0, -0.02), bin, tilt)
+				for lx in [-0.46, 0.46]:
+					_box("paint", Vector3(0.9, 0.05, 1.14), at + Vector3(lx, 1.17, 0.0), Color("#1c1d1f"), tilt)
+				for sx in [-1.0, 1.0]:
+					_box("metal", Vector3(0.1, 0.2, 0.95), at + Vector3(sx * 0.97, 0.85, 0), bin.darkened(0.25))
+					_box("metal", Vector3(0.12, 0.1, 0.1), at + Vector3(sx * 0.7, 0.5, 0.58), bin.darkened(0.25))
+			else:
+				_box("metal", Vector3(1.83, 1.07, 1.07), at + Vector3(0, 0.6, 0), bin)
+				_box("paint", Vector3(1.87, 0.06, 1.12), at + Vector3(0, 1.16, 0), Color("#1c1d1f"))
 
 
 ## Flat ground work over a polygon (x, z), as _flat_rect does for a rectangle.
@@ -699,6 +716,22 @@ func _civic_sign(c: Vector3, w: float, h: float, text: String, panel: String, le
 	sign_spec = was
 
 
+## A ground sign by an office's drive. Desktop: a monument sign, as
+## every office park and bank branch builds them: a dressed limestone
+## plinth with a projecting cap, the name panel set into its face, in a
+## mulched bed. Otherwise the plain panel on the lawn.
+func _monument_sign(c: Vector3, w: float, h: float) -> void:
+	if not fine_parts:
+		_sign(c, w, h)
+		return
+	var stone := _dressed(Color("#cfc6b0"))
+	_flat_rect("mulch", c.x - w * 0.5 - 0.9, c.x + w * 0.5 + 0.9, c.z - 0.8, c.z + 1.2, 0.075)
+	_box("brick", Vector3(w + 0.6, h + 0.75, 0.5), Vector3(c.x, (h + 0.75) * 0.5, c.z + 0.26), stone)
+	_box("brick", Vector3(w + 0.8, 0.14, 0.62), Vector3(c.x, h + 0.82, c.z + 0.26), stone)
+	_box("brick", Vector3(w + 0.7, 0.2, 0.56), Vector3(c.x, 0.1, c.z + 0.26), _dressed(Color("#b9b09a")))  # its base course
+	_sign(Vector3(c.x, 0.45, c.z - 0.005), w, h)
+
+
 func _sign(c: Vector3, w: float, h: float, word := -1) -> void:
 	var col := Color(_pick(SIGNS))
 	col.a = minf(w / 60.0, 0.49)
@@ -753,6 +786,26 @@ const READER_BOARDS := [
 ## The stand-in trades that serve food at tables (DINER, CAFE, PIZZA, DELI,
 ## SUBS, TACOS, GRILL, DONUTS, TAVERN): their windows show booths.
 const EATERIES := [0, 1, 2, 7, 8, 11, 28, 29, 35]
+## What each trade's window shows (HouseBuilder.shop_kind): clothes on
+## racks, goods on shelves, a showroom floor of sofas and tables, an
+## office's counter and desks, or a salon's chairs and mirrors.
+const APPAREL := ["SHOES", "THRIFT", "SPORTS"]
+const SHOWROOM := ["FURNITURE", "APPLIANCE", "ANTIQUES"]
+const OFFICE_FRONTS := ["TAX", "INSURANCE", "REALTY", "LOANS", "DENTAL", "LAW"]
+const SALONS := ["SALON", "NAILS", "BARBER"]
+const SHELVES := ["DRUGS", "LIQUOR", "HARDWARE", "VIDEO", "BOOKS", "TOYS", "GIFTS", "MUSIC", "PETS", "CANDY",
+	"HOBBY", "PAINT", "QUILTS", "FABRIC", "SEWING", "CELLULAR", "MARKET", "OPTICAL", "JEWELRY", "BIKES"]
+
+
+static func _trade_room(word: int) -> int:
+	if word < 0 or word >= TRADE_WORDS.size():
+		return 0
+	var t: String = TRADE_WORDS[word]
+	if t in OFFICE_FRONTS:
+		return 4
+	if t in SALONS:
+		return 5
+	return 1 if t in APPAREL else (3 if t in SHOWROOM else (2 if t in SHELVES else 0))
 
 
 ## Which stand-in trade word a shop at `x` letters, as the sign shader reads
@@ -918,12 +971,13 @@ func _strip_center(to_curb: float, anchor := false) -> void:
 	var style: String = ["flat", "flat", "mansard", "mansard", "towers"][sr.randi() % 5]
 	if era == "recent":
 		style = ["mansard", "towers", "towers"][sr.randi() % 3]
-	var mat := "paint"
+	var mat := "cmu"  # painted block
 	if style == "mansard":
 		wall = Color(FACADE_BRICK[sr.randi() % FACADE_BRICK.size()])
 		mat = "brick"
 	elif style == "towers":
 		wall = Color(["#d8c9a8", "#cdbb98", "#e0d4ba", "#c4b391"][sr.randi() % 4])
+		mat = "eifs"
 	# A neighborhood center: a supermarket anchors the +x end.
 	var aw := clampf(w * 0.4, 32.0, 56.0) if anchor and w >= 70.0 else 0.0
 	var ax0 := w * 0.5 - aw
@@ -939,12 +993,30 @@ func _strip_center(to_curb: float, anchor := false) -> void:
 		var sw := bay - 1.4
 		shopfront = fine_parts
 		diner_room = 7.0 if fine_parts and (i > 0 or sign_spec.is_empty()) and _letters_word(x) in EATERIES else 0.0
+		shop_kind = _trade_room(_letters_word(x)) if fine_parts and (i > 0 or sign_spec.is_empty()) else 0
 		_glass(Vector3(x - 0.4, 1.7, zf - 0.03), Vector3(-1, 0, 0), sw - 1.4, 2.3, rng.randf_range(0.0, 0.2))
 		shopfront = false
 		diner_room = 0.0
+		shop_kind = 0
 		_glass(Vector3(x + sw * 0.5 - 0.5, 1.45, zf - 0.03), Vector3(-1, 0, 0), 0.95, 2.4, 0.0)
 		_box("paint", Vector3(sw, 0.1, 0.12), Vector3(x, 2.9, zf - 0.06), mull)
-		_box("paint", Vector3(sw, 0.35, 0.12), Vector3(x, 0.47, zf - 0.06), mull)
+		if fine_parts:
+			# Desktop: the bulkhead stops at the tenant's door, which runs to
+			# the walk in a framed aluminium leaf: stiles, a deep bottom
+			# rail, an offset pull, a closer arm and a threshold.
+			var dcx := x + sw * 0.5 - 0.5
+			var bw := sw - 1.05
+			_box("paint", Vector3(bw, 0.35, 0.12), Vector3(x - sw * 0.5 + bw * 0.5, 0.47, zf - 0.06), mull)
+			for e in [-1.0, 1.0]:
+				_box("metal", Vector3(0.09, 2.45, 0.1), Vector3(dcx + e * 0.48, 1.5, zf - 0.08), mull)
+			_box("metal", Vector3(1.05, 0.09, 0.1), Vector3(dcx, 2.7, zf - 0.08), mull)
+			_box("metal", Vector3(0.9, 0.28, 0.09), Vector3(dcx, 0.42, zf - 0.08), mull)
+			_box("metal", Vector3(0.9, 0.07, 0.09), Vector3(dcx, 2.55, zf - 0.08), mull)
+			_box("metal", Vector3(0.04, 0.8, 0.05), Vector3(dcx - 0.34, 1.2, zf - 0.16), Color("#b9bcbe"))
+			_box("metal", Vector3(0.38, 0.05, 0.06), Vector3(dcx + 0.2, 2.47, zf - 0.15), Color("#4a4c4e"))
+			_box("metal", Vector3(1.0, 0.02, 0.18), Vector3(dcx, 0.31, zf - 0.1), Color("#b0b3b5"))
+		else:
+			_box("paint", Vector3(sw, 0.35, 0.12), Vector3(x, 0.47, zf - 0.06), mull)
 		_box("paint", Vector3(0.5, 3.0, 0.2), Vector3(x - bay * 0.5, 1.8, zf - 0.1), wall.darkened(0.1))
 		# The owner's own store takes the first bay; the other tenants' signs
 		# are their own businesses, drawn as stand-in lettering.
@@ -962,16 +1034,31 @@ func _strip_center(to_curb: float, anchor := false) -> void:
 	if style == "mansard":
 		_strip_mansard(-w * 0.5 - 0.2, x1 + 0.2, zf, h + 1.2, Color(["#4a3f36", "#3e3e3c", "#5a4a3c", "#6b5a45"][sr.randi() % 4]))
 	else:
-		_box("paint", Vector3(w + 0.4, 0.5, 2.6), Vector3(0, 3.65, zf - 1.3), wall.lightened(0.1))
+		_box("eifs" if style == "towers" else "paint", Vector3(w + 0.4, 0.5, 2.6), Vector3(0, 3.65, zf - 1.3), wall.lightened(0.1))
 		_quad("paint", Vector3(-w * 0.5 - 0.2, 3.39, zf - 2.6), Vector3(w * 0.5 + 0.2, 3.39, zf - 2.6),
 			Vector3(w * 0.5 + 0.2, 3.39, zf), Vector3(-w * 0.5 - 0.2, 3.39, zf), SOFFIT, [], Vector3.DOWN)
+	if fine_parts:
+		# Desktop: a recessed can light in the soffit over the middle of
+		# each bay, lit dusk to dawn, and the walk bright under them, as
+		# every strip centre's lease requires for its tenants.
+		var sy := 3.325 if style == "mansard" else 3.375
+		var lx := -w * 0.5 + bay * 0.5
+		while lx < x1:
+			_box("sign", Vector3(0.3, 0.02, 0.3), Vector3(lx, sy, zf - 1.3), Color(0.98, 0.95, 0.88, 1.0))
+			_light_pool(Vector3(lx, 0.12, zf - 1.3), bay * 1.15, 4.6, Color(1.0, 0.95, 0.86))
+			lx += bay
 	var pier := Color(["#9c8f7a", "#b3a58c", "#8a7f70"][sr.randi() % 3])
 	var x := -w * 0.5
 	while x <= x1 + 0.01:
 		var px := clampf(x, -w * 0.5 + 0.3, w * 0.5 - 0.3)
-		_box(mat, Vector3(0.45, 3.0, 0.45), Vector3(px, 1.9, zf - 2.3), wall.lightened(0.1) if mat == "paint" else wall)
+		_box(mat, Vector3(0.45, 3.0, 0.45), Vector3(px, 1.9, zf - 2.3), wall if mat == "brick" else wall.lightened(0.1))
 		if style == "towers":
-			_box("paint", Vector3(0.65, 1.1, 0.65), Vector3(px, 0.55, zf - 2.3), pier)  # cultured stone
+			if fine_parts:
+				# Desktop: real stone-veneer coursing under a precast cap.
+				_box("brick", Vector3(0.65, 1.05, 0.65), Vector3(px, 0.525, zf - 2.3), _dressed(pier))
+				_box("concrete", Vector3(0.75, 0.08, 0.75), Vector3(px, 1.09, zf - 2.3), Color("#d2cbbb"))
+			else:
+				_box("paint", Vector3(0.65, 1.1, 0.65), Vector3(px, 0.55, zf - 2.3), pier)  # cultured stone
 		x += bay
 	if aw > 0.0:
 		_grocery_anchor(ax0, w * 0.5, zf, cz, d, wall, mull)
@@ -981,12 +1068,77 @@ func _strip_center(to_curb: float, anchor := false) -> void:
 	elif style == "flat":
 		# A raised false front over the end store, and over the middle on a
 		# long centre: what a strip centre's parapet does to break up its length.
-		_raised_front(-w * 0.5 + bay * 0.5, bay, zf, h + 1.2, wall, "paint")
+		_raised_front(-w * 0.5 + bay * 0.5, bay, zf, h + 1.2, wall, mat)
 		if n >= 5:
-			_raised_front(-w * 0.5 + (n / 2 + 0.5) * bay, bay, zf, h + 1.2, wall, "paint")
+			_raised_front(-w * 0.5 + (n / 2 + 0.5) * bay, bay, zf, h + 1.2, wall, mat)
 	_shop_parking(to_curb, w, zf - 2.6, 0.0)
+	# The walk carries on under the canopy to the shop doors (concrete from
+	# curb to storefront, as at every strip centre), not grass.
+	_flat_rect("drive", -w * 0.5 - 0.5, w * 0.5 + 0.5, zf - 2.6, zf, 0.08)
 	if fine_parts:
 		_strip_lot_dress(to_curb, zf - 4.6, n, wall)
+		_strip_rear(w, n, bay, aw, zf + d, h + 1.2, wall)
+
+
+## Desktop: a strip centre's back as built. Every tenant has its own
+## steel service door with a wall pack over it (fire code wants an exit
+## from each space), the utilities come in at one end as a bank of
+## electric meters and a gas meter manifold, downspouts drop from the
+## roof scuppers every other bay onto splash blocks, and an asphalt
+## service drive runs along the back for deliveries and trash pickup.
+func _strip_rear(w: float, n: int, bay: float, aw: float, back: float, top: float, wall: Color) -> void:
+	var ax0 := w * 0.5 - aw
+	if depth - back > 4.0:
+		_flat_rect("asphalt", -w * 0.5 - 0.5, w * 0.5 + 0.5, back, minf(back + 7.0, depth - 0.5), 0.07)
+	var tenants := 0
+	for i in n:
+		var x := -w * 0.5 + (i + 0.5) * bay
+		if aw > 0.0 and x > ax0:
+			continue
+		tenants += 1
+		var dx := x + bay * 0.25 * (1.0 if posmod(hash([rng.seed, i, 73]), 2) == 0 else -1.0)
+		_steel_door(Vector3(dx, 1.35, back + 0.03), 1.0)
+		if i % 2 == 1:
+			var sx := -w * 0.5 + i * bay
+			_box("metal", Vector3(0.16, top - 0.2, 0.12), Vector3(sx, (top - 0.2) * 0.5, back + 0.09), wall.darkened(0.15))
+			_box("metal", Vector3(0.3, 0.2, 0.2), Vector3(sx, top - 0.35, back + 0.12), wall.darkened(0.2))
+			_box("concrete", Vector3(0.35, 0.06, 0.7), Vector3(sx, 0.1, back + 0.45), Color("#bdb9ae"))
+	# The utility end: one meter per tenant on a common panel, gas beside it.
+	var mx := -w * 0.5 + 1.2
+	var cols := mini(tenants, 6)
+	var rows := int(ceil(float(tenants) / float(maxi(cols, 1))))
+	var pw := cols * 0.42 + 0.2
+	_box("metal", Vector3(pw, rows * 0.55 + 0.3, 0.2), Vector3(mx + pw * 0.5, 1.2 + rows * 0.27, back + 0.1), Color("#8e9294"))
+	for k in tenants:
+		var c := k % cols
+		var rw := k / cols
+		var cx := mx + 0.31 + c * 0.42
+		var cy := 1.35 + rw * 0.55
+		_box("metal", Vector3(0.32, 0.4, 0.06), Vector3(cx, cy, back + 0.23), Color("#a3a7a9"))
+		_cylinder("paint", Vector3(cx, cy - 0.05, back + 0.26), 0.09, 0.08, Color("#dfe6e8"), 10)
+	var gx := mx + pw + 0.5
+	_box("paint", Vector3(0.06, 0.06, 0.4), Vector3(gx, 0.5, back + 0.2), Color("#e2b100"))
+	_box("paint", Vector3(0.06, 0.9, 0.06), Vector3(gx, 0.85, back + 0.38), Color("#e2b100"))
+	_box("paint", Vector3(mini(tenants, 4) * 0.35 + 0.1, 0.06, 0.06), Vector3(gx + mini(tenants, 4) * 0.175, 1.3, back + 0.38), Color("#e2b100"))
+	for k in mini(tenants, 4):
+		_box("metal", Vector3(0.28, 0.34, 0.2), Vector3(gx + 0.2 + k * 0.35, 1.05, back + 0.38), Color("#9a9c9a"))
+
+
+## A lot light's footing at `c` (ground), `h` tall. Desktop: as built, a
+## round formed concrete pier (24 in sonotube) with a chamfered top, the
+## square steel base plate on four anchor bolts and nuts, and a base cover
+## round the pole's foot. Otherwise the plain block.
+func _pole_base(c: Vector3, h: float) -> void:
+	if not fine_parts:
+		_box("concrete", Vector3(0.6, h, 0.6), c + Vector3(0, h * 0.5, 0), FOUNDATION)
+		return
+	_cylinder("concrete", c, 0.3, h - 0.04, FOUNDATION, 16)
+	_cylinder("concrete", c + Vector3(0, h - 0.04, 0), 0.27, 0.04, FOUNDATION.lightened(0.05), 16)
+	_box("metal", Vector3(0.36, 0.03, 0.36), c + Vector3(0, h + 0.015, 0), Color("#3a3c3e"))
+	for sx in [-1.0, 1.0]:
+		for sz in [-1.0, 1.0]:
+			_box("metal", Vector3(0.05, 0.06, 0.05), c + Vector3(sx * 0.13, h + 0.06, sz * 0.13), Color("#6d6f70"))
+	_box("paint", Vector3(0.26, 0.22, 0.26), c + Vector3(0, h + 0.14, 0), Color("#2e3032"))
 
 
 ## A 1970s-80s strip's mansard: a steep slope of asphalt shingles from the
@@ -1025,9 +1177,9 @@ func _strip_towers(w: float, bay: float, n: int, stop: float, zf: float, top: fl
 		var fw := bay * sr.randf_range(0.55, 0.85)
 		var rise := sr.randf_range(1.4, 3.2)
 		var tint := wall.lightened(sr.randf_range(-0.08, 0.1))
-		_box("paint", Vector3(fw, rise + 0.6, 1.0), Vector3(cx, top + rise * 0.5 - 0.3, zf - 0.4), tint)
-		_box("paint", Vector3(fw + 0.5, 0.35, 1.4), Vector3(cx, top + rise + 0.12, zf - 0.4), cap)
-		_box("paint", Vector3(fw + 0.2, 0.2, 1.15), Vector3(cx, top + rise - 0.6, zf - 0.4), cap)
+		_box("eifs", Vector3(fw, rise + 0.6, 1.0), Vector3(cx, top + rise * 0.5 - 0.3, zf - 0.4), tint)
+		_box("eifs", Vector3(fw + 0.5, 0.35, 1.4), Vector3(cx, top + rise + 0.12, zf - 0.4), cap)
+		_box("eifs", Vector3(fw + 0.2, 0.2, 1.15), Vector3(cx, top + rise - 0.6, zf - 0.4), cap)
 		if sr.randf() < 0.4:
 			var y := top + rise + 0.3
 			var hx := fw * 0.5 + 0.2
@@ -1505,10 +1657,9 @@ func _cc_parking(to_curb: float, w: float, zw: float, xg0: float, cr: RandomNumb
 	var pad := Rect2(lot1 - 20.0, 2.0, 19.0, 15.0)
 	var pc := pad.get_center()
 	var brick := Color(FACADE_BRICK[cr.randi() % FACADE_BRICK.size()])
-	# EIFS over a brick wainscot, the 1990s pad restaurant's dress (painted,
-	# so its far version takes the center's own wall colour).
-	_box("paint", Vector3(12.0, 4.2, 9.0), Vector3(pc.x, 2.1, pc.y + 1.0), Color(["#d9c7a6", "#cbb894", "#e2d6bd"][cr.randi() % 3]))
-	_box("paint", Vector3(12.06, 1.1, 9.06), Vector3(pc.x, 0.55, pc.y + 1.0), brick)
+	# EIFS over a brick wainscot, the 1990s pad restaurant's dress.
+	_box("eifs", Vector3(12.0, 4.2, 9.0), Vector3(pc.x, 2.1, pc.y + 1.0), Color(["#d9c7a6", "#cbb894", "#e2d6bd"][cr.randi() % 3]))
+	_box("brick", Vector3(12.06, 1.1, 9.06), Vector3(pc.x, 0.55, pc.y + 1.0), brick)
 	_quad("membrane", Vector3(pc.x - 6.0, 4.22, pc.y - 3.5), Vector3(pc.x + 6.0, 4.22, pc.y - 3.5),
 		Vector3(pc.x + 6.0, 4.22, pc.y + 5.5), Vector3(pc.x - 6.0, 4.22, pc.y + 5.5), Color("#9a9790"), [], Vector3.UP)
 	var accent := Color(AWNING[cr.randi() % AWNING.size()])
@@ -1572,7 +1723,7 @@ func _cc_parking(to_curb: float, w: float, zw: float, xg0: float, cr: RandomNumb
 			var x := lot0 + 14.0
 			while x < lot1 - 8.0:
 				if absf(x - cut_x) > 7.0 and not pad.grow(2.0).has_point(Vector2(x, sz)):
-					_box("concrete", Vector3(0.6, 0.9, 0.6), Vector3(x, 0.45, sz), FOUNDATION)
+					_pole_base(Vector3(x, 0, sz), 0.9)
 					_box("paint", Vector3(0.16, 10.0, 0.16), Vector3(x, 5.9, sz), Color("#2e3032"))
 					_box("paint", Vector3(0.6, 0.18, 0.8), Vector3(x, 10.9, sz), Color("#2e3032"))
 					_box("sign", Vector3(0.5, 0.02, 0.7), Vector3(x, 10.8, sz), Color(0.95, 0.96, 1.0, 1.0))  # LED lens
@@ -1719,7 +1870,7 @@ func _strip_lot_dress(to_curb: float, back: float, n: int, wall: Color) -> void:
 		var px := lerpf(lot0, lot1, (i + 0.5) / poles)
 		if absf(px) < 4.5:
 			px += 6.0  # clear of the curb cut
-		_box("concrete", Vector3(0.6, 0.6, 0.6), Vector3(px, 0.3, 0.7), FOUNDATION)
+		_pole_base(Vector3(px, 0, 0.7), 0.6)
 		_box("paint", Vector3(0.15, 8.6, 0.15), Vector3(px, 4.9, 0.7), dark)
 		for s in [-1.0, 1.0]:
 			_box("paint", Vector3(0.08, 0.08, 0.7), Vector3(px, 9.1, 0.7 + s * 0.35), dark)
@@ -1768,7 +1919,28 @@ func _strip_lot_dress(to_curb: float, back: float, n: int, wall: Color) -> void:
 			_quad("sign", Vector3(sx - 1.15, y - ph * 0.5 + 0.04, pz), Vector3(sx + 1.15, y - ph * 0.5 + 0.04, pz),
 				Vector3(sx + 1.15, y + ph * 0.5 - 0.04, pz), Vector3(sx - 1.15, y + ph * 0.5 - 0.04, pz), col,
 				[Vector2(0, v0), Vector2(2.3, v0), Vector2(2.3, v0 + 1.0), Vector2(0, v0 + 1.0)], Vector3(0, 0, side))
-	_box("concrete", Vector3(4.2, 0.25, 1.2), Vector3(sx, 0.125, sz), FOUNDATION)
+	if fine_parts:
+		# Desktop: as built, the pylon stands in a planted bed: brick piers
+		# with precast caps and a brick base panel under the cabinet, a
+		# steel-edged mulch bed round it with clipped shrubs and junipers.
+		var brick := wall.darkened(0.25)
+		for s in [-1.0, 1.0]:
+			_box("concrete", Vector3(0.72, 0.1, 0.72), Vector3(sx + s * 1.5, base + cab_h + 0.45, sz), Color("#d2cbbb"))
+			_box("brick", Vector3(0.68, 0.2, 0.68), Vector3(sx + s * 1.5, 0.1, sz), brick.darkened(0.1))
+		_box("brick", Vector3(2.4, base - 0.1, 0.46), Vector3(sx, (base - 0.1) * 0.5, sz), brick)
+		_box("concrete", Vector3(2.5, 0.08, 0.5), Vector3(sx, base - 0.06, sz), Color("#d2cbbb"))
+		_flat_rect("mulch", sx - 3.0, sx + 3.0, sz - 1.4, sz + 1.4, 0.075)
+		for e in [-1.0, 1.0]:
+			_box("metal", Vector3(6.0, 0.08, 0.02), Vector3(sx, 0.07, sz + e * 1.4), Color("#2c2d2b"))
+			_box("metal", Vector3(0.02, 0.08, 2.8), Vector3(sx + e * 3.0, 0.07, sz), Color("#2c2d2b"))
+		var st := rng.state
+		for k in 4:
+			var kx := sx + (-2.3 if k < 2 else 2.3)
+			var kz := sz + (-0.75 if k % 2 == 0 else 0.75)
+			_shrub(Vector3(kx, 0.08, kz), 0.42 if k % 2 == 0 else 0.5, 0 if k % 2 == 0 else 2)
+		rng.state = st
+	else:
+		_box("concrete", Vector3(4.2, 0.25, 1.2), Vector3(sx, 0.125, sz), FOUNDATION)
 
 
 ## A gas station: a lit canopy over two or three pump islands, a
@@ -1781,7 +1953,7 @@ func _shop_gas_station(to_curb: float) -> void:
 	var brand := Color(_pick(["#c8102e", "#00529b", "#007a33", "#f2a900", "#1d1d1d"]))
 	var wall := Color(_pick(BLOCK + ["#d8d2c2"]))
 	_box("paint", Vector3(sw + 0.1, 0.3, sd + 0.1), Vector3(0, 0.15, cz), FOUNDATION)
-	_flat_roofed("paint", sw, sd, cz, 4.2, 4.8, wall)
+	_flat_roofed("cmu", sw, sd, cz, 4.2, 4.8, wall)
 	_box("paint", Vector3(sw + 0.1, 0.7, 0.2), Vector3(0, 4.45, zf - 0.1), brand)
 	shopfront = fine_parts  # aisles of snacks and the cooler wall inside
 	allnight = true  # open late or all night, like any Indiana c-store
@@ -1790,6 +1962,8 @@ func _shop_gas_station(to_curb: float) -> void:
 	shopfront = false
 	allnight = false
 	_box("paint", Vector3(6.6, 0.1, 0.12), Vector3(-sw * 0.3 + 2.4, 2.9, zf - 0.06), MULLION[1])
+	if fine_parts:
+		_cstore_front(sw, zf)
 	# Canopy: a deep flat roof on columns. Its fascia is in the brand colour,
 	# or white with a brand stripe (Speedway, Marathon and Casey's canopies on
 	# Indiana highways), with recessed lights in the white soffit.
@@ -1803,6 +1977,18 @@ func _shop_gas_station(to_curb: float) -> void:
 	if white_fascia:
 		# Desktop: the brand band is lit from inside after dark.
 		_box("sign" if fine_parts else "paint", Vector3(cw + 0.04, 0.3, cd + 0.04), Vector3(0, 5.2, ccz), Color(brand, 0.0))
+	if fine_parts:
+		# Real canopy fascias are aluminium composite with formed coping on
+		# top and a drip edge under, and a backlit logo crown centred on the
+		# street and store faces, standing proud of the band.
+		for y in [5.71, 4.81]:
+			_box("metal", Vector3(cw + 0.08, 0.06, cd + 0.08), Vector3(0, y, ccz), Color("#9a9c9e"))
+		for f in [-1.0, 1.0]:
+			var fz: float = ccz + f * (cd * 0.5 + 0.07)
+			_box("sign", Vector3(2.8, 1.5, 0.14), Vector3(0, 5.45, fz), Color(brand, 0.0))
+			_box("metal", Vector3(2.9, 0.06, 0.2), Vector3(0, 6.22, fz), Color("#9a9c9e"))
+			_box("sign", Vector3(2.1, 1.0, 0.04), Vector3(0, 5.45, fz + f * 0.08), Color(1.0, 1.0, 1.0, 0.0))
+			_box("sign", Vector3(0.62, 0.62, 0.03), Vector3(0, 5.45, fz + f * 0.1), Color(brand, 0.0), Basis(Vector3(0, 0, 1), PI * 0.25))
 	_quad("paint", Vector3(-cw * 0.5, 4.79, ccz - cd * 0.5), Vector3(cw * 0.5, 4.79, ccz - cd * 0.5),
 		Vector3(cw * 0.5, 4.79, ccz + cd * 0.5), Vector3(-cw * 0.5, 4.79, ccz + cd * 0.5), Color("#e8e6df"), [], Vector3.DOWN)
 	if fine_parts:
@@ -1819,14 +2005,34 @@ func _shop_gas_station(to_curb: float) -> void:
 	for i in islands:
 		var x := (i - (islands - 1) * 0.5) * cw / islands
 		_box("concrete", Vector3(1.2, 0.2, 5.5), Vector3(x, 0.1, ccz), FOUNDATION)
-		_box("paint", Vector3(0.4, 4.6, 0.4), Vector3(x, 2.5, ccz), Color("#d8d6cf"))
+		if fine_parts:
+			# Real canopy columns: a steel tube inside aluminium composite
+			# cladding with a reveal under the deck, standing on a
+			# concrete-filled pier that guards it from bumpers, with a
+			# brand-colour wrap at eye height.
+			_box("concrete", Vector3(0.62, 0.9, 0.62), Vector3(x, 0.65, ccz), Color("#c9c5bb"))
+			_box("paint", Vector3(0.68, 0.05, 0.68), Vector3(x, 1.12, ccz), Color("#b9b5ab"))
+			_box("paint", Vector3(0.5, 3.55, 0.5), Vector3(x, 2.92, ccz), Color("#e4e2dc"))
+			_box("paint", Vector3(0.52, 0.55, 0.52), Vector3(x, 1.75, ccz), brand)
+			_box("paint", Vector3(0.36, 0.12, 0.36), Vector3(x, 4.75, ccz), Color("#8d8f90"))
+		else:
+			_box("paint", Vector3(0.4, 4.6, 0.4), Vector3(x, 2.5, ccz), Color("#d8d6cf"))
 		for s in [-1.0, 1.0]:
 			_dispenser(Vector3(x, 0.2, ccz + s * 1.5), brand)
 			# Concrete-filled steel bollards guard each end of the island.
 			_box("paint", Vector3(0.16, 1.1, 0.16), Vector3(x, 0.75, ccz + s * 2.9), Color("#f2c200"))
 		if fine_parts:
 			# A trash can and squeegee bucket by the column.
-			_box("paint", Vector3(0.5, 0.9, 0.5), Vector3(x + 0.4, 0.65, ccz), Color("#2d3f2e"))
+			# Island service centre: a square steel trash receptacle with a
+			# push-flap top, a towel box on its side and a windshield
+			# squeegee bucket hung on the front.
+			var tx := x + 0.62
+			_box("paint", Vector3(0.48, 0.92, 0.48), Vector3(tx, 0.66, ccz), Color("#3b3f42"))
+			_box("paint", Vector3(0.52, 0.08, 0.52), Vector3(tx, 1.16, ccz), Color("#2a2d2f"))
+			_box("paint", Vector3(0.3, 0.05, 0.02), Vector3(tx, 1.0, ccz - 0.25), Color("#1b1c1d"))
+			_box("paint", Vector3(0.3, 0.36, 0.14), Vector3(tx, 1.38, ccz + 0.12), Color("#f2f1ec"))
+			_box("paint", Vector3(0.24, 0.3, 0.18), Vector3(tx + 0.33, 0.95, ccz), Color("#2f6fb0"))
+			_box("paint", Vector3(0.04, 0.5, 0.04), Vector3(tx + 0.33, 1.2, ccz + 0.05), Color("#1d1d1d"))
 	# Price sign on a pole near the street: the brand panel on top, then a
 	# black LED board with a row for each grade (red digits, Indiana law
 	# posts the per-gallon price to the tenth of a cent).
@@ -1875,7 +2081,25 @@ func _shop_gas_station(to_curb: float) -> void:
 	# By the front door: the ice chest and the propane exchange cage.
 	_box("paint", Vector3(1.8, 1.7, 0.8), Vector3(sw * 0.5 - 1.4, 1.15, zf - 0.6), Color("#eef2f4"))
 	_box("paint", Vector3(1.82, 0.35, 0.82), Vector3(sw * 0.5 - 1.4, 1.75, zf - 0.6), Color("#1e5aa8"))
-	_box("metal", Vector3(1.5, 1.6, 0.8), Vector3(sw * 0.5 - 3.4, 1.1, zf - 0.6), Color("#8d9093"))
+	if fine_parts:
+		# Real ones: a merchandiser's twin lids show as a seam and two
+		# handles; the exchange cage is welded steel mesh round three
+		# shelves of 20 lb cylinders, padlocked, on a steel base.
+		var ix := sw * 0.5 - 1.4
+		_box("paint", Vector3(0.02, 1.2, 0.02), Vector3(ix, 1.0, zf - 1.01), Color("#b9c0c4"))
+		for s in [-1.0, 1.0]:
+			_box("metal", Vector3(0.05, 0.4, 0.05), Vector3(ix + s * 0.18, 1.1, zf - 1.03), Color("#9aa0a4"))
+		var gx := sw * 0.5 - 3.4
+		_box("metal", Vector3(1.5, 0.3, 0.8), Vector3(gx, 0.45, zf - 0.6), Color("#2f4f7a"))
+		_box("chain", Vector3(1.5, 1.3, 0.8), Vector3(gx, 1.25, zf - 0.6), Color("#c9ccce"))
+		_box("metal", Vector3(1.56, 0.06, 0.86), Vector3(gx, 1.93, zf - 0.6), Color("#2f4f7a"))
+		for row in 2:
+			_box("metal", Vector3(1.44, 0.03, 0.74), Vector3(gx, 0.62 + row * 0.66, zf - 0.6), Color("#7d8285"))
+			for k in 3:
+				_cylinder("paint", Vector3(gx - 0.45 + k * 0.45, 0.64 + row * 0.66, zf - 0.6), 0.15, 0.46, Color("#e9ecee") if (k + row) % 3 else Color("#3a6aa8"), 10)
+		_box("metal", Vector3(0.08, 0.1, 0.04), Vector3(gx + 0.3, 1.3, zf - 1.02), Color("#b08a3a"))
+	else:
+		_box("metal", Vector3(1.5, 1.6, 0.8), Vector3(sw * 0.5 - 3.4, 1.1, zf - 0.6), Color("#8d9093"))
 	# Cars pull up beside the pumps, one each side of an island, and the
 	# driver walks in to pay.
 	if not small_store:
@@ -1888,6 +2112,47 @@ func _shop_gas_station(to_curb: float) -> void:
 		var x := (i - (islands - 1) * 0.5) * cw / islands
 		for s in [-1.0, 1.0]:
 			site.stalls.append([Vector2(x + s * 2.0, ccz), Vector2(0, 1)])
+
+
+## Desktop: the c-store's front as built, from photos of Indiana highway
+## stores: a raised 6 in concrete walk the width of the store with a row of
+## concrete-filled pipe bollards along its edge, a dark-bronze aluminium
+## pair of glass doors with push bars and a transom in the storefront, a
+## walk-off mat, and snap frames holding posters on the glass either side.
+func _cstore_front(sw: float, zf: float) -> void:
+	var dx := -sw * 0.3 + 2.4
+	var bronze := Color("#3a332c")
+	_box("concrete", Vector3(sw, 0.3, 2.4), Vector3(0, 0.15, zf - 1.2), Color("#c8c4ba"))
+	_box("concrete", Vector3(sw, 0.16, 0.16), Vector3(0, 0.08, zf - 2.48), Color("#bdb9ae"))
+	var bx := -sw * 0.5 + 1.0
+	while bx < sw * 0.5 - 0.5:
+		if absf(bx - dx) > 1.4:
+			_cylinder("paint", Vector3(bx, 0.3, zf - 2.15), 0.085, 1.0, Color("#f2c200"), 10)
+			_cylinder("paint", Vector3(bx, 1.3, zf - 2.15), 0.06, 0.06, Color("#d9ad00"), 10)
+		bx += 1.8
+	# The doors: jambs, a meeting stile, rails, push bars and a transom bar.
+	var fz := zf - 0.08
+	for x in [dx - 0.92, dx + 0.92]:
+		_box("metal", Vector3(0.1, 2.55, 0.1), Vector3(x, 1.58, fz), bronze)
+	_box("metal", Vector3(0.12, 2.2, 0.1), Vector3(dx, 1.4, fz), bronze)
+	_box("metal", Vector3(1.84, 0.1, 0.1), Vector3(dx, 2.5, fz), bronze)
+	for s in [-1.0, 1.0]:
+		var lx: float = dx + s * 0.46
+		_box("metal", Vector3(0.8, 0.22, 0.08), Vector3(lx, 0.42, fz), bronze)
+		_box("metal", Vector3(0.6, 0.04, 0.05), Vector3(lx, 1.1, fz - 0.07), Color("#b9bcbe"))
+		_box("metal", Vector3(0.05, 0.4, 0.05), Vector3(dx + s * 0.1, 1.15, fz - 0.06), Color("#b9bcbe"))
+	_box("paint", Vector3(1.9, 0.02, 1.2), Vector3(dx, 0.31, zf - 0.7), Color("#2a2b2c"))
+	# Poster snap frames on the glass either side of the doors.
+	var pk := posmod(hash([rng.seed, 72]), 4)
+	var tints := ["#c8102e", "#00529b", "#2f7d32", "#e8a317"]
+	for s in [-1.0, 1.0]:
+		var px: float = dx + s * 2.15
+		if absf(px) > sw * 0.5 - 0.6:
+			continue
+		var col := Color(tints[(pk + int(s + 1.0)) % 4])
+		_box("metal", Vector3(0.66, 0.92, 0.03), Vector3(px, 1.5, zf - 0.05), Color("#c9ccce"))
+		_box("paint", Vector3(0.58, 0.84, 0.02), Vector3(px, 1.5, zf - 0.07), col)
+		_box("paint", Vector3(0.48, 0.3, 0.01), Vector3(px, 1.36, zf - 0.085), Color("#f4f1e8"))
 
 
 ## A mansard band round a flat-roofed box from `y0` up to `y1`, sloping in
@@ -1929,16 +2194,31 @@ func _seven_seg(n: int, c: Vector3, col: Color, scale := 1.0) -> void:
 
 ## A fuel dispenser (Gilbarco Encore / Wayne Ovation shape): a plinth, a
 ## pale body with a dark screen and nozzle bay on each face, and a valance
-## in the brand colour on top.
+## in the brand colour on top. It sits lengthwise on the island, its two
+## faces toward the lanes either side (+-x), where the cars pull up.
 func _dispenser(at: Vector3, brand: Color) -> void:
-	_box("paint", Vector3(0.9, 0.2, 0.6), at + Vector3(0, 0.1, 0), Color("#6f6a62"))
-	_box("paint", Vector3(0.8, 1.45, 0.5), at + Vector3(0, 0.92, 0), Color("#e8e6df"))
-	_box("paint", Vector3(0.82, 0.32, 0.52), at + Vector3(0, 1.8, 0), brand)
+	_box("paint", Vector3(0.6, 0.2, 0.9), at + Vector3(0, 0.1, 0), Color("#6f6a62"))
+	_box("paint", Vector3(0.5, 1.45, 0.8), at + Vector3(0, 0.92, 0), Color("#e8e6df"))
+	_box("paint", Vector3(0.52, 0.32, 0.82), at + Vector3(0, 1.8, 0), brand)
 	for f in [-1.0, 1.0]:
-		_box("paint", Vector3(0.6, 0.32, 0.03), at + Vector3(0, 1.3, f * 0.26), Color("#1b1e22"))
+		_box("paint", Vector3(0.03, 0.32, 0.6), at + Vector3(f * 0.26, 1.3, 0), Color("#1b1e22"))
 		if fine_parts:
-			_box("paint", Vector3(0.18, 0.35, 0.06), at + Vector3(-0.22, 0.8, f * 0.27), Color("#2b2b2b"))
-			_box("paint", Vector3(0.18, 0.35, 0.06), at + Vector3(0.22, 0.8, f * 0.27), Color("#2b2b2b"))
+			var hose := Color("#141516")
+			for sz in [-0.22, 0.22]:
+				# The nozzle in its holster on the face...
+				_box("paint", Vector3(0.06, 0.35, 0.18), at + Vector3(f * 0.27, 0.8, sz), Color("#2b2b2b"))
+				_box("paint", Vector3(0.1, 0.07, 0.07), at + Vector3(f * 0.31, 0.93, sz), Color("#3a3a3a"))  # its grip
+				# ...and its hose, out of the top of the cabinet, drooping in a
+				# loop beside the face and back up to the nozzle.
+				var top := at + Vector3(f * 0.28, 1.62, sz * 1.6)
+				var low := at + Vector3(f * 0.42, 0.42, sz * 1.75)
+				var noz := at + Vector3(f * 0.33, 0.9, sz)
+				for seg in [[top, low], [low, noz]]:
+					var p0: Vector3 = seg[0]
+					var p1: Vector3 = seg[1]
+					var d := p1 - p0
+					var basis := Basis(Quaternion(Vector3.UP, d.normalized()))
+					_box("paint", Vector3(0.035, d.length(), 0.035), (p0 + p1) * 0.5, hose, basis)
 
 
 ## A diner or family restaurant: one storey, a long band of windows with a
@@ -1951,7 +2231,9 @@ func _shop_diner(to_curb: float) -> void:
 	var band := Color(_pick(["#c8102e", "#1f3b6e", "#2a7a6e", "#d8d6cf"]))
 	var wall := Color(_pick(["#e9e6dc", "#d8d2c2", "#a8775c"]))
 	_box("paint", Vector3(w + 0.1, 0.3, d + 0.1), Vector3(0, 0.15, cz), FOUNDATION)
-	_flat_roofed("paint", w, d, cz, 4.0, 4.6, wall)
+	# Pale ones are EIFS (synthetic stucco), the brown one face brick:
+	# what freestanding family restaurants wear since the 1980s.
+	_flat_roofed("brick" if wall == Color("#a8775c") else "eifs", w, d, cz, 4.0, 4.6, wall)
 	_box("metal", Vector3(w + 0.1, 0.45, 0.12), Vector3(0, 1.0, zf - 0.06), Color("#c9cbc8"))
 	_box("paint", Vector3(w + 0.1, 0.55, 0.14), Vector3(0, 3.3, zf - 0.07), band)
 	var n := int((w - 3.0) / 1.5)
@@ -2019,10 +2301,14 @@ func _bank(to_curb: float) -> void:
 	var cz := zf + d * 0.5
 	var brick := Color(_pick(FACADE_BRICK))
 	var stone := Color("#d8d2c2")
-	_box("paint", Vector3(w + 0.1, 0.6, d + 0.1), Vector3(0, 0.3, cz), stone)
+	# Indiana limestone, dressed: the water table, frieze, cornice, quoins
+	# and door surround read as cut stone, not paint (Bedford stone fronts
+	# every county bank of the 1910s-20s).
+	var ashlar := _dressed(stone)
+	_box("brick", Vector3(w + 0.1, 0.6, d + 0.1), Vector3(0, 0.3, cz), ashlar)
 	_box("brick", Vector3(w, 6.6, d), Vector3(0, 3.9, cz), brick)
 	_hip_roof(0.0, cz, 7.2, w, d, 2.0, Color(_pick(ROOF)))
-	_box("paint", Vector3(w + 0.2, 0.3, d + 0.2), Vector3(0, 7.1, cz), stone)
+	_box("brick", Vector3(w + 0.2, 0.3, d + 0.2), Vector3(0, 7.1, cz), ashlar)
 	for i in 4:
 		var x := lerpf(-w * 0.5 + 1.6, w * 0.5 - 1.6, i / 3.0)
 		if i == 1 or i == 2:
@@ -2036,7 +2322,7 @@ func _bank(to_curb: float) -> void:
 		# A square plinth and a capital, as on every Colonial Revival bank.
 		_box("paint", Vector3(0.75, 0.3, 0.75), Vector3(-2.4 + k * 1.6, 0.77, zf - 2.5), stone)
 		_box("paint", Vector3(0.72, 0.22, 0.72), Vector3(-2.4 + k * 1.6, 5.86, zf - 2.5), stone)
-	_box("paint", Vector3(6.4, 0.8, 3.2), Vector3(0, 6.4, zf - 1.5), stone)
+	_box("brick", Vector3(6.4, 0.8, 3.2), Vector3(0, 6.4, zf - 1.5), ashlar)
 	# The cornice under the pediment, projecting past the frieze.
 	_box("paint", Vector3(6.8, 0.18, 3.5), Vector3(0, 6.86, zf - 1.6), stone.lightened(0.05))
 	if fine_parts:
@@ -2047,14 +2333,14 @@ func _bank(to_curb: float) -> void:
 		for sx in [-1.0, 1.0]:
 			for q in 9:
 				var qw := 0.7 if q % 2 == 0 else 0.45
-				_box("paint", Vector3(qw, 0.32, 0.08), Vector3(sx * (w * 0.5 - qw * 0.5 + 0.02), 1.0 + q * 0.68, zf - 0.05), stone)
+				_box("brick", Vector3(qw, 0.32, 0.08), Vector3(sx * (w * 0.5 - qw * 0.5 + 0.02), 1.0 + q * 0.68, zf - 0.05), ashlar)
 	_tri("paint", Vector3(-3.2, 6.8, zf - 3.1), Vector3(3.2, 6.8, zf - 3.1), Vector3(0, 8.0, zf - 3.1), stone, [], Vector3.FORWARD)
 	_quad("roof", Vector3(-3.3, 6.8, zf - 3.1), Vector3(0, 8.0, zf - 3.1), Vector3(0, 8.0, zf), Vector3(-3.3, 6.8, zf), Color(ROOF[0]), [], Vector3(-1, 3, 0))
 	_quad("roof", Vector3(3.3, 6.8, zf - 3.1), Vector3(0, 8.0, zf - 3.1), Vector3(0, 8.0, zf), Vector3(3.3, 6.8, zf), Color(ROOF[0]), [], Vector3(1, 3, 0))
 	# The front doors: a stone surround with a cornice, a pair of glass and
 	# bronze doors and a transom light over them.
-	_box("paint", Vector3(2.6, 3.5, 0.12), Vector3(0, 2.35, zf - 0.075), stone)
-	_box("paint", Vector3(3.0, 0.25, 0.3), Vector3(0, 4.2, zf - 0.15), stone)
+	_box("brick", Vector3(2.6, 3.5, 0.12), Vector3(0, 2.35, zf - 0.075), ashlar)
+	_box("brick", Vector3(3.0, 0.25, 0.3), Vector3(0, 4.2, zf - 0.15), ashlar)
 	_box("paint", Vector3(1.9, 2.95, 0.06), Vector3(0, 2.07, zf - 0.13), Color("#3a3530"))
 	for sx in [-0.45, 0.45]:
 		_glass(Vector3(sx, 1.9, zf - 0.17), Vector3(-1, 0, 0), 0.7, 2.0, 0.0)

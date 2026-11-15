@@ -455,6 +455,20 @@ void fragment() {
 	// hardwoods show.
 	vec3 shade_grass = col * vec3(0.62, 0.7, 0.55);
 	vec3 litter_floor = mix(shade_grass, litter.rgb * (0.8 + 0.4 * clump), 0.25 + 0.5 * smoothstep(0.55, 0.95, cover.r));
+#ifdef DESKTOP_DETAIL
+	// Once the leaves are down (November to April) a hardwood floor is a
+	// carpet of them, wall to wall: fresh fallen oak and maple a warm tan
+	// in November, packed and grey-brown by March; only at the very edge
+	// does the grass come through. The green floor stays for the summer,
+	// when mayapple, jewelweed and the like cover it.
+	float fallen = max(season_look.y, season_look.x * 0.55);
+	// (Colours written here are linear, like everything this shader mixes:
+	// the carpet is sRGB 0.40/0.30/0.18, fresh 0.50/0.33/0.16.)
+	vec3 carpet = mix(vec3(0.133, 0.073, 0.027), vec3(0.214, 0.089, 0.022), season_look.x);
+	carpet = mix(carpet, vec3(0.119, 0.089, 0.059), season_look.y * (1.0 - season_look.x) * (1.0 - season_look.w * 0.4));
+	carpet *= 0.82 + 0.36 * clump;
+	litter_floor = mix(litter_floor, mix(litter_floor, carpet, 0.35 + 0.6 * smoothstep(0.4, 0.8, cover.r)), fallen);
+#endif
 	vec3 yard_floor = mix(litter_floor, col * vec3(0.82, 0.86, 0.76), yard);
 	vec3 woods = mix(yard_floor, tops, painted);
 	// A ragged edge, as real woods have, not the straight line between samples.
@@ -531,20 +545,47 @@ void fragment() {
 	col = mix(col, spoil.rgb * (0.85 + 0.3 * clump), smoothstep(0.3, 0.7, cover.a));
 	// Muddy, sandy banks by the water.
 	float banks = smoothstep(0.03, 0.3, cover.g);
+#ifdef DESKTOP_DETAIL
+	// From the air Grant County's pit ponds and the Mississinewa's banks
+	// are grassy or wooded right down to the water, with only a narrow lip
+	// of dark wet silt and a little grey gravel at the edge, never a pale
+	// beach ring. The wet margin above it grows lush and dark (reed canary
+	// grass, sedges, cattails in the coves).
+	float margin = smoothstep(0.02, 0.12, cover.g) * (1.0 - smoothstep(0.15, 0.35, cover.g));
+	col = mix(col, col * vec3(0.72, 0.84, 0.64), margin * (1.0 - season_look.y * 0.5) * (1.0 - cover.r * 0.6));
+	banks = smoothstep(0.16, 0.42, cover.g + (clump - 0.5) * 0.12);
+	col = mix(col, mix(vec3(0.073, 0.055, 0.033), vec3(0.171, 0.163, 0.14), step(0.8, grain) * 0.5) * (0.9 + 0.2 * grain), banks);
+#else
 	col = mix(col, mud.rgb * (0.9 + 0.2 * grain), banks);
+#endif
 	if (pk > 0.0 && banks > 0.0) {
 		pr = mix(pr, ph_mud(p), banks);
 		ps = mix(ps, ph_mud_s(p), banks);
 	}
 	// Worn, bare soil on steep banks.
+#ifdef DESKTOP_DETAIL
+	// A cut bank on the Mississinewa or a creek is raw only in patches, where
+	// the current undercuts it: damp brown-grey till with roots hanging out,
+	// darker than a dry field's soil. The rest is grown over (grass, vines,
+	// the woods' own floor), so a bank never reads as a pale ribbon of road.
+	float raw = smoothstep(0.2, 0.45, steep) * smoothstep(0.35, 0.65, clump + (mid - 0.5) * 0.3) * (1.0 - 0.5 * in_woods);
+	col = mix(col, vec3(0.107, 0.073, 0.04) * (0.85 + 0.3 * grain), raw * 0.75);
+#else
 	col = mix(col, soil.rgb * 0.9, smoothstep(0.2, 0.45, steep) * 0.6);
+#endif
 
 	// The painted grain stands in for the photo's detail where there is none.
 	col *= 1.0 + ((grain - 0.5) * mix(0.4, 0.22, mowed) * fade + (blades - 0.5) * 0.3 * fade * fade) * (1.0 - pk * 0.8);
 	col *= mix(vec3(1.0), pr, pk);
-	// Snow lies thinner under the woods and on steep banks, and drifts in
-	// patches before it covers everything.
+	// Snow lies a little thinner under the woods and thinner on steep banks,
+	// and drifts in patches before it covers everything. Leafless Indiana
+	// hardwoods catch only about a tenth of a snowfall in their branches, so
+	// the woods floor stays white with litter showing through in thin spots.
+#ifdef DESKTOP_DETAIL
+	float under = smoothstep(0.3, 0.65, cover.r) * (1.0 - painted) * 0.15 + smoothstep(0.2, 0.45, steep) * 0.4;
+#else
 	float under = smoothstep(0.3, 0.65, cover.r) * (1.0 - painted) * 0.45 + smoothstep(0.2, 0.45, steep) * 0.4;
+#endif
 	float lies = smoothstep(0.05, 0.45, snow * 1.15 - clump * 0.35 - (1.0 - mid) * 0.15 + 0.1 - under);
 	lies *= 1.0 - smoothstep(0.03, 0.3, cover.g) * 0.5;
 	lies *= 1.0 - hw_paved * 0.85;
@@ -583,6 +624,9 @@ uniform vec4 deep : source_color = vec4(0.12, 0.16, 0.12, 1.0);
 // The silt and mud of the bottom where it's shallow by the bank.
 uniform vec4 shore : source_color = vec4(0.36, 0.33, 0.24, 1.0);
 global uniform float snow;
+#ifdef DESKTOP_DETAIL
+global uniform vec4 season_look;
+#endif
 
 varying vec3 world_pos;
 // Metres of water under this point, over 3. TerrainView._water_mesh puts
@@ -624,6 +668,30 @@ void fragment() {
 	ROUGHNESS = mix(mix(0.3, 0.16, smoothstep(0.1, 0.8, d)), 0.55, ice);
 	SPECULAR = mix(0.55, 0.35, ice);
 	METALLIC = 0.0;
+#ifdef DESKTOP_DETAIL
+	// The sheet lies flat over every square that touches the water, so
+	// round a small shallow pond it spread out over the grass a few
+	// centimetres deep, a pale mirror with square corners that read as a
+	// concrete pad. Real pond margins are wet ground and water a hand deep,
+	// darker than dry mud (wet silt, the water's own tea colour), so the
+	// first decimetres fade into the ground along a ragged line.
+	float metres = depth3 * 3.0;
+	float hand = (1.0 - smoothstep(0.1, 0.9, metres)) * (1.0 - ice);
+	ALBEDO = mix(ALBEDO, vec3(0.047, 0.051, 0.025) * (0.85 + 0.3 * a), hand);
+	// Water's own reflectance (F0 about 0.02, Godot's SPECULAR 0.25): at
+	// 0.55 every shallow read as a pale milky shoal from the air.
+	SPECULAR = mix(0.25, 0.35, ice);
+	// The shallow rim of an Indiana farm pond is grown over with cattails,
+	// bulrush and sedge standing in the water (a ring a few metres wide,
+	// green in summer, straw-tan from fall to spring), not open water
+	// mirroring the sky in a pale band.
+	float reeds = (1.0 - smoothstep(0.2, 0.65, metres + (b - 0.5) * 0.35 + (a - 0.5) * 0.15)) * (1.0 - ice);
+	vec3 reed_col = mix(vec3(0.051, 0.084, 0.017), vec3(0.263, 0.196, 0.089), clamp(season_look.y + season_look.x * 0.5, 0.0, 1.0));
+	ALBEDO = mix(ALBEDO, reed_col * (0.8 + 0.4 * a), reeds * 0.9);
+	ROUGHNESS = mix(ROUGHNESS, 0.92, reeds);
+	SPECULAR = mix(SPECULAR, 0.08, reeds);
+	ALPHA = mix(smoothstep(0.04, 0.3, metres + (a - 0.5) * 0.16 + (c - 0.5) * 0.1), 1.0, ice);
+#endif
 }
 """
 
@@ -697,7 +765,7 @@ static func water_material() -> ShaderMaterial:
 	if _water_mat == null:
 		_water_mat = ShaderMaterial.new()
 		var sh := Shader.new()
-		sh.code = WATER_SHADER
+		sh.code = WATER_SHADER.replace("shader_type spatial;", "shader_type spatial;\n" + PhotoGround.defines())
 		_water_mat.shader = sh
 		_water_mat.set_shader_parameter("noise_soft", Ground.noise(256, 0.02, 3, 41))
 	return _water_mat

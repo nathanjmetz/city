@@ -847,6 +847,21 @@
   }
  },
  "textures": {
+  "beige_wall_001": {
+   "author": "Dimitrios Savva, Rico Cilliers",
+   "dir": "res://art/assets/pbr/beige_wall_001",
+   "licence": "CC0-1.0",
+   "loop": "downtown",
+   "name": "Beige Wall 001",
+   "page": "https://polyhaven.com/a/beige_wall_001",
+   "real": "exterior insulation and finish system: fine sand-finish acrylic stucco over foam, the dress of every 1990s-2010s Indiana strip centre and pad restaurant",
+   "size_m": [
+    3.0,
+    3.0
+   ],
+   "source": "polyhaven",
+   "use": "EIFS fronts and tenant towers of 1990s-2010s strip centres (tinted to the wall colour)"
+  },
   "bitumen": {
    "author": "Rob Tuytel",
    "dir": "res://art/assets/pbr/bitumen",
@@ -981,6 +996,21 @@
    ],
    "source": "polyhaven",
    "use": "schools, churches, courthouses' brick wings"
+  },
+  "large_sandstone_blocks": {
+   "author": "Rob Tuytel",
+   "dir": "res://art/assets/pbr/large_sandstone_blocks",
+   "licence": "CC0-1.0",
+   "loop": "downtown",
+   "name": "Large Sandstone Blocks",
+   "page": "https://polyhaven.com/a/large_sandstone_blocks",
+   "real": "sawn Indiana (Bedford) limestone ashlar, the base and trim of nearly every Indiana courthouse-square bank and office block",
+   "size_m": [
+    3.0,
+    3.0
+   ],
+   "source": "polyhaven",
+   "use": "dressed stone bases, belt courses and cornices of downtown blocks, banks and office buildings (its shading only, tinted to the stone colour)"
   },
   "mud_forest": {
    "author": "eye-candy.xyz",

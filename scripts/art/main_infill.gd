@@ -71,6 +71,8 @@ static func _mi_midcentury(b: DenseBuilder, r: RandomNumberGenerator, to_curb: f
 	for k in fronts:
 		var fx := -w * 0.5 + (k + 0.5) * fw
 		var sw := fw - 0.8
+		if DenseBuilder.fine:
+			b._light_pool(Vector3(fx, 0.1, zf - 0.2), sw * 1.4, 4.4, Color(0.78, 0.7, 0.58))  # the windows' spill after dark
 		# Polished stone bulkhead, then glass to the canopy in tall lights.
 		b._box("paint", Vector3(sw, 0.5, 0.12), Vector3(fx, 0.25, zf - 0.06), stone)
 		var lights := maxi(3, roundi(sw / 1.6))
@@ -107,6 +109,21 @@ static func _mi_midcentury(b: DenseBuilder, r: RandomNumberGenerator, to_curb: f
 		b._box("paint", Vector3(w - 1.2, 0.85, 0.06), Vector3(0, y0 + 0.43, zf - 0.04), enamel)
 		b._glass(Vector3(0, y0 + 1.65, zf - 0.03), Vector3(-1, 0, 0), w - 1.6, 1.5, r.randf_range(0.0, 0.5))
 		var n := maxi(3, roundi((w - 1.6) / 1.4))
+		if DenseBuilder.fine:
+			# Desktop: the spandrel is a row of separate enamelled steel
+			# panels, one per window bay, held in aluminium battens with a
+			# cap along the top (1950s storefront remodelling catalogues).
+			for i in n + 1:
+				b._box("metal", Vector3(0.05, 0.85, 0.08), Vector3(lerpf(-w * 0.5 + 0.8, w * 0.5 - 0.8, float(i) / n), y0 + 0.43, zf - 0.07),
+					ALUMINIUM)
+			for i in n:
+				# Each panel faded a little differently by sixty summers.
+				var fade := float(posmod(hash([r.seed, f, i, 77]), 100)) / 100.0
+				var x0 := lerpf(-w * 0.5 + 0.8, w * 0.5 - 0.8, float(i) / n)
+				var x1 := lerpf(-w * 0.5 + 0.8, w * 0.5 - 0.8, float(i + 1) / n)
+				b._box("paint", Vector3(x1 - x0 - 0.04, 0.8, 0.02), Vector3((x0 + x1) * 0.5, y0 + 0.43, zf - 0.075),
+					enamel.lightened(0.03 + fade * 0.07))
+			b._box("metal", Vector3(w - 1.2, 0.05, 0.09), Vector3(0, y0 + 0.02, zf - 0.07), ALUMINIUM)
 		for i in n + 1:
 			b._box("metal", Vector3(0.05, 1.5, 0.08), Vector3(lerpf(-w * 0.5 + 0.8, w * 0.5 - 0.8, float(i) / n), y0 + 1.65, zf - 0.05),
 				Color("#3a3d3e"))
@@ -123,6 +140,27 @@ static func _mi_midcentury(b: DenseBuilder, r: RandomNumberGenerator, to_curb: f
 	var sx := -e * (w * 0.5 - 0.9)
 	b._box("paint", Vector3(1.0, 2.2, 0.06), Vector3(sx, 1.1, zf - 0.17), Color("#6b5038"))
 	b._box("paint", Vector3(0.5, 2.2, 0.06), Vector3(sx + e * 0.8, 1.1, zf - 0.17), Color("#d8dcd8"))
+	if DenseBuilder.fine:
+		# Desktop: the flats' door as built: a stained flush door with a
+		# narrow wired-glass lite, in an aluminium frame, a kick plate, a
+		# lever and the street number; the sidelight is real glass block,
+		# 8 in units set in white mortar, catching the light unevenly.
+		var al := ALUMINIUM
+		b._box("metal", Vector3(1.12, 0.06, 0.08), Vector3(sx, 2.23, zf - 0.19), al)
+		for jx in [-0.53, 0.53]:
+			b._box("metal", Vector3(0.06, 2.2, 0.08), Vector3(sx + jx, 1.1, zf - 0.19), al)
+		b._glass(Vector3(sx + e * 0.22, 1.45, zf - 0.205), Vector3(-1, 0, 0), 0.16, 0.9, 0.4)
+		b._box("metal", Vector3(0.84, 0.25, 0.01), Vector3(sx, 0.17, zf - 0.205), Color("#b8b4a8"))  # kick plate
+		b._box("metal", Vector3(0.14, 0.025, 0.04), Vector3(sx - e * 0.36, 1.0, zf - 0.23), Color("#c9c6bc"))  # lever
+		b._box("paint", Vector3(0.24, 0.1, 0.01), Vector3(sx, 2.36, zf - 0.205), Color("#1c1d1f"))  # number plate
+		b._box("concrete", Vector3(1.3, 0.12, 0.5), Vector3(sx, 0.06, zf - 0.4), Color("#c4beb2"))  # the step
+		var gx := sx + e * 0.8
+		b._box("paint", Vector3(0.5, 2.2, 0.05), Vector3(gx, 1.1, zf - 0.165), Color("#e9e6dd"))  # mortar
+		for row in 10:
+			for col in 2:
+				var lit := float(posmod(hash([r.seed, row, col, 31]), 100)) / 100.0
+				b._box("paint", Vector3(0.2, 0.2, 0.03), Vector3(gx - 0.11 + col * 0.22, 0.12 + row * 0.215, zf - 0.2),
+					Color("#a9c3c8").lightened(0.1 + lit * 0.25))
 	b._box("metal", Vector3(1.8, 1.0, 1.2), Vector3(r.randf_range(-w * 0.3, w * 0.3), deck + 0.5, cz + 2.0), Color("#b9bcbc"))
 	b._alley_side(w, zf + d, fronts, fw, storeys, shop_h, floor_h, wall)
 	b._downtown_walk(to_curb, width, zf)
@@ -155,6 +193,8 @@ static func _mi_newbuild(b: DenseBuilder, r: RandomNumberGenerator, to_curb: flo
 		var lights := maxi(2, roundi(sw / 1.8))
 		var lw := sw / lights
 		var eats := DenseBuilder.fine and b.sign_spec.is_empty() and int(b._word_slot(bx) * 0.5) - 1 in CommercialBuilder.EATERIES
+		if DenseBuilder.fine:
+			b._light_pool(Vector3(bx, 0.1, zf - 0.2), sw * 1.4, 4.4, Color(0.78, 0.7, 0.58))  # the windows' spill after dark
 		b._box("paint", Vector3(sw, 0.45, 0.1), Vector3(bx, 0.22, zf - 0.05), stone)
 		for i in lights:
 			var x := bx - sw * 0.5 + (i + 0.5) * lw
