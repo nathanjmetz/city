@@ -19,6 +19,10 @@ standalone redistribution or cost money.
 Sources:
   "polyhaven"  api.polyhaven.com (always CC0)
   "url"        any direct file list; the entry must name "licence", "author" and "page"
+  "scan"       a vehicle photo scan (Sketchfab, CC-BY): the unmodified download sits on
+               the vehicle-scans-raw release as "raw" (a zip); it is cleaned here by
+               tools/vehicles/bake_vehicle.py (Blender as a Python module, installed on
+               first use) to "length" metres, front/back flipped when "flip" is true
 
 Run: python3 tools/assets/fetch.py [id ...]     (no ids = everything in the catalog)
      python3 tools/assets/fetch.py --check      (licence/credit check only, no downloads)
@@ -146,6 +150,52 @@ def fetch_url(kind, aid, spec):
     return entry, total
 
 
+RAW_URL = "https://github.com/nathanjmetz/city/releases/download/vehicle-scans-raw/"
+
+
+def _bpy_python():
+    """A Python that can import bpy (Blender as a module): BPY_PATH, or a
+    one-time pip install into ~/.cache/bpyenv (about 1 GB)."""
+    import subprocess
+    path = os.environ.get("BPY_PATH") or os.path.expanduser("~/.cache/bpyenv")
+    env = dict(os.environ, PYTHONPATH=path)
+    if subprocess.run([sys.executable, "-P", "-c", "import bpy"], env=env, capture_output=True).returncode != 0:
+        subprocess.run([sys.executable, "-m", "pip", "install", "-q", "--target", path, "bpy"], check=True)
+    return env
+
+
+def fetch_scan(kind, aid, spec):
+    import subprocess, tempfile, zipfile
+    dest = os.path.join(OUT, "models", aid)
+    out = os.path.join(dest, aid + ".glb")
+    stamp = os.path.join(dest, "bake.json")
+    want = json.dumps({k: spec.get(k) for k in ("raw", "raw_url", "length", "flip")}, sort_keys=True)
+    if not (os.path.exists(out) and os.path.exists(stamp) and open(stamp).read() == want):
+        with tempfile.TemporaryDirectory() as tmp:
+            z = os.path.join(tmp, "raw.zip")
+            with open(z, "wb") as f:
+                f.write(get(spec.get("raw_url") or RAW_URL + spec["raw"]))
+            with zipfile.ZipFile(z) as zf:
+                zf.extractall(os.path.join(tmp, "x"))
+            scene = None
+            for r, _, fs in os.walk(os.path.join(tmp, "x")):
+                for n in fs:
+                    if n.endswith((".gltf", ".glb")) and scene is None:
+                        scene = os.path.join(r, n)
+            if scene is None:
+                raise RuntimeError("no glTF in " + spec["raw"])
+            os.makedirs(dest, exist_ok=True)
+            cmd = [sys.executable, "-P", os.path.join(ROOT, "tools/vehicles/bake_vehicle.py"), scene, out,
+                   str(spec["length"])] + (["flip"] if spec.get("flip") else [])
+            subprocess.run(cmd, env=_bpy_python(), check=True, stdout=subprocess.DEVNULL)
+        with open(stamp, "w") as f:
+            f.write(want)
+    entry = {"author": spec["author"], "page": spec["page"], "name": spec.get("name", aid),
+             "path": "res://art/assets/models/%s/%s.glb" % (aid, aid), "size_m": spec.get("size_m", [0, 0, 0]),
+             "tris": spec.get("tris", 0)}
+    return entry, os.path.getsize(out)
+
+
 def main():
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     check_only = "--check" in sys.argv
@@ -163,7 +213,7 @@ def main():
             if check_only or (args and aid not in args):
                 continue
             src = spec.get("src", "polyhaven")
-            entry, total = (fetch_polyhaven if src == "polyhaven" else fetch_url)(kind, aid, spec)
+            entry, total = {"polyhaven": fetch_polyhaven, "scan": fetch_scan}.get(src, fetch_url)(kind, aid, spec)
             entry.update(licence=lic, source=src, loop=spec.get("loop", ""), use=spec.get("use", ""),
                          real=spec.get("real", ""))
             index[kind][aid] = entry
