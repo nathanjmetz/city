@@ -172,7 +172,9 @@ void fragment() {
 	float turn = clamp(season_look.x * 1.5 - r * 0.5, 0.0, 1.0);
 	float bare = clamp(season_look.y * 1.4 - r * 0.4, 0.0, 1.0);
 	float clumps = texture(noise_grain, world_pos.xz / 0.9 + world_pos.y * 0.5).r;
-	vec3 leaf = vcol(COLOR.rgb) * (0.7 + clumps * 0.6);
+	// Leaf clusters a few metres across, lit tops and darker hollows.
+	float masses = texture(noise_grain, world_pos.xz / 4.0 + world_pos.y * 0.25).r;
+	vec3 leaf = vcol(COLOR.rgb) * (0.7 + clumps * 0.6) * (0.65 + masses * 0.7);
 	// Maples scarlet to orange, ashes and lindens yellow, oaks a dull
 	// russet brown that hangs on; in linear colour, muted as seen from far.
 	vec3 fall = mix(vec3(0.26, 0.05, 0.02), vec3(0.38, 0.15, 0.02), r / 0.45);
@@ -529,6 +531,7 @@ func _yard_trees(v: PackedVector3Array, nrm: PackedVector3Array, col: PackedColo
 		var bt := Vector3(x, base, z)
 		var cen := Vector3(x, mid, z)
 		var under := c * Color(0.75, 0.75, 0.75, 1.0)
+		var first := v.size()
 		for k in 7:
 			var k1 := (k + 1) % 7
 			var a: Vector3 = pts[0][k]
@@ -539,6 +542,12 @@ func _yard_trees(v: PackedVector3Array, nrm: PackedVector3Array, col: PackedColo
 			_quad(v, nrm, col, a, d, d2, a2, c, out + Vector3(0, r * 0.6, 0))
 			_tri(v, nrm, col, a2, d2, t, c, out * 0.5 + Vector3(0, r, 0))
 			_tri(v, nrm, col, a, d, bt, under, out - Vector3(0, r * 0.5, 0))
+		# A crown is a rounded mass of leaves, not a cut gem: shade it with
+		# normals from its middle (a squashed sphere), so light rolls round
+		# it smoothly instead of lighting seven flat facets.
+		var ec := Vector3(x, mid - r * 0.15, z)
+		for idx in range(first, v.size()):
+			nrm[idx] = ((v[idx] - ec) * Vector3(1.0, 1.4, 1.0)).normalized()
 
 
 ## The parking lot round a store or plant: its footprint grown on every side
