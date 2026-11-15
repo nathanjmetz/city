@@ -234,6 +234,7 @@ func _fill(b: Vector2i) -> Array:
 			xf.origin -= mid
 			mm.set_instance_transform(i, xf)
 		var mi := MultiMeshInstance3D.new()
+		mi.name = id
 		mi.multimesh = mm
 		mi.position = mid
 		mi.visibility_range_end = REACH

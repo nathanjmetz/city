@@ -78,21 +78,27 @@ func _process(delta: float) -> bool:
 
 
 ## Scanned props drawn near the camera (CountryProps), for the log.
-func _props() -> int:
-	var n := 0
+func _props() -> String:
+	var by := {}
 	for c in _main.get_children():
 		if c is CountryProps:
 			for mi in c.get_children():
-				n += (mi as MultiMeshInstance3D).multimesh.instance_count
-	return n
+				var mm := (mi as MultiMeshInstance3D).multimesh
+				var k := mm.mesh.resource_name if mm.mesh.resource_name != "" else str(mm.mesh.get_aabb().size.round())
+				by[k] = by.get(k, 0) + mm.instance_count
+	return str(by)
 
 
 ## Where the first scanned prop near the camera lies (the woods if none).
 func _prop_spot() -> Vector3:
+	# PROP_ID picks a scan by its mesh name (e.g. nettle), else the first.
+	var want := OS.get_environment("PROP_ID")
 	for c in _main.get_children():
 		if c is CountryProps:
 			for mi in c.get_children():
 				var mm: MultiMesh = (mi as MultiMeshInstance3D).multimesh
+				if want != "" and not want in String((mi as Node).name):
+					continue
 				if mm.instance_count > 0:
 					return (mi as Node3D).position + mm.get_instance_transform(0).origin
 	return _aims.woods

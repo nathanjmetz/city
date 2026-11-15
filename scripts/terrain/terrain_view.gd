@@ -745,7 +745,10 @@ void fragment() {
 	ROUGHNESS = mix(ROUGHNESS, mix(0.3, 0.16, smoothstep(0.1, 0.8, d)), reeds * fl);
 	SPECULAR = mix(SPECULAR, 0.25, reeds * fl);
 	float pebble = texture(noise_soft, p / 1.7).r;
-	float bar = (1.0 - smoothstep(0.15, 0.45, metres + (b - 0.5) * 0.3 + (c - 0.5) * 0.3)) * fl * (1.0 - ice);
+	// Bars lie in stretches (the inside of bends, below riffles), not as an
+	// unbroken beach along both banks.
+	float reach = smoothstep(0.42, 0.62, texture(noise_soft, p / 110.0 + vec2(0.37, 0.11)).r);
+	float bar = (1.0 - smoothstep(0.15, 0.45, metres + (b - 0.5) * 0.3 + (c - 0.5) * 0.3)) * fl * (1.0 - ice) * reach;
 	float dry = 1.0 - smoothstep(0.02, 0.2, metres + (a - 0.5) * 0.1);
 	vec3 gravel = mix(vec3(0.120, 0.100, 0.072), vec3(0.230, 0.205, 0.160), dry) * (0.75 + 0.5 * pebble);
 	ALBEDO = mix(ALBEDO, gravel, bar);
