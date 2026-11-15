@@ -825,12 +825,21 @@ func _tw_deco_portal(fz: float, stone: Color) -> void:
 		for i in 3:
 			_box("brick", Vector3(0.12, 7.4, 0.08), Vector3(sx * (2.05 + i * 0.22), 3.7, fz + 0.03), stone.lightened(0.06))
 	# The doors: two leaves, each a glass light in a bronze frame.
+	# Through their glass, the lobby: its marble and bronze under the
+	# ceiling lights, lit all night (the guard's desk), as at _office_front.
+	var lobby_keep := [shopfront, allnight, shop_kind]
+	shopfront = true
+	allnight = true
+	shop_kind = 4
 	for sx in [-0.7, 0.7]:
 		_box("metal", Vector3(1.3, 2.7, 0.06), Vector3(sx, 1.35, fz - 0.03), bronze)
 		_glass(Vector3(sx, 1.45, fz - 0.07), Vector3(-1, 0, 0), 0.9, 2.1, 0.0)
 		_box("metal", Vector3(0.05, 0.6, 0.08), Vector3(sx * 0.2, 1.1, fz - 0.1), Color("#b08d57"))  # pull
 	_box("metal", Vector3(3.0, 0.18, 0.1), Vector3(0, 2.8, fz - 0.05), bronze)  # transom bar
 	_glass(Vector3(0, 3.15, fz - 0.03), Vector3(-1, 0, 0), 2.7, 0.5, 0.0)
+	shopfront = lobby_keep[0]
+	allnight = lobby_keep[1]
+	shop_kind = lobby_keep[2]
 	_box("metal", Vector3(3.0, 0.12, 0.1), Vector3(0, 3.45, fz - 0.05), bronze)
 	# The grille above: upright bars, rows of chevrons, and a sunburst.
 	for i in 7:
@@ -853,8 +862,12 @@ func _tw_deco_portal(fz: float, stone: Color) -> void:
 		var lc := Vector3(sx * 2.9, 3.2, fz + 0.2)
 		_box("metal", Vector3(0.08, 0.08, 0.5), lc + Vector3(0, 0.45, 0.25), dark)  # bracket back to the wall
 		_box("metal", Vector3(0.36, 0.6, 0.36), lc, dark)
-		_box("paint", Vector3(0.28, 0.45, 0.38), lc, Color("#efe2bd"))
+		_box("sign", Vector3(0.28, 0.45, 0.38), lc, Color(1.0, 0.88, 0.64, 1.0))  # its frosted glass, lit
 		_box("metal", Vector3(0.44, 0.08, 0.44), lc + Vector3(0, 0.34, 0), dark)
+		# After dark each lantern lights the stone round it.
+		_light_pool(Vector3(lc.x, 3.0, fz + 0.01), 3.2, 4.2, Color(0.9, 0.78, 0.58), Vector3.FORWARD)
+	# And the walk before the doors.
+	_light_pool(Vector3(0, 0.125, fz - 2.2), 8.0, 5.0, Color(0.88, 0.8, 0.64))
 
 
 # ---------------------------------------------------------------- postwar glass
