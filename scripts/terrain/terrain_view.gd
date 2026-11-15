@@ -577,7 +577,9 @@ void fragment() {
 	float pit = smoothstep(0.42, 0.5, pit_k);
 	float berm = smoothstep(0.26, 0.4, pit_k) * (1.0 - pit);
 	vec3 outwash = mix(vec3(0.30, 0.24, 0.16), vec3(0.21, 0.18, 0.14), smoothstep(0.45, 0.7, mid)) * (0.85 + 0.3 * grain);
-	col = mix(col, soil.rgb * 0.75, berm * 0.65);
+	// Stripped topsoil and overburden: grey-brown till, not the red-brown
+	// of a ploughed field.
+	col = mix(col, vec3(0.095, 0.083, 0.062) * (0.85 + 0.3 * clump), berm * 0.55);
 	col = mix(col, outwash, pit);
 	if (pk > 0.0 && pit > 0.0) {
 		pr = mix(pr, ph_soil(p), pit * 0.6);
@@ -627,6 +629,10 @@ void fragment() {
 	float margin = smoothstep(0.02, 0.12, cover.g) * (1.0 - smoothstep(0.15, 0.35, cover.g));
 	col = mix(col, col * vec3(0.72, 0.84, 0.64), margin * (1.0 - season_look.y * 0.5) * (1.0 - cover.r * 0.6));
 	banks = smoothstep(0.16, 0.42, cover.g + (clump - 0.5) * 0.12);
+	// Under a wooded shore the canopy and its litter run right down to the
+	// water: no silt lip shows from the air (it drew a thin rust outline
+	// round every wooded pit lake in the wide view).
+	banks *= 1.0 - 0.8 * smoothstep(0.3, 0.6, cover.r);
 	col = mix(col, mix(vec3(0.073, 0.055, 0.033), vec3(0.171, 0.163, 0.14), step(0.8, grain) * 0.5) * (0.9 + 0.2 * grain), banks);
 #else
 	col = mix(col, mud.rgb * (0.9 + 0.2 * grain), banks);
