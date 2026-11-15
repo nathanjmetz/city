@@ -1819,6 +1819,8 @@ func _office(to_curb: float, width: float, storeys: int) -> void:
 					sz += 1.5
 				_box("metal", Vector3(0.14, 0.05, d - 1.5), Vector3(sd * (w * 0.5 + 0.07), y - gh * 0.5 - 0.02, cz), MULLION[0])
 			_box("metal", Vector3(w - 1.5, 0.05, 0.14), Vector3(0, y - gh * 0.5 - 0.02, zf - 0.07), MULLION[0])
+	if fine:
+		_office_back_door(zf + d, wall, mat)
 	# Entrance canopy, a plaza walk with planters, and a parking lot at the side.
 	_box("paint", Vector3(6.0, 0.3, 2.4), Vector3(0, 3.6, zf - 1.2), Color("#3a3c3e"))
 	_flat_rect("drive", -4.0, 4.0, -0.3, zf, 0.07)
@@ -2279,3 +2281,37 @@ func _slipcover_trim(w: float, zf: float, y0: float, ph: float, panel: Color, ma
 	_pixel_text(word, 0.0, y0 + ph * 0.55, zf - 0.3, px, 0.08, col, "paint")
 
 
+## Desktop: the lot-side entrance in the middle of an office's back wall,
+## where the accessible stall is (most people come in from the lot, not
+## the street): the ribbon filled in with wall either side, a pair of
+## dark-bronze aluminium storefront doors with a transom, push bars and
+## a threshold, a flat steel canopy on hangers with two downlights, and
+## the street number over the doors. No random numbers.
+func _office_back_door(zb: float, wall: Color, mat: String) -> void:
+	var bronze := Color("#3b332b")
+	_box(mat, Vector3(3.4, 3.7, 0.16), Vector3(0, 1.85, zb + 0.08), wall)
+	_box("metal", Vector3(2.0, 2.75, 0.06), Vector3(0, 1.375, zb + 0.17), bronze)
+	var keep := office_glass
+	office_glass = true
+	for e in [-1.0, 1.0]:
+		_glass(Vector3(e * 0.45, 1.13, zb + 0.205), Vector3(1, 0, 0), 0.72, 1.86, 0.0)
+		_box("metal", Vector3(0.66, 0.035, 0.05), Vector3(e * 0.45, 1.05, zb + 0.25), Color("#b9bbbc"))  # push bar
+	_glass(Vector3(0, 2.5, zb + 0.205), Vector3(1, 0, 0), 1.8, 0.42, 0.0)  # transom
+	office_glass = keep
+	for x in [-0.95, -0.03, 0.03, 0.95]:
+		_box("metal", Vector3(0.1 if absf(x) > 0.5 else 0.05, 2.75, 0.09), Vector3(x, 1.375, zb + 0.22), bronze)
+	_box("metal", Vector3(2.0, 0.1, 0.09), Vector3(0, 2.25, zb + 0.22), bronze)  # door head
+	_box("metal", Vector3(2.0, 0.1, 0.09), Vector3(0, 2.7, zb + 0.22), bronze)
+	_box("metal", Vector3(1.8, 0.2, 0.08), Vector3(0, 0.1, zb + 0.22), bronze)  # bottom rails
+	_box("metal", Vector3(2.1, 0.015, 0.3), Vector3(0, 0.08, zb + 0.3), Color("#9a9c9d"))  # threshold
+	# The canopy: a steel fascia box on two rods back to the wall.
+	_box("metal", Vector3(3.4, 0.3, 1.3), Vector3(0, 3.15, zb + 0.81), Color("#2c2e30"))
+	for e in [-1.0, 1.0]:
+		var a := Vector3(e * 1.5, 3.3, zb + 1.4)
+		var b2 := Vector3(e * 1.5, 4.0, zb + 0.16)
+		var mid := (a + b2) * 0.5
+		var seg := b2 - a
+		_box("metal", Vector3(0.03, 0.03, seg.length()), mid, Color("#2c2e30"), Basis(Vector3.RIGHT, atan2(seg.y, -seg.z)))
+		_box("sign", Vector3(0.18, 0.012, 0.18), Vector3(e * 0.7, 2.995, zb + 0.85), Color(0.98, 0.95, 0.88, 1.0))
+	_light_pool(Vector3(0, 0.1, zb + 1.0), 3.6, 2.6, Color(1.0, 0.95, 0.86))
+	_box("paint", Vector3(0.5, 0.16, 0.02), Vector3(0, 3.0, zb + 1.465), Color("#e8e6e0"))  # street number
