@@ -120,7 +120,12 @@ static func _mi_midcentury(b: DenseBuilder, r: RandomNumberGenerator, to_curb: f
 	for f in range(1, storeys):
 		var y0 := shop_h + (f - 1) * floor_h
 		b._box("paint", Vector3(w - 1.2, 0.85, 0.06), Vector3(0, y0 + 0.43, zf - 0.04), enamel)
+		# Desktop: upstairs are offices (the lawyer, the dentist, the
+		# insurance man), lit a floor at a time after dark, not flats.
+		var was_office := b.office_glass
+		b.office_glass = DenseBuilder.fine
 		b._glass(Vector3(0, y0 + 1.65, zf - 0.03), Vector3(-1, 0, 0), w - 1.6, 1.5, r.randf_range(0.0, 0.5))
+		b.office_glass = was_office
 		var n := maxi(3, roundi((w - 1.6) / 1.4))
 		if DenseBuilder.fine:
 			# Desktop: the spandrel is a row of separate enamelled steel
