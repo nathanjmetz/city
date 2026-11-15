@@ -687,6 +687,12 @@ void fragment() {
 	// banks out (Indiana ponds usually skin over by mid-January, the river
 	// channel rarely), grey and smooth with the snow drifted over it.
 	float ice = smoothstep(0.5, 0.85, snow + (1.0 - smoothstep(0.3, 2.5, d)) * 0.25 - (c - 0.5) * 0.2);
+#ifdef DESKTOP_DETAIL
+	// The Mississinewa's current keeps its channel open through all but the
+	// hardest cold snaps: shelf ice along the banks and over the shallow
+	// bars, dark open water down the middle, steaming on the coldest days.
+	ice *= 1.0 - smoothstep(0.3, 0.8, flow) * smoothstep(0.35, 0.9, d + (a - 0.5) * 0.3);
+#endif
 	vec3 frozen = mix(vec3(0.52, 0.56, 0.58), vec3(0.80, 0.83, 0.88), smoothstep(0.3, 0.7, snow * (0.8 + 0.4 * a)));
 	ALBEDO = mix(col, frozen, ice);
 	NORMAL = normalize(mix(NORMAL, (VIEW_MATRIX * vec4(0.0, 1.0, 0.0, 0.0)).xyz, ice));
@@ -1621,22 +1627,33 @@ static func _water_mesh(d: Dictionary) -> ArrayMesh:
 
 ## 1 where the water at a region point is a river channel (the
 ## Mississinewa, the bigger creeks), 0 in a pond, pit lake or reservoir: on
-## rings 120 and 250 m out, a channel is wet only where it comes in and goes
-## out, a pond's rings are dry and a lake's mostly wet.
+## rings 120, 250 and 500 m out, a channel is wet only where it comes in and
+## goes out, a pond's rings are dry and a lake's mostly wet.
 static func _river_channel(x: float, z: float) -> float:
+	# The river is one 18 m cell wide in the cover data, so a ring point
+	# that grazes it reads well under 0.5: count anything past 0.15.
 	var near := 0
 	for k in 12:
 		var ang := k * TAU / 12.0
-		if Terrain.water(x + cos(ang) * 120.0, z + sin(ang) * 120.0) > 0.4:
+		if Terrain.water(x + cos(ang) * 120.0, z + sin(ang) * 120.0) > 0.15:
 			near += 1
 	if near < 1 or near > 4:
 		return 0.0
 	var far := 0
 	for k in 20:
 		var ang := k * TAU / 20.0
-		if Terrain.water(x + cos(ang) * 250.0, z + sin(ang) * 250.0) > 0.4:
+		if Terrain.water(x + cos(ang) * 250.0, z + sin(ang) * 250.0) > 0.15:
 			far += 1
-	return 1.0 if far >= 2 and far <= 6 else 0.0
+	if far > 4:
+		return 0.0
+	# A narrow arm of a lake reads like a channel close up: 500 m out, a
+	# river still crosses the ring only a few times, a lake fills a long arc.
+	var wide := 0
+	for k in 28:
+		var ang := k * TAU / 28.0
+		if Terrain.water(x + cos(ang) * 500.0, z + sin(ang) * 500.0) > 0.15:
+			wide += 1
+	return 1.0 if wide <= 5 else 0.0
 
 
 ## How wooded the bank is within 25 m of a water point, 0 to 1: trees
