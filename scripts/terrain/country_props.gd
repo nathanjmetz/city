@@ -20,6 +20,10 @@ const SQUARE := 64.0
 const REACH := 170.0
 ## Squares to fill each frame.
 const PER_FRAME := 2
+## The gravel pits' stockpiles and stackers are big enough to see from
+## much further: squares this big, drawn this far.
+const FAR_SQUARE := 256.0
+const FAR_REACH := 900.0
 ## Spot spacing on the woods floor, metres.
 const WOODS_STEP := 6.0
 ## Stockpile spot spacing on a gravel pit's worked floor, metres.
@@ -41,6 +45,9 @@ var _built := {}
 var _meshes := {}
 var _scan_at := Vector2.INF
 var _queue: Array = []
+var _far_built := {}
+var _far_scan_at := Vector2.INF
+var _far_queue: Array = []
 
 
 func setup(s: CitySim) -> void:
@@ -54,7 +61,7 @@ static func drawn() -> bool:
 
 func _process(_delta: float) -> void:
 	if not drawn():
-		if not _built.is_empty():
+		if not _built.is_empty() or not _far_built.is_empty():
 			_clear()
 		return
 	if Terrain.view_origin != _origin:
@@ -64,8 +71,15 @@ func _process(_delta: float) -> void:
 	if cam == null:
 		return
 	var c := Vector2(cam.global_position.x, cam.global_position.z)
+	var lift := cam.global_position.y - Terrain.base(c.x + _origin.x, c.y + _origin.y)
+	if lift < FAR_REACH:
+		if _far_scan_at == Vector2.INF or c.distance_to(_far_scan_at) > FAR_SQUARE * 0.5:
+			_far_rescan(c)
+		if not _far_queue.is_empty():
+			var fb: Vector2i = _far_queue.pop_back()
+			_far_built[fb] = _fill_far(fb)
 	# Only near the ground: from high up they're specks.
-	if cam.global_position.y - Terrain.base(c.x + _origin.x, c.y + _origin.y) > REACH * 1.2:
+	if lift > REACH * 1.2:
 		return
 	if _scan_at == Vector2.INF or c.distance_to(_scan_at) > SQUARE * 0.5:
 		_rescan(c)
@@ -83,6 +97,35 @@ func _clear() -> void:
 	_built.clear()
 	_queue.clear()
 	_scan_at = Vector2.INF
+	for b in _far_built:
+		for n in _far_built[b]:
+			n.queue_free()
+	_far_built.clear()
+	_far_queue.clear()
+	_far_scan_at = Vector2.INF
+
+
+func _far_rescan(c: Vector2) -> void:
+	_far_scan_at = c
+	var r := ceili(FAR_REACH / FAR_SQUARE) + 1
+	var cb := Vector2i((c / FAR_SQUARE).floor())
+	var want := []
+	for dz in range(-r, r + 1):
+		for dx in range(-r, r + 1):
+			var b := cb + Vector2i(dx, dz)
+			if not _far_built.has(b) and _far_dist(b, c) < FAR_REACH + FAR_SQUARE:
+				want.append(b)
+	for b in _far_built.keys():
+		if _far_dist(b, c) > FAR_REACH + FAR_SQUARE * 2.0:
+			for n in _far_built[b]:
+				n.queue_free()
+			_far_built.erase(b)
+	want.sort_custom(func(a, b): return _far_dist(a, c) > _far_dist(b, c))
+	_far_queue = want
+
+
+static func _far_dist(b: Vector2i, c: Vector2) -> float:
+	return ((Vector2(b) + Vector2(0.5, 0.5)) * FAR_SQUARE).distance_to(c)
 
 
 func _rescan(c: Vector2) -> void:
@@ -313,58 +356,6 @@ func _fill(b: Vector2i) -> Array:
 				_add(by_id, STUMPS[int(k * 2.0) % 2], _at(p, yaw, lerpf(0.7, 1.05, sz), 0.05))
 			else:
 				_add(by_id, BRANCHES, _at(p, yaw, lerpf(1.4, 2.4, sz), 0.04))
-	# A working gravel pit's floor: conical stockpiles of washed gravel and
-	# sand by the plant (Grant County pits sell pea gravel, #53 stone and
-	# fill sand off piles 5-10 m high), a few to a pit.
-	var np := int(SQUARE / PILE_STEP) + 1
-	var piles: Array[Vector3] = []
-	for j in np:
-		for i in np:
-			var g := Vector2i(floori((lo.x + o.x) / PILE_STEP) + i, floori((lo.y + o.y) / PILE_STEP) + j)
-			var r := Vector2((g.x + 0.3 + 0.4 * CropCalendar.h01(g.x, g.y, 61)) * PILE_STEP,
-				(g.y + 0.3 + 0.4 * CropCalendar.h01(g.x, g.y, 62)) * PILE_STEP)
-			var p := Vector3(r.x - o.x, 0.0, r.y - o.y)
-			if p.x < lo.x or p.x >= lo.x + SQUARE or p.z < lo.y or p.z >= lo.y + SQUARE:
-				continue
-			if CropCalendar.h01(g.x, g.y, 63) > 0.4:
-				continue
-			if Terrain.bare(r.x, r.y) < 0.55:
-				continue
-			var near := false
-			for q in piles:
-				if q.distance_to(Vector3(r.x - o.x, 0.0, r.y - o.y)) < 24.0:
-					near = true
-			if near:
-				continue
-			if Terrain.water(r.x, r.y) > 0.03 or CountyRail.clears(r.x, r.y):
-				continue
-			if sim != null and sim.vegetation.is_occupied(Vegetation.cell_of(p)):
-				continue
-			var rad := lerpf(6.0, 11.0, CropCalendar.h01(g.x, g.y, 64))
-			# Beside the haul road, not on it: the loader works off its edge.
-			if TerrainView.on_haul(r.x, r.y, rad * 0.75):
-				continue
-			var xf := Transform3D(Basis(Vector3.UP, CropCalendar.h01(g.x, g.y, 65) * TAU).scaled(Vector3(rad, rad, rad)),
-				Vector3(p.x, Terrain.base(r.x, r.y) - 0.2, p.z))
-			piles.append(p)
-			var pid := "pile_sand" if CropCalendar.h01(g.x, g.y, 66) < 0.4 else "pile_gravel"
-			_add(by_id, pid, xf)
-			# Most piles are built by a radial stacker: a conveyor on a
-			# wheeled undercarriage reaching up over the crest, its tail
-			# hopper on the ground, on the side away from the loader's bite.
-			if CropCalendar.h01(g.x, g.y, 67) < 0.75:
-				for turn in [0.0, 0.9, -0.9]:
-					var phi: float = _pile_bite(pid) + PI + turn - CropCalendar.h01(g.x, g.y, 65) * TAU
-					var out := Vector2(cos(phi), sin(phi))
-					var tail := r + out * STACKER_REACH
-					var mid := r + out * STACKER_REACH * 0.4
-					if Terrain.water(tail.x, tail.y) > 0.03 or Terrain.water(mid.x, mid.y) > 0.03 \
-							or CountyRail.clears(tail.x, tail.y) or Terrain.trees(tail.x, tail.y) > 0.4:
-						continue
-					var yaw := atan2(out.y, -out.x)
-					_add(by_id, "stacker", Transform3D(Basis(Vector3.UP, yaw),
-						Vector3(tail.x - o.x, Terrain.base(tail.x, tail.y) - 0.1, tail.y - o.y)))
-					break
 	# Driftwood: trees the river undercut, lying from the bank into the
 	# water or stranded at the edge (the Mississinewa and its creeks are
 	# full of these strainers and small log jams below wooded banks).
@@ -420,35 +411,7 @@ func _fill(b: Vector2i) -> Array:
 					_add(by_id, STONES[id.y % 2], _at(p, yaw, lerpf(0.45, 0.75, h / 0.06), 0.1))
 				else:
 					_add(by_id, BOULDER, _at(p, yaw, lerpf(0.8, 1.2, (h - 0.06) / 0.02), 0.2))
-	var out := []
-	for id in by_id:
-		var mesh := _mesh(id)
-		if mesh == null:
-			continue
-		var list: Array = by_id[id]
-		# The node stands at the square's middle, on the ground: its
-		# visibility range is measured from there, not from the instances.
-		var mid := Vector3(lo.x + SQUARE * 0.5, 0.0, lo.y + SQUARE * 0.5)
-		mid.y = Terrain.base(mid.x + o.x, mid.z + o.y)
-		var mm := MultiMesh.new()
-		mm.transform_format = MultiMesh.TRANSFORM_3D
-		mm.mesh = mesh
-		mm.instance_count = list.size()
-		for i in list.size():
-			var xf: Transform3D = list[i]
-			xf.origin -= mid
-			mm.set_instance_transform(i, xf)
-		var mi := MultiMeshInstance3D.new()
-		mi.name = id
-		mi.multimesh = mm
-		mi.position = mid
-		mi.visibility_range_end = REACH
-		mi.visibility_range_end_margin = 20.0
-		mi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
-		mi.material_overlay = _snow_overlay()
-		add_child(mi)
-		out.append(mi)
-	return out
+	return _nodes(by_id, lo, SQUARE, REACH)
 
 
 ## Snow lying on the props' tops (logs, stones, the piles, a stacker's
@@ -495,6 +458,106 @@ void fragment() {
 		_snow_mat.shader = sh
 	return _snow_mat
 
+
+
+## One MultiMesh node per scan for the props of one square.
+func _nodes(by_id: Dictionary, lo: Vector2, size: float, reach: float) -> Array:
+	var o := _origin
+	var out := []
+	for id in by_id:
+		var mesh := _mesh(id)
+		if mesh == null:
+			continue
+		var list: Array = by_id[id]
+		# The node stands at the square's middle, on the ground: its
+		# visibility range is measured from there, not from the instances.
+		var mid := Vector3(lo.x + size * 0.5, 0.0, lo.y + size * 0.5)
+		mid.y = Terrain.base(mid.x + o.x, mid.z + o.y)
+		var mm := MultiMesh.new()
+		mm.transform_format = MultiMesh.TRANSFORM_3D
+		mm.mesh = mesh
+		mm.instance_count = list.size()
+		for i in list.size():
+			var xf: Transform3D = list[i]
+			xf.origin -= mid
+			mm.set_instance_transform(i, xf)
+		var mi := MultiMeshInstance3D.new()
+		mi.name = id
+		mi.multimesh = mm
+		mi.position = mid
+		mi.visibility_range_end = reach
+		mi.visibility_range_end_margin = 20.0
+		mi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
+		mi.material_overlay = _snow_overlay()
+		add_child(mi)
+		out.append(mi)
+	return out
+
+
+## A far square: only the gravel pits' stockpiles and stackers, which stand
+## 5-10 m high and show from across the pit and the fields around it
+## (from 250 m they had simply vanished with the logs and stones).
+func _fill_far(b: Vector2i) -> Array:
+	var by_id := {}
+	var lo := Vector2(b) * FAR_SQUARE
+	_piles(by_id, lo, FAR_SQUARE)
+	return _nodes(by_id, lo, FAR_SQUARE, FAR_REACH)
+
+
+func _piles(by_id: Dictionary, lo: Vector2, size: float) -> void:
+	var o := _origin
+	# A working gravel pit's floor: conical stockpiles of washed gravel and
+	# sand by the plant (Grant County pits sell pea gravel, #53 stone and
+	# fill sand off piles 5-10 m high), a few to a pit.
+	var np := int(size / PILE_STEP) + 1
+	var piles: Array[Vector3] = []
+	for j in np:
+		for i in np:
+			var g := Vector2i(floori((lo.x + o.x) / PILE_STEP) + i, floori((lo.y + o.y) / PILE_STEP) + j)
+			var r := Vector2((g.x + 0.3 + 0.4 * CropCalendar.h01(g.x, g.y, 61)) * PILE_STEP,
+				(g.y + 0.3 + 0.4 * CropCalendar.h01(g.x, g.y, 62)) * PILE_STEP)
+			var p := Vector3(r.x - o.x, 0.0, r.y - o.y)
+			if p.x < lo.x or p.x >= lo.x + size or p.z < lo.y or p.z >= lo.y + size:
+				continue
+			if CropCalendar.h01(g.x, g.y, 63) > 0.4:
+				continue
+			if Terrain.bare(r.x, r.y) < 0.55:
+				continue
+			var near := false
+			for q in piles:
+				if q.distance_to(Vector3(r.x - o.x, 0.0, r.y - o.y)) < 24.0:
+					near = true
+			if near:
+				continue
+			if Terrain.water(r.x, r.y) > 0.03 or CountyRail.clears(r.x, r.y):
+				continue
+			if sim != null and sim.vegetation.is_occupied(Vegetation.cell_of(p)):
+				continue
+			var rad := lerpf(6.0, 11.0, CropCalendar.h01(g.x, g.y, 64))
+			# Beside the haul road, not on it: the loader works off its edge.
+			if TerrainView.on_haul(r.x, r.y, rad * 0.75):
+				continue
+			var xf := Transform3D(Basis(Vector3.UP, CropCalendar.h01(g.x, g.y, 65) * TAU).scaled(Vector3(rad, rad, rad)),
+				Vector3(p.x, Terrain.base(r.x, r.y) - 0.2, p.z))
+			piles.append(p)
+			var pid := "pile_sand" if CropCalendar.h01(g.x, g.y, 66) < 0.4 else "pile_gravel"
+			_add(by_id, pid, xf)
+			# Most piles are built by a radial stacker: a conveyor on a
+			# wheeled undercarriage reaching up over the crest, its tail
+			# hopper on the ground, on the side away from the loader's bite.
+			if CropCalendar.h01(g.x, g.y, 67) < 0.75:
+				for turn in [0.0, 0.9, -0.9]:
+					var phi: float = _pile_bite(pid) + PI + turn - CropCalendar.h01(g.x, g.y, 65) * TAU
+					var out := Vector2(cos(phi), sin(phi))
+					var tail := r + out * STACKER_REACH
+					var mid := r + out * STACKER_REACH * 0.4
+					if Terrain.water(tail.x, tail.y) > 0.03 or Terrain.water(mid.x, mid.y) > 0.03 \
+							or CountyRail.clears(tail.x, tail.y) or Terrain.trees(tail.x, tail.y) > 0.4:
+						continue
+					var yaw := atan2(out.y, -out.x)
+					_add(by_id, "stacker", Transform3D(Basis(Vector3.UP, yaw),
+						Vector3(tail.x - o.x, Terrain.base(tail.x, tail.y) - 0.1, tail.y - o.y)))
+					break
 
 static func _add(by_id: Dictionary, id: String, xf: Transform3D) -> void:
 	if not by_id.has(id):
