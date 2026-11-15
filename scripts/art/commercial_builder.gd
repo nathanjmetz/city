@@ -2264,12 +2264,16 @@ func _shop_diner(to_curb: float) -> void:
 	# the local diners built off US 35 and SR 9 in Marion).
 	var r := RandomNumberGenerator.new()
 	r.seed = hash([rng.seed, 31])
-	if r.randf() < 0.5:
+	var mans := r.randf() < 0.5
+	if mans:
 		_mansard(w, d, cz, zf, 3.0, 4.75, 0.9, Color(["#4a3b30", "#3a3a3c", "#5b4636", "#7a3a2a"][r.randi() % 4]))
 	# Pole sign, with a changeable-letter reader board under it.
 	var px := half - 2.0
+	var dword: int = [0, 1, 28][posmod(hash([rng.seed, 41]), 3)]  # DINER, CAFE, GRILL
 	_box("paint", Vector3(0.35, 7.5, 0.35), Vector3(px, 3.75, 1.5), Color("#5a5e60"))
-	_sign(Vector3(px, 6.8, 1.3), 3.4, 1.6, [0, 1, 28][posmod(hash([rng.seed, 41]), 3)])  # DINER, CAFE, GRILL
+	_sign(Vector3(px, 6.8, 1.3), 3.4, 1.6, dword)
+	if fine_parts and sign_spec.is_empty():
+		_diner_letters(w, zf, n, band, mans, TRADE_WORDS[dword])
 	_box("paint", Vector3(3.0, 1.1, 0.3), Vector3(px, 5.3, 1.5), Color("#f4f2ea"))
 	_box("paint", Vector3(3.1, 0.08, 0.32), Vector3(px, 5.88, 1.5), Color("#2b2b2b"))
 	_box("paint", Vector3(3.1, 0.08, 0.32), Vector3(px, 4.72, 1.5), Color("#2b2b2b"))
@@ -2290,6 +2294,27 @@ func _shop_diner(to_curb: float) -> void:
 	# add one for Rotary lunches and rehearsal dinners.
 	if not small_store:
 		_rt_wing(w, zf + d, 3.6, wall, "paint", band, false)
+
+
+## Desktop: a family restaurant names itself on the building as well as on
+## the pole: lit channel letters over the entry vestibule's doors, and a
+## bigger set over the window band, on the fascia or, under a mansard, on a
+## raceway bracketed to the shingles (how Frisch's, Bob Evans and every
+## county-road diner letter their fronts). White on a coloured band, red on
+## a pale one; they glow after dark. No random numbers.
+func _diner_letters(w: float, zf: float, n: int, band: Color, mans: bool, word: String) -> void:
+	var col := Color("#c8102e") if band.get_luminance() > 0.6 else Color("#f4f1ea")
+	col.a = 1.0
+	# Over the vestibule doors (its face is at zf - 2.0, head at 2.54 m).
+	_pixel_text(word, -w * 0.5 + 1.0, 2.66, zf - 2.06, 0.1, 0.1, col, "sign")
+	# Over the windows, centred on the band of glass.
+	var cx := -w * 0.5 + 2.6 + (n - 1) * 0.75
+	var span := word.length() * 4.0 * 0.12 - 0.12
+	if mans:
+		_box("paint", Vector3(span + 0.3, 0.14, 0.3), Vector3(cx, 3.6, zf - 0.68), Color("#4a4c4e"))  # raceway
+		_pixel_text(word, cx, 3.32, zf - 0.86, 0.12, 0.12, col, "sign")
+	else:
+		_pixel_text(word, cx, 3.05, zf - 0.19, 0.1, 0.1, col, "sign")
 
 
 ## A small-town bank: brick, two storeys of tall windows, a stone portico
