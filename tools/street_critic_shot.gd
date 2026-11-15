@@ -4,7 +4,8 @@ extends SceneTree
 ## Several spots per run, so the town loads once.
 ## Run: godot -s tools/street_critic_shot.gd -- town.city OUT_DIR [--quality=ultra]
 ## (pass a copy of the .city: the game autosaves into it). SPOTS=name,name
-## picks some of them.
+## picks some of them. SHOT_MONTH / SHOT_HOUR set the time; LOOK_CYCLE=1
+## turns on the real seasons and day/night for them (snow, night lights).
 
 ## [name, look at, yaw, pitch, distance]
 const SPOTS := [
@@ -61,9 +62,11 @@ func _process(_delta: float) -> bool:
 	_frames += 1
 	var args := OS.get_cmdline_user_args()
 	if _frames == 2:
-		DayNight.seasons_on = false
+		# LOOK_CYCLE=1 keeps the real seasons and day/night (snow, night).
+		var real := OS.get_environment("LOOK_CYCLE") != ""
+		DayNight.seasons_on = real
 		GradeCrossingView.shut = OS.get_environment("SHUT_GATES") != ""
-		DayNight.cycle_on = false
+		DayNight.cycle_on = real
 		# Late morning in July, unless SHOT_HOUR / SHOT_MONTH say otherwise.
 		var month := float(OS.get_environment("SHOT_MONTH")) if OS.get_environment("SHOT_MONTH") != "" else 7.0
 		var hour := float(OS.get_environment("SHOT_HOUR")) if OS.get_environment("SHOT_HOUR") != "" else 11.0

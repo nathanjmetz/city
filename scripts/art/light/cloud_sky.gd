@@ -90,6 +90,7 @@ uniform vec3 top_color : source_color = vec3(0.17, 0.36, 0.70);
 uniform vec3 horizon_color : source_color = vec3(0.74, 0.79, 0.84);
 uniform float curve = 0.12;
 global uniform float snow;
+global uniform float night;
 uniform float stars_alpha = 0.0;
 // Where the sun really is, set or not (SkyLight._twilight_sun): straight up
 // while it's high, which turns the twilight off.
@@ -214,7 +215,11 @@ void sky() {
 	// fair-weather cloud bases. As the cloud closes up the gaps between
 	// clouds turn to the lid too: under a full overcast no blue shows, and
 	// the dimmed blue showing through read as dark blue blots on the grey.
-	vec3 lid = mix(horizon_color, vec3(0.62, 0.64, 0.67), 0.5) * (0.85 + 0.15 * day);
+	// By night (the moon is the light then, so `day` stays up) the lid is
+	// no brighter than the dark sky: a dull brown-grey, faintly lit from
+	// below by the town's lights (night photos of a cloudy small-town sky),
+	// not the day's pale grey, which lit the snow like an overcast noon.
+	vec3 lid = mix(horizon_color, mix(vec3(0.62, 0.64, 0.67), vec3(0.03, 0.026, 0.022), night), 0.5) * (0.85 + 0.15 * day);
 	float closed = smoothstep(0.75, 1.0, cover);
 	if (up > 0.0 && closed > 0.0) {
 		col = mix(col, lid, smoothstep(0.8, 1.0, cover) * smoothstep(0.0, 0.1, up));
