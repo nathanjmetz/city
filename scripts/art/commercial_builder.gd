@@ -2317,6 +2317,19 @@ func _bank(to_curb: float) -> void:
 			_window(Vector3(x, y, zf), Vector3(-1, 0, 0), 1.2, 1.9, true, false, stone)
 	# Portico: four columns, an entablature and a pediment.
 	_stoop(0.0, zf, 6.0, 3.0, 0.6)
+	if fine_parts:
+		# Desktop: a classical bank meets the walk with limestone steps the
+		# full width of its portico, not a house stoop: three 6 in risers
+		# on 11 in treads with a bullnosed nosing, between stone cheek
+		# blocks (Bedford stone county banks).
+		for k in range(1, 4):
+			var sh := 0.6 - k * 0.15
+			var sz := zf - 3.0 - (k - 0.5) * 0.28
+			_box("brick", Vector3(6.0, sh + 0.006, 0.31), Vector3(0, sh * 0.5 + 0.003, sz), ashlar)
+			_box("paint", Vector3(6.0, 0.03, 0.04), Vector3(0, sh - 0.012, sz - 0.16), stone.lightened(0.04))  # nosing
+		for sx in [-1.0, 1.0]:
+			_box("brick", Vector3(0.35, 0.68, 0.9), Vector3(sx * 3.17, 0.34, zf - 3.42), ashlar)
+			_box("paint", Vector3(0.42, 0.06, 0.98), Vector3(sx * 3.17, 0.71, zf - 3.42), stone.lightened(0.05))  # cap
 	for k in 4:
 		_cylinder("paint", Vector3(-2.4 + k * 1.6, 0.6, zf - 2.5), 0.28, 5.4, stone, 10)
 		# A square plinth and a capital, as on every Colonial Revival bank.
