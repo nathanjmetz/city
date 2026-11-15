@@ -23,6 +23,11 @@ const GRAVEL := Color("#8d877c")
 const LINE := Color("#e8e6df")
 ## Set by the art gallery to draw one kind of shop.
 static var force_shop := ""
+## Set by the builders whose sites were planned under a zoning code (strip
+## centres): their dumpster stands in a screened enclosure whatever the era.
+var bin_enclosure := false
+## Where such a site plan put the enclosure (x), clear of the back doors; NAN: anywhere.
+var bin_x := NAN
 ## Small parts only the desktop draws; the browser keeps its triangle budget.
 static var fine_parts := not OS.has_feature("web")
 
@@ -568,6 +573,8 @@ func _service_yard(gravel: bool, dumpster := true, reach := 15.0) -> void:
 		_flat_ground("gravel" if gravel else "asphalt", poly, 0.05, col)  # 1 cm under any parking already drawn
 	if dumpster and depth - z0 > 3.0:
 		var at := Vector3(rng.randf_range(-half * 0.5, half * 0.5), 0, z0 + 1.2)
+		if fine_parts and not is_nan(bin_x):
+			at.x = bin_x
 		if _in_lot(at, 1.5):
 			var bin := Color(_pick(["#2f4a3a", "#2a3a5a", "#4a4e52"]))
 			if fine_parts:
@@ -586,6 +593,29 @@ func _service_yard(gravel: bool, dumpster := true, reach := 15.0) -> void:
 				for sx in [-1.0, 1.0]:
 					_box("metal", Vector3(0.1, 0.2, 0.95), at + Vector3(sx * 0.97, 0.85, 0), bin.darkened(0.25))
 					_box("metal", Vector3(0.12, 0.1, 0.1), at + Vector3(sx * 0.7, 0.5, 0.58), bin.darkened(0.25))
+				if bin_enclosure or not gravel:
+					# A newer shop's can stands in the enclosure its site plan
+					# had to show (Indiana town codes: refuse containers
+					# screened on three sides by a 6 ft masonry wall the
+					# colour of the building, opaque steel gates on the
+					# truck side): split-face block walls under a cap, the
+					# gates on steel posts, one leaf swung open for pickup.
+					var cmu := Color("#a9a49a")
+					var cap := Color("#c4bfb4")
+					var wz := at.z - 1.15
+					_box("cmu", Vector3(2.9, 1.83, 0.2), Vector3(at.x, 0.915, wz), cmu)
+					_box("concrete", Vector3(3.0, 0.08, 0.26), Vector3(at.x, 1.87, wz), cap)
+					for sx in [-1.0, 1.0]:
+						_box("cmu", Vector3(0.2, 1.83, 2.3), Vector3(at.x + sx * 1.35, 0.915, wz + 1.15), cmu)
+						_box("concrete", Vector3(0.26, 0.08, 2.36), Vector3(at.x + sx * 1.35, 1.87, wz + 1.15), cap)
+						_box("metal", Vector3(0.1, 1.95, 0.1), Vector3(at.x + sx * 1.2, 0.975, wz + 2.35), Color("#3a3c3e"))  # gate post
+					var gate := Color("#4a4e52")
+					# The left leaf shut, the right one swung out against the wall.
+					_box("metal", Vector3(1.15, 1.7, 0.05), Vector3(at.x - 0.6, 0.95, wz + 2.37), gate)
+					for gy in [0.25, 1.65]:
+						_box("metal", Vector3(1.15, 0.06, 0.07), Vector3(at.x - 0.6, gy, wz + 2.38), gate.darkened(0.2))
+					_box("metal", Vector3(0.05, 1.7, 1.15), Vector3(at.x + 1.27, 0.95, wz + 2.95), gate)
+					_box("metal", Vector3(0.02, 0.02, 0.5), Vector3(at.x - 0.05, 0.02, wz + 2.6), Color("#2c2d2b"))  # cane bolt's hole
 			else:
 				_box("metal", Vector3(1.83, 1.07, 1.07), at + Vector3(0, 0.6, 0), bin)
 				_box("paint", Vector3(1.87, 0.06, 1.12), at + Vector3(0, 1.16, 0), Color("#1c1d1f"))
@@ -1004,6 +1034,7 @@ func _awning(cx: float, w: float, zf: float, y: float, col: Color) -> void:
 ## canopy on square columns, with a parking field in front.
 func _strip_center(to_curb: float, anchor := false) -> void:
 	_tenant_words = []
+	bin_enclosure = true
 	var w := half * 2.0 - 2.0
 	var d := rng.randf_range(14.0, minf(18.0, maxf(depth - 18.0, 14.0)))
 	var h := rng.randf_range(5.2, 6.0)
@@ -1187,6 +1218,7 @@ func _strip_rear(w: float, n: int, bay: float, aw: float, back: float, top: floa
 	if depth - back > 4.0:
 		_flat_rect("asphalt", -w * 0.5 - 0.5, w * 0.5 + 0.5, back, minf(back + 7.0, depth - 0.5), 0.07)
 	var tenants := 0
+	var doors := []
 	for i in n:
 		var x := -w * 0.5 + (i + 0.5) * bay
 		if aw > 0.0 and x > ax0:
@@ -1194,11 +1226,22 @@ func _strip_rear(w: float, n: int, bay: float, aw: float, back: float, top: floa
 		tenants += 1
 		var dx := x + bay * 0.25 * (1.0 if posmod(hash([rng.seed, i, 73]), 2) == 0 else -1.0)
 		_steel_door(Vector3(dx, 1.35, back + 0.03), 1.0)
+		doors.append(dx)
 		if i % 2 == 1:
 			var sx := -w * 0.5 + i * bay
 			_box("metal", Vector3(0.16, top - 0.2, 0.12), Vector3(sx, (top - 0.2) * 0.5, back + 0.09), wall.darkened(0.15))
 			_box("metal", Vector3(0.3, 0.2, 0.2), Vector3(sx, top - 0.35, back + 0.12), wall.darkened(0.2))
 			_box("concrete", Vector3(0.35, 0.06, 0.7), Vector3(sx, 0.1, back + 0.45), Color("#bdb9ae"))
+	# The trash enclosure in the widest stretch of wall between two back
+	# doors, nearest the middle, so no tenant's exit opens into it.
+	doors.sort()
+	var best := -1.0
+	for k in range(1, doors.size()):
+		var gap: float = doors[k] - doors[k - 1]
+		var c: float = (doors[k] + doors[k - 1]) * 0.5
+		if gap >= 4.6 and gap - absf(c) * 0.05 > best:
+			best = gap - absf(c) * 0.05
+			bin_x = c
 	# The utility end: one meter per tenant on a common panel, gas beside it.
 	var mx := -w * 0.5 + 1.2
 	var cols := mini(tenants, 6)
