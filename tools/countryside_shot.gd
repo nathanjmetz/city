@@ -28,6 +28,7 @@ const VIEWS := [
 	["river_low", "river", 250.0, 12.0, 45.0],
 	["bare_mid", "bare", 200.0, 35.0, 250.0],
 	["bare_close", "bare", 200.0, 22.0, 70.0],
+	["pile_close", "prop", 120.0, 18.0, 45.0],
 ]
 
 var _view := -1
