@@ -337,12 +337,12 @@ static func _seg_poly(a: Vector2, b: Vector2, poly: PackedVector2Array) -> Array
 	return [best, at]
 
 
-## The right of way (ROW_HALF each side) of the drawn track through `box`
+## The right of way (ROW_HALF each side, or `half`) of the drawn track through `box`
 ## (region coordinates), as outlines of pieces at most `piece` metres long
 ## that overlap a little at the joins: {key: outline}. A town's lot planner
 ## treats them as land already taken, so lots backing onto the railroad stop
 ## at its line, shorter, rather than being lost. Keys have no ":".
-static func row_pieces(box: Rect2, piece := 48.0) -> Dictionary:
+static func row_pieces(box: Rect2, piece := 48.0, half := ROW_HALF) -> Dictionary:
 	_load()
 	var out := {}
 	if routes.is_empty() or not any_in(box):
@@ -361,14 +361,14 @@ static func row_pieces(box: Rect2, piece := 48.0) -> Dictionary:
 				if len < 0.01:
 					continue
 				var u := (b - a) / len
-				var n := Vector2(-u.y, u.x) * ROW_HALF
+				var n := Vector2(-u.y, u.x) * half
 				var k := ceili(len / piece)
 				for j in k:
 					# Each piece runs 3 m past its ends, so the outer side of a
 					# bend leaves no gap.
 					var p0 := a + u * (len * j / k - 3.0)
 					var p1 := a + u * (len * (j + 1) / k + 3.0)
-					if not box.intersects(Rect2(p0, Vector2.ZERO).expand(p1).grow(ROW_HALF)):
+					if not box.intersects(Rect2(p0, Vector2.ZERO).expand(p1).grow(half)):
 						continue
 					if Backdrop.inside((p0 + p1) * 0.5):
 						continue
