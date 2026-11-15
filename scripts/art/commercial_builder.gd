@@ -1755,6 +1755,17 @@ func _power_center(to_curb: float) -> void:
 		_box("paint", Vector3(2.4, 2.2, 0.06), Vector3(vx, 1.1, zf - 4.46), Color("#2b2d2f"))
 		if fine_parts:
 			_cc_entry(vx, zf - 4.4, db, vx < ex, 6, 1.0 if vx < ex else -1.0, true, 1.5)
+	if fine_parts:
+		# Desktop: the long wings either side of the entry broken into 30 ft
+		# (9.1 m) bays by block pilasters with a cast cap, as any 1990s-2010s
+		# discount store front (Walmart, Target, Meijer) is.
+		var npd := maxi(2, int(wd / 9.1))
+		for i in npd + 1:
+			var px := xd0 + 0.45 + i * (wd - 0.9) / npd
+			if absf(px - ex) < ew * 0.5 + 0.8:
+				continue
+			_box("paint", Vector3(0.9, dh - 0.1, 0.45), Vector3(px, (dh - 0.1) * 0.5, zf - 0.22), dw.darkened(0.07))
+			_box("paint", Vector3(1.1, 0.35, 0.6), Vector3(px, dh + 0.1, zf - 0.27), dw.lightened(0.1))
 	boxes.append([xd0, w * 0.5, dh])
 	sign_spec = spec
 	site.door = Vector2(hx + 6.0, zf - 4.5)
