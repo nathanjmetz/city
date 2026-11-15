@@ -638,6 +638,7 @@ func _mixed(to_curb: float, width: float, storeys: int) -> void:
 			# After dark the lit display windows throw their light out
 			# across the sidewalk, brightest at the glass.
 			_light_pool(Vector3(fx, 0.1, zf - 0.2), sw * 1.4, 4.4, Color(0.78, 0.7, 0.58))
+		shop_kind = _trade_room(int(_word_slot(fx) * 0.5) - 1) if fine and (sign_spec.is_empty() or k != fronts / 2) else 0
 		for i in bays:
 			var x := fx - sw * 0.5 + (i + 0.5) * bw
 			if i == bays / 2 and bw > 1.5:
@@ -661,6 +662,7 @@ func _mixed(to_curb: float, width: float, storeys: int) -> void:
 				for q in range(1, panes):
 					_box("paint", Vector3(0.04, 0.46, 0.05), Vector3(x - bw * 0.5 + q * bw / panes, 2.93, zf - 0.06), mull)
 			_box("paint", Vector3(0.1, 3.0, 0.14), Vector3(x - bw * 0.5, 1.75, zf - 0.07), mull)
+		shop_kind = 0
 		_box("paint", Vector3(0.1, 3.0, 0.14), Vector3(fx + sw * 0.5, 1.75, zf - 0.07), mull)
 		_box("paint", Vector3(sw + 0.3, 0.08, 0.15), Vector3(fx, 2.66, zf - 0.08), mull)  # transom bar
 		_box("paint", Vector3(sw + 0.3, 0.12, 0.18), Vector3(fx, 3.25, zf - 0.09), trim)
