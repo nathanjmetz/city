@@ -219,7 +219,10 @@ void sky() {
 	// no brighter than the dark sky: a dull brown-grey, faintly lit from
 	// below by the town's lights (night photos of a cloudy small-town sky),
 	// not the day's pale grey, which lit the snow like an overcast noon.
-	vec3 lid = mix(horizon_color, mix(vec3(0.62, 0.64, 0.67), vec3(0.03, 0.026, 0.022), night), 0.5) * (0.85 + 0.15 * day);
+	// Grey whatever colour a clear sky's edge would be: at a cloudy sunset
+	// the gold stays above the cloud.
+	vec3 h_grey = vec3(dot(horizon_color, vec3(0.2126, 0.7152, 0.0722)));
+	vec3 lid = mix(h_grey, mix(vec3(0.62, 0.64, 0.67), vec3(0.03, 0.026, 0.022), night), 0.5) * (0.85 + 0.15 * day);
 	float closed = smoothstep(0.75, 1.0, cover);
 	if (up > 0.0 && closed > 0.0) {
 		col = mix(col, lid, smoothstep(0.8, 1.0, cover) * smoothstep(0.0, 0.1, up));
