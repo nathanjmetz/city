@@ -1945,8 +1945,14 @@ func _cc_parking(to_curb: float, w: float, zw: float, xg0: float, cr: RandomNumb
 	# Carmel) cap a row at about 15 unbroken stalls, so every 16th stall is a
 	# curbed, planted island, lined up row to row as in any power center lot.
 	var isles := []
+	# Cart corrals: a big box's lot gives a stall in every other row to a
+	# galvanized corral (Walmart and Lowe's lots: one within ~45 m of any
+	# stall), halfway between the islands, its open end on the aisle.
+	var corrals := []
+	var ri := -1
 	for row in rows:
 		var zc: float = row[0]
+		ri += 1
 		var x := lot0 + 2.0
 		var n := -1
 		while x + stall <= lot1 - 2.0 + 0.01:
@@ -1957,6 +1963,9 @@ func _cc_parking(to_curb: float, w: float, zw: float, xg0: float, cr: RandomNumb
 				continue
 			if n % 16 == 15 and absf(mx - cut_x) > 10.0 and mx < lot1 - 10.0 and not pad.grow(4.0).has_point(Vector2(mx, zc)):
 				isles.append(Vector2(mx, zc))
+				continue
+			if n % 16 == 7 and ri % 2 == 1 and absf(mx - cut_x) > 10.0 and mx < lot1 - 10.0 and not pad.grow(4.0).has_point(Vector2(mx, zc)):
+				corrals.append([Vector2(mx, zc), signf(float(row[2]) - zc)])
 				continue
 			_flat_rect("line", mx - stall * 0.5 - 0.06, mx - stall * 0.5 + 0.06, zc - 2.75, zc + 2.75, 0.07, LINE)
 			site.stalls.append([Vector2(mx, zc), Vector2(0, row[1]), row[2]])
@@ -2005,6 +2014,30 @@ func _cc_parking(to_curb: float, w: float, zw: float, xg0: float, cr: RandomNumb
 			_box("concrete", e[0], e[1], Color("#cfcac0"))
 		var pick := TreeField.pick(ir, true)
 		trees.append([Vector3(c.x, 0, c.y), pick[0], pick[1], ir.randf_range(0.7, 0.95)])
+	# The corrals: two rails of 1.9" galvanized pipe on posts, a closed head
+	# with a CART RETURN panel, a kick rail low, and the day's carts nested
+	# in from the open end (how many is the corral's own hash).
+	var galv := Color("#a9adb0")
+	for cc in corrals:
+		var c: Vector2 = cc[0]
+		var o: float = cc[1]  # toward the aisle: the open end
+		var head := c.y - o * 2.4
+		for sx in [-0.8, 0.8]:
+			for y in [1.05, 0.35]:
+				_box("metal", Vector3(0.05, 0.05, 4.8), Vector3(c.x + sx, y, c.y), galv)
+			for k in 3:
+				_box("metal", Vector3(0.06, 1.08, 0.06), Vector3(c.x + sx, 0.54, c.y - o * 2.4 + o * k * 2.4), galv)
+		_box("metal", Vector3(1.66, 0.05, 0.05), Vector3(c.x, 1.05, head), galv)
+		_box("paint", Vector3(1.2, 0.5, 0.03), Vector3(c.x, 1.45, head), Color("#1f4e8a"))
+		_box("paint", Vector3(1.0, 0.1, 0.035), Vector3(c.x, 1.48, head), Color("#eef0f0"))  # its words
+		for e in [-0.5, 0.5]:
+			_box("metal", Vector3(0.04, 0.5, 0.04), Vector3(c.x + e, 1.3, head), galv)
+		var nc := posmod(hash([rng.seed, c.x, c.y, "carts"]), 6)
+		for k in nc:
+			var cz := head + o * (0.55 + k * 0.32)
+			_box("metal", Vector3(0.56, 0.5, 0.85), Vector3(c.x, 0.62, cz + o * 0.2), Color("#c4c7c6"))  # basket
+			_box("paint", Vector3(0.58, 0.04, 0.05), Vector3(c.x, 1.0, cz + o * 0.68), Color("#b0262b"))  # handle
+			_box("metal", Vector3(0.5, 0.03, 0.7), Vector3(c.x, 0.2, cz + o * 0.2), Color("#8f9396"))  # lower rack
 
 
 ## The supermarket that anchors a neighborhood center (ICSC: 30,000 to
