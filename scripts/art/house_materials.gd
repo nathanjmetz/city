@@ -980,8 +980,12 @@ void fragment() {
 	ALBEDO = mix(vcol(COLOR.rgb), vec3(0.86, 0.84, 0.79), text);
 	ROUGHNESS = 0.4;
 	SPECULAR = 0.5;
-	// Lit signs after dark: bright letters on a softly glowing panel.
-	EMISSION = mix(vcol(COLOR.rgb) * 0.5, vec3(1.0, 0.95, 0.85) * 2.0, text) * smoothstep(0.3, 0.6, night);
+	// Lit signs after dark: the letters lit (channel letters on a raceway,
+	// the usual Main Street sign since the 1950s), the board behind them
+	// only faintly, from the letters' own spill, not glowing edge to edge
+	// like a cabinet box.
+	float spill = 0.05 + 0.1 * smoothstep(0.1, 0.5, vy) * smoothstep(0.9, 0.5, vy) * band;
+	EMISSION = mix(vcol(COLOR.rgb) * spill, vec3(1.0, 0.95, 0.85) * 2.0, text) * smoothstep(0.3, 0.6, night);
 	EMISSION = mix(EMISSION, vcol(COLOR.rgb) * (0.25 + 3.5 * smoothstep(0.2, 0.6, night)), neon) * (1.0 - painted);
 	ROUGHNESS = mix(0.4, 0.85, painted);
 }
