@@ -241,11 +241,18 @@ void sky() {
 			// shaded base is the sky's grey-blue.
 			// Each turret a lit bulge with shade in the folds between.
 			lit *= mix(1.0, 0.8 + 0.4 * noise(m / 150.0 + 2.1), fine * (1.0 - closed));
+			// Looking toward the sun a cloud is lit from behind: its thick
+			// body is a blue-grey silhouette and only its thin edges glow
+			// (photos toward a low sun over flat farmland); looking away the
+			// same clouds take the full light. Most marked with the sun low.
+			float low_sun = LIGHT0_ENABLED ? 1.0 - smoothstep(0.1, 0.5, LIGHT0_DIRECTION.y) : 0.0;
+			float back = mix(0.55, 0.9, low_sun) * smoothstep(0.15, 0.8, dens * 0.4 + cl.y * 0.9) * smoothstep(0.45, 0.95, mu) * day * (1.0 - closed);
 			vec3 bright = sun_c * 0.62 + horizon_color * 0.35 + tw_light;
 			vec3 base = mix(horizon_color, top_color, 0.35) * 0.5 + sun_c * 0.05;
 			vec3 cc = mix(base, bright, lit);
+			cc = mix(cc, mix(horizon_color, top_color, 0.5) * 0.5, back);
 			// Silver lining toward the sun.
-			cc += sun_c * pow(max(mu, 0.0), 10.0) * (1.0 - dens) * 0.6 * day;
+			cc += sun_c * pow(max(mu, 0.0), 10.0) * (1.0 - dens) * mix(0.6, 1.2, low_sun) * day;
 			// Overcast: the lid (above), darker where it is thicker.
 			cc = mix(cc, lid * (1.0 - 0.16 * cl.y - 0.08 * (noise(m / 2600.0) - 0.5)), closed);
 			// Far clouds sink into the haze at the horizon.
