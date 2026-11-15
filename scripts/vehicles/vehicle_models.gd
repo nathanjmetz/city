@@ -111,6 +111,11 @@ const LOD_ULTRA := 2
 
 ## The mesh for one kind (or one part, like "trailer_box") at a level of detail.
 static func build(kind: String, lod := 0) -> ArrayMesh:
+	if VehicleScans.is_scan(kind):
+		var scan := VehicleScans.mesh(kind, lod)
+		if scan:
+			return scan
+		kind = VehicleScans.kind_of(kind)
 	var b := VehicleModels.new()
 	b._lo = lod == LOD_FAR
 	b._hi = lod == LOD_ULTRA
@@ -138,6 +143,7 @@ static func mesh_keys() -> Array:
 			# batch and weren't drawn at all (2026-10-29).
 			if not out.has(k):
 				out.append(k)
+			out.append_array(VehicleScans.of(k))
 		if WINTER.has(k):
 			out.append(WINTER[k])
 	for e in EMPTY.values():
@@ -152,10 +158,21 @@ static func trailer_for(trailer: String, cargo) -> String:
 	return EMPTY[trailer] if EMPTY.has(trailer) and not VehicleTypes.is_loaded(cargo) else trailer
 
 
+## Where a body's rear axle sits; a scan uses its kind's.
+static func axle(model: String, fallback := 3.5) -> float:
+	if AXLE.has(model):
+		return float(AXLE[model])
+	return float(AXLE.get(VehicleScans.kind_of(model), fallback))
+
+
 ## The model one vehicle of a kind uses, fixed by its id, so a street of
 ## pickups is a mix of crew cabs, extended cabs and midsize ones.
 static func variant(kind: String, id: int) -> String:
-	var list: Array = VARIANTS.get(kind, [])
+	# Real scans where this machine has them; while a kind has only a few,
+	# the code-built bodies stay in the mix so a street isn't one car.
+	var list: Array = VehicleScans.of(kind)
+	if list.size() < VehicleScans.ENOUGH:
+		list = list + VARIANTS.get(kind, [] if list.is_empty() else [kind])
 	if list.is_empty():
 		return kind
 	var h := (id * 2246822519 + 3266489917) & 0xffffffff

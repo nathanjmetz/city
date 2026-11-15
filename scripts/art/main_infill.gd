@@ -79,6 +79,9 @@ static func _mi_midcentury(b: DenseBuilder, r: RandomNumberGenerator, to_curb: f
 		var lw := sw / lights
 		# A shop whose sign says it serves food shows its booths and counter.
 		var eats := DenseBuilder.fine and b.sign_spec.is_empty() and int(b._word_slot(fx) * 0.5) - 1 in CommercialBuilder.EATERIES
+		# Desktop: the room behind the glass fits the trade on the sign
+		# (an insurance agent's desks, not a dress shop's racks).
+		b.shop_kind = b._trade_room(int(b._word_slot(fx) * 0.5) - 1) if DenseBuilder.fine and b.sign_spec.is_empty() else 0
 		for i in lights:
 			var x := fx - sw * 0.5 + (i + 0.5) * lw
 			if i == lights / 2:
@@ -87,6 +90,15 @@ static func _mi_midcentury(b: DenseBuilder, r: RandomNumberGenerator, to_curb: f
 				b._glass(Vector3(x, 1.2, zf - 0.07), Vector3(-1, 0, 0), lw - 0.3, 2.1, 0.0)
 				b._glass(Vector3(x, 2.75, zf - 0.07), Vector3(-1, 0, 0), lw - 0.1, 0.4, 0.0)
 				b._box("metal", Vector3(0.06, 2.5, 0.1), Vector3(x - lw * 0.5, 1.75, zf - 0.06), ALUMINIUM)
+				if DenseBuilder.fine:
+					# Desktop: the 1950s wide-stile door's hardware: a
+					# horizontal push bar across the glass, a pull on the
+					# stile, a kick plate and an aluminium threshold.
+					b._box("metal", Vector3(lw - 0.4, 0.045, 0.045), Vector3(x, 1.05, zf - 0.13), ALUMINIUM.lightened(0.1))
+					for t in [-1.0, 1.0]:
+						b._box("metal", Vector3(0.03, 0.03, 0.07), Vector3(x + t * (lw * 0.5 - 0.25), 1.05, zf - 0.1), ALUMINIUM)
+					b._box("metal", Vector3(lw - 0.3, 0.2, 0.01), Vector3(x, 0.25, zf - 0.075), ALUMINIUM.darkened(0.08))
+					b._box("metal", Vector3(lw, 0.015, 0.2), Vector3(x, 0.008, zf - 0.13), Color("#9a9c9d"))
 				continue
 			b.shopfront = DenseBuilder.fine
 			b.diner_room = 7.0 if eats else 0.0
@@ -94,6 +106,7 @@ static func _mi_midcentury(b: DenseBuilder, r: RandomNumberGenerator, to_curb: f
 			b.shopfront = false
 			b.diner_room = 0.0
 			b._box("metal", Vector3(0.06, 2.5, 0.1), Vector3(x - lw * 0.5, 1.75, zf - 0.06), ALUMINIUM)
+		b.shop_kind = 0
 		b._box("metal", Vector3(0.06, 2.5, 0.1), Vector3(fx + sw * 0.5, 1.75, zf - 0.06), ALUMINIUM)
 		b._box("metal", Vector3(sw, 0.06, 0.1), Vector3(fx, 3.0, zf - 0.06), ALUMINIUM)
 		# The cantilevered canopy, the shop's name on its fascia.
@@ -193,14 +206,27 @@ static func _mi_newbuild(b: DenseBuilder, r: RandomNumberGenerator, to_curb: flo
 		var lights := maxi(2, roundi(sw / 1.8))
 		var lw := sw / lights
 		var eats := DenseBuilder.fine and b.sign_spec.is_empty() and int(b._word_slot(bx) * 0.5) - 1 in CommercialBuilder.EATERIES
+		b.shop_kind = b._trade_room(int(b._word_slot(bx) * 0.5) - 1) if DenseBuilder.fine and b.sign_spec.is_empty() else 0
 		if DenseBuilder.fine:
 			b._light_pool(Vector3(bx, 0.1, zf - 0.2), sw * 1.4, 4.4, Color(0.78, 0.7, 0.58))  # the windows' spill after dark
 		b._box("paint", Vector3(sw, 0.45, 0.1), Vector3(bx, 0.22, zf - 0.05), stone)
 		for i in lights:
 			var x := bx - sw * 0.5 + (i + 0.5) * lw
-			if i == lights / 2 and k % 2 == 0:
+			# Every shop has its own door, in its middle light (the odd bays
+			# used to have none). The odd bays still take the random draw
+			# their display light took, so nothing after it moves.
+			if i == lights / 2:
+				if k % 2 == 1:
+					r.randf()
 				b._box("paint", Vector3(1.1, 2.5, 0.05), Vector3(x, 1.25, zf - 0.03), BLACK)
 				b._glass(Vector3(x, 1.25, zf - 0.07), Vector3(-1, 0, 0), 0.8, 2.2, 0.0)
+				if DenseBuilder.fine:
+					# Desktop: a brushed pull, a deep bottom rail and a threshold.
+					b._box("metal", Vector3(0.035, 0.9, 0.035), Vector3(x + 0.28, 1.05, zf - 0.16), Color("#b9bbbc"))
+					for y in [0.68, 1.42]:
+						b._box("metal", Vector3(0.025, 0.025, 0.08), Vector3(x + 0.28, y, zf - 0.11), Color("#b9bbbc"))
+					b._box("metal", Vector3(0.8, 0.22, 0.03), Vector3(x, 0.26, zf - 0.08), BLACK)
+					b._box("metal", Vector3(1.1, 0.015, 0.2), Vector3(x, 0.01, zf - 0.12), Color("#9a9c9d"))
 			else:
 				b.shopfront = DenseBuilder.fine
 				b.diner_room = 7.0 if eats else 0.0
@@ -209,6 +235,7 @@ static func _mi_newbuild(b: DenseBuilder, r: RandomNumberGenerator, to_curb: flo
 				b.diner_room = 0.0
 			b._glass(Vector3(x, 3.75, zf - 0.03), Vector3(-1, 0, 0), lw - 0.08, 0.7, 0.0)
 			b._box("metal", Vector3(0.07, 3.8, 0.1), Vector3(x - lw * 0.5, 2.05, zf - 0.06), BLACK)
+		b.shop_kind = 0
 		b._box("metal", Vector3(0.07, 3.8, 0.1), Vector3(bx + sw * 0.5, 2.05, zf - 0.06), BLACK)
 		b._box("metal", Vector3(sw, 0.08, 0.1), Vector3(bx, 3.3, zf - 0.06), BLACK)
 		# A steel canopy on tie rods, the sign band above it.
@@ -218,6 +245,18 @@ static func _mi_newbuild(b: DenseBuilder, r: RandomNumberGenerator, to_curb: flo
 			var c := Vector3(bx + t * sw * 0.35, 3.45, zf - 1.45)
 			b._box("metal", Vector3(0.04, 0.04, a.distance_to(c)), (a + c) * 0.5, BLACK,
 				Basis(Vector3.RIGHT, -atan2(a.y - c.y, a.z - c.z)))
+		if DenseBuilder.fine:
+			# Desktop: the canopy's formed fascia channel with a drip lip,
+			# and LED cans in its soffit lighting the walk (hung steel
+			# canopies on new Indiana main-street infill, Carmel and
+			# Noblesville).
+			b._box("metal", Vector3(sw + 0.04, 0.28, 0.06), Vector3(bx, 3.33, zf - 1.5), BLACK)
+			b._box("metal", Vector3(sw + 0.04, 0.03, 0.1), Vector3(bx, 3.195, zf - 1.53), BLACK)
+			var cans := maxi(2, roundi(sw / 2.2))
+			for q in cans:
+				var lx := bx - sw * 0.5 + (q + 0.5) * sw / cans
+				b._box("sign", Vector3(0.16, 0.012, 0.16), Vector3(lx, 3.265, zf - 0.85), Color(0.98, 0.95, 0.88, 1.0))
+				b._light_pool(Vector3(lx, 0.11, zf - 1.0), 2.4, 2.6, Color(1.0, 0.95, 0.86))
 		b._sign(Vector3(bx, 3.6, zf - 0.12), minf(sw * 0.6, 5.0), 0.45)
 		b._box("brick", Vector3(0.8, shop_h, 0.2), Vector3(bx - bw * 0.5 + 0.4, shop_h * 0.5, zf - 0.1), brick.darkened(0.08))
 		# Upstairs: projecting panel bays rise past the brick parapet.
