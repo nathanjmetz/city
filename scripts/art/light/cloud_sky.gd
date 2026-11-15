@@ -57,16 +57,21 @@ float fbm(vec2 p) {
 // Cloud at a point on the cloud layer (metres): x how much cloud (its
 // edge), y how thick it is there. Billows a few hundred metres across,
 // grouped into fields a few kilometres across.
-vec2 cloud2(vec2 m, float c) {
+// `fine` (0 to 1) adds the small billows: a fair-weather cumulus has a
+// crisp, cauliflower edge of turrets 40-120 m across (photos of summer
+// cumulus over Indiana), not a soft cotton blur; they fade out far off,
+// where they would only shimmer.
+vec2 cloud2(vec2 m, float c, float fine) {
 	float big = noise(m / 5200.0);
 	float n = fbm(m / 1400.0) * 0.8 + big * 0.35;
+	n += ((noise(m / 120.0 + 5.3) - 0.5) * 0.08 + (noise(m / 47.0 + 1.7) - 0.5) * 0.04) * fine;
 	// Calibrated so about `c` of the sky is cloud.
 	float thr = mix(0.80, 0.28, c);
-	return vec2(smoothstep(thr, thr + 0.05, n), smoothstep(thr + 0.02, thr + 0.2, n));
+	return vec2(smoothstep(thr, thr + mix(0.05, 0.025, fine), n), smoothstep(thr + 0.02, thr + 0.2, n));
 }
 
 float cloud(vec2 m, float c) {
-	return cloud2(m, c).x;
+	return cloud2(m, c, 0.0).x;
 }
 
 
@@ -219,7 +224,8 @@ void sky() {
 		// the land, so they pass overhead as the camera moves.
 		float t = max(base_m - POSITION.y, 200.0) / max(up, 0.035);
 		vec2 m = POSITION.xz + d.xz * t + cloud_offset(TIME);
-		vec2 cl = cloud2(m, cover);
+		float fine = exp(-t / 9000.0);
+		vec2 cl = cloud2(m, cover, fine);
 		float dens = cl.x;
 		if (dens > 0.001) {
 			// Thicker toward the sun = darker underside; a sample a little
@@ -233,6 +239,8 @@ void sky() {
 			lit *= 1.0 - cl.y * mix(0.85, 0.45, smoothstep(0.65, 0.95, 1.0 - up));
 			// Sunlit cloud is about as bright as a white wall in sun; the
 			// shaded base is the sky's grey-blue.
+			// Each turret a lit bulge with shade in the folds between.
+			lit *= mix(1.0, 0.8 + 0.4 * noise(m / 150.0 + 2.1), fine * (1.0 - closed));
 			vec3 bright = sun_c * 0.62 + horizon_color * 0.35 + tw_light;
 			vec3 base = mix(horizon_color, top_color, 0.35) * 0.5 + sun_c * 0.05;
 			vec3 cc = mix(base, bright, lit);
