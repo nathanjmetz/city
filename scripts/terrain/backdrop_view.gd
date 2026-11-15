@@ -175,7 +175,8 @@ void fragment() {
 	float clumps = texture(noise_grain, world_pos.xz / 0.9 + world_pos.y * 0.5).r;
 	// Leaf clusters a few metres across, lit tops and darker hollows.
 	float masses = texture(noise_grain, world_pos.xz / 4.0 + world_pos.y * 0.25).r;
-	vec3 leaf = vcol(COLOR.rgb) * (0.7 + clumps * 0.6) * (0.65 + masses * 0.7);
+	// Summer leaves are a deep, cool green under a midday sun, not olive.
+	vec3 leaf = vcol(COLOR.rgb) * vec3(0.8, 0.9, 0.78) * (0.7 + clumps * 0.6) * (0.65 + masses * 0.7);
 	// Maples scarlet to orange, ashes and lindens yellow, oaks a dull
 	// russet brown that hangs on; in linear colour, muted as seen from far.
 	vec3 fall = mix(vec3(0.26, 0.05, 0.02), vec3(0.38, 0.15, 0.02), r / 0.45);
@@ -191,6 +192,13 @@ void fragment() {
 	if (hash(floor(world_pos.xz / 0.6) + floor(world_pos.y / 0.6) * 17.0) > keep) {
 		discard;
 	}
+	// A crown shades itself: outer leaves catch the sun and sky, the lower
+	// half and the hollows sit in the tree's own shadow, so from the air a
+	// summer maple is a lit cap over a dark skirt, not an even green dome
+	// (aerial photos of Marion's tree-lined streets in July).
+	vec3 wn = (INV_VIEW_MATRIX * vec4(NORMAL, 0.0)).xyz;
+	float lit = mix(0.42, 1.0, smoothstep(-0.35, 0.75, wn.y)) * (0.75 + masses * 0.5);
+	leaf *= mix(lit, 1.0, bare);
 	ALBEDO = mix(leaf, twig, bare);
 	ROUGHNESS = 1.0;
 	SPECULAR = 0.1;
