@@ -158,6 +158,49 @@ func _process(_delta: float) -> void:
 		_build(_queue.pop_back())
 
 
+## Yard-tree crowns through the year: Marion's street trees are mostly
+## maples, oaks, ashes and lindens, so they turn yellow, orange and red
+## through October (each tree a little earlier or later than the next),
+## drop in early November, and stand as grey-brown twig domes, the ground
+## and snow showing through, until they leaf out pale green in mid-April
+## (Seasons.look via the global season_look: autumn, bare, spring, dry).
+static var _crown_mat: ShaderMaterial
+const CROWN_SHADER := """
+global uniform vec4 season_look;
+void fragment() {
+	float r = hash(floor(world_pos.xz / 9.0) + 0.37);
+	float turn = clamp(season_look.x * 1.5 - r * 0.5, 0.0, 1.0);
+	float bare = clamp(season_look.y * 1.4 - r * 0.4, 0.0, 1.0);
+	float clumps = texture(noise_grain, world_pos.xz / 0.9 + world_pos.y * 0.5).r;
+	vec3 leaf = vcol(COLOR.rgb) * (0.7 + clumps * 0.6);
+	// Maples scarlet to orange, ashes and lindens yellow, oaks a dull
+	// russet brown that hangs on; in linear colour, muted as seen from far.
+	vec3 fall = mix(vec3(0.26, 0.05, 0.02), vec3(0.38, 0.15, 0.02), r / 0.45);
+	if (r > 0.45) fall = vec3(0.34, 0.25, 0.03);
+	if (r > 0.75) fall = vec3(0.16, 0.09, 0.04);
+	fall *= 0.72;
+	leaf = mix(leaf, vec3(0.3, 0.28, 0.04), smoothstep(0.0, 0.5, turn) * (1.0 - smoothstep(0.5, 1.0, turn)));
+	leaf = mix(leaf, fall, smoothstep(0.35, 1.0, turn));
+	leaf = mix(leaf, leaf * vec3(1.45, 1.4, 0.55), season_look.z * 0.8);
+	// Bare: a thin net of grey-brown twigs; most of the crown is open air.
+	vec3 twig = vec3(0.16, 0.13, 0.11) * (0.8 + clumps * 0.4);
+	float keep = mix(1.0, 0.38, bare);
+	if (hash(floor(world_pos.xz / 0.6) + floor(world_pos.y / 0.6) * 17.0) > keep) {
+		discard;
+	}
+	ALBEDO = mix(leaf, twig, bare);
+	ROUGHNESS = 1.0;
+	SPECULAR = 0.1;
+}
+"""
+
+
+static func _crown_material() -> ShaderMaterial:
+	if _crown_mat == null:
+		_crown_mat = HouseMaterials._shader(CROWN_SHADER)
+	return _crown_mat
+
+
 ## Streetlights after dark (desktop): seen from the air a Midwest town at
 ## night is strings of light along every street, each pole's pool on the
 ## pavement and its lamp a bright point, not just lit windows. Cobra-head
@@ -274,7 +317,7 @@ func _build(c: Vector2i) -> void:
 		ta[Mesh.ARRAY_NORMAL] = blk[6]
 		ta[Mesh.ARRAY_COLOR] = blk[7]
 		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, ta)
-		mesh.surface_set_material(1, HouseMaterials.get_mat("plain"))
+		mesh.surface_set_material(1, _crown_material())
 	if not blk[8].is_empty():
 		var la := []
 		la.resize(Mesh.ARRAY_MAX)
