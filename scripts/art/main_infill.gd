@@ -285,6 +285,21 @@ static func _mi_newbuild(b: DenseBuilder, r: RandomNumberGenerator, to_curb: flo
 		var bay_top := top + (0.9 if is_panel else 0.0)
 		if is_panel:
 			b._box("paint", Vector3(bw - 0.8, bay_top - shop_h, 0.35), Vector3(bx, (shop_h + bay_top) * 0.5, zf - 0.175), panel)
+			if DenseBuilder.fine:
+				# Desktop: fibre-cement panels as hung, about 1.2 m wide,
+				# with reveal joints in a grid: a vertical either side of
+				# the window stack and at the bay's edges, a horizontal at
+				# each floor line, and a metal corner trim down both edges.
+				var pw := bw - 0.8
+				var jc := panel.darkened(0.4)
+				var jh := bay_top - shop_h
+				for jx in [-1.6, 1.6]:
+					if absf(jx) < pw * 0.5 - 0.3:
+						b._box("paint", Vector3(0.02, jh, 0.01), Vector3(bx + jx, shop_h + jh * 0.5, zf - 0.352), jc)
+				for f in range(1, storeys):
+					b._box("paint", Vector3(pw, 0.02, 0.01), Vector3(bx, shop_h + f * floor_h, zf - 0.352), jc)
+				for e in [-1.0, 1.0]:
+					b._box("metal", Vector3(0.05, jh, 0.37), Vector3(bx + e * (pw * 0.5 + 0.005), shop_h + jh * 0.5, zf - 0.175), panel.darkened(0.2))
 		b._box("metal", Vector3(bw - (0.6 if is_panel else 0.0), 0.3, 0.5 + (0.35 if is_panel else 0.0)),
 			Vector3(bx, bay_top - 0.15, zf - 0.25 - (0.17 if is_panel else 0.0)), BLACK if is_panel else panel.darkened(0.3))
 		for f in range(1, storeys):
