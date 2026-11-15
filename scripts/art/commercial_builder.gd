@@ -1015,6 +1015,17 @@ func _strip_center(to_curb: float, anchor := false) -> void:
 			_box("metal", Vector3(0.04, 0.8, 0.05), Vector3(dcx - 0.34, 1.2, zf - 0.16), Color("#b9bcbe"))
 			_box("metal", Vector3(0.38, 0.05, 0.06), Vector3(dcx + 0.2, 2.47, zf - 0.15), Color("#4a4c4e"))
 			_box("metal", Vector3(1.0, 0.02, 0.18), Vector3(dcx, 0.31, zf - 0.1), Color("#b0b3b5"))
+			# The display window in a real storefront frame (2 x 4.5 in
+			# aluminium, Kawneer 451-type): a jamb at the party pier,
+			# vertical mullions every 1.2-1.5 m, a sill on the bulkhead and a
+			# transom bar level with the door head, the lights above it.
+			var gw := sw - 1.4
+			var g0 := x - 0.4 - gw * 0.5
+			var lites := maxi(2, ceili(gw / 1.5))
+			for k in lites:
+				_box("metal", Vector3(0.06, 2.2, 0.1), Vector3(g0 + 0.03 + k * gw / lites, 1.75, zf - 0.08), mull)
+			_box("metal", Vector3(gw, 0.07, 0.1), Vector3(g0 + gw * 0.5, 0.67, zf - 0.08), mull)  # sill
+			_box("metal", Vector3(gw, 0.08, 0.1), Vector3(g0 + gw * 0.5, 2.7, zf - 0.08), mull)  # transom bar
 		else:
 			_box("paint", Vector3(sw, 0.35, 0.12), Vector3(x, 0.47, zf - 0.06), mull)
 		_box("paint", Vector3(0.5, 3.0, 0.2), Vector3(x - bay * 0.5, 1.8, zf - 0.1), wall.darkened(0.1))
