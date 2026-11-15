@@ -1731,7 +1731,7 @@ func _power_center(to_curb: float) -> void:
 				_glass(Vector3(wx, 2.0, zf + 0.97), Vector3(-1, 0, 0), 3.4, 2.2, cr.randf_range(0.2, 0.5))
 		for px in [x0 + 0.45, x1 - 0.45]:
 			_box("paint", Vector3(0.9, jh, 0.5), Vector3(px, jh * 0.5, zf + 0.75), jc.darkened(0.06))
-		boxes.append([x0, x1, jh])
+		boxes.append([x0, x1, jh, zf + 1.0 + jd])
 	# The discount store at the other end.
 	var dh := cr.randf_range(8.4, 9.4)
 	var dw := Color(["#b8b2a4", "#c9c1ae", "#d6c4a0", "#a49d8f"][cr.randi() % 4])
@@ -1774,13 +1774,19 @@ func _power_center(to_curb: float) -> void:
 	if depth - dz > 5.0:
 		_flat_rect("asphalt", -half + 0.6, half - 0.6, dz, depth - 0.6, 0.06)
 		for bx in boxes:
-			var bz: float = zf + dd if float(bx[1]) - float(bx[0]) > 30.0 else zf + 1.0 + minf(dd, 36.0)
+			# Docks on the box's own back wall; a shallower junior box's
+			# truck court is paved up to it (no lawn between dock and trucks).
+			var bz: float = float(bx[3]) if bx.size() > 3 else zf + dd
+			if bz < dz - 0.1:
+				_flat_rect("asphalt", float(bx[0]) + 0.05, float(bx[1]) - 0.05, bz, dz + 0.2, 0.06)
 			var nk := 2 if float(bx[1]) - float(bx[0]) > 30.0 else 1
 			for k in nk:
 				var kx: float = float(bx[1]) - 5.0 - k * 5.0
 				_box("paint", Vector3(3.0, 3.2, 0.1), Vector3(kx, 1.6, bz + 0.06), Color("#5a5c5e"))
 				_box("paint", Vector3(3.4, 1.2, 0.5), Vector3(kx, 1.2, bz + 0.3), Color("#1e1f20"))
-				if k == 0 and depth - bz > 15.0 and cr.randf() < 0.6:
+				# (the dice roll on the old dock line, so the draws stay as they were)
+				var old_bz: float = zf + dd if float(bx[1]) - float(bx[0]) > 30.0 else zf + 1.0 + minf(dd, 36.0)
+				if k == 0 and depth - old_bz > 15.0 and cr.randf() < 0.6:
 					_box("paint", Vector3(2.6, 2.4, 14.6), Vector3(kx, 2.4, bz + 7.9), Color("#e6e4de"))
 					_box("paint", Vector3(2.6, 0.5, 14.6), Vector3(kx, 3.85, bz + 7.9), Color("#e6e4de"))
 					_box("paint", Vector3(2.4, 1.0, 0.4), Vector3(kx, 0.6, bz + 13.5), Color("#2a2a2a"))
