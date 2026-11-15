@@ -494,7 +494,11 @@ func _tw_chicago_entry(x: float, zf: float, mw: float) -> void:
 	_box("metal", Vector3(mw + 0.06, 0.08, 0.06), Vector3(x, 4.12, zf - 1.62), Color("#8a6a3e"))
 	var n := maxi(2, roundi(mw / 1.5))
 	for i in n:
-		_box("paint", Vector3(0.25, 0.03, 0.25), Vector3(x - mw * 0.5 + (i + 0.5) * mw / n, 4.03, zf - 0.8), Color("#f4f0e2"))
+		_box("sign", Vector3(0.25, 0.03, 0.25), Vector3(x - mw * 0.5 + (i + 0.5) * mw / n, 4.03, zf - 0.8), Color("#f4f0e2"))
+	# After dark the downlights pool on the walk under the marquee and wash
+	# the bronze and prism glass behind it, as a lit entrance does.
+	_light_pool(Vector3(x, 0.125, zf - 1.4), mw + 3.0, 5.0, Color(0.92, 0.84, 0.68))
+	_light_pool(Vector3(x, 2.4, fz - 0.06), mw + 1.0, 3.6, Color(0.7, 0.62, 0.48), Vector3.FORWARD)
 
 
 ## Desktop: the mouth of a podium garage on the street (any downtown
