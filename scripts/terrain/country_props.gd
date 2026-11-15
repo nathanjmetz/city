@@ -22,6 +22,8 @@ const REACH := 170.0
 const PER_FRAME := 2
 ## Spot spacing on the woods floor, metres.
 const WOODS_STEP := 6.0
+## Spot spacing along wooded water edges for driftwood, metres.
+const DRIFT_STEP := 10.0
 
 ## [asset id, metres long it is scanned at, scale range]
 const LOG := ["dead_tree_trunk", 2.2, 3.0]
@@ -158,6 +160,33 @@ func _fill(b: Vector2i) -> Array:
 				_add(by_id, STUMPS[int(k * 2.0) % 2], _at(p, yaw, lerpf(0.7, 1.05, sz), 0.05))
 			else:
 				_add(by_id, BRANCHES, _at(p, yaw, lerpf(1.4, 2.4, sz), 0.04))
+	# Driftwood: trees the river undercut, lying from the bank into the
+	# water or stranded at the edge (the Mississinewa and its creeks are
+	# full of these strainers and small log jams below wooded banks).
+	var nd := int(SQUARE / DRIFT_STEP)
+	for j in nd:
+		for i in nd:
+			var g := Vector2i(floori((lo.x + o.x) / DRIFT_STEP) + i, floori((lo.y + o.y) / DRIFT_STEP) + j)
+			var h := CropCalendar.h01(g.x, g.y, 81)
+			if h > 0.4:
+				continue
+			var r := Vector2((g.x + 0.5) * DRIFT_STEP, (g.y + 0.5) * DRIFT_STEP)
+			var wv := Terrain.water(r.x, r.y)
+			if wv < 0.12 or wv > 0.55 or CountyRail.clears(r.x, r.y):
+				continue
+			if maxf(Terrain.trees(r.x + 12.0, r.y), maxf(Terrain.trees(r.x - 12.0, r.y),
+					maxf(Terrain.trees(r.x, r.y + 12.0), Terrain.trees(r.x, r.y - 12.0)))) < 0.5:
+				continue
+			var p := Vector3(r.x - o.x, 0.0, r.y - o.y)
+			if sim != null and sim.vegetation.is_occupied(Vegetation.cell_of(p)):
+				continue
+			var big := h < 0.08
+			var kind: Array = BIG_LOG if big else LOG
+			var sc := lerpf(kind[1], kind[2], CropCalendar.h01(g.x, g.y, 82))
+			# Waterlogged: half under the surface, or lying on the bank.
+			var wy := minf(Terrain.base(r.x, r.y), Terrain.water_level(r.x, r.y)) - (0.45 if big else 0.6 * 0.29) * sc
+			var xf := Transform3D(Basis(Vector3.UP, CropCalendar.h01(g.x, g.y, 83) * TAU).scaled(Vector3.ONE * sc), Vector3(p.x, wy, p.z))
+			_add(by_id, kind[0], xf)
 	# Fencerows on the survey's eighth-mile lines (Vegetation.FENCE_GRID): a
 	# fieldstone pile now and then, a boulder at a corner.
 	var grid := Vegetation.FENCE_GRID
