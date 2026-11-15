@@ -1188,6 +1188,23 @@ func _strip_mansard(x0: float, x1: float, zf: float, top: float, col: Color) -> 
 		_quad("roof", Vector3(e, y0, zo), Vector3(e, top, zt), Vector3(e, top, zf), Vector3(e, y0, zf), col.darkened(0.08), [],
 			Vector3(signf(e), 0, 0))
 	_box("paint", Vector3(x1 - x0 + 0.05, 0.3, 0.12), Vector3((x0 + x1) * 0.5, y0 + 0.1, zo - 0.04), Color("#3a3430"))
+	if fine_parts:
+		# Desktop: the slope sheds onto the walk, so its eave carries a 5 in
+		# K-style aluminium gutter (a lip, the ogee face, the hangers' line),
+		# draining to a downspout down each end pier: an outlet, an elbow
+		# back to the pier, the leader, its straps and a shoe on a splash
+		# block.
+		var gut := Color("#5a4c40")
+		var gz := zo - 0.18
+		_box("metal", Vector3(x1 - x0 + 0.08, 0.13, 0.13), Vector3((x0 + x1) * 0.5, y0 + 0.04, gz), gut)
+		_box("metal", Vector3(x1 - x0 + 0.08, 0.025, 0.02), Vector3((x0 + x1) * 0.5, y0 + 0.115, gz - 0.07), gut.lightened(0.12))  # the lip
+		for e in [x0 + 0.5, x1 - 0.5]:
+			_box("metal", Vector3(0.12, 0.08, 0.38), Vector3(e, y0 - 0.06, gz + 0.13), gut)  # outlet and elbow
+			_box("metal", Vector3(0.09, y0 - 0.25, 0.07), Vector3(e, (y0 + 0.15) * 0.5, zf - 2.56), gut)  # leader
+			for sy in [1.0, 2.2]:
+				_box("metal", Vector3(0.13, 0.03, 0.09), Vector3(e, sy, zf - 2.555), gut.darkened(0.2))  # straps
+			_box("metal", Vector3(0.09, 0.07, 0.25), Vector3(e, 0.2, zf - 2.66), gut)  # shoe
+			_box("concrete", Vector3(0.3, 0.05, 0.6), Vector3(e, 0.105, zf - 2.95), Color("#bdb8ae"))  # splash block
 	_quad("paint", Vector3(x0, y0 - 0.01, zo), Vector3(x1, y0 - 0.01, zo), Vector3(x1, y0 - 0.01, zf), Vector3(x0, y0 - 0.01, zf), SOFFIT, [], Vector3.DOWN)
 
 
