@@ -1109,6 +1109,17 @@ func _strip_center(to_curb: float, anchor := false) -> void:
 	# curb to storefront, as at every strip centre), not grass.
 	_flat_rect("drive", -w * 0.5 - 0.5, w * 0.5 + 0.5, zf - 2.6, zf, 0.08)
 	if fine_parts:
+		# Desktop: the walk's tooled contraction joints, across it every
+		# 5 ft as poured (ACI 302 / INDOT sidewalk spec: joints at intervals
+		# about equal to the walk's width), and the isolation joint along
+		# the storefront.
+		var jc := Color("#77746e")
+		var jx := -w * 0.5 - 0.5 + 1.52
+		while jx < w * 0.5 + 0.4:
+			_box("paint", Vector3(0.014, 0.004, 2.58), Vector3(jx, 0.0815, zf - 1.3), jc)
+			jx += 1.52
+		_box("paint", Vector3(w + 1.0, 0.004, 0.018), Vector3(0, 0.0815, zf - 0.02), jc.darkened(0.2))
+	if fine_parts:
 		_strip_lot_dress(to_curb, zf - 4.6, n, wall)
 		_strip_rear(w, n, bay, aw, zf + d, h + 1.2, wall)
 
