@@ -672,6 +672,20 @@ void fragment() {
 	SPECULAR = mix(0.55, 0.35, ice);
 	METALLIC = 0.0;
 #ifdef DESKTOP_DETAIL
+	// Open water is one colour, the lake's own silty green: the 160 m
+	// blotches above read as a stained sheet from the air. What varies on a
+	// real lake is the wind: long slicks of glassy calm (a sharp mirror of
+	// the sky) between ruffled bands (cat's paws) that break it up and
+	// look darker, stretched along the wind (prevailing west-southwest here).
+	float open_w = smoothstep(1.0, 2.5, d) * (1.0 - ice);
+	vec3 even = mix(shallow.rgb, deep.rgb, 0.55 + 0.35 * smoothstep(0.8, 3.0, d));
+	ALBEDO = mix(ALBEDO, even, open_w * 0.85);
+	vec2 wind = vec2(dot(p, vec2(0.93, 0.36)), dot(p, vec2(-0.36, 0.93)));
+	float paws = 0.65 * texture(noise_soft, wind / vec2(420.0, 70.0) + vec2(t * 0.5, 0.0)).r
+		+ 0.35 * texture(noise_soft, wind / vec2(170.0, 55.0) - vec2(t * 0.3, 0.0)).r;
+	float slick = smoothstep(0.58, 0.72, paws) * open_w;
+	ROUGHNESS = mix(ROUGHNESS, 0.04, slick);
+	ROUGHNESS = mix(ROUGHNESS, 0.32, (1.0 - smoothstep(0.3, 0.45, paws)) * open_w);
 	// The sheet lies flat over every square that touches the water, so
 	// round a small shallow pond it spread out over the grass a few
 	// centimetres deep, a pale mirror with square corners that read as a
