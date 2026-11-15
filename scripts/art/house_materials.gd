@@ -604,8 +604,17 @@ void fragment() {
 	float on = step(pick, windows_lit) * smoothstep(0.2, 0.6, night);
 	vec3 warm = mix(vec3(1.0, 0.62, 0.3), vec3(1.0, 0.78, 0.5), hash(cell + 3.1));
 	vec3 lamp = mix(warm, vec3(0.55, 0.7, 1.0), step(0.9, hash(cell + 7.7)));
-	// Light through blinds is dimmer and softer.
-	EMISSION = lamp * on * mix(2.2, 1.1, blinds) * (0.8 + 0.4 * UV.y);
+	// Light through blinds is dimmer and softer. A lit room is not a flat
+	// slab of light: brightest up under the ceiling fixture mid-window,
+	// falling off to the jambs, darker low down where a sofa back or a
+	// table sits against the glass, and drawn-back curtains glow through
+	// as warm, dimmer fabric (the colour of the cloth).
+	float mid = 0.62 + 0.38 * sin(3.14159 * ux);
+	float high = mix(0.55, 1.1, smoothstep(0.0, 0.9, UV.y));
+	float sill = mix(0.55 + 0.3 * hash(wcell + 9.4), 1.0, smoothstep(0.14, 0.3, UV.y));
+	float cloth = side * step(h1, 0.6) * (1.0 - blinds);
+	vec3 shade = mix(lamp, lamp * (lin(drape) * 0.9 + 0.25), cloth) * mix(1.0, 0.5, cloth);
+	EMISSION = shade * on * mix(1.6, 0.95, blinds) * mid * high * mix(sill, 1.0, blinds);
 	if (office > 0.5) {
 		// Offices after hours go dark a floor at a time: a few whole floors
 		// still lit (late workers, the cleaning crew) in cool LED white, a
