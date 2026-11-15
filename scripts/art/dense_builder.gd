@@ -1098,41 +1098,6 @@ func _gold_word(word: String, c: Vector3, col: Color) -> void:
 				cx += run
 
 
-## A shop's neon OPEN sign in the window: red tube letters in a blue tube
-## border, on a clear hanger. Glows after dark ("sign" alpha 1).
-func _open_sign(c: Vector3) -> void:
-	var red := Color("#ff3446")
-	var blue := Color("#3a7bff")
-	var t := 0.022
-	var w := 0.62
-	var h := 0.26
-	for e in [[Vector3(w, t, t), Vector3(0, h * 0.5, 0)], [Vector3(w, t, t), Vector3(0, -h * 0.5, 0)],
-			[Vector3(t, h, t), Vector3(-w * 0.5, 0, 0)], [Vector3(t, h, t), Vector3(w * 0.5, 0, 0)]]:
-		_box("sign", e[0], c + e[1], blue)
-	var lh := 0.15
-	var lw := 0.1
-	for i in 4:
-		var x := c.x + 0.21 - i * 0.14  # +x is the viewer's left
-		var lc := Vector3(x, c.y, c.z)
-		var strokes := []
-		match i:
-			0:  # O
-				strokes = [[lw, 0, 0, lh * 0.5], [lw, 0, 0, -lh * 0.5], [0, lh, -lw * 0.5, 0], [0, lh, lw * 0.5, 0]]
-			1:  # P
-				strokes = [[0, lh, -lw * 0.5, 0], [lw, 0, 0, lh * 0.5], [lw, 0, 0, 0], [0, lh * 0.5, lw * 0.5, lh * 0.25]]
-			2:  # E
-				strokes = [[0, lh, -lw * 0.5, 0], [lw, 0, 0, lh * 0.5], [lw * 0.8, 0, -lw * 0.1, 0], [lw, 0, 0, -lh * 0.5]]
-			3:  # N
-				strokes = [[0, lh, -lw * 0.5, 0], [0, lh, lw * 0.5, 0]]
-		for s in strokes:
-			_box("sign", Vector3(maxf(s[0], t), maxf(s[1], t), t), lc + Vector3(-s[2], s[3], 0), red)
-		if i == 3:
-			_box("sign", Vector3(t, Vector2(lw, lh).length(), t), lc, red, Basis(Vector3.BACK, -atan2(lw, lh)))
-	# The hanging chain.
-	for sx in [-0.25, 0.25]:
-		_box("metal", Vector3(0.008, 0.3, 0.008), c + Vector3(sx, h * 0.5 + 0.15, 0.01), Color("#9a9a9a"))
-
-
 ## Desktop: what shopkeepers set out against their own fronts on a Main
 ## Street walk (the building side, clear of the door and the walking lane
 ## the ADA asks for): potted plants by the door, a chalkboard A-frame, a
