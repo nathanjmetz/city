@@ -2346,7 +2346,20 @@ func _bank(to_curb: float) -> void:
 		_glass(Vector3(sx, 1.9, zf - 0.17), Vector3(-1, 0, 0), 0.7, 2.0, 0.0)
 	_glass(Vector3(0, 3.2, zf - 0.17), Vector3(-1, 0, 0), 1.7, 0.55, 0.0)
 	site.door = Vector2(0.0, zf - 3.0)
-	_sign(Vector3(0, 4.3, zf - 0.08), 4.0, 0.5, [3, 3, 56, 57][posmod(hash([rng.seed, 47]), 4)])  # BANK, SAVINGS, TRUST
+	var bank_word: int = [3, 3, 56, 57][posmod(hash([rng.seed, 47]), 4)]  # BANK, SAVINGS, TRUST
+	if fine_parts and sign_spec.is_empty():
+		# Desktop: no sign board hung behind the columns; the name is cut
+		# into the limestone frieze over them, as on every 1910s-20s county
+		# bank (Bedford stone, incised Roman capitals), shadowed dark.
+		var lw := 5.2
+		var lc := stone.darkened(0.12)
+		lc.a = 0.5 + lw / 60.0
+		var v0 := 2.0 * (bank_word + 1)
+		var fz := zf - 3.115
+		_quad("sign", Vector3(lw * 0.5, 6.18, fz), Vector3(-lw * 0.5, 6.18, fz), Vector3(-lw * 0.5, 6.66, fz), Vector3(lw * 0.5, 6.66, fz),
+			lc, [Vector2(0, v0), Vector2(lw, v0), Vector2(lw, v0 + 1.0), Vector2(0, v0 + 1.0)], Vector3.FORWARD)
+	else:
+		_sign(Vector3(0, 4.3, zf - 0.08), 4.0, 0.5, bank_word)
 	# Drive-up lane and canopy beside the building.
 	var lx := w * 0.5 + 3.0
 	_box("paint", Vector3(4.0, 0.6, 7.0), Vector3(lx, 4.3, cz), stone)
