@@ -1591,6 +1591,23 @@ func _office_mirror(to_curb: float, width: float, storeys: int) -> void:
 			var gh := 3.0 if f == 0 else 2.3
 			var y := f * floor_h + 0.3 + (1.6 if f == 0 else 2.15)
 			_glass(mid + Vector3(0, y, 0), along, len - 0.15, gh, 0.0 if f == 0 else r.randf_range(0.1, 0.45))
+		if fine:
+			# Desktop: the bands between the ribbons are opaque spandrel
+			# glass (ceramic-frit backed, near black and glossy, not the
+			# roof membrane's grain), framed by a sill and a head rail.
+			var prev := 0.0
+			for f in storeys + 1:
+				var gh2 := 3.0 if f == 0 else 2.3
+				var y2 := f * floor_h + 0.3 + (1.6 if f == 0 else 2.15)
+				var b0: float = y2 - gh2 * 0.5 if f < storeys else top - 0.35
+				if b0 - prev > 0.05:
+					var o := out * 0.035
+					_quad("paint", a + o + Vector3(0, prev, 0), b + o + Vector3(0, prev, 0), b + o + Vector3(0, b0, 0), a + o + Vector3(0, b0, 0),
+						tint.darkened(0.55), [], out)
+				if f < storeys:
+					for yy in [y2 - gh2 * 0.5, y2 + gh2 * 0.5]:
+						_box("metal", Vector3(len - 0.1, 0.07, 0.1), mid + out * 0.04 + Vector3(0, yy, 0), frame, Basis(along, Vector3.UP, out))
+					prev = y2 + gh2 * 0.5
 		# Mullions about 1.5 m apart, full height, and the coping.
 		var n := maxi(1, roundi(len / 1.5))
 		for k in n + 1:
