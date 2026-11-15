@@ -2341,9 +2341,9 @@ func _slipcover_trim(w: float, zf: float, y0: float, ph: float, panel: Color, ma
 	if wi < 0 or wi >= TRADE_WORDS.size():
 		return
 	var word: String = TRADE_WORDS[wi]
-	var px := minf(0.24, (w - 2.0) / (word.length() * 4.0 - 1.0))
+	var px := minf(0.15, (w - 2.0) / (word.length() * 6.0 - 1.0))
 	var col := Color(["#7a1e1e", "#2a2a2c", "#1f3b6e", "#8a6a2a"][mark % 4])
-	_pixel_text(word, 0.0, y0 + ph * 0.55, zf - 0.3, px, 0.08, col, "paint")
+	_pixel_text57(word, 0.0, y0 + ph * 0.55, zf - 0.3, px, 0.08, col, "paint")
 
 
 ## Desktop: the lot-side entrance in the middle of an office's back wall,

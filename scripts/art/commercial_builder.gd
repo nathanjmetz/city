@@ -937,14 +937,14 @@ func _channel_letters(c: Vector3, w: float, h: float, named := "") -> void:
 	var word: String = TRADE_WORDS[wi] if named == "" else named
 	if named == "":
 		_tenant_words.append(wi)
-	var px := minf(lh / 5.0, w * 0.85 / (word.length() * 4.0 - 1.0))
-	lh = px * 5.0
-	var span := word.length() * 4.0 * px - px
+	var px := minf(lh / 7.0, w * 0.85 / (word.length() * 6.0 - 1.0))
+	lh = px * 7.0
+	var span := word.length() * 6.0 * px - px
 	var y0 := c.y + (h - lh) * 0.5
 	var z := c.z - 0.08
 	# The raceway the letters hang on, painted to match the fascia.
 	_box("paint", Vector3(span + px * 2.0, 0.12, 0.1), Vector3(c.x, y0 + lh * 0.45, c.z - 0.03), Color("#5b5d5f"))
-	_pixel_text(word, c.x, y0, z, px, 0.13, col, "sign")
+	_pixel_text57(word, c.x, y0, z, px, 0.13, col, "sign")
 
 
 ## The channel letters' own random numbers for a tenant at `x`.
@@ -973,6 +973,61 @@ func _letters_word(x: float) -> int:
 		n = (n + 1) % 50
 	_letters_at[k] = n
 	return n
+
+
+## The 5x7 dot-matrix capitals (the classic HD44780 character set), for
+## big desktop lettering where the 3x5 font's steps would show.
+const PIXEL_FONT_57 := {
+	"A": [".###.", "#...#", "#...#", "#...#", "#####", "#...#", "#...#"],
+	"B": ["####.", "#...#", "#...#", "####.", "#...#", "#...#", "####."],
+	"C": [".###.", "#...#", "#....", "#....", "#....", "#...#", ".###."],
+	"D": ["###..", "#..#.", "#...#", "#...#", "#...#", "#..#.", "###.."],
+	"E": ["#####", "#....", "#....", "####.", "#....", "#....", "#####"],
+	"F": ["#####", "#....", "#....", "####.", "#....", "#....", "#...."],
+	"G": [".###.", "#...#", "#....", "#.###", "#...#", "#...#", ".####"],
+	"H": ["#...#", "#...#", "#...#", "#####", "#...#", "#...#", "#...#"],
+	"I": [".###.", "..#..", "..#..", "..#..", "..#..", "..#..", ".###."],
+	"J": ["..###", "...#.", "...#.", "...#.", "...#.", "#..#.", ".##.."],
+	"K": ["#...#", "#..#.", "#.#..", "##...", "#.#..", "#..#.", "#...#"],
+	"L": ["#....", "#....", "#....", "#....", "#....", "#....", "#####"],
+	"M": ["#...#", "##.##", "#.#.#", "#.#.#", "#...#", "#...#", "#...#"],
+	"N": ["#...#", "#...#", "##..#", "#.#.#", "#..##", "#...#", "#...#"],
+	"O": [".###.", "#...#", "#...#", "#...#", "#...#", "#...#", ".###."],
+	"P": ["####.", "#...#", "#...#", "####.", "#....", "#....", "#...."],
+	"Q": [".###.", "#...#", "#...#", "#...#", "#.#.#", "#..#.", ".##.#"],
+	"R": ["####.", "#...#", "#...#", "####.", "#.#..", "#..#.", "#...#"],
+	"S": [".####", "#....", "#....", ".###.", "....#", "....#", "####."],
+	"T": ["#####", "..#..", "..#..", "..#..", "..#..", "..#..", "..#.."],
+	"U": ["#...#", "#...#", "#...#", "#...#", "#...#", "#...#", ".###."],
+	"V": ["#...#", "#...#", "#...#", "#...#", "#...#", ".#.#.", "..#.."],
+	"W": ["#...#", "#...#", "#...#", "#.#.#", "#.#.#", "#.#.#", ".#.#."],
+	"X": ["#...#", "#...#", ".#.#.", "..#..", ".#.#.", "#...#", "#...#"],
+	"Y": ["#...#", "#...#", "#...#", ".#.#.", "..#..", "..#..", "..#.."],
+	"Z": ["#####", "....#", "...#.", "..#..", ".#...", "#....", "#####"],
+}
+
+
+## Desktop: block capitals from the 5x7 font, centred on `cx`, facing the
+## street (-z) like _pixel_text, bottom at `y0`, in `px`-square strokes: the
+## smoother face for letters a metre or more tall (pin-mounted slipcover
+## names, channel letters), where the 3x5 font reads as pixels.
+func _pixel_text57(word: String, cx: float, y0: float, z: float, px: float, depth: float, col: Color, mat: String) -> void:
+	var x0 := cx + (word.length() * 6.0 * px - px) * 0.5  # +x is the viewer's left
+	for i in word.length():
+		var rows: Array = PIXEL_FONT_57.get(word[i], [])
+		for ry in rows.size():
+			var row: String = rows[ry]
+			var k := 0
+			while k < 5:
+				if row[k] != "#":
+					k += 1
+					continue
+				var run := 0
+				while k + run < 5 and row[k + run] == "#":
+					run += 1
+				var lx := x0 - (i * 6.0 * px + (k + run * 0.5) * px)
+				_box(mat, Vector3(run * px, px, depth), Vector3(lx, y0 + (6.5 - ry) * px, z), col)
+				k += run
 
 
 ## Block capitals from the 3x5 pixel font, centred on `cx`, facing the street
