@@ -819,6 +819,13 @@ void fragment() {
 	// The Mississinewa is slow and smooth between riffles: a sharp mirror,
 	// not the ruffled sheen of a lake in the wind.
 	ROUGHNESS = mix(ROUGHNESS, 0.06, fl * smoothstep(0.4, 0.9, metres) * (1.0 - bar) * (1.0 - ice));
+	// Water a hand deep over a grassy swale or a pond's flooded margin is
+	// full of standing grass and sedge, which break up the sky's mirror: it
+	// reads as dark, soaked ground, not as pale sheets of sky lying on a
+	// lawn (creek view 2026-11-15).
+	float stems = (1.0 - smoothstep(0.2, 0.6, metres + (b - 0.5) * 0.2)) * (1.0 - ice) * (1.0 - bar);
+	SPECULAR *= 1.0 - stems;
+	ROUGHNESS = mix(ROUGHNESS, 0.95, stems);
 #endif
 }
 """
@@ -1721,6 +1728,16 @@ static func _water_mesh(d: Dictionary) -> ArrayMesh:
 ## rings 120, 250 and 500 m out, a channel is wet only where it comes in and
 ## goes out, a pond's rings are dry and a lake's mostly wet.
 static func _river_channel(x: float, z: float) -> float:
+	# Only a channel deep enough to carry the river (the Mississinewa runs
+	# a metre or two deep): a farm ditch or a small creek a few decimetres
+	# deep has no gravel bars, just its grassy, reedy edge (creek view
+	# 2026-11-15: a shallow creek's sheet drew as pale bars across a lawn).
+	var deep := 0.0
+	for k in 9:
+		var q := Vector2(x, z) + (Vector2.ZERO if k == 8 else Vector2.from_angle(k * TAU / 8.0) * 25.0)
+		deep = maxf(deep, Terrain.water_level(q.x, q.y) - Terrain.height(q.x, q.y))
+	if deep < 0.8:
+		return 0.0
 	# The river is one 18 m cell wide in the cover data, so a ring point
 	# that grazes it reads well under 0.5: count anything past 0.15.
 	var near := 0
