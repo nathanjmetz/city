@@ -26,6 +26,8 @@ const VIEWS := [
 	["river_wide", "river", 200.0, 45.0, 900.0],
 	["pits_wide", "pits", 200.0, 45.0, 900.0],
 	["river_low", "river", 250.0, 12.0, 45.0],
+	["bare_mid", "bare", 200.0, 35.0, 250.0],
+	["bare_close", "bare", 200.0, 22.0, 70.0],
 ]
 
 var _view := -1
@@ -166,6 +168,9 @@ func _find_aims() -> void:
 				_aims.river = Vector3(x, 0, z)
 	# Flooded gravel pits west of Sweetser: square lakes with berms.
 	_aims.pits = Vector3(-3500, 0, 600)
+	# Bare worked ground beside those pits (WorldCover bare): the active
+	# face of a sand and gravel pit.
+	_aims.bare = Vector3(-3381, 0, -513)
 	# The railroad: the point of the county's track nearest the demo
 	# farms, off a crossing or bridge.
 	_aims.rail = _aims.field
