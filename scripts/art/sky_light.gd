@@ -58,8 +58,13 @@ var lights_on := 0.0
 ## reads as a dark blue-grey, not a deep pure green or red (the Purkinje
 ## shift; why night photos look washed and day-for-night film is graded
 ## grey-blue). Lamps and windows stay coloured: their light is bright
-## enough for the cones. How much colour full night takes off (desktop).
-const NIGHT_GREY := 0.4
+## enough for the cones, so a 3000 K pool on snow stays warm against the
+## moonlit blue-grey around it (night_grade). How much colour full night
+## takes off the dim parts of the picture (desktop).
+const NIGHT_GREY := 0.6
+## The night grade's lookup, entries a side (a 3D texture, rebuilt in
+## steps of the night's darkness).
+const GRADE_SIZE := 32
 ## What the weather's overcast leaves of the colour (Weather sets it).
 var weather_sat := 1.0
 var _day := {}  # the fixed late-morning look, to go back to
@@ -102,6 +107,7 @@ var overcast := 0.0
 ## adjustment_contrast, about mid grey) and the darkness it was last set for.
 const TONE_CONTRAST := 1.1
 var _tone_dark := -1.0
+var _grade_night := 0.0  # the night grade's darkness last built (0: the plain curve)
 
 
 ## Depth fog at street level (see _ready) and how high the haze reaches.
@@ -336,7 +342,7 @@ func set_time(hour: float, months: float) -> void:
 		var veil := SKY_FOG * smoothstep(-4.0, 8.0, elev)
 		if absf(env.fog_sky_affect - veil) > 0.001:
 			env.fog_sky_affect = veil
-		_tone(maxf(darkness, overcast))
+		_tone(maxf(darkness, overcast), darkness)
 		env.adjustment_saturation = saturation()
 	haze_scale = l.haze
 	env.ambient_light_color = l.shade_color
@@ -373,7 +379,7 @@ func set_time(hour: float, months: float) -> void:
 func saturation() -> float:
 	if _gl:
 		return weather_sat
-	return 1.08 * (1.0 - NIGHT_GREY * darkness) * weather_sat
+	return 1.08 * weather_sat
 
 
 ## Light through a closed cloud deck for a sun at `elev` degrees, as bright
@@ -422,12 +428,62 @@ func _fill() -> float:
 ## By night it goes back to the straight line (darkness 1), so the night's
 ## dark (DayNight, Daylight.NIGHT_FILL) stays as dark as it was tuned.
 ## Rebuilt only when darkness has moved a little (a 256-entry texture).
-func _tone(dark: float) -> void:
+## After dark (night > 0) it is a 3D lookup instead that also takes the
+## colour out of the dim parts of the picture (night_grade), rebuilt in
+## steps of 0.1 of the night's darkness.
+func _tone(dark: float, night := 0.0) -> void:
+	var n := snappedf(night, 0.1) if night < 1.0 else 1.0
+	if n < 0.05:
+		n = 0.0
 	# Full day and full night exactly; between them, steps of 0.02.
-	if dark == _tone_dark or (absf(dark - _tone_dark) < 0.02 and dark > 0.0 and dark < 1.0):
+	if n == _grade_night and (dark == _tone_dark or (absf(dark - _tone_dark) < 0.02 and dark > 0.0 and dark < 1.0)):
 		return
 	_tone_dark = dark
-	env.adjustment_color_correction = ImageTexture.create_from_image(tone_curve(dark))
+	_grade_night = n
+	if n == 0.0:
+		env.adjustment_color_correction = ImageTexture.create_from_image(tone_curve(dark))
+	else:
+		env.adjustment_color_correction = night_grade(dark, n)
+
+
+## The tone curve (tone_curve(dark)) with night vision's colour loss on top
+## (NIGHT_GREY at full night, `night` 0 to 1): a colour keeps its brightness
+## and loses most of its colour while dim, and keeps it from about the
+## brightness of a lamp-lit street up. The colour comes out before the
+## curve, which at night clips the darkest few percent to black channel by
+## channel (that clipping is what drew a moonlit lawn pure green).
+## Entry (i, j, k) holds the output for input ((i, j, k) + 0.5) / GRADE_SIZE.
+static func night_grade(dark: float, night: float) -> ImageTexture3D:
+	var tex := ImageTexture3D.new()
+	tex.create(Image.FORMAT_RGBF, GRADE_SIZE, GRADE_SIZE, GRADE_SIZE, false, night_grade_slices(dark, night))
+	return tex
+
+
+## night_grade's lookup as its slices, one per blue entry.
+static func night_grade_slices(dark: float, night: float) -> Array[Image]:
+	var curve := tone_curve(dark)
+	var lut := PackedFloat32Array()
+	lut.resize(256)
+	for i in 256:
+		lut[i] = curve.get_pixel(i, 0).r
+	var n := GRADE_SIZE
+	var slices: Array[Image] = []
+	for k in n:
+		var bytes := PackedFloat32Array()
+		bytes.resize(n * n * 3)
+		var b := (k + 0.5) / n
+		for j in n:
+			var g := (j + 0.5) / n
+			for i in n:
+				var r := (i + 0.5) / n
+				var y := 0.2126 * r + 0.7152 * g + 0.0722 * b
+				var grey := NIGHT_GREY * night * (1.0 - smoothstep(0.15, 0.45, y))
+				var o := (j * n + i) * 3
+				bytes[o] = lut[clampi(int(lerpf(r, y, grey) * 256.0), 0, 255)]
+				bytes[o + 1] = lut[clampi(int(lerpf(g, y, grey) * 256.0), 0, 255)]
+				bytes[o + 2] = lut[clampi(int(lerpf(b, y, grey) * 256.0), 0, 255)]
+		slices.append(Image.create_from_data(n, n, false, Image.FORMAT_RGBF, bytes.to_byte_array()))
+	return slices
 
 
 ## The curve _tone uses, one channel's output per entry: entry i holds the

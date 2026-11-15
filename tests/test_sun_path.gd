@@ -196,6 +196,17 @@ func _tone_curve() -> void:
 	# Shade on asphalt or a lawn (about 0.13 out of AgX) kept at least 0.11,
 	# where the straight line took it to 0.09.
 	_check(day.get_pixel(33, 0).r > 0.11 and night.get_pixel(33, 0).r < 0.1, "tone curve: shade no longer crushed by day")
+	# By night (night_grade) a dim green lawn loses most of its colour and a
+	# bright warm lamp pool keeps it.
+	var grade := SkyLight.night_grade_slices(1.0, 1.0)
+	var at := func(c: Color) -> Color:
+		var n := SkyLight.GRADE_SIZE
+		var img: Image = grade[clampi(int(c.b * n), 0, n - 1)]
+		return img.get_pixel(clampi(int(c.r * n), 0, n - 1), clampi(int(c.g * n), 0, n - 1))
+	var lawn: Color = at.call(Color(0.03, 0.12, 0.03))
+	var pool: Color = at.call(Color(0.62, 0.5, 0.36))
+	_check(lawn.r > 0.0 and lawn.g - lawn.r < 0.05, "night grade: a moonlit lawn is grey-green, not pure green")
+	_check(pool.r - pool.b > 0.25, "night grade: a lamp-lit pool keeps its warmth")
 
 
 func _check(ok: bool, what: String) -> void:
