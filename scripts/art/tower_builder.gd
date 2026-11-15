@@ -929,6 +929,16 @@ func _tw_plaza(width: float, zf: float, w: float) -> void:
 	# Long granite benches facing the street.
 	for sx in [-1.0, 1.0]:
 		_box("concrete", Vector3(3.2, 0.45, 0.7), Vector3(sx * (w * 0.3), 0.225, zf * 0.72), Color("#9a958c"))
+	# Desktop: pole lights by the benches, cut-off heads on dark bronze
+	# poles (the plaza fixtures of 1960s-70s bank plazas), each pooling
+	# light on the paving; plazas are lit for safety all night.
+	if fine_parts:
+		for sx in [-1.0, 1.0]:
+			var lp := Vector3(sx * (w * 0.3 + 2.6), 0, zf * 0.72)
+			_box("metal", Vector3(0.14, 4.2, 0.14), lp + Vector3(0, 2.1, 0), Color("#2b2723"))
+			_box("metal", Vector3(0.7, 0.16, 0.7), lp + Vector3(0, 4.28, 0), Color("#2b2723"))
+			_box("sign", Vector3(0.6, 0.02, 0.6), lp + Vector3(0, 4.19, 0), Color(1.0, 0.94, 0.84, 1.0))
+			_light_pool(lp + Vector3(0, 0.125, 0), 12.0, 12.0, Color(0.86, 0.8, 0.7))
 	# The sculpture, beside the tower where the plaza is wide enough.
 	if r.randf() < 0.7 and (width - w) * 0.5 >= 9.0:
 		var red := r.randf() < 0.5
@@ -1029,12 +1039,18 @@ func _tw_glass_lobby(w: float, d: float, cz: float, ground_h: float) -> void:
 	for i in nx:
 		var x := -w * 0.5 + (i + 0.5) * w / nx
 		for z in [cz - d * 0.5 + 1.5, cz + d * 0.5 - 1.5]:
-			_box("paint", Vector3(0.35, 0.03, 0.35), Vector3(x, y, z), lamp)
+			_box("sign", Vector3(0.35, 0.03, 0.35), Vector3(x, y, z), lamp)
 	var nz := maxi(1, roundi((ld - 0.0) / 3.0))
 	for i in nz:
 		var z := cz - ld * 0.5 + (i + 0.5) * ld / nz
 		for x in [-w * 0.5 + 1.5, w * 0.5 - 1.5]:
-			_box("paint", Vector3(0.35, 0.03, 0.35), Vector3(x, y, z), lamp)
+			_box("sign", Vector3(0.35, 0.03, 0.35), Vector3(x, y, z), lamp)
+	# After dark the lobby stays lit (the guard's desk, the elevator bank:
+	# office lobbies burn all night) and the soffit lights the walk under
+	# the overhang, brighter than the plaza (IES: building entries 5-10 fc).
+	var warm := Color(0.9, 0.84, 0.72)
+	_light_pool(Vector3(0, ground_h * 0.45, fz - 0.07), lw * 0.9, ground_h * 0.85, warm, Vector3.FORWARD)
+	_light_pool(Vector3(0, 0.125, cz - d * 0.5 + 1.5), w, 4.5, warm)
 	_box("metal", Vector3(1.0, 2.2, 0.08), Vector3(lw * 0.3, 1.1, cz + ld * 0.5 + 0.06), Color("#6d7174"))  # service door
 
 
