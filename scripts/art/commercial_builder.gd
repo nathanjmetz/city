@@ -2019,7 +2019,10 @@ func _cc_parking(to_curb: float, w: float, zw: float, xg0: float, cr: RandomNumb
 					_box("paint", Vector3(0.16, 10.0, 0.16), Vector3(x, 5.9, sz), Color("#2e3032"))
 					_box("paint", Vector3(0.6, 0.18, 0.8), Vector3(x, 10.9, sz), Color("#2e3032"))
 					_box("sign", Vector3(0.5, 0.02, 0.7), Vector3(x, 10.8, sz), Color(0.95, 0.96, 1.0, 1.0))  # LED lens
-					_light_pool(Vector3(x, 0.13, sz), 26.0, 26.0, Color(0.95, 0.96, 1.0))
+					# A 40 ft LED pole's Type V spread reaches ~2.5x its height, so
+					# neighbours' pools overlap into the even field IES RP-20 asks
+					# of a big lot (no dark gaps between poles).
+					_light_pool(Vector3(x, 0.13, sz), 62.0, 62.0, Color(0.5, 0.51, 0.55))
 				x += 30.0
 	for k in [-1.0, 1.0]:
 		var p := Vector3(cut_x + k * 4.4, 0, 1.2)
