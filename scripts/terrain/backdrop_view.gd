@@ -229,13 +229,17 @@ static func _pool_material() -> ShaderMaterial:
 shader_type spatial;
 render_mode unshaded, blend_add, depth_draw_never, cull_disabled, fog_disabled, shadows_disabled;
 global uniform float night;
+global uniform float snow;
 varying float dist;
 void vertex() {
 	dist = length((MODELVIEW_MATRIX * vec4(VERTEX, 1.0)).xyz);
 }
 void fragment() {
 	float r = length(UV);
-	float pool = exp(-r * r * 9.0) * 0.32;
+	// Fresh snow sends back about four times the light lawn or asphalt
+	// does (albedo ~0.8 against ~0.2), so a snowy town at night is lit up
+	// in wide orange and white pools (night aerials of Midwest towns).
+	float pool = exp(-r * r * mix(9.0, 6.5, snow)) * 0.32 * (1.0 + 2.2 * snow);
 	float lamp = exp(-r * r * 900.0) * 6.0;
 	ALBEDO = COLOR.rgb * (pool + lamp) * smoothstep(0.25, 0.7, night) * exp(-0.00016 * dist);
 }
