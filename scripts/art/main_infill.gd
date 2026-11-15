@@ -150,6 +150,28 @@ static func _mi_midcentury(b: DenseBuilder, r: RandomNumberGenerator, to_curb: f
 		b._box("paint", Vector3(0.22, 2.6, 1.2), Vector3(e * (w * 0.5 - 0.5), by, zf - 0.7), enamel.darkened(0.25))
 		b._box("paint", Vector3(0.26, 2.3, 1.0), Vector3(e * (w * 0.5 - 0.5), by, zf - 0.7), Color("#efe9d8"))
 		b._box("metal", Vector3(0.08, 0.08, 0.6), Vector3(e * (w * 0.5 - 0.5), by + 1.35, zf - 0.3), BLACK)
+		if DenseBuilder.fine:
+			# Desktop: the blade's porcelain faces carry the tenant's name
+			# across the top of the board, both sides, lit from
+			# within after dark (1950s porcelain-enamel blade signs on
+			# Indiana main streets, Marion and Kokomo).
+			var bx := e * (w * 0.5 - 0.5)
+			var v0 := b._word_slot(bx)
+			var lit := enamel.darkened(0.2)
+			lit.a = 0.9 / 60.0
+			for sd in [-1.0, 1.0]:
+				var x: float = bx + sd * 0.135
+				var y0 := by + 0.45
+				var za := zf - 0.25
+				var zb := zf - 1.15
+				# Reading from the wall out on one face, from the tip in on the other.
+				var ua := 0.0 if sd > 0.0 else 0.9
+				b._quad("sign", Vector3(x, y0, za), Vector3(x, y0, zb), Vector3(x, y0 + 0.42, zb), Vector3(x, y0 + 0.42, za), lit,
+					[Vector2(ua, v0), Vector2(0.9 - ua, v0), Vector2(0.9 - ua, v0 + 1.0), Vector2(ua, v0 + 1.0)], Vector3(sd, 0, 0))
+				# A band of the enamel colour below it, as the porcelain's
+				# second colour, and a pinstripe.
+				b._box("paint", Vector3(0.012, 1.2, 0.9), Vector3(x + sd * 0.002, by - 0.35, zf - 0.7), enamel)
+				b._box("paint", Vector3(0.012, 0.03, 0.9), Vector3(x + sd * 0.004, by + 0.33, zf - 0.7), enamel.darkened(0.3))
 	var sx := -e * (w * 0.5 - 0.9)
 	b._box("paint", Vector3(1.0, 2.2, 0.06), Vector3(sx, 1.1, zf - 0.17), Color("#6b5038"))
 	b._box("paint", Vector3(0.5, 2.2, 0.06), Vector3(sx + e * 0.8, 1.1, zf - 0.17), Color("#d8dcd8"))
