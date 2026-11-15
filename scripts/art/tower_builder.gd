@@ -96,6 +96,9 @@ static func _tw_start(seed: int, to_curb: float, lot: Dictionary, storeys: int, 
 				kind = "flats"
 		else:
 			kind = _tw_form(seed, b.half * 2.0, homes)
+	# 1900s-30s blocks (Chicago, deco, bank) kept clear glass, even after
+	# window replacement: never the low-e tint of a 1980s tower.
+	b.old_glass = kind in ["chicago", "deco", "bank"]
 	match kind:
 		"chicago": b._tw_chicago(to_curb, b.half * 2.0, storeys)
 		"deco": b._tw_deco(to_curb, b.half * 2.0, storeys)

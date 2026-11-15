@@ -208,6 +208,7 @@ var rng: RandomNumberGenerator
 var shopfront := false
 ## Desktop: office windows (GLASS shader UV.x 4..5) go dark a floor at a time.
 var office_glass := false
+var old_glass := false  # with office_glass: a prewar block's clear glass, untinted
 ## Desktop: glass in front of a diner's booths and lunch counter: UV.x 6..7
 ## (a roadside diner's high windows) or 7..8 (a Main Street cafe's low ones).
 var diner_room := 0.0
@@ -3142,7 +3143,7 @@ func _glass(c: Vector3, right: Vector3, w: float, h: float, blinds: float) -> vo
 	if owner_care <= -2 and c.y < 3.6:
 		var out := right.cross(Vector3.UP).normalized()
 		_box("paint", Vector3(w + 0.12, h + 0.12, 0.05), c + out * 0.07, PLYWOOD, Basis(right.normalized(), Vector3.UP, out))
-	var o := diner_room if diner_room > 0.0 else (10.0 if shopfront and allnight else (2.0 if shopfront else (4.0 if office_glass else 0.0)))
+	var o := diner_room if diner_room > 0.0 else (10.0 if shopfront and allnight else (2.0 if shopfront else ((12.0 if old_glass else 4.0) if office_glass else 0.0)))
 	var kb := 0.74 if not shopfront or shop_kind == 0 else 0.6 + 0.02 * shop_kind
 	_quad("glass", c - r - u, c + r - u, c + r + u, c - r + u, Color(0.85, 0.82, kb, blinds),
 		[Vector2(o, 0), Vector2(o + 1, 0), Vector2(o + 1, 1), Vector2(o, 1)])

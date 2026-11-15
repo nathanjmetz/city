@@ -563,7 +563,10 @@ void fragment() {
 	}
 	if (!shop) {
 	// UV.x in 4..5: office glass (the builders' `office_glass`, desktop).
-	float office = step(4.0, UV.x) * step(UV.x, 5.0);
+	// 12..13: an old (prewar) office block's clear glass: the same rooms and
+	// blinds, without the modern low-e tint and mirror sheen.
+	float oldglass = step(12.0, UV.x) * step(UV.x, 13.0);
+	float office = step(4.0, UV.x) * step(UV.x, 5.0) + oldglass;
 	float ux = fract(UV.x);
 	vec3 room = vec3(0.018, 0.02, 0.022);
 	float blinds = step(1.0 - COLOR.a, UV.y);
@@ -590,11 +593,12 @@ void fragment() {
 		// quite flat), and only the ceiling's pale band showing through.
 		float hx = world_pos.x + world_pos.z;
 		float pane = hash(vec2(floor(hx / 1.5), floor(world_pos.y / 3.6)) + 31.7);
-		vec3 tint = vec3(0.72, 0.84, 0.86);
+		vec3 tint = mix(vec3(0.72, 0.84, 0.86), vec3(1.0), oldglass);
 		vec3 deep = mix(room, vcol(COLOR.rgb) * 0.3 * slat, blinds);
 		deep += vec3(0.03, 0.032, 0.034) * smoothstep(0.8, 0.95, UV.y) * (1.0 - blinds);
 		vec3 refl = sky * (0.9 + 0.2 * pane) * mix(0.85, 1.05, UV.y);
-		ALBEDO = mix(deep, refl, 0.38 + 0.45 * fres) * tint;
+		// Clear old glass shows more of the room and less sky.
+		ALBEDO = mix(deep, refl, mix(0.38, 0.2, oldglass) + 0.45 * fres) * tint;
 	}
 	ROUGHNESS = 0.08;
 	SPECULAR = 0.6;
