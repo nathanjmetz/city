@@ -760,6 +760,8 @@ func _mixed(to_curb: float, width: float, storeys: int) -> void:
 		# A bronze plaque on the end pier by the stair door: the district's listing.
 		_box("metal", Vector3(0.45, 0.32, 0.04), Vector3(sx + signf(sx) * 0.62, 1.55, zf - 0.23), Color("#6b5428"))
 	_alley_side(w, zf + d, fronts, fw, storeys, shop_h, floor_h, wall)
+	if fine and era == "prewar" and storeys >= 2:
+		_star_anchors(w, d, zf, shop_h, floor_h, storeys)
 	if fine and storeys >= 2:
 		_party_wall(w, d, zf, shop_h, floor_h, storeys, wall)
 	if fine:
@@ -2209,6 +2211,25 @@ func _parking(x0: float, x1: float, z0: float, z1: float, _width: float) -> void
 		if z1 - z0 > 16.0:
 			_flat_rect("line", x - 0.06, x + 0.06, z1 - 5.5, z1, 0.07, LINE)
 		x += 2.75
+
+
+## Desktop: the cast-iron star anchors on an old Main Street building's
+## side walls, the ends of the tie rods that hold its walls to each floor's
+## joists, a row at every floor line (every Indiana block of the 1880s-1910s
+## has them). Where the neighbour stands taller they sit inside its wall,
+## unseen. No draws.
+func _star_anchors(w: float, d: float, zf: float, shop_h: float, floor_h: float, storeys: int) -> void:
+	var iron := Color("#2b2826")
+	for side in [-1.0, 1.0]:
+		var x: float = side * (w * 0.5 + 0.03)
+		for f in range(1, storeys):
+			var y := shop_h + (f - 1) * floor_h + 0.1
+			var z := zf + 1.5
+			while z < zf + d - 1.0:
+				_box("metal", Vector3(0.03, 0.06, 0.42), Vector3(x, y, z), iron)
+				_box("metal", Vector3(0.03, 0.42, 0.06), Vector3(x, y, z), iron)
+				_box("metal", Vector3(0.05, 0.12, 0.12), Vector3(x + side * 0.01, y, z), iron)
+				z += 3.0
 
 
 ## Desktop: a 1960s aluminium slipcover as hung: sheets about 2.4 m tall
