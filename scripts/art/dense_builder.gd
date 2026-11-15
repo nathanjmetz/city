@@ -857,7 +857,8 @@ func _alley_side(w: float, zb: float, fronts: int, fw: float, storeys: int, shop
 		var fx := -w * 0.5 + (k + 0.5) * fw
 		var side := -1.0 if k % 2 == 0 else 1.0
 		var dx := fx + fw * 0.2 * side
-		_steel_door(Vector3(dx, 1.05, zb), 1.0)
+		# The wall pack lights only its own lot, not the neighbour's.
+		_steel_door(Vector3(dx, 1.05, zb), 1.0, Color("#5a5e60"), true, minf(5.0, (w * 0.5 - absf(dx)) * 2.0))
 		var wx := dx - side * 2.0
 		# Some shops keep a steel roll-down shutter down over the back
 		# window instead of bars (a scan from the free library; the bars
