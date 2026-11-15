@@ -2102,9 +2102,12 @@ func _tw_faces(w: float, d: float, cz: float, cx := 0.0) -> Array:
 	]
 
 
-## Turns a box built facing the street to lie along `along`.
+## Turns a box built facing the street to lie along `along`. (A turn of a
+## about UP takes x to (cos a, 0, -sin a), so the angle is atan2(z, -x);
+## the z sign used to be flipped, harmless on square faces but it set a
+## cut corner's floor-line steel crosswise, poking out as spikes.)
 func _tw_yaw(along: Vector3) -> Basis:
-	return Basis(Vector3.UP, atan2(-along.z, -along.x))
+	return Basis(Vector3.UP, atan2(along.z, -along.x))
 
 
 ## A gravel roof inside the parapet, in the membrane material, so the far
