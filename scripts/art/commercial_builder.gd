@@ -23,6 +23,7 @@ const GRAVEL := Color("#8d877c")
 const LINE := Color("#e8e6df")
 ## Set by the art gallery to draw one kind of shop.
 static var force_shop := ""
+var lot_corrals := false  # a community center's lot draws the grocer's corrals
 ## Set by the builders whose sites were planned under a zoning code (strip
 ## centres): their dumpster stands in a screened enclosure whatever the era.
 var bin_enclosure := false
@@ -1545,7 +1546,9 @@ func _community_center(to_curb: float) -> void:
 	while px <= x1s + 0.01:
 		_box("paint", Vector3(0.45, 3.0, 0.45), Vector3(clampf(px, x0s + 0.3, x1s - 0.3), 1.9, zf - 2.3), wall.lightened(0.1))
 		px += bay
+	lot_corrals = true  # the big lot has its own corrals (_cc_parking)
 	_grocery_anchor(xg0, w * 0.5, zf, zf + ds * 0.5, ds, wall, mull)
+	lot_corrals = false
 	sign_spec = spec
 	site.door = Vector2(vxs[0], zf - 4.5)
 	# The truck court: the discount store's docks and trailers at the back.
@@ -1561,6 +1564,9 @@ func _community_center(to_curb: float) -> void:
 				_box("paint", Vector3(2.6, 0.5, 14.6), Vector3(kx, 3.85, dz + 7.9), Color("#e6e4de"))
 				_box("paint", Vector3(2.4, 1.0, 0.4), Vector3(kx, 0.6, dz + 13.5), Color("#2a2a2a"))
 		_box("paint", Vector3(2.4, 2.2, 5.0), Vector3(sx0 + 4.0, 1.1, dz + 2.8), Color("#3d5a7a"))  # baler/compactor
+	if fine_parts:
+		_box_sconces(sx0, xd1, zf)  # the discount store
+		_box_sconces(xg0, w * 0.5, zf - 0.25)  # the grocer
 	_rooftop(w * 0.8, dd * 0.6, zf + dd * 0.5, hd, 6)
 	_cc_parking(to_curb, w, zf - 2.6, xg0, cr)
 
@@ -1769,6 +1775,12 @@ func _power_center(to_curb: float) -> void:
 	boxes.append([xd0, w * 0.5, dh])
 	sign_spec = spec
 	site.door = Vector2(hx + 6.0, zf - 4.5)
+	if fine_parts:
+		# Desktop: dark-sky sconces along every box front, one per 30 ft
+		# bay at 5 m, each washing the wall below it and lighting the walk
+		# (IES RP-20's storefront walk, brighter than the lot), dusk to dawn.
+		for bx in boxes:
+			_box_sconces(float(bx[0]), float(bx[1]), zf + 1.0 if bx.size() > 3 else zf)
 	# The truck court: each box's docks, a trailer at some.
 	var dz := zf + dd
 	if depth - dz > 5.0:
@@ -1792,6 +1804,20 @@ func _power_center(to_curb: float) -> void:
 					_box("paint", Vector3(2.4, 1.0, 0.4), Vector3(kx, 0.6, bz + 13.5), Color("#2a2a2a"))
 	_rooftop(w * 0.8, dd * 0.6, zf + dd * 0.5, hh, 8)
 	_cc_parking(to_curb, w, zf - 2.6, xd0, cr)
+
+
+## Desktop: dark-sky sconces along a big box's front between x0 and x1 (wall
+## at z fz), one per 30 ft bay at 5 m, each washing the wall below it and
+## lighting the storefront walk (IES RP-20's walk, brighter than the lot).
+func _box_sconces(x0: float, x1: float, fz: float) -> void:
+	var bw := x1 - x0
+	var nb := maxi(1, int(bw / 9.1))
+	for i in nb:
+		var sx := x0 + (i + 0.5) * bw / nb
+		_box("metal", Vector3(0.5, 0.28, 0.32), Vector3(sx, 5.2, fz - 0.16), Color("#2e3032"))
+		_box("sign", Vector3(0.44, 0.02, 0.26), Vector3(sx, 5.05, fz - 0.17), Color(1.0, 0.94, 0.84, 1.0))
+		_light_pool(Vector3(sx, 3.3, fz - 0.06), 6.5, 6.0, Color(0.85, 0.78, 0.68), Vector3.FORWARD)
+		_light_pool(Vector3(sx, 0.125, fz - 2.6), 9.0, 6.0, Color(0.9, 0.84, 0.74))
 
 
 ## A flat-roofed box between x0 and x1: walls, a membrane roof, a parapet
@@ -2019,7 +2045,10 @@ func _cc_parking(to_curb: float, w: float, zw: float, xg0: float, cr: RandomNumb
 					_box("paint", Vector3(0.16, 10.0, 0.16), Vector3(x, 5.9, sz), Color("#2e3032"))
 					_box("paint", Vector3(0.6, 0.18, 0.8), Vector3(x, 10.9, sz), Color("#2e3032"))
 					_box("sign", Vector3(0.5, 0.02, 0.7), Vector3(x, 10.8, sz), Color(0.95, 0.96, 1.0, 1.0))  # LED lens
-					_light_pool(Vector3(x, 0.13, sz), 26.0, 26.0, Color(0.95, 0.96, 1.0))
+					# A 40 ft LED pole's Type V spread reaches ~2.5x its height, so
+					# neighbours' pools overlap into the even field IES RP-20 asks
+					# of a big lot (no dark gaps between poles).
+					_light_pool(Vector3(x, 0.13, sz), 62.0, 62.0, Color(0.5, 0.51, 0.55))
 				x += 30.0
 	for k in [-1.0, 1.0]:
 		var p := Vector3(cut_x + k * 4.4, 0, 1.2)
@@ -2133,8 +2162,9 @@ func _grocery_anchor(x0: float, x1: float, zf: float, cz: float, d: float, wall:
 		if len > 3.0:
 			_glass(Vector3((fx0 + fx1) * 0.5, 2.0, zfa - 0.03), Vector3(-1, 0, 0), len, 2.6, r.randf_range(0.2, 0.5))
 			_box("paint", Vector3(len, 0.12, 0.1), Vector3((fx0 + fx1) * 0.5, 3.35, zfa - 0.06), mull)
-	# Cart corrals in the lot, and the truck well at the back.
-	for k in 2:
+	# Cart corrals in the lot (on desktop a big lot paints its own in stall
+	# spaces; these would stand on painted stalls), and the truck well.
+	for k in (0 if fine_parts and lot_corrals else 2):
 		var cx := lerpf(x0 + 4.0, x1 - 4.0, 0.25 + k * 0.5)
 		var czz := zf - 12.0 - k * 2.0
 		if czz < 2.0:
