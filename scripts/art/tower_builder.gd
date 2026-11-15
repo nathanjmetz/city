@@ -1243,10 +1243,14 @@ func _tw_slab(to_curb: float, width: float, storeys: int) -> void:
 				if not balcony:
 					c.y = y0 + 1.55
 					_glass(c, face[1], len_b - 1.4, 1.5, rng.randf_range(0.1, 0.7))
+					if fine_parts and face[1] != Vector3(1, 0, 0):  # not the back
+						_tw_slider(c, face[1], len_b - 1.4, 1.5, slab, true)
 					continue
 				# A sliding door out to a cantilevered slab with an aluminium guard.
 				c.y = y0 + 0.22 + 1.05
 				_glass(c, face[1], len_b - 1.2, 2.1, rng.randf_range(0.1, 0.6))
+				if fine_parts:
+					_tw_slider(c, face[1], len_b - 1.2, 2.1, slab, false)
 				var b0: Vector3 = wall_at + face[1] * (-face[2] * 0.5 + (i + 0.5) * len_b)
 				var yaw := _tw_yaw(face[1])
 				_box("paint", Vector3(len_b - 0.4, 0.24, 1.54), b0 + out * 0.72 + Vector3(0, y0 + 0.14, 0), slab, yaw)
@@ -1260,6 +1264,8 @@ func _tw_slab(to_curb: float, width: float, storeys: int) -> void:
 		var x := -w * 0.5 + (i + 0.5) * bw
 		if absf(x) > lobby * 0.5 + 0.5:
 			_glass(Vector3(x, 2.1, zf - 0.03), Vector3(-1, 0, 0), bw - 1.4, 1.6, rng.randf_range(0.2, 0.7))
+			if fine_parts:
+				_tw_slider(Vector3(x, 2.1, zf - 0.03), Vector3(-1, 0, 0), bw - 1.4, 1.6, slab, true)
 	_box("paint", Vector3(5.0, 0.3, 4.0), Vector3(0, 3.35, zf - 2.0), slab)
 	for s in [-1.0, 1.0]:
 		_box("metal", Vector3(0.15, 3.2, 0.15), Vector3(s * 2.2, 1.6, zf - 3.7), guard)
@@ -2262,6 +2268,26 @@ func _tw_storefront(c: Vector3, right: Vector3, gw: float, gh: float, frame: Col
 	_box("metal", Vector3(gw + 0.1, 0.08, 0.1), at.call(0.0, y0 + 2.6, 0.05), frame, bas)  # transom bar
 	_box("metal", Vector3(gw + 0.1, 0.55, 0.08), at.call(0.0, y0 + 0.275, 0.06), frame.darkened(0.15), bas)  # bulkhead
 	_box("metal", Vector3(gw + 0.14, 0.05, 0.16), at.call(0.0, y0 + 0.57, 0.08), frame.lightened(0.1), bas)  # sill
+
+
+## Desktop: a postwar apartment's aluminium window or balcony door as it
+## was built (1960s Midwest high-rise flats: mill-finish horizontal
+## sliders and sliding patio doors): a frame round the glass, the meeting
+## stile where the two sashes overlap, and under a window a precast sill
+## that sheds water off the wall. Centre `c` on the face, `right` along it.
+func _tw_slider(c: Vector3, right: Vector3, gw: float, gh: float, sill_col: Color, sill: bool) -> void:
+	var r := right.normalized()
+	var out := r.cross(Vector3.UP).normalized()
+	var bas := Basis(r, Vector3.UP, -out)
+	var al := Color("#9a9c9a")
+	var p := c + out * 0.03
+	_box("metal", Vector3(gw + 0.08, 0.06, 0.06), p + Vector3(0, gh * 0.5, 0), al, bas)  # head
+	_box("metal", Vector3(gw + 0.08, 0.06, 0.06), p - Vector3(0, gh * 0.5, 0), al, bas)  # sill track
+	for e in [-1.0, 1.0]:
+		_box("metal", Vector3(0.06, gh, 0.06), p + r * e * (gw * 0.5 + 0.01), al, bas)  # jambs
+	_box("metal", Vector3(0.07, gh, 0.07), p + r * gw * 0.04, al, bas)  # meeting stile
+	if sill:
+		_box("paint", Vector3(gw + 0.3, 0.07, 0.14), c + out * 0.07 - Vector3(0, gh * 0.5 + 0.06, 0), sill_col, bas)
 
 
 ## Desktop: a postwar apartment tower's lobby front as you walk up to it
