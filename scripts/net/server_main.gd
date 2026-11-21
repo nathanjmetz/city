@@ -14,6 +14,12 @@ extends SceneTree
 ##                              data file, as <name>-telemetry/)
 ##   --approve yes CITY_APPROVE the host lets each new player in (default: the
 ##                              invite code is the only key)
+##   --test-pin PIN CITY_TEST_PIN  for playtests only: one PIN that lets
+##                              anyone in as the name they give, host
+##                              included (default: off). Its sign-ins stop
+##                              working once the server runs without it, but
+##                              PINs anyone saw as host keep working: give
+##                              players New PINs after an open playtest.
 
 var server: RegionServer
 
@@ -26,6 +32,7 @@ func _init() -> void:
 		"host": OS.get_environment("CITY_HOST"),
 		"approve": OS.get_environment("CITY_APPROVE"),
 		"telemetry": OS.get_environment("CITY_TELEMETRY_DIR"),
+		"test-pin": OS.get_environment("CITY_TEST_PIN"),
 	}
 	var args := OS.get_cmdline_user_args()
 	for i in args.size() - 1:
@@ -37,6 +44,9 @@ func _init() -> void:
 		data = OS.get_environment("PWD").path_join(data)
 	server = RegionServer.new()
 	server.require_approval = opts.approve in ["yes", "true", "1"]
+	server.test_pin = RegionServer._clean_pin(opts["test-pin"])
+	if server.test_pin != "":
+		print("The test PIN is on: anyone who types it comes in as any player, the host too.")
 	if opts.telemetry != "":
 		server.telemetry_dir = opts.telemetry if opts.telemetry.begins_with("/") or opts.telemetry.begins_with("user://") \
 			else OS.get_environment("PWD").path_join(opts.telemetry)

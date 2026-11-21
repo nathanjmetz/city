@@ -57,6 +57,12 @@ var host_names := []
 ## Whether the host must let each new player in. Off: the invite code is
 ## the key (Brawn: "if you have the invite code, you can play").
 var require_approval := false
+## A PIN for playtests that lets anyone in as the name they give, the host
+## included (Nathan, 2026-10-29: "just make a pin that works for everybody").
+## Empty, the default, means off. Only the server computer turns it on
+## (--test-pin / CITY_TEST_PIN), so its value never sits in the public code.
+## Sign-ins made with it stop working once the server runs without it.
+var test_pin := ""
 
 var _peer := WebSocketMultiplayerPeer.new()
 ## Sends and receives over _peer: big messages in parts, and only as fast as
@@ -536,15 +542,29 @@ func _hello(from: int, msg: Dictionary) -> void:
 		if _pin_misses.size() >= PIN_MISSES and Time.get_ticks_msec() - int(_pin_misses[0]) < 60_000:
 			_reject(from, "Too many wrong PINs. Wait a minute, then try again.")
 			return
-		account = _account_by_pin(pin)
-		if account.is_empty():
-			_pin_misses.append(Time.get_ticks_msec())
-			while _pin_misses.size() > PIN_MISSES:
-				_pin_misses.pop_front()
-			_log("Wrong PIN from peer %d" % from)
-			_reject(from, "That PIN isn't right. Check it with the host.")
-			return
-		_log("%s came in with their PIN" % account.name)
+		if test_pin != "" and pin == test_pin:
+			if name == "":
+				_reject(from, "Put your name in your Profile first, then type the test PIN.")
+				return
+			if accounts.is_empty():
+				_reject(from, "The host comes in first, with the invite code.")
+				return
+			account = _account_for_test_pin(name, str(msg.get("id", "")).left(64))
+			if account.status != "declined":
+				token = _issue_token(account)
+				account.test_tokens.append(token.sha256_text())
+				account.test_tokens = account.test_tokens.filter(func(t): return t in account.tokens)
+				_log("%s came in with the test PIN" % account.name)
+		else:
+			account = _account_by_pin(pin)
+			if account.is_empty():
+				_pin_misses.append(Time.get_ticks_msec())
+				while _pin_misses.size() > PIN_MISSES:
+					_pin_misses.pop_front()
+				_log("Wrong PIN from peer %d" % from)
+				_reject(from, "That PIN isn't right. Check it with the host.")
+				return
+			_log("%s came in with their PIN" % account.name)
 	elif accounts.is_empty() and str(msg.get("code", "")).to_upper().replace("-", "").strip_edges() == invite_code:
 		account = _new_account(name if name != "" else _free_name(), str(msg.get("password", "")),
 			str(msg.get("id", "")).left(64))
@@ -657,9 +677,21 @@ func _new_pin() -> String:
 	while true:
 		var b := crypto.generate_random_bytes(4)
 		var pin := "%06d" % (b.decode_u32(0) % 1000000)
-		if _account_by_pin(pin).is_empty():
+		if _account_by_pin(pin).is_empty() and pin != test_pin:
 			return pin
 	return ""
+
+
+## Who the test PIN lets in: the player by the name they gave, or a new
+## player by that name. A player the host removed stays out.
+func _account_for_test_pin(name: String, device_id: String) -> Dictionary:
+	var key := name.to_lower()
+	if not accounts.has(key):
+		_new_account(name, "", device_id).status = "approved"
+		_send_pins()
+	if not accounts[key].has("test_tokens"):
+		accounts[key].test_tokens = []
+	return accounts[key]
 
 
 ## (Host) adds a player by name, with a PIN to send them; or makes an
@@ -1103,6 +1135,14 @@ func _load() -> void:
 		accounts[key] = {"name": str(a.name), "salt": str(a.salt), "hash": str(a.hash), "status": str(a.status),
 			"player": str(a.player), "host": bool(a.host), "tokens": Array(a.get("tokens", [])),
 			"pin": str(a.get("pin", ""))}
+		# Sign-ins the test PIN made last as long as it stays on.
+		var test_tokens := Array(a.get("test_tokens", []))
+		if test_pin == "":
+			for t in test_tokens:
+				accounts[key].tokens.erase(t)
+			_dirty = _dirty or not test_tokens.is_empty()
+		elif not test_tokens.is_empty():
+			accounts[key].test_tokens = test_tokens
 	# Regions from before PINs: every player gets one, and the first player
 	# is the host if nobody is.
 	for key in accounts:
